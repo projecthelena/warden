@@ -30,3 +30,20 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+
+# Go build output
+bin/
+.out/
+.gocache/
+
+# Node modules
+web/node_modules
+web/dist
+internal/static/dist/*
+!internal/static/dist/.gitkeep
+
+# Editors
+.DS_Store
+.vscode/
+.idea/

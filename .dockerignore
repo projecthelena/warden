@@ -1,0 +1,13 @@
+.gocache
+.git
+.github
+.idea
+.vscode
+bin
+dashboard
+deployments
+web/node_modules
+web/dist
+node_modules
+Dockerfile
+README.md
