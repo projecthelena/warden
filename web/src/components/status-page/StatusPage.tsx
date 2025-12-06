@@ -1,8 +1,10 @@
+import { useEffect, useState } from "react";
 import { Monitor, Group, Incident, useMonitorStore } from "@/lib/store";
 import { CheckCircle2, AlertTriangle, XCircle, Activity, ChevronDown, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { UptimeHistory } from "@/components/ui/monitor-visuals";
+import { useParams } from "react-router-dom";
 import {
     Accordion,
     AccordionContent,
@@ -81,36 +83,75 @@ function IncidentItem({ incident }: { incident: Incident }) {
 }
 
 export function StatusPage() {
-    const { groups, incidents } = useMonitorStore();
+    const { slug } = useParams();
+    const { fetchPublicStatusBySlug } = useMonitorStore();
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [data, setData] = useState<{ title: string, groups: Group[], incidents: Incident[] } | null>(null);
 
-    const activeIncidents = incidents.filter(i => i.status !== 'resolved' && i.status !== 'completed');
-    const pastIncidents = incidents.filter(i => i.status === 'resolved' || i.status === 'completed');
+    useEffect(() => {
+        const load = async () => {
+            setLoading(true);
+            const result = await fetchPublicStatusBySlug(slug || 'all');
+            if (result) {
+                setData(result);
+            } else {
+                setError("Status page not found or private.");
+            }
+            setLoading(false);
+        };
+        load();
+    }, [slug]);
+
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-[#020617] flex items-center justify-center text-slate-100">
+                <div className="flex items-center gap-2">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                    Loading Status...
+                </div>
+            </div>
+        )
+    }
+
+    if (error || !data) {
+        return (
+            <div className="min-h-screen bg-[#020617] flex items-center justify-center text-slate-100">
+                <div className="text-center">
+                    <Activity className="w-12 h-12 text-slate-600 mx-auto mb-4" />
+                    <h1 className="text-xl font-semibold mb-2">Status Page Unavailable</h1>
+                    <p className="text-slate-500">{error || "Could not load status information."}</p>
+                </div>
+            </div>
+        )
+    }
 
     return (
         <div className="min-h-screen bg-[#020617] text-slate-100 font-sans">
             <header className="max-w-3xl mx-auto pt-12 pb-8 px-6 text-center">
                 <div className="flex items-center justify-center gap-3 mb-2">
                     <Activity className="w-8 h-8 text-blue-500" />
-                    <h1 className="text-3xl font-bold tracking-tight">ClusterUptime Status</h1>
+                    <h1 className="text-3xl font-bold tracking-tight">{data.title}</h1>
                 </div>
             </header>
 
             <main className="max-w-3xl mx-auto px-6 pb-20">
-                <GlobalStatus groups={groups} incidents={incidents} />
+                <GlobalStatus groups={data.groups || []} incidents={data.incidents || []} />
 
-                {activeIncidents.length > 0 && (
+                {/* Incidents Section */}
+                {data.incidents && data.incidents.length > 0 && (
                     <div className="mb-12">
                         <h2 className="text-xl font-semibold mb-4">Active Incidents</h2>
                         <Card className="bg-slate-900 border-slate-800">
                             <CardContent className="pt-6">
-                                {activeIncidents.map(i => <IncidentItem key={i.id} incident={i} />)}
+                                {data.incidents.map(i => <IncidentItem key={i.id} incident={i} />)}
                             </CardContent>
                         </Card>
                     </div>
                 )}
 
                 <div className="space-y-8 mb-16">
-                    {groups.map(group => (
+                    {data.groups && data.groups.map(group => (
                         <Card key={group.id} className="bg-slate-900/40 border-slate-800">
                             <CardHeader className="pb-2 border-b border-slate-800/50">
                                 <CardTitle className="text-lg">{group.name}</CardTitle>
@@ -121,24 +162,6 @@ export function StatusPage() {
                         </Card>
                     ))}
                 </div>
-
-                {pastIncidents.length > 0 && (
-                    <div className="mb-12">
-                        <h2 className="text-xl font-semibold mb-4">Past Incidents</h2>
-                        <Accordion type="single" collapsible className="w-full">
-                            <AccordionItem value="history" className="border-slate-800">
-                                <AccordionTrigger className="text-slate-400 hover:text-slate-200 hover:no-underline">
-                                    View Incident History
-                                </AccordionTrigger>
-                                <AccordionContent>
-                                    <div className="pt-4 space-y-6">
-                                        {pastIncidents.map(i => <IncidentItem key={i.id} incident={i} />)}
-                                    </div>
-                                </AccordionContent>
-                            </AccordionItem>
-                        </Accordion>
-                    </div>
-                )}
             </main>
 
             <footer className="border-t border-slate-900 py-8 text-center text-slate-600 text-sm">

@@ -1,12 +1,8 @@
 package uptime
 
 import (
-	"context"
-	"net/http"
 	"sync"
 	"time"
-
-	"github.com/clusteruptime/clusteruptime/internal/config"
 )
 
 type Status struct {
@@ -17,70 +13,70 @@ type Status struct {
 }
 
 type Monitor struct {
-	cfg     config.Config
-	history []Status
-	mu      sync.RWMutex
-	client  *http.Client
+	id       string
+	url      string
+	interval time.Duration
+	history  []Status
+	mu       sync.RWMutex
+	stopCh   chan struct{}
+	jobQueue chan<- Job
 }
 
-func NewMonitor(cfg config.Config) *Monitor {
+func NewMonitor(id, url string, interval time.Duration, jobQueue chan<- Job) *Monitor {
 	return &Monitor{
-		cfg:     cfg,
-		history: make([]Status, 0, 100),
-		client: &http.Client{
-			Timeout: 5 * time.Second,
-		},
+		id:       id,
+		url:      url,
+		interval: interval,
+		history:  make([]Status, 0, 50), // Keep last 50 in memory
+		stopCh:   make(chan struct{}),
+		jobQueue: jobQueue,
 	}
 }
 
-func (m *Monitor) Start(ctx context.Context) {
-	ticker := time.NewTicker(m.cfg.CheckInterval)
+func (m *Monitor) Start() {
+	ticker := time.NewTicker(m.interval)
 	defer ticker.Stop()
 
 	// Initial check
-	m.check()
+	m.schedule()
 
 	for {
 		select {
-		case <-ctx.Done():
+		case <-m.stopCh:
 			return
 		case <-ticker.C:
-			m.check()
+			m.schedule()
 		}
 	}
 }
 
-func (m *Monitor) check() {
-	if m.cfg.TargetURL == "" {
-		return
+func (m *Monitor) Stop() {
+	close(m.stopCh)
+}
+
+func (m *Monitor) schedule() {
+	select {
+	case m.jobQueue <- Job{MonitorID: m.id, URL: m.url}:
+		// Scheduled
+	default:
+		// Queue full, skip this tick to avoid blocking scheduler
+		// Log warning?
 	}
+}
 
-	start := time.Now()
-	resp, err := m.client.Get(m.cfg.TargetURL)
-	latency := time.Since(start).Milliseconds()
-
-	status := Status{
-		Timestamp: time.Now(),
-		Latency:   latency,
-		IsUp:      true,
-	}
-
-	if err != nil {
-		status.IsUp = false
-		status.Error = err.Error()
-	} else {
-		defer resp.Body.Close()
-		if resp.StatusCode >= 400 {
-			status.IsUp = false
-			status.Error = resp.Status
-		}
-	}
-
+// RecordResult is called by the ResultProcessor to update in-memory history
+func (m *Monitor) RecordResult(isUp bool, latency int64, ts time.Time) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Keep last 100 checks
-	if len(m.history) >= 100 {
+	status := Status{
+		Timestamp: ts,
+		Latency:   latency,
+		IsUp:      isUp,
+	}
+
+	// Keep last 50 checks
+	if len(m.history) >= 50 {
 		m.history = m.history[1:]
 	}
 	m.history = append(m.history, status)
@@ -93,4 +89,18 @@ func (m *Monitor) GetHistory() []Status {
 	dst := make([]Status, len(m.history))
 	copy(dst, m.history)
 	return dst
+}
+
+func (m *Monitor) GetTargetURL() string {
+	return m.url
+}
+
+func (m *Monitor) GetLastStatus() (bool, int64, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if len(m.history) == 0 {
+		return false, 0, false // No history yet
+	}
+	last := m.history[len(m.history)-1]
+	return last.IsUp, last.Latency, true
 }

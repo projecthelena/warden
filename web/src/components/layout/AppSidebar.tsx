@@ -9,10 +9,12 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
     SidebarRail,
+    SidebarFooter,
 } from "@/components/ui/sidebar";
 import { Activity, Layers, Server, Zap, Bell } from "lucide-react";
 import { Group } from "@/lib/store";
 import { useNavigate, useLocation } from "react-router-dom";
+import { UserInfo } from "./UserInfo";
 
 interface AppSidebarProps {
     groups: Group[];
@@ -51,8 +53,8 @@ export function AppSidebar({ groups }: AppSidebarProps) {
                         <SidebarMenu>
                             <SidebarMenuItem>
                                 <SidebarMenuButton
-                                    isActive={location.pathname === '/'}
-                                    onClick={() => navigate('/')}
+                                    isActive={location.pathname === '/dashboard'}
+                                    onClick={() => navigate('/dashboard')}
                                 >
                                     <Layers />
                                     <span>All Groups</span>
@@ -67,22 +69,14 @@ export function AppSidebar({ groups }: AppSidebarProps) {
                                     <span>Incidents</span>
                                 </SidebarMenuButton>
                             </SidebarMenuItem>
+
                             <SidebarMenuItem>
                                 <SidebarMenuButton
-                                    isActive={location.pathname === '/notifications'}
-                                    onClick={() => navigate('/notifications')}
-                                >
-                                    <Bell />
-                                    <span>Notifications</span>
-                                </SidebarMenuButton>
-                            </SidebarMenuItem>
-                            <SidebarMenuItem>
-                                <SidebarMenuButton
-                                    isActive={location.pathname === '/status'}
-                                    onClick={() => navigate('/status')}
+                                    isActive={location.pathname === '/status-pages'}
+                                    onClick={() => navigate('/status-pages')}
                                 >
                                     <Activity />
-                                    <span>Status Page</span>
+                                    <span>Status Pages</span>
                                 </SidebarMenuButton>
                             </SidebarMenuItem>
                         </SidebarMenu>
@@ -108,6 +102,9 @@ export function AppSidebar({ groups }: AppSidebarProps) {
                     </SidebarGroupContent>
                 </SidebarGroup>
             </SidebarContent>
+            <SidebarFooter>
+                <UserInfo />
+            </SidebarFooter>
             <SidebarRail />
         </Sidebar>
     );

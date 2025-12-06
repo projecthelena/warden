@@ -4,6 +4,7 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -25,12 +26,25 @@ func Handler() http.Handler {
 		if upath == "" {
 			upath = "index.html"
 		}
+
+		// If file exists, serve it
 		if _, err := fs.Stat(sub, upath); err == nil {
 			fileServer.ServeHTTP(w, r)
 			return
 		}
-		r2 := *r
-		r2.URL.Path = "/index.html"
-		fileServer.ServeHTTP(w, &r2)
+
+		// Fallback to index.html for SPA
+		// Deep copy the URL to avoid modifying the original request unexpectedly (though here it's fine)
+		// and explicitely set path to index.html
+		r2 := new(http.Request)
+		*r2 = *r
+		r2.URL = new(url.URL)
+		*r2.URL = *r.URL
+		r2.URL.Path = "/"
+
+		// Important: Clear RawQuery if specific behavior needed, or keep it.
+		// fileServer uses URL.Path.
+
+		fileServer.ServeHTTP(w, r2)
 	})
 }

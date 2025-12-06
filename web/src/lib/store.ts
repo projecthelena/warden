@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { create } from 'zustand';
 
 export interface MonitorEvent {
     id: string;
@@ -17,6 +17,14 @@ export interface NotificationChannel {
         channel?: string;
     };
     enabled: boolean;
+}
+
+export interface User {
+    name: string;
+    email: string;
+    avatar: string;
+    isAuthenticated: boolean;
+    timezone?: string;
 }
 
 export interface Monitor {
@@ -48,171 +56,326 @@ export interface Incident {
     affectedGroups: string[];
 }
 
-const generateHistory = (): Monitor['history'] => {
-    return Array.from({ length: 20 }, () => {
-        const r = Math.random();
-        if (r > 0.98) return 'down';
-        if (r > 0.95) return 'degraded';
-        return 'up';
-    });
-};
+interface MonitorStore {
+    groups: Group[];
+    incidents: Incident[];
+    channels: NotificationChannel[];
+    user: User | null;
+    isAuthChecked: boolean;
 
-// Helper to generate some mock events
-const generateEvents = (): MonitorEvent[] => {
-    return [
-        { id: '1', type: 'up', timestamp: new Date(Date.now() - 1000 * 60 * 5).toISOString(), message: 'Monitor is UP (200 OK)' },
-        { id: '2', type: 'degraded', timestamp: new Date(Date.now() - 1000 * 60 * 60).toISOString(), message: 'High latency detected (850ms)' },
-        { id: '3', type: 'up', timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(), message: 'Monitor recovered' },
-    ]
+    // Actions
+    checkAuth: () => Promise<void>;
+    login: (username: string) => Promise<boolean>;
+    logout: () => Promise<void>;
+
+    // CRUD
+    fetchPublicStatus: () => Promise<void>;
+    fetchMonitors: () => Promise<void>;
+    addGroup: (name: string) => Promise<void>;
+    deleteGroup: (id: string) => Promise<void>;
+    addMonitor: (name: string, url: string, groupName: string) => Promise<void>;
+    updateMonitor: (id: string, updates: Partial<Monitor>) => void;
+    deleteMonitor: (id: string) => Promise<void>;
+
+    addIncident: (incident: Omit<Incident, 'id' | 'date'>) => void;
+    resolveIncident: (id: string) => void;
+    addChannel: (channel: Omit<NotificationChannel, 'id'>) => void;
+    updateChannel: (id: string, updates: Partial<NotificationChannel>) => void;
+    deleteChannel: (id: string) => void;
+
+    updateUser: (data: { password?: string; timezone?: string }) => Promise<void>;
+
+    // Status Pages
+    fetchStatusPages: () => Promise<StatusPage[]>;
+    toggleStatusPage: (slug: string, publicStatus: boolean, title?: string, groupId?: string) => Promise<void>;
+    fetchPublicStatusBySlug: (slug: string) => Promise<any>;
 }
 
-// Initialize with a default group
-const INITIAL_GROUPS: Group[] = [
-    {
-        id: "default",
-        name: "Default",
-        monitors: []
-    },
-    {
-        id: "g1",
-        name: "Platform Core",
-        monitors: [
-            { id: "m1", name: "Auth Service", url: "https://auth.api.internal", status: "up", latency: 45, history: generateHistory(), lastCheck: "Just now", events: generateEvents() },
-            { id: "m2", name: "User Database", url: "db.prod.internal", status: "up", latency: 12, history: generateHistory(), lastCheck: "Just now", events: [] },
-        ]
-    }
-];
+export interface StatusPage {
+    id: number;
+    slug: string;
+    title: string;
+    groupId?: string;
+    public: boolean;
+    createdAt: string;
+}
 
-const INITIAL_INCIDENTS: Incident[] = [
-    {
-        id: "i1",
-        title: "Payment Gateway Latency",
-        description: "We are observing high latency check.",
-        status: "investigating",
-        type: "incident",
-        severity: "major",
-        startTime: new Date().toISOString(),
-        affectedGroups: ["Platform Core"]
-    }
-]
+export const useMonitorStore = create<MonitorStore>((set, get) => ({
+    groups: [],
+    incidents: [],
+    channels: [],
+    user: null,
+    isAuthChecked: false,
 
-const INITIAL_CHANNELS: NotificationChannel[] = [
-    {
-        id: "c1",
-        type: "slack",
-        name: "DevOps Alerts",
-        config: { webhookUrl: "https://hooks.slack.com/services/..." },
-        enabled: true
-    }
-];
+    // ... (existing actions)
 
-export const useMonitorStore = () => {
-    const [groups, setGroups] = useState<Group[]>(INITIAL_GROUPS);
-    const [incidents, setIncidents] = useState<Incident[]>(INITIAL_INCIDENTS);
-    const [channels, setChannels] = useState<NotificationChannel[]>(INITIAL_CHANNELS);
+    updateUser: async (data) => {
+        try {
+            const res = await fetch("/api/auth/me", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(data),
+                credentials: 'include'
+            });
+            if (!res.ok) throw new Error("Failed to update settings");
 
-    const addGroup = (name: string) => {
-        setGroups(prev => {
-            if (prev.some(g => g.name.toLowerCase() === name.toLowerCase())) return prev;
-            return [...prev, {
-                id: Math.random().toString(36).substr(2, 9),
-                name,
-                monitors: []
-            }];
-        });
-    };
-
-    const addMonitor = (name: string, url: string, groupName: string = "Default") => {
-        setGroups(prev => {
-            const currentGroups = [...prev];
-            const targetGroup = groupName.trim() || "Default";
-            const existingGroupIndex = currentGroups.findIndex(g => g.name.toLowerCase() === targetGroup.toLowerCase());
-
-            const newMonitor: Monitor = {
-                id: Math.random().toString(36).substr(2, 9),
-                name,
-                url,
-                status: 'up',
-                latency: Math.floor(Math.random() * 50) + 10,
-                history: Array(20).fill('up'),
-                lastCheck: "Just now",
-                events: []
-            };
-
-            if (existingGroupIndex >= 0) {
-                // Add to existing
-                const group = { ...currentGroups[existingGroupIndex] };
-                group.monitors = [...group.monitors, newMonitor];
-                currentGroups[existingGroupIndex] = group;
-            } else {
-                // Create new group
-                currentGroups.push({
-                    id: Math.random().toString(36).substr(2, 9),
-                    name: targetGroup,
-                    monitors: [newMonitor]
-                });
+            // Update local user state if timezone changed
+            const currentUser = get().user;
+            if (currentUser && data.timezone) {
+                set({ user: { ...currentUser, timezone: data.timezone } });
             }
-            return currentGroups;
-        });
-    };
+        } catch (error) {
+            console.error(error);
+            throw error;
+        }
+    },
 
-    const updateMonitor = (monitorId: string, updates: Partial<Monitor>) => {
-        setGroups(prev => prev.map(g => ({
-            ...g,
-            monitors: g.monitors.map(m => m.id === monitorId ? { ...m, ...updates } : m)
-        })));
-    };
+    fetchStatusPages: async () => {
+        try {
+            const res = await fetch("/api/status-pages", { credentials: 'include' });
+            if (res.ok) {
+                const data = await res.json();
+                return data.pages || [];
+            }
+        } catch (error) {
+            console.error(error);
+        }
+        return [];
+    },
 
-    const deleteMonitor = (monitorId: string) => {
-        setGroups(prev => prev.map(g => ({
-            ...g,
-            monitors: g.monitors.filter(m => m.id !== monitorId)
-        })));
-    };
+    toggleStatusPage: async (slug, publicStatus, title, groupId) => {
+        try {
+            await fetch(`/api/status-pages/${slug}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ public: publicStatus, title: title || slug, groupId: groupId }),
+                credentials: 'include'
+            });
+            // Ideally refetch pages here if stored in state, but we return Promise for component to handle
+        } catch (error) {
+            console.error(error);
+            throw error;
+        }
+    },
 
-    const addIncident = (incident: Omit<Incident, 'id'>) => {
-        const newIncident = { ...incident, id: Math.random().toString(36).substr(2, 9) };
-        setIncidents(prev => [newIncident, ...prev]);
-    };
+    checkAuth: async () => {
+        // ...
 
-    const addChannel = (channel: Omit<NotificationChannel, 'id'>) => {
-        const newChannel = { ...channel, id: Math.random().toString(36).substr(2, 9) };
-        setChannels(prev => [...prev, newChannel]);
-    };
+        try {
+            const res = await fetch('/api/auth/me', { credentials: 'include' });
+            if (res.ok) {
+                const data = await res.json();
+                set({
+                    user: {
+                        name: data.user.username,
+                        email: "admin@clusteruptime.com",
+                        avatar: data.user.avatar || "https://github.com/shadcn.png",
+                        isAuthenticated: true
+                    },
+                    isAuthChecked: true
+                });
+                // Once auth is confirmed, fetch private data
+                get().fetchMonitors();
+            } else {
+                set({ user: null, isAuthChecked: true });
+            }
+        } catch {
+            set({ user: null, isAuthChecked: true });
+        }
+    },
 
-    const updateChannel = (id: string, updates: Partial<NotificationChannel>) => {
-        setChannels(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
-    };
+    login: async (username, password) => {
+        try {
+            const res = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password }),
+                credentials: 'include'
+            });
 
-    const deleteChannel = (id: string) => {
-        setChannels(prev => prev.filter(c => c.id !== id));
-    };
+            if (res.ok) {
+                const data = await res.json();
+                set({
+                    user: {
+                        name: data.user.username,
+                        email: "admin@clusteruptime.com",
+                        avatar: data.user.avatar || "https://github.com/shadcn.png",
+                        isAuthenticated: true
+                    }
+                });
+                get().fetchMonitors();
+                return true;
+            }
+        } catch (e) {
+            console.error(e);
+        }
+        return false;
+    },
 
-    useEffect(() => {
-        // Simulate live updates
-        const interval = setInterval(() => {
-            setGroups(prev => prev.map(g => ({
-                ...g,
-                monitors: g.monitors.map(m => {
-                    const newLatency = Math.max(10, m.latency + (Math.random() * 40 - 20));
-                    let newStatus = m.status;
-                    if (Math.random() > 0.99) newStatus = 'down';
-                    else if (Math.random() > 0.99) newStatus = 'degraded';
-                    else if (Math.random() > 0.95) newStatus = 'up';
+    logout: async () => {
+        try {
+            await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+        } catch (e) {
+            console.error(e);
+        }
+        set({ user: null, groups: [] }); // Clear data on logout
+    },
 
-                    const newHistory = [...m.history.slice(1), newStatus];
+    fetchMonitors: async () => {
+        try {
+            const res = await fetch('/api/uptime', { credentials: 'include' });
+            if (res.ok) {
+                const data = await res.json();
+                // Backend now returns { groups: [...] }
+                if (data.groups) {
+                    set({ groups: data.groups });
+                }
+            }
+        } catch (e) {
+            console.error("Failed to fetch monitors", e);
+        }
+    },
 
-                    return {
-                        ...m,
-                        latency: Math.floor(newLatency),
-                        status: newStatus,
-                        history: newHistory
-                    };
-                })
-            })));
-        }, 2000);
-        return () => clearInterval(interval);
-    }, []);
 
-    return { groups, incidents, channels, addGroup, addMonitor, updateMonitor, deleteMonitor, addIncident, addChannel, updateChannel, deleteChannel };
-};
+
+    // ...
+
+    fetchPublicStatusBySlug: async (slug: string) => {
+        try {
+            const res = await fetch(`/api/s/${slug}`);
+            if (res.ok) {
+                const data = await res.json();
+                // Return data directly or set to a store state?
+                // For now, let's return it so component can handle loading state locally if desired, 
+                // OR we can adapt 'groups' state.
+                // But 'groups' is for the Admin dashboard. 
+                // Let's just return the data used by the public view.
+                return data;
+            }
+        } catch (error) {
+            console.error(error);
+        }
+        return null;
+    },
+
+    fetchPublicStatus: async () => {
+        // Legacy
+        try {
+            const res = await fetch('/api/status');
+            if (res.ok) {
+                const data = await res.json();
+                if (data.groups) {
+                    set({ groups: data.groups });
+                }
+            }
+        } catch (e) {
+            console.error("Failed to fetch public status", e);
+        }
+    },
+
+    // Client-side actions (now API backed)
+    addGroup: async (name) => {
+        try {
+            const res = await fetch('/api/groups', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name }),
+                credentials: 'include'
+            });
+            if (res.ok) {
+                get().fetchMonitors();
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    },
+
+    deleteGroup: async (id) => {
+        try {
+            const res = await fetch(`/api/groups/${id}`, {
+                method: 'DELETE',
+                credentials: 'include'
+            });
+            if (res.ok) {
+                get().fetchMonitors();
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    },
+
+    addMonitor: async (name, url, groupName) => {
+        // We need groupID. If groupName is passed, we must find ID or create it?
+        // Current UI passes groupName (string). 
+        // Backend expects GroupID.
+        // Logic: Find group by name. If not found, create it first?
+        // Or change UI to pass Group ID.
+        // Let's assume UI passes Group ID if it selects from list, or we handle "New Group" logic here.
+        // For robustness, let's find the group ID from the name if possible.
+
+        const groups = get().groups;
+        let groupId = groups.find(g => g.name === groupName)?.id;
+
+        if (!groupId) {
+            // Create group implicitly? Or fail? 
+            // Let's create it implicitly to support "New Group" flow from simple UI
+            // BUT `addGroup` is async.
+            try {
+                const res = await fetch('/api/groups', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: groupName || "Default" }),
+                    credentials: 'include'
+                });
+                if (res.ok) {
+                    const newGroup = await res.json();
+                    groupId = newGroup.id;
+                } else {
+                    return; // Fail
+                }
+            } catch (e) {
+                console.error(e);
+                return;
+            }
+        }
+
+        try {
+            const res = await fetch('/api/monitors', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, url, groupId }),
+                credentials: 'include'
+            });
+            if (res.ok) {
+                get().fetchMonitors();
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    },
+
+    updateMonitor: (id, updates) => { }, // Placeholder for now
+
+    deleteMonitor: async (id) => {
+        try {
+            const res = await fetch(`/api/monitors/${id}`, {
+                method: 'DELETE',
+                credentials: 'include'
+            });
+            if (res.ok) {
+                get().fetchMonitors();
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    },
+
+    addIncident: (incident) => set((state) => ({
+        incidents: [{ ...incident, id: Math.random().toString(36).substr(2, 9) }, ...state.incidents]
+    })),
+    addChannel: (channel) => set((state) => ({
+        channels: [...state.channels, { ...channel, id: Math.random().toString(36).substr(2, 9) }]
+    })),
+    updateChannel: (id, updates) => { },
+    deleteChannel: (id) => { }
+}));

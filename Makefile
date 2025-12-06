@@ -1,6 +1,6 @@
 .PHONY: backend frontend build docker test clean dev-backend dev-frontend dev-bundle
 
-BACKEND_ENV ?= LISTEN_ADDR=:9096 TARGET_URL=https://google.com
+BACKEND_ENV ?= LISTEN_ADDR=:9096
 BIN_DIR ?= $(PWD)/bin
 BINARY ?= $(BIN_DIR)/clusteruptime
 

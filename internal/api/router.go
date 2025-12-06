@@ -8,29 +8,63 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 
+	"github.com/clusteruptime/clusteruptime/internal/db"
 	"github.com/clusteruptime/clusteruptime/internal/static"
 	"github.com/clusteruptime/clusteruptime/internal/uptime"
 )
 
 // NewRouter builds the HTTP router serving both JSON APIs and static assets.
-func NewRouter(monitor *uptime.Monitor) http.Handler {
-	uptimeH := NewUptimeHandler(monitor)
+func NewRouter(manager *uptime.Manager, store *db.Store) http.Handler {
+	uptimeH := NewUptimeHandler(manager, store)
+	authH := NewAuthHandler(store)
+	statusPageH := NewStatusPageHandler(store, manager)
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
+	// Update CORS to allow credentials
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"*"},
-		AllowedMethods:   []string{http.MethodGet, http.MethodOptions},
+		AllowedOrigins:   []string{"http://localhost:5173", "http://127.0.0.1:5173"}, // Add frontend dev URL
+		AllowedMethods:   []string{http.MethodGet, http.MethodPost, http.MethodOptions},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Requested-With"},
-		AllowCredentials: false,
+		AllowCredentials: true,
 		MaxAge:           300,
 	}))
 
 	r.Route("/api", func(api chi.Router) {
-		api.Get("/health", Health) // Use standalone function if handlers_health.go defines it attached to Handler, I might need to fix that
-		api.Get("/uptime", uptimeH.GetHistory)
+		// Public Routes
+		api.Get("/health", Health)
+		api.Get("/status", uptimeH.GetHistory) // Legacy singular endpoint? Maybe repurpose or keep.
+		// Actually, let's keep it for now as "public data" if authentication is not enforced there yet?
+		// Wait, checking line 37: api.Get("/status", uptimeH.GetHistory) // Public status page data
+		// This endpoints logic inside uptimeH.GetHistory doesn't check for status_pages config yet.
+		// We will need to guard this or create new endpoints.
+
+		api.Get("/s/{slug}", statusPageH.GetPublicStatus) // New public endpoint for status pages
+
+		// Public Auth Routes
+		api.Post("/auth/login", authH.Login)
+		api.Post("/auth/logout", authH.Logout)
+
+		// Protected Routes
+		api.Group(func(protected chi.Router) {
+			protected.Use(authH.AuthMiddleware)
+			protected.Get("/auth/me", authH.Me)
+			protected.Patch("/auth/me", authH.UpdateUser)
+			protected.Get("/uptime", uptimeH.GetHistory) // Dashboard data (authenticated)
+
+			// CRUD operations
+			crudH := NewCRUDHandler(store, manager)
+			protected.Post("/groups", crudH.CreateGroup)
+			protected.Delete("/groups/{id}", crudH.DeleteGroup)
+			protected.Post("/monitors", crudH.CreateMonitor)
+			protected.Delete("/monitors/{id}", crudH.DeleteMonitor)
+
+			// Status Pages Management
+			protected.Get("/status-pages", statusPageH.GetAll)
+			protected.Patch("/status-pages/{slug}", statusPageH.Toggle)
+		})
 	})
 
 	r.Handle("/*", static.Handler())

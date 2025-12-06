@@ -1,20 +1,26 @@
-import { useState } from "react";
-import { Routes, Route, useParams, useLocation } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Routes, Route, useParams, useLocation, useNavigate } from "react-router-dom";
+import { useEffect as usePageEffect } from "react"; // Alias to avoid conflict if I used it inside Dashboard, effectively just need simple imports
 import { AppSidebar } from "./components/layout/AppSidebar";
 import { SidebarProvider, SidebarInset } from "./components/ui/sidebar";
 import { useMonitorStore } from "./lib/store";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./components/ui/card";
 import { StatusBadge, UptimeHistory } from "./components/ui/monitor-visuals";
 import { Button } from "./components/ui/button";
-import { Plus } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { CreateMonitorSheet } from "./components/CreateMonitorSheet";
 import { CreateGroupSheet } from "./components/CreateGroupSheet";
 import { IncidentsView } from "./components/incidents/IncidentsView";
 import { CreateIncidentSheet } from "./components/incidents/CreateIncidentSheet";
-import { StatusPage } from "./components/status-page/StatusPage";
 import { MonitorDetailsSheet } from "./components/MonitorDetailsSheet";
 import { NotificationsView } from "./components/notifications/NotificationsView";
-import { CreateChannelSheet } from "./components/notifications/CreateChannelSheet"; // Import the new sheet
+import { CreateChannelSheet } from "./components/notifications/CreateChannelSheet";
+import { StatusPage } from "./components/status-page/StatusPage";
+import { LoginPage } from "./components/auth/LoginPage";
+import { SettingsView } from "./components/settings/SettingsView";
+import { StatusPagesView } from "./components/status-pages/StatusPagesView";
+import { Navigate } from "react-router-dom"; // Import the new sheet
+import { Toaster } from "@/components/ui/toaster";
 
 function MonitorCard({ monitor }: { monitor: any }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -51,6 +57,14 @@ function MonitorCard({ monitor }: { monitor: any }) {
 }
 
 function MonitorGroup({ group }: { group: any }) {
+  const { deleteGroup } = useMonitorStore();
+
+  const handleDelete = () => {
+    if (confirm(`Are you sure you want to delete group "${group.name}"?`)) {
+      deleteGroup(group.id);
+    }
+  };
+
   return (
     <Card className="bg-slate-900/20 border-slate-800">
       <CardHeader className="pb-3">
@@ -59,10 +73,15 @@ function MonitorGroup({ group }: { group: any }) {
             <CardTitle>{group.name}</CardTitle>
             <CardDescription>ID: {group.id}</CardDescription>
           </div>
+          {group.id !== 'default' && (
+            <Button variant="ghost" size="icon" onClick={handleDelete} className="text-slate-500 hover:text-red-400 hover:bg-red-950/30">
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          )}
         </div>
       </CardHeader>
       <CardContent className="space-y-2">
-        {group.monitors.length === 0 ? (
+        {(!group.monitors || group.monitors.length === 0) ? (
           <div className="text-sm text-slate-500 italic py-2">No monitors in this group.</div>
         ) : (
           group.monitors.map((m: any) => (
@@ -92,13 +111,29 @@ function Dashboard() {
 }
 
 function AdminLayout() {
-  const { groups, addGroup, addMonitor, addIncident } = useMonitorStore();
+  const { groups, addGroup, addMonitor, addIncident, user, isAuthChecked } = useMonitorStore();
   const location = useLocation();
-  const params = useParams(); // Note: inside Routes, useParams works for the matched route
+  const navigate = useNavigate();
 
-  // We need to resolve title and actions based on current path
+  // Route Guard
+  if (!isAuthChecked) {
+    return (
+      <div className="min-h-screen bg-[#020617] flex items-center justify-center text-slate-100">
+        <div className="flex items-center gap-2">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+          Wait ...
+        </div>
+      </div>
+    )
+  }
+
+  if (!user || !user.isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
   const isIncidents = location.pathname === '/incidents';
   const isNotifications = location.pathname === '/notifications';
+  const isSettings = location.pathname === '/settings';
   const groupId = location.pathname.startsWith('/groups/') ? location.pathname.split('/')[2] : null;
   const activeGroup = groupId ? groups.find(g => g.id === groupId) : null;
 
@@ -106,7 +141,9 @@ function AdminLayout() {
     ? "Incidents & Maintenance"
     : isNotifications
       ? "Notifications & Integrations"
-      : (activeGroup ? activeGroup.name : "All Groups");
+      : isSettings
+        ? "Settings"
+        : (activeGroup ? activeGroup.name : "All Groups");
 
   const existingGroupNames = groups.map(g => g.name);
 
@@ -122,6 +159,8 @@ function AdminLayout() {
                 <CreateIncidentSheet onCreate={addIncident} groups={existingGroupNames} />
               ) : isNotifications ? (
                 <CreateChannelSheet />
+              ) : isSettings ? (
+                null
               ) : ( // Dashboard
                 <>
                   {!activeGroup && <CreateGroupSheet onCreate={addGroup} />}
@@ -133,23 +172,34 @@ function AdminLayout() {
           <main className="flex-1 overflow-auto p-6 space-y-6">
             <div className="max-w-5xl mx-auto space-y-6">
               <Routes>
-                <Route path="/" element={<Dashboard />} />
+                <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/groups/:groupId" element={<Dashboard />} />
                 <Route path="/incidents" element={<IncidentsView />} />
                 <Route path="/notifications" element={<NotificationsView />} />
+                <Route path="/settings" element={<SettingsView />} />
+                <Route path="/status-pages" element={<StatusPagesView />} />
+                <Route path="/" element={<Navigate to="/dashboard" replace />} />
               </Routes>
             </div>
           </main>
         </SidebarInset>
       </div>
+      <Toaster />
     </SidebarProvider>
   )
 }
 
 const App = () => {
+  const { checkAuth } = useMonitorStore();
+
+  useEffect(() => {
+    checkAuth();
+  }, []);
+
   return (
     <Routes>
-      <Route path="/status" element={<StatusPage />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/status/:slug" element={<StatusPage />} />
       <Route path="/*" element={<AdminLayout />} />
     </Routes>
   );
