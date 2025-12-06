@@ -41,7 +41,7 @@ export function CreateMonitorSheet({ onCreate, groups }: CreateMonitorSheetProps
     return (
         <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
-                <Button className="gap-2">
+                <Button className="gap-2" size="sm">
                     <Plus className="w-4 h-4" /> New Monitor
                 </Button>
             </SheetTrigger>

@@ -57,7 +57,7 @@ export function CreateIncidentSheet({ onCreate, groups }: CreateIncidentSheetPro
     return (
         <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
-                <Button variant="destructive" className="gap-2">
+                <Button size="sm" className="gap-2">
                     <Plus className="w-4 h-4" /> Report Incident
                 </Button>
             </SheetTrigger>

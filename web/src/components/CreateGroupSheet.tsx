@@ -34,7 +34,7 @@ export function CreateGroupSheet({ onCreate }: CreateGroupSheetProps) {
     return (
         <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
-                <Button variant="outline" className="gap-2 border-slate-700 bg-slate-900/50 hover:bg-slate-800 text-slate-300">
+                <Button variant="outline" size="sm" className="gap-2 border-slate-700 bg-slate-900/50 hover:bg-slate-800 text-slate-300">
                     <FolderPlus className="w-4 h-4" /> New Group
                 </Button>
             </SheetTrigger>
