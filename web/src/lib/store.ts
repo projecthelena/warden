@@ -1,19 +1,39 @@
 import { useState, useEffect } from 'react';
 
+export interface MonitorEvent {
+    id: string;
+    type: 'up' | 'down' | 'degraded';
+    timestamp: string;
+    message: string;
+}
+
 export interface Monitor {
     id: string;
     name: string;
     url: string;
     status: 'up' | 'down' | 'degraded';
     latency: number;
-    history: ('up' | 'down' | 'degraded')[]; // Last 20 checks
+    history: ('up' | 'down' | 'degraded')[];
     lastCheck: string;
+    events: MonitorEvent[];
 }
 
-export interface Project {
+export interface Group {
     id: string;
     name: string;
     monitors: Monitor[];
+}
+
+export interface Incident {
+    id: string;
+    title: string;
+    description: string;
+    status: 'investigating' | 'identified' | 'monitoring' | 'resolved' | 'scheduled' | 'in_progress' | 'completed';
+    type: 'incident' | 'maintenance';
+    severity: 'minor' | 'major' | 'critical';
+    startTime: string;
+    endTime?: string;
+    affectedGroups: string[];
 }
 
 const generateHistory = (): Monitor['history'] => {
@@ -25,50 +45,125 @@ const generateHistory = (): Monitor['history'] => {
     });
 };
 
-const INITIAL_DATA: Project[] = [
+// Helper to generate some mock events
+const generateEvents = (): MonitorEvent[] => {
+    return [
+        { id: '1', type: 'up', timestamp: new Date(Date.now() - 1000 * 60 * 5).toISOString(), message: 'Monitor is UP (200 OK)' },
+        { id: '2', type: 'degraded', timestamp: new Date(Date.now() - 1000 * 60 * 60).toISOString(), message: 'High latency detected (850ms)' },
+        { id: '3', type: 'up', timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(), message: 'Monitor recovered' },
+    ]
+}
+
+// Initialize with a default group
+const INITIAL_GROUPS: Group[] = [
     {
-        id: "p1",
+        id: "default",
+        name: "Default",
+        monitors: []
+    },
+    {
+        id: "g1",
         name: "Platform Core",
         monitors: [
-            { id: "m1", name: "Auth Service", url: "https://auth.api.internal", status: "up", latency: 45, history: generateHistory(), lastCheck: "Just now" },
-            { id: "m2", name: "User Database", url: "db.prod.internal", status: "up", latency: 12, history: generateHistory(), lastCheck: "Just now" },
-            { id: "m3", name: "Payment Gateway", url: "stripe.api", status: "degraded", latency: 850, history: generateHistory(), lastCheck: "1m ago" },
-        ]
-    },
-    {
-        id: "p2",
-        name: "Marketing Site",
-        monitors: [
-            { id: "m4", name: "Landing Page", url: "https://clustercost.com", status: "up", latency: 120, history: generateHistory(), lastCheck: "Just now" },
-            { id: "m5", name: "Blog", url: "https://blog.clustercost.com", status: "up", latency: 150, history: generateHistory(), lastCheck: "Just now" },
-        ]
-    },
-    {
-        id: "p3",
-        name: "Internal Tools",
-        monitors: [
-            { id: "m6", name: "CI/CD Pipeline", url: "jenkins.internal", status: "down", latency: 0, history: generateHistory(), lastCheck: "5m ago" }
+            { id: "m1", name: "Auth Service", url: "https://auth.api.internal", status: "up", latency: 45, history: generateHistory(), lastCheck: "Just now", events: generateEvents() },
+            { id: "m2", name: "User Database", url: "db.prod.internal", status: "up", latency: 12, history: generateHistory(), lastCheck: "Just now", events: [] },
         ]
     }
 ];
 
+const INITIAL_INCIDENTS: Incident[] = [
+    {
+        id: "i1",
+        title: "Payment Gateway Latency",
+        description: "We are observing high latency check.",
+        status: "investigating",
+        type: "incident",
+        severity: "major",
+        startTime: new Date().toISOString(),
+        affectedGroups: ["Platform Core"]
+    }
+]
+
 export const useMonitorStore = () => {
-    const [projects, setProjects] = useState<Project[]>(INITIAL_DATA);
+    const [groups, setGroups] = useState<Group[]>(INITIAL_GROUPS);
+    const [incidents, setIncidents] = useState<Incident[]>(INITIAL_INCIDENTS);
+
+    const addGroup = (name: string) => {
+        setGroups(prev => {
+            if (prev.some(g => g.name.toLowerCase() === name.toLowerCase())) return prev;
+            return [...prev, {
+                id: Math.random().toString(36).substr(2, 9),
+                name,
+                monitors: []
+            }];
+        });
+    };
+
+    const addMonitor = (name: string, url: string, groupName: string = "Default") => {
+        setGroups(prev => {
+            const currentGroups = [...prev];
+            const targetGroup = groupName.trim() || "Default";
+            const existingGroupIndex = currentGroups.findIndex(g => g.name.toLowerCase() === targetGroup.toLowerCase());
+
+            const newMonitor: Monitor = {
+                id: Math.random().toString(36).substr(2, 9),
+                name,
+                url,
+                status: 'up',
+                latency: Math.floor(Math.random() * 50) + 10,
+                history: Array(20).fill('up'),
+                lastCheck: "Just now",
+                events: []
+            };
+
+            if (existingGroupIndex >= 0) {
+                // Add to existing
+                const group = { ...currentGroups[existingGroupIndex] };
+                group.monitors = [...group.monitors, newMonitor];
+                currentGroups[existingGroupIndex] = group;
+            } else {
+                // Create new group
+                currentGroups.push({
+                    id: Math.random().toString(36).substr(2, 9),
+                    name: targetGroup,
+                    monitors: [newMonitor]
+                });
+            }
+            return currentGroups;
+        });
+    };
+
+    const updateMonitor = (monitorId: string, updates: Partial<Monitor>) => {
+        setGroups(prev => prev.map(g => ({
+            ...g,
+            monitors: g.monitors.map(m => m.id === monitorId ? { ...m, ...updates } : m)
+        })));
+    };
+
+    const deleteMonitor = (monitorId: string) => {
+        setGroups(prev => prev.map(g => ({
+            ...g,
+            monitors: g.monitors.filter(m => m.id !== monitorId)
+        })));
+    };
+
+    const addIncident = (incident: Omit<Incident, 'id'>) => {
+        const newIncident = { ...incident, id: Math.random().toString(36).substr(2, 9) };
+        setIncidents(prev => [newIncident, ...prev]);
+    };
 
     useEffect(() => {
         // Simulate live updates
         const interval = setInterval(() => {
-            setProjects(prev => prev.map(p => ({
-                ...p,
-                monitors: p.monitors.map(m => {
-                    // Randomly fluctuate latency and occasionally status
+            setGroups(prev => prev.map(g => ({
+                ...g,
+                monitors: g.monitors.map(m => {
                     const newLatency = Math.max(10, m.latency + (Math.random() * 40 - 20));
                     let newStatus = m.status;
                     if (Math.random() > 0.99) newStatus = 'down';
                     else if (Math.random() > 0.99) newStatus = 'degraded';
                     else if (Math.random() > 0.95) newStatus = 'up';
 
-                    // Shift history
                     const newHistory = [...m.history.slice(1), newStatus];
 
                     return {
@@ -83,5 +178,5 @@ export const useMonitorStore = () => {
         return () => clearInterval(interval);
     }, []);
 
-    return { projects };
+    return { groups, incidents, addGroup, addMonitor, updateMonitor, deleteMonitor, addIncident };
 };

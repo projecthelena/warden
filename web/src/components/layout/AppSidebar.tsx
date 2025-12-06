@@ -11,15 +11,22 @@ import {
     SidebarRail,
 } from "@/components/ui/sidebar";
 import { Activity, Layers, Server, Zap } from "lucide-react";
-import { Project } from "@/lib/store";
+import { Group } from "@/lib/store";
+import { useNavigate, useLocation } from "react-router-dom";
 
 interface AppSidebarProps {
-    projects: Project[];
-    activeProject: string | null;
-    onSelectProject: (id: string | null) => void;
+    groups: Group[];
 }
 
-export function AppSidebar({ projects, activeProject, onSelectProject }: AppSidebarProps) {
+export function AppSidebar({ groups }: AppSidebarProps) {
+    const navigate = useNavigate();
+    const location = useLocation();
+
+    const isActive = (path: string) => {
+        if (path === '/') return location.pathname === '/';
+        return location.pathname.startsWith(path);
+    }
+
     return (
         <Sidebar collapsible="icon" className="border-r border-slate-800 bg-slate-950">
             <SidebarHeader>
@@ -44,17 +51,29 @@ export function AppSidebar({ projects, activeProject, onSelectProject }: AppSide
                         <SidebarMenu>
                             <SidebarMenuItem>
                                 <SidebarMenuButton
-                                    isActive={activeProject === null}
-                                    onClick={() => onSelectProject(null)}
+                                    isActive={location.pathname === '/'}
+                                    onClick={() => navigate('/')}
                                 >
                                     <Layers />
-                                    <span>All Projects</span>
+                                    <span>All Groups</span>
                                 </SidebarMenuButton>
                             </SidebarMenuItem>
                             <SidebarMenuItem>
-                                <SidebarMenuButton>
+                                <SidebarMenuButton
+                                    isActive={location.pathname === '/incidents'}
+                                    onClick={() => navigate('/incidents')}
+                                >
                                     <Zap />
                                     <span>Incidents</span>
+                                </SidebarMenuButton>
+                            </SidebarMenuItem>
+                            <SidebarMenuItem>
+                                <SidebarMenuButton
+                                    isActive={location.pathname === '/status'}
+                                    onClick={() => navigate('/status')}
+                                >
+                                    <Activity />
+                                    <span>Status Page</span>
                                 </SidebarMenuButton>
                             </SidebarMenuItem>
                         </SidebarMenu>
@@ -62,17 +81,17 @@ export function AppSidebar({ projects, activeProject, onSelectProject }: AppSide
                 </SidebarGroup>
 
                 <SidebarGroup>
-                    <SidebarGroupLabel>Monitors</SidebarGroupLabel>
+                    <SidebarGroupLabel>Groups</SidebarGroupLabel>
                     <SidebarGroupContent>
                         <SidebarMenu>
-                            {projects.map((project) => (
-                                <SidebarMenuItem key={project.id}>
+                            {groups.map((group) => (
+                                <SidebarMenuItem key={group.id}>
                                     <SidebarMenuButton
-                                        isActive={activeProject === project.id}
-                                        onClick={() => onSelectProject(project.id)}
+                                        isActive={location.pathname === `/groups/${group.id}`}
+                                        onClick={() => navigate(`/groups/${group.id}`)}
                                     >
                                         <Server />
-                                        <span>{project.name}</span>
+                                        <span>{group.name}</span>
                                     </SidebarMenuButton>
                                 </SidebarMenuItem>
                             ))}
