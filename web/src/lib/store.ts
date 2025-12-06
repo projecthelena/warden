@@ -7,6 +7,18 @@ export interface MonitorEvent {
     message: string;
 }
 
+export interface NotificationChannel {
+    id: string;
+    type: 'slack' | 'email' | 'discord' | 'webhook';
+    name: string;
+    config: {
+        webhookUrl?: string;
+        email?: string;
+        channel?: string;
+    };
+    enabled: boolean;
+}
+
 export interface Monitor {
     id: string;
     name: string;
@@ -84,9 +96,20 @@ const INITIAL_INCIDENTS: Incident[] = [
     }
 ]
 
+const INITIAL_CHANNELS: NotificationChannel[] = [
+    {
+        id: "c1",
+        type: "slack",
+        name: "DevOps Alerts",
+        config: { webhookUrl: "https://hooks.slack.com/services/..." },
+        enabled: true
+    }
+];
+
 export const useMonitorStore = () => {
     const [groups, setGroups] = useState<Group[]>(INITIAL_GROUPS);
     const [incidents, setIncidents] = useState<Incident[]>(INITIAL_INCIDENTS);
+    const [channels, setChannels] = useState<NotificationChannel[]>(INITIAL_CHANNELS);
 
     const addGroup = (name: string) => {
         setGroups(prev => {
@@ -152,6 +175,19 @@ export const useMonitorStore = () => {
         setIncidents(prev => [newIncident, ...prev]);
     };
 
+    const addChannel = (channel: Omit<NotificationChannel, 'id'>) => {
+        const newChannel = { ...channel, id: Math.random().toString(36).substr(2, 9) };
+        setChannels(prev => [...prev, newChannel]);
+    };
+
+    const updateChannel = (id: string, updates: Partial<NotificationChannel>) => {
+        setChannels(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+    };
+
+    const deleteChannel = (id: string) => {
+        setChannels(prev => prev.filter(c => c.id !== id));
+    };
+
     useEffect(() => {
         // Simulate live updates
         const interval = setInterval(() => {
@@ -178,5 +214,5 @@ export const useMonitorStore = () => {
         return () => clearInterval(interval);
     }, []);
 
-    return { groups, incidents, addGroup, addMonitor, updateMonitor, deleteMonitor, addIncident };
+    return { groups, incidents, channels, addGroup, addMonitor, updateMonitor, deleteMonitor, addIncident, addChannel, updateChannel, deleteChannel };
 };

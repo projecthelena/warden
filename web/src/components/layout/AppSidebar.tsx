@@ -10,7 +10,7 @@ import {
     SidebarMenuItem,
     SidebarRail,
 } from "@/components/ui/sidebar";
-import { Activity, Layers, Server, Zap } from "lucide-react";
+import { Activity, Layers, Server, Zap, Bell } from "lucide-react";
 import { Group } from "@/lib/store";
 import { useNavigate, useLocation } from "react-router-dom";
 
@@ -32,7 +32,7 @@ export function AppSidebar({ groups }: AppSidebarProps) {
             <SidebarHeader>
                 <SidebarMenu>
                     <SidebarMenuItem>
-                        <SidebarMenuButton size="lg" className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground">
+                        <SidebarMenuButton className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground">
                             <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-blue-600 text-sidebar-primary-foreground">
                                 <Activity className="size-4" />
                             </div>
@@ -65,6 +65,15 @@ export function AppSidebar({ groups }: AppSidebarProps) {
                                 >
                                     <Zap />
                                     <span>Incidents</span>
+                                </SidebarMenuButton>
+                            </SidebarMenuItem>
+                            <SidebarMenuItem>
+                                <SidebarMenuButton
+                                    isActive={location.pathname === '/notifications'}
+                                    onClick={() => navigate('/notifications')}
+                                >
+                                    <Bell />
+                                    <span>Notifications</span>
                                 </SidebarMenuButton>
                             </SidebarMenuItem>
                             <SidebarMenuItem>

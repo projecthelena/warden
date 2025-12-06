@@ -12,7 +12,9 @@ import { CreateGroupSheet } from "./components/CreateGroupSheet";
 import { IncidentsView } from "./components/incidents/IncidentsView";
 import { CreateIncidentSheet } from "./components/incidents/CreateIncidentSheet";
 import { StatusPage } from "./components/status-page/StatusPage";
-import { MonitorDetailsSheet } from "./components/MonitorDetailsSheet"; // Import the new sheet
+import { MonitorDetailsSheet } from "./components/MonitorDetailsSheet";
+import { NotificationsView } from "./components/notifications/NotificationsView";
+import { CreateChannelSheet } from "./components/notifications/CreateChannelSheet"; // Import the new sheet
 
 function MonitorCard({ monitor }: { monitor: any }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -96,12 +98,15 @@ function AdminLayout() {
 
   // We need to resolve title and actions based on current path
   const isIncidents = location.pathname === '/incidents';
+  const isNotifications = location.pathname === '/notifications';
   const groupId = location.pathname.startsWith('/groups/') ? location.pathname.split('/')[2] : null;
   const activeGroup = groupId ? groups.find(g => g.id === groupId) : null;
 
   const pageTitle = isIncidents
     ? "Incidents & Maintenance"
-    : (activeGroup ? activeGroup.name : "All Groups");
+    : isNotifications
+      ? "Notifications & Integrations"
+      : (activeGroup ? activeGroup.name : "All Groups");
 
   const existingGroupNames = groups.map(g => g.name);
 
@@ -115,7 +120,9 @@ function AdminLayout() {
             <div className="ml-auto flex items-center gap-2">
               {isIncidents ? (
                 <CreateIncidentSheet onCreate={addIncident} groups={existingGroupNames} />
-              ) : (
+              ) : isNotifications ? (
+                <CreateChannelSheet />
+              ) : ( // Dashboard
                 <>
                   {!activeGroup && <CreateGroupSheet onCreate={addGroup} />}
                   <CreateMonitorSheet onCreate={addMonitor} groups={existingGroupNames} />
@@ -123,12 +130,15 @@ function AdminLayout() {
               )}
             </div>
           </header>
-          <main className="flex-1 overflow-auto p-6">
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/groups/:groupId" element={<Dashboard />} />
-              <Route path="/incidents" element={<IncidentsView />} />
-            </Routes>
+          <main className="flex-1 overflow-auto p-6 space-y-6">
+            <div className="max-w-5xl mx-auto space-y-6">
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/groups/:groupId" element={<Dashboard />} />
+                <Route path="/incidents" element={<IncidentsView />} />
+                <Route path="/notifications" element={<NotificationsView />} />
+              </Routes>
+            </div>
           </main>
         </SidebarInset>
       </div>
