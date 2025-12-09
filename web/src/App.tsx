@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { Routes, Route, useParams, useLocation, useNavigate } from "react-router-dom";
 import { useEffect as usePageEffect } from "react"; // Alias to avoid conflict if I used it inside Dashboard, effectively just need simple imports
 import { AppSidebar } from "./components/layout/AppSidebar";
-import { SidebarProvider, SidebarInset } from "./components/ui/sidebar";
+import { SidebarProvider, SidebarInset, SidebarTrigger } from "./components/ui/sidebar";
+import { Separator } from "./components/ui/separator";
 import { useMonitorStore } from "./lib/store";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./components/ui/card";
 import { StatusBadge, UptimeHistory } from "./components/ui/monitor-visuals";
@@ -161,41 +162,44 @@ function AdminLayout() {
 
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen w-full bg-[#020617] text-slate-100">
-        <AppSidebar groups={safeGroups} />
-        <SidebarInset className="flex-1 flex flex-col min-w-0">
-          <header className="flex h-14 items-center gap-4 border-b border-slate-800 bg-[#020617]/50 px-6 backdrop-blur sticky top-0 z-10">
+      <AppSidebar groups={safeGroups} />
+      <SidebarInset>
+        <header className="flex h-16 shrink-0 items-center gap-2 border-b border-slate-800 bg-[#020617]/50 px-4 backdrop-blur sticky top-0 z-10 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12">
+          <div className="flex items-center gap-2">
+            <SidebarTrigger className="-ml-1" />
+            <Separator orientation="vertical" className="mr-2 h-4" />
             <div className="font-semibold">{pageTitle}</div>
-            <div className="ml-auto flex items-center gap-2">
-              {isIncidents ? (
-                <CreateIncidentSheet onCreate={addIncident} groups={existingGroupNames} />
-              ) : isNotifications ? (
-                <CreateChannelSheet />
-              ) : isSettings ? (
-                null
-              ) : ( // Dashboard
-                <>
-                  {!activeGroup && <CreateGroupSheet onCreate={addGroup} />}
-                  <CreateMonitorSheet onCreate={addMonitor} groups={existingGroupNames} />
-                </>
-              )}
-            </div>
-          </header>
-          <main className="flex-1 overflow-auto p-6 space-y-6">
-            <div className="max-w-5xl mx-auto space-y-6">
-              <Routes>
-                <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/groups/:groupId" element={<Dashboard />} />
-                <Route path="/incidents" element={<IncidentsView />} />
-                <Route path="/notifications" element={<NotificationsView />} />
-                <Route path="/settings" element={<SettingsView />} />
-                <Route path="/status-pages" element={<StatusPagesView />} />
-                <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              </Routes>
-            </div>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            {isIncidents ? (
+              <CreateIncidentSheet onCreate={addIncident} groups={existingGroupNames} />
+            ) : isNotifications ? (
+              <CreateChannelSheet />
+            ) : isSettings ? (
+              null
+            ) : ( // Dashboard
+              <>
+                {!activeGroup && <CreateGroupSheet onCreate={addGroup} />}
+                <CreateMonitorSheet onCreate={addMonitor} groups={existingGroupNames} />
+              </>
+            )}
+          </div>
+        </header>
+        <div className="flex-1 overflow-auto p-4 pt-0">
+          <main className="max-w-5xl mx-auto space-y-6 py-6">
+            <Routes>
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/groups/:groupId" element={<Dashboard />} />
+              <Route path="/incidents" element={<IncidentsView />} />
+              <Route path="/maintenance" element={<IncidentsView />} />
+              <Route path="/notifications" element={<NotificationsView />} />
+              <Route path="/settings" element={<SettingsView />} />
+              <Route path="/status-pages" element={<StatusPagesView />} />
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            </Routes>
           </main>
-        </SidebarInset>
-      </div>
+        </div>
+      </SidebarInset>
       <Toaster />
     </SidebarProvider>
   )

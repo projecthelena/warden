@@ -80,6 +80,7 @@ interface MonitorStore {
     fetchPublicStatus: () => Promise<void>;
     fetchMonitors: () => Promise<void>;
     addGroup: (name: string) => Promise<void>;
+    updateGroup: (id: string, name: string) => Promise<void>;
     deleteGroup: (id: string) => Promise<void>;
     addMonitor: (name: string, url: string, groupName: string) => Promise<void>;
     updateMonitor: (id: string, updates: Partial<Monitor>) => void;
@@ -302,21 +303,67 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
     },
 
     // Client-side actions (now API backed)
-    addGroup: async (name) => {
+    addGroup: async (name: string) => {
         try {
-            const res = await fetch('/api/groups', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+            const res = await fetch("/api/groups", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ name }),
-                credentials: 'include'
             });
-            if (res.ok) {
-                get().fetchMonitors();
-                toast({ title: "Group Created", description: `Group "${name}" created successfully.` });
+            if (!res.ok) {
+                // Try to parse conflict error message
+                const text = await res.text();
+                // Simple heuristic to extract message if JSON
+                try {
+                    const json = JSON.parse(text);
+                    throw new Error(json.error || "Failed to create group");
+                } catch {
+                    throw new Error(text || "Failed to create group");
+                }
             }
-        } catch (e) {
-            console.error(e);
-            toast({ title: "Error", description: "Failed to create group.", variant: "destructive" });
+            const group = await res.json();
+            set((state) => ({ groups: [...(state.groups || []), { ...group, monitors: [] }] }));
+            toast({
+                title: "Group Created",
+                description: `Group "${name}" created successfully.`,
+                className: "bg-green-950 border-green-900 text-green-100",
+            });
+        } catch (error: any) {
+            toast({
+                title: "Failed to create group",
+                description: error.message,
+                variant: "destructive",
+            });
+        }
+    },
+
+    updateGroup: async (id: string, name: string) => {
+        try {
+            const res = await fetch(`/api/groups/${id}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name }),
+            });
+
+            if (!res.ok) throw new Error("Failed to update group");
+
+            set((state) => ({
+                groups: state.groups.map((g) =>
+                    g.id === id ? { ...g, name } : g
+                ),
+            }));
+
+            toast({
+                title: "Group Updated",
+                description: `Group "${name}" updated successfully.`,
+                className: "bg-blue-950 border-blue-900 text-blue-100",
+            });
+        } catch (error: any) {
+            toast({
+                title: "Failed to update group",
+                description: error.message,
+                variant: "destructive",
+            });
         }
     },
 

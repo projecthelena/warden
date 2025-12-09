@@ -147,6 +147,8 @@ func (s *Store) migrate() error {
 	_, _ = s.db.Exec("ALTER TABLE users ADD COLUMN timezone TEXT DEFAULT 'UTC'")
 	// Add status_code column if missing (Migration for rich history)
 	_, _ = s.db.Exec("ALTER TABLE monitor_checks ADD COLUMN status_code INTEGER DEFAULT 0")
+	// Add icon column if missing (Migration for group icons) - Ensuring it exists but ignoring it in logic
+	_, _ = s.db.Exec("ALTER TABLE groups ADD COLUMN icon TEXT DEFAULT 'Server'")
 
 	// Seed default global status page
 	// Use INSERT OR IGNORE to prevent overwriting 'public' status of existing page
@@ -198,6 +200,11 @@ func (s *Store) CreateGroup(g Group) error {
 
 func (s *Store) DeleteGroup(id string) error {
 	_, err := s.db.Exec("DELETE FROM groups WHERE id = ?", id)
+	return err
+}
+
+func (s *Store) UpdateGroup(id, name string) error {
+	_, err := s.db.Exec("UPDATE groups SET name = ? WHERE id = ?", name, id)
 	return err
 }
 
@@ -334,7 +341,7 @@ func (s *Store) seed() error {
 
 	if groupCount == 0 {
 		log.Println("Seeding default group...")
-		_, err := s.db.Exec("INSERT INTO groups (id, name) VALUES (?, ?)", "g-default", "Default")
+		_, err := s.db.Exec("INSERT INTO groups (id, name, icon) VALUES (?, ?, ?)", "g-default", "Default", "Server")
 		if err != nil {
 			return err
 		}

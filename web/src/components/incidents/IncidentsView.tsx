@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { useMonitorStore, Incident } from "@/lib/store";
 import { AlertCircle, Calendar, CheckCircle2 } from "lucide-react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 function IncidentCard({ incident }: { incident: Incident }) {
     const isMaintenance = incident.type === 'maintenance';
@@ -35,6 +36,24 @@ function IncidentCard({ incident }: { incident: Incident }) {
 
 export function IncidentsView() {
     const { incidents } = useMonitorStore();
+    const [searchParams] = useSearchParams();
+    const navigate = useNavigate();
+    const { pathname } = useLocation();
+
+    // Determine active tab based on URL path or query param
+    const currentTab = pathname === '/maintenance'
+        ? 'maintenance'
+        : (searchParams.get('tab') || 'active');
+
+    const handleTabChange = (value: string) => {
+        if (value === 'maintenance') {
+            navigate('/maintenance');
+        } else if (value === 'active') {
+            navigate('/incidents');
+        } else {
+            navigate(`/incidents?tab=${value}`);
+        }
+    };
 
     const activeIncidents = incidents.filter(i => i.type === 'incident' && i.status !== 'resolved');
     const maintenance = incidents.filter(i => i.type === 'maintenance' && i.status !== 'completed');
@@ -43,10 +62,10 @@ export function IncidentsView() {
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold tracking-tight">Incidents & Maintenance</h2>
+                <h2 className="text-2xl font-bold tracking-tight">Events</h2>
             </div>
 
-            <Tabs defaultValue="active" className="w-full">
+            <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
                 <TabsList className="bg-slate-900 border border-slate-800">
                     <TabsTrigger value="active">Open Incidents ({activeIncidents.length})</TabsTrigger>
                     <TabsTrigger value="maintenance">Scheduled ({maintenance.length})</TabsTrigger>

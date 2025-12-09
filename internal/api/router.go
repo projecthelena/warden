@@ -56,8 +56,12 @@ func NewRouter(manager *uptime.Manager, store *db.Store) http.Handler {
 
 			// CRUD operations
 			crudH := NewCRUDHandler(store, manager)
-			protected.Post("/groups", crudH.CreateGroup)
-			protected.Delete("/groups/{id}", crudH.DeleteGroup)
+			protected.Route("/groups", func(r chi.Router) {
+				r.Post("/", crudH.CreateGroup)
+				r.Get("/", crudH.GetGroups)
+				r.Delete("/{id}", crudH.DeleteGroup)
+				r.Put("/{id}", crudH.UpdateGroup)
+			})
 			protected.Post("/monitors", crudH.CreateMonitor)
 			protected.Delete("/monitors/{id}", crudH.DeleteMonitor)
 

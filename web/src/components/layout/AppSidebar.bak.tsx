@@ -2,13 +2,9 @@
 
 
 import * as React from "react"
-import { Link, useLocation } from "react-router-dom"
 import {
-    Activity,
-    Bell,
     BookOpen,
     Bot,
-    Calendar,
     Command,
     Frame,
     LifeBuoy,
@@ -16,12 +12,14 @@ import {
     PieChart,
     Send,
     Settings2,
-    Siren,
     Terminal,
+    Activity,
     Zap,
+    Bell,
 } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
+import { NavGroups } from "@/components/nav-groups"
 import { NavSecondary } from "@/components/nav-secondary"
 import { NavUser } from "@/components/nav-user"
 import {
@@ -37,7 +35,6 @@ import { Group, useMonitorStore } from "@/lib/store"
 
 export function AppSidebar({ groups, ...props }: React.ComponentProps<typeof Sidebar> & { groups: Group[] }) {
     const { user } = useMonitorStore();
-    const { pathname, search } = useLocation();
 
     const data = {
         user: {
@@ -50,7 +47,7 @@ export function AppSidebar({ groups, ...props }: React.ComponentProps<typeof Sid
                 title: "Dashboards",
                 url: "/dashboard",
                 icon: Terminal,
-                isActive: pathname === "/dashboard",
+                isActive: true,
                 items: [
                     {
                         title: "Overview",
@@ -59,23 +56,21 @@ export function AppSidebar({ groups, ...props }: React.ComponentProps<typeof Sid
                 ],
             },
             {
-                title: "Events",
-                url: "#",
-                icon: Siren,
-                isActive: pathname.startsWith("/incidents") || pathname.startsWith("/maintenance"),
+                title: "Incidents",
+                url: "/incidents",
+                icon: Zap,
                 items: [
                     {
-                        title: "Incidents",
+                        title: "Active Incidents",
                         url: "/incidents",
-                        isActive: pathname === "/incidents",
                     },
                     {
                         title: "Maintenance",
-                        url: "/maintenance",
-                        isActive: pathname === "/maintenance",
+                        url: "/incidents", // Could be filtered view in future
                     },
                 ],
             },
+
             {
                 title: "Status Pages",
                 url: "/status-pages",
@@ -106,8 +101,13 @@ export function AppSidebar({ groups, ...props }: React.ComponentProps<typeof Sid
         navSecondary: [
             {
                 title: "Support",
-                url: "https://github.com/ClusterUptime/clusteruptime/issues/new",
+                url: "#",
                 icon: LifeBuoy,
+            },
+            {
+                title: "Feedback",
+                url: "#",
+                icon: Send,
             },
         ],
     }
@@ -118,21 +118,22 @@ export function AppSidebar({ groups, ...props }: React.ComponentProps<typeof Sid
                 <SidebarMenu>
                     <SidebarMenuItem>
                         <SidebarMenuButton size="lg" asChild>
-                            <Link to="/dashboard">
-                                <div className="flex aspect-square size-8 items-center justify-center rounded-lg">
-                                    <Activity className="size-6 text-cyan-400" />
+                            <a href="#">
+                                <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
+                                    <Command className="size-4" />
                                 </div>
                                 <div className="grid flex-1 text-left text-sm leading-tight">
-                                    <span className="truncate font-semibold">ClusterUptime</span>
-                                    <span className="truncate text-xs">OSS Monitor</span>
+                                    <span className="truncate font-medium">ClusterUptime</span>
+                                    <span className="truncate text-xs">Enterprise</span>
                                 </div>
-                            </Link>
+                            </a>
                         </SidebarMenuButton>
                     </SidebarMenuItem>
                 </SidebarMenu>
             </SidebarHeader>
             <SidebarContent>
-                <NavMain items={data.navMain} groups={groups} />
+                <NavMain items={data.navMain} />
+                <NavGroups groups={groups} />
                 <NavSecondary items={data.navSecondary} className="mt-auto" />
             </SidebarContent>
             <SidebarFooter>
