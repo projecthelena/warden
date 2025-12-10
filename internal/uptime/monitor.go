@@ -57,6 +57,11 @@ func (m *Monitor) Stop() {
 }
 
 func (m *Monitor) schedule() {
+	defer func() {
+		if r := recover(); r != nil {
+			// Ignore panic on closed channel
+		}
+	}()
 	select {
 	case m.jobQueue <- Job{MonitorID: m.id, URL: m.url}:
 		// Scheduled
