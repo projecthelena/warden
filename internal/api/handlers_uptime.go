@@ -8,6 +8,7 @@ import (
 
 	"github.com/clusteruptime/clusteruptime/internal/db"
 	"github.com/clusteruptime/clusteruptime/internal/uptime"
+	"github.com/go-chi/chi/v5"
 )
 
 type UptimeHandler struct {
@@ -170,6 +171,29 @@ func (h *UptimeHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 
 	resp := UptimeResponse{
 		Groups: groupDTOs,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (h *UptimeHandler) GetMonitorUptimeStats(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		http.Error(w, "ID required", http.StatusBadRequest)
+		return
+	}
+
+	u24, u7, u30, err := h.store.GetUptimeStats(id)
+	if err != nil {
+		http.Error(w, "Failed to calculate stats: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := map[string]float64{
+		"uptime24h": u24,
+		"uptime7d":  u7,
+		"uptime30d": u30,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

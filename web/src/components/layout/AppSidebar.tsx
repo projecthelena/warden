@@ -91,6 +91,10 @@ export function AppSidebar({ groups, ...props }: React.ComponentProps<typeof Sid
                         title: "Notifications",
                         url: "/notifications",
                     },
+                    {
+                        title: "API Keys",
+                        url: "/api-keys",
+                    },
                 ],
             },
         ],

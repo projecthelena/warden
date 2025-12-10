@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Monitor, useMonitorStore } from "@/lib/store";
 import {
     Sheet,
@@ -7,6 +7,13 @@ import {
     SheetHeader,
     SheetTitle,
 } from "@/components/ui/sheet";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,11 +42,35 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
     const { updateMonitor, deleteMonitor } = useMonitorStore();
     const [name, setName] = useState(monitor.name);
     const [url, setUrl] = useState(monitor.url);
+    const [interval, setInterval] = useState(monitor.interval || 60);
+    const [stats, setStats] = useState({ uptime24h: 100, uptime7d: 100, uptime30d: 100 });
+
+    useEffect(() => {
+        if (open) {
+            setName(monitor.name);
+            setUrl(monitor.url);
+            setInterval(monitor.interval || 60);
+        }
+    }, [open, monitor]);
+
+    useEffect(() => {
+        if (open && monitor.id) {
+            fetch(`/api/monitors/${monitor.id}/uptime`)
+                .then(res => res.json())
+                .then(data => setStats(data))
+                .catch(err => console.error("Failed to fetch stats", err));
+        }
+    }, [open, monitor.id]);
 
     const handleSave = () => {
-        updateMonitor(monitor.id, { name, url });
+        updateMonitor(monitor.id, { name, url, interval });
         onOpenChange(false);
     };
+
+    const formatUptime = (val: number) => {
+        if (val === 100) return "100%";
+        return val.toFixed(2) + "%";
+    }
 
     return (
         <Sheet open={open} onOpenChange={onOpenChange}>
@@ -52,6 +83,21 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                     <SheetDescription className="text-slate-400 font-mono text-xs">
                         ID: {monitor.id}
                     </SheetDescription>
+
+                    <div className="grid grid-cols-3 gap-2 mt-4">
+                        <div className="bg-slate-900 border border-slate-800 rounded p-2 text-center">
+                            <span className="text-xs text-slate-500 block mb-1">24h Uptime</span>
+                            <span className="text-sm font-semibold text-green-400">{formatUptime(stats.uptime24h)}</span>
+                        </div>
+                        <div className="bg-slate-900 border border-slate-800 rounded p-2 text-center">
+                            <span className="text-xs text-slate-500 block mb-1">7d Uptime</span>
+                            <span className="text-sm font-semibold text-green-400">{formatUptime(stats.uptime7d)}</span>
+                        </div>
+                        <div className="bg-slate-900 border border-slate-800 rounded p-2 text-center">
+                            <span className="text-xs text-slate-500 block mb-1">30d Uptime</span>
+                            <span className="text-sm font-semibold text-green-400">{formatUptime(stats.uptime30d)}</span>
+                        </div>
+                    </div>
                 </SheetHeader>
 
                 <Tabs defaultValue="events" className="w-full">
@@ -97,6 +143,21 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                             <div className="grid gap-2">
                                 <Label>Target URL</Label>
                                 <Input value={url} onChange={e => setUrl(e.target.value)} className="bg-slate-900 border-slate-800 font-mono text-xs" />
+                            </div>
+                            <div className="grid gap-2">
+                                <Label>Check Frequency</Label>
+                                <Select onValueChange={(v) => setInterval(Number(v))} value={interval.toString()}>
+                                    <SelectTrigger className="bg-slate-900 border-slate-800 text-slate-100">
+                                        <SelectValue placeholder="Select frequency" />
+                                    </SelectTrigger>
+                                    <SelectContent className="bg-slate-950 border-slate-800 text-slate-100">
+                                        <SelectItem value="10" className="cursor-pointer">10 Seconds</SelectItem>
+                                        <SelectItem value="30" className="cursor-pointer">30 Seconds</SelectItem>
+                                        <SelectItem value="60" className="cursor-pointer">1 Minute</SelectItem>
+                                        <SelectItem value="300" className="cursor-pointer">5 Minutes</SelectItem>
+                                        <SelectItem value="600" className="cursor-pointer">10 Minutes</SelectItem>
+                                    </SelectContent>
+                                </Select>
                             </div>
                             <Button onClick={handleSave} className="w-full bg-blue-600 hover:bg-blue-500">
                                 <Save className="w-4 h-4 mr-2" /> Save Changes

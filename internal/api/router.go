@@ -52,7 +52,8 @@ func NewRouter(manager *uptime.Manager, store *db.Store) http.Handler {
 			protected.Use(authH.AuthMiddleware)
 			protected.Get("/auth/me", authH.Me)
 			protected.Patch("/auth/me", authH.UpdateUser)
-			protected.Get("/uptime", uptimeH.GetHistory) // Dashboard data (authenticated)
+			protected.Get("/uptime", uptimeH.GetHistory)                          // Dashboard data (authenticated)
+			protected.Get("/monitors/{id}/uptime", uptimeH.GetMonitorUptimeStats) // Uptime Stats
 
 			// CRUD operations
 			crudH := NewCRUDHandler(store, manager)
@@ -63,6 +64,7 @@ func NewRouter(manager *uptime.Manager, store *db.Store) http.Handler {
 				r.Put("/{id}", crudH.UpdateGroup)
 			})
 			protected.Post("/monitors", crudH.CreateMonitor)
+			protected.Put("/monitors/{id}", crudH.UpdateMonitor)
 			protected.Delete("/monitors/{id}", crudH.DeleteMonitor)
 
 			// Status Pages Management
@@ -72,7 +74,6 @@ func NewRouter(manager *uptime.Manager, store *db.Store) http.Handler {
 			// API Keys
 			apiKeyH := NewAPIKeyHandler(store)
 			protected.Get("/api-keys", apiKeyH.ListKeys)
-			protected.Post("/api-keys", apiKeyH.CreateKey)
 			protected.Post("/api-keys", apiKeyH.CreateKey)
 			protected.Delete("/api-keys/{id}", apiKeyH.DeleteKey)
 

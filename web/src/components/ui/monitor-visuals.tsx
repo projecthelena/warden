@@ -38,17 +38,17 @@ export const UptimeHistory = ({ history }: { history: Monitor['history'] }) => {
 
     return (
         <TooltipProvider delayDuration={0}>
-            <div className="flex gap-[2px] h-8 items-end w-full max-w-[300px]" title="Last 30 checks">
+            <div className="flex gap-1 h-6 items-end w-full max-w-[360px]" title="Last 30 checks">
                 {displaySlots.map((slot, i) => (
                     <Tooltip key={i}>
                         <TooltipTrigger asChild>
                             <div
                                 className={cn(
-                                    "flex-1 rounded-sm transition-all duration-300 min-w-[4px]",
-                                    slot === null && "bg-slate-800/30 h-full", // Empty slot
-                                    slot?.status === 'up' && "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.3)] h-full hover:bg-green-400 hover:shadow-[0_0_12px_rgba(34,197,94,0.6)]",
-                                    slot?.status === 'degraded' && "bg-yellow-500 shadow-[0_0_8px_rgba(234,179,8,0.3)] h-full hover:bg-yellow-400",
-                                    slot?.status === 'down' && "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.3)] h-full hover:bg-red-400",
+                                    "flex-1 rounded-sm transition-all duration-300 min-w-[6px] cursor-pointer",
+                                    slot === null && "bg-slate-800/30 h-full hover:bg-slate-800/50", // Empty slot
+                                    slot?.status === 'up' && "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.3)] h-full hover:bg-emerald-400 hover:shadow-[0_0_12px_rgba(16,185,129,0.6)] hover:scale-y-105",
+                                    slot?.status === 'degraded' && "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.3)] h-full hover:bg-amber-400 hover:scale-y-105",
+                                    slot?.status === 'down' && "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.3)] h-full hover:bg-rose-400 hover:scale-y-105",
                                 )}
                             />
                         </TooltipTrigger>

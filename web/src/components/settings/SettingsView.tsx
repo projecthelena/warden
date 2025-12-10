@@ -7,7 +7,7 @@ import { Separator } from "@/components/ui/separator";
 import { useState, useEffect } from "react";
 import { useMonitorStore } from "@/lib/store";
 import { useToast } from "@/components/ui/use-toast";
-import { APIKeysView } from "./APIKeysView";
+
 import {
     AlertDialog,
     AlertDialogAction,
@@ -72,15 +72,27 @@ function GeneralSettings() {
     const { settings, fetchSettings, updateSettings } = useMonitorStore();
     const { toast } = useToast();
     const [threshold, setThreshold] = useState(settings?.latency_threshold || "1000");
+    const [retention, setRetention] = useState(settings?.data_retention_days || "30");
 
     // Fetch settings on mount
     useEffect(() => {
         fetchSettings();
     }, []);
 
+    // Update state when settings load
+    useEffect(() => {
+        if (settings) {
+            setThreshold(settings.latency_threshold || "1000");
+            setRetention(settings.data_retention_days || "30");
+        }
+    }, [settings]);
+
     const handleSave = async () => {
-        await updateSettings({ latency_threshold: threshold });
-        toast({ title: "Settings Saved", description: "Latency threshold updated." });
+        await updateSettings({
+            latency_threshold: threshold,
+            data_retention_days: retention
+        });
+        toast({ title: "Settings Saved", description: "Global settings updated." });
     };
 
     return (
@@ -95,17 +107,28 @@ function GeneralSettings() {
                     <div className="text-sm text-slate-400 mb-2">
                         Response times higher than this value will mark the service as "Degraded".
                     </div>
-                    <div className="flex gap-4">
-                        <Input
-                            id="latency"
-                            type="number"
-                            value={threshold}
-                            onChange={(e) => setThreshold(e.target.value)}
-                            className="bg-slate-950 border-slate-800 max-w-[200px]"
-                        />
-                        <Button onClick={handleSave}>Save</Button>
-                    </div>
+                    <Input
+                        id="latency"
+                        type="number"
+                        value={threshold}
+                        onChange={(e) => setThreshold(e.target.value)}
+                        className="bg-slate-950 border-slate-800 max-w-[200px]"
+                    />
                 </div>
+                <div className="grid gap-2">
+                    <Label htmlFor="retention">Data Retention (Days)</Label>
+                    <div className="text-sm text-slate-400 mb-2">
+                        Monitor checks older than this will be automatically deleted.
+                    </div>
+                    <Input
+                        id="retention"
+                        type="number"
+                        value={retention}
+                        onChange={(e) => setRetention(e.target.value)}
+                        className="bg-slate-950 border-slate-800 max-w-[200px]"
+                    />
+                </div>
+                <Button onClick={handleSave} className="w-fit">Save Settings</Button>
             </CardContent>
         </Card>
     );
@@ -198,25 +221,9 @@ export function SettingsView() {
 
                 <GeneralSettings />
 
-                <Card className="bg-slate-900/20 border-slate-800">
-                    <CardHeader>
-                        <CardTitle>Appearance</CardTitle>
-                        <CardDescription>
-                            Customize how the dashboard looks.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div className="flex items-center justify-between max-w-md p-4 border border-slate-800 rounded-lg">
-                            <div className="space-y-0.5">
-                                <Label className="text-base">Dark Mode</Label>
-                                <p className="text-sm text-slate-500">Enable dark theme for the interface.</p>
-                            </div>
-                            <Button variant="outline" size="sm" disabled>Enabled</Button>
-                        </div>
-                    </CardContent>
-                </Card>
 
-                <APIKeysView />
+
+
 
                 <Card className="bg-red-950/10 border-red-900/50">
                     <CardHeader>

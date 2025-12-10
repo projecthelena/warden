@@ -126,9 +126,10 @@ func (h *CRUDHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 
 func (h *CRUDHandler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name    string `json:"name"`
-		URL     string `json:"url"`
-		GroupID string `json:"groupId"`
+		Name     string `json:"name"`
+		URL      string `json:"url"`
+		GroupID  string `json:"groupId"`
+		Interval int    `json:"interval"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -138,11 +139,12 @@ func (h *CRUDHandler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
 	id := generateID(req.Name, "m-")
 
 	m := db.Monitor{
-		ID:      id,
-		GroupID: req.GroupID,
-		Name:    req.Name,
-		URL:     req.URL,
-		Active:  true,
+		ID:       id,
+		GroupID:  req.GroupID,
+		Name:     req.Name,
+		URL:      req.URL,
+		Active:   true,
+		Interval: req.Interval,
 	}
 
 	if err := h.store.CreateMonitor(m); err != nil {
@@ -164,6 +166,32 @@ func (h *CRUDHandler) GetGroups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(groups)
+}
+
+func (h *CRUDHandler) UpdateMonitor(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		http.Error(w, "ID required", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Name     string `json:"name"`
+		URL      string `json:"url"`
+		Interval int    `json:"interval"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.UpdateMonitor(id, req.Name, req.URL, req.Interval); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	h.manager.Sync()
+	w.WriteHeader(http.StatusOK)
 }
 
 func (h *CRUDHandler) DeleteMonitor(w http.ResponseWriter, r *http.Request) {

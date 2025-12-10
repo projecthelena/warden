@@ -44,6 +44,7 @@ export interface Monitor {
     history: HistoryPoint[];
     lastCheck: string;
     events: MonitorEvent[];
+    interval: number;
 }
 
 export interface Group {
@@ -82,7 +83,7 @@ interface MonitorStore {
     addGroup: (name: string) => Promise<void>;
     updateGroup: (id: string, name: string) => Promise<void>;
     deleteGroup: (id: string) => Promise<void>;
-    addMonitor: (name: string, url: string, groupName: string) => Promise<void>;
+    addMonitor: (name: string, url: string, groupName: string, interval?: number) => Promise<void>;
     updateMonitor: (id: string, updates: Partial<Monitor>) => void;
     deleteMonitor: (id: string) => Promise<void>;
 
@@ -104,6 +105,16 @@ interface MonitorStore {
     createAPIKey: (name: string) => Promise<string | null>;
     deleteAPIKey: (id: number) => Promise<void>;
     resetDatabase: () => Promise<boolean>;
+
+    // Settings
+    settings: Settings | null;
+    fetchSettings: () => Promise<void>;
+    updateSettings: (settings: Partial<Settings>) => Promise<void>;
+}
+
+export interface Settings {
+    latency_threshold: string;
+    data_retention_days: string;
 }
 
 export interface StatusPage {
@@ -383,22 +394,11 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
         }
     },
 
-    addMonitor: async (name, url, groupName) => {
-        // We need groupID. If groupName is passed, we must find ID or create it?
-        // Current UI passes groupName (string). 
-        // Backend expects GroupID.
-        // Logic: Find group by name. If not found, create it first?
-        // Or change UI to pass Group ID.
-        // Let's assume UI passes Group ID if it selects from list, or we handle "New Group" logic here.
-        // For robustness, let's find the group ID from the name if possible.
-
+    addMonitor: async (name, url, groupName, interval = 60) => {
         const groups = get().groups;
         let groupId = groups.find(g => g.name === groupName)?.id;
 
         if (!groupId) {
-            // Create group implicitly? Or fail? 
-            // Let's create it implicitly to support "New Group" flow from simple UI
-            // BUT `addGroup` is async.
             try {
                 const res = await fetch('/api/groups', {
                     method: 'POST',
@@ -422,7 +422,7 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
             const res = await fetch('/api/monitors', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, url, groupId }),
+                body: JSON.stringify({ name, url, groupId, interval }),
                 credentials: 'include'
             });
             if (res.ok) {
@@ -435,7 +435,23 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
         }
     },
 
-    updateMonitor: (id, updates) => { }, // Placeholder for now
+    updateMonitor: async (id, updates) => {
+        try {
+            const res = await fetch(`/api/monitors/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updates),
+                credentials: 'include'
+            });
+            if (res.ok) {
+                get().fetchMonitors();
+                toast({ title: "Monitor Updated", description: "Monitor details updated." });
+            }
+        } catch (e) {
+            console.error(e);
+            toast({ title: "Error", description: "Failed to update monitor.", variant: "destructive" });
+        }
+    },
 
     deleteMonitor: async (id) => {
         try {
@@ -540,7 +556,7 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
         }
     },
 
-    updateSettings: async (newSettings) => {
+    updateSettings: async (newSettings: Partial<Settings>) => {
         try {
             await fetch('/api/settings', {
                 method: 'PATCH',
@@ -548,7 +564,12 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
                 body: JSON.stringify(newSettings),
                 credentials: 'include'
             });
-            set({ settings: newSettings });
+            set((state) => ({
+                settings: {
+                    ...(state.settings || { latency_threshold: "1000", data_retention_days: "30" }),
+                    ...newSettings
+                }
+            }));
         } catch (error) {
             console.error('Failed to update settings:', error);
         }

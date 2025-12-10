@@ -9,8 +9,9 @@ type Status struct {
 	Timestamp  time.Time `json:"timestamp"`
 	IsUp       bool      `json:"isUp"`
 	Latency    int64     `json:"latencyMs"` // milliseconds
-	Error      string    `json:"error,omitempty"`
 	StatusCode int       `json:"statusCode"`
+	Error      string    `json:"error,omitempty"`
+	IsDegraded bool      `json:"isDegraded"`
 }
 
 type Monitor struct {
@@ -66,7 +67,7 @@ func (m *Monitor) schedule() {
 }
 
 // RecordResult is called by the ResultProcessor to update in-memory history
-func (m *Monitor) RecordResult(isUp bool, latency int64, ts time.Time, statusCode int) {
+func (m *Monitor) RecordResult(isUp bool, latency int64, ts time.Time, statusCode int, errStr string, isDegraded bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -75,6 +76,8 @@ func (m *Monitor) RecordResult(isUp bool, latency int64, ts time.Time, statusCod
 		Latency:    latency,
 		IsUp:       isUp,
 		StatusCode: statusCode,
+		Error:      errStr,
+		IsDegraded: isDegraded,
 	}
 
 	// Keep last 50 checks
@@ -97,12 +100,16 @@ func (m *Monitor) GetTargetURL() string {
 	return m.url
 }
 
-func (m *Monitor) GetLastStatus() (bool, int64, bool) {
+func (m *Monitor) GetInterval() time.Duration {
+	return m.interval
+}
+
+func (m *Monitor) GetLastStatus() (bool, int64, bool, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if len(m.history) == 0 {
-		return false, 0, false // No history yet
+		return false, 0, false, false // No history yet
 	}
 	last := m.history[len(m.history)-1]
-	return last.IsUp, last.Latency, true
+	return last.IsUp, last.Latency, true, last.IsDegraded
 }

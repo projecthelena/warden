@@ -22,6 +22,8 @@ type CheckResult struct {
 	Latency    int64
 	Timestamp  time.Time
 	StatusCode int
+	Error      string
+	IsDegraded bool
 }
 
 type Manager struct {
@@ -73,6 +75,9 @@ func (m *Manager) Start() {
 	// Start Result Processor (Batch Writer)
 	m.wg.Add(1)
 	go m.resultProcessor()
+
+	// Start Retention Worker
+	go m.retentionWorker()
 
 	// Initial Sync
 	m.Sync()
@@ -135,18 +140,18 @@ func (m *Manager) worker() {
 		latency := time.Since(start).Milliseconds()
 
 		isUp := true
+		var errMsg string
+		statusCode := 0
+
 		if err != nil {
 			isUp = false
+			errMsg = err.Error()
 		} else {
 			resp.Body.Close()
+			statusCode = resp.StatusCode
 			if resp.StatusCode >= 400 {
 				isUp = false
 			}
-		}
-
-		statusCode := 0
-		if err == nil && resp != nil {
-			statusCode = resp.StatusCode
 		}
 
 		m.resultQueue <- CheckResult{
@@ -156,6 +161,7 @@ func (m *Manager) worker() {
 			Latency:    latency,
 			Timestamp:  start,
 			StatusCode: statusCode,
+			Error:      errMsg,
 		}
 	}
 }
@@ -191,15 +197,7 @@ func (m *Manager) resultProcessor() {
 			m.mu.RUnlock()
 
 			if exists {
-				active, lastLatency, hasHistory := mon.GetLastStatus()
-
-				// 1. Detect Events
-				// Logic:
-				// - If no history (New Monitor):
-				//   - If Status=Down -> Alert "Monitor is down (initial)"
-				// - If has history:
-				//   - If Status Changed: Alert Up/Down.
-				//   - If Status=Up and Latency crossed threshold (Debounced by previous state): Alert Degraded.
+				active, _, hasHistory, lastDegraded := mon.GetLastStatus()
 
 				// 2. Latency Threshold
 				m.mu.RLock()
@@ -207,7 +205,9 @@ func (m *Manager) resultProcessor() {
 				m.mu.RUnlock()
 
 				isDegraded := res.Status && res.Latency > threshold
-				wasDegraded := active && lastLatency > threshold
+				res.IsDegraded = isDegraded // Update result for storage
+
+				wasDegraded := active && lastDegraded
 
 				message := "Monitor is down"
 				if res.StatusCode > 0 {
@@ -219,13 +219,15 @@ func (m *Manager) resultProcessor() {
 					if !res.Status {
 						go m.store.CreateEvent(res.MonitorID, "down", message)
 						log.Printf("Monitor %s is DOWN (Initial)", res.MonitorID)
+					} else if isDegraded {
+						go m.store.CreateEvent(res.MonitorID, "degraded", "High latency detected (>"+strconv.FormatInt(threshold, 10)+"ms)")
 					}
 				} else {
 					// Handle Transitions
 					if active && !res.Status {
 						// UP -> DOWN
 						go m.store.CreateEvent(res.MonitorID, "down", message)
-						log.Printf("Monitor %s is DOWN", res.MonitorID)
+						log.Printf("Monitor %s is DOWN: %s", res.MonitorID, message)
 					} else if !active && res.Status {
 						// DOWN -> UP
 						go m.store.CreateEvent(res.MonitorID, "recovered", "Monitor recovered")
@@ -277,7 +279,7 @@ func (m *Manager) updateMonitorState(res CheckResult) {
 	m.mu.RUnlock()
 
 	if exists {
-		mon.RecordResult(res.Status, res.Latency, res.Timestamp, res.StatusCode)
+		mon.RecordResult(res.Status, res.Latency, res.Timestamp, res.StatusCode, res.Error, res.IsDegraded)
 	}
 }
 
@@ -305,9 +307,26 @@ func (m *Manager) Sync() {
 			continue
 		}
 
+		// Determine interval
+		intervalSec := dbM.Interval
+		if intervalSec < 1 {
+			intervalSec = 60
+		}
+		interval := time.Duration(intervalSec) * time.Second
+
+		if existing, exists := m.monitors[dbM.ID]; exists {
+			// Check for changes (URL or Interval)
+			if existing.GetTargetURL() != dbM.URL || existing.GetInterval() != interval {
+				log.Printf("Monitor %s config changed (Interval/URL). Restarting...", dbM.Name)
+				existing.Stop()
+				delete(m.monitors, dbM.ID)
+			}
+		}
+
 		if _, exists := m.monitors[dbM.ID]; !exists {
 			// Start new monitor passing the JobQueue
-			mon := NewMonitor(dbM.ID, dbM.URL, 10*time.Second, m.jobQueue) // Default 10s interval for now
+			mon := NewMonitor(dbM.ID, dbM.URL, interval, m.jobQueue)
+			// ...
 
 			// Hydrate history from DB
 			checks, err := m.store.GetMonitorChecks(dbM.ID, 50)
@@ -318,13 +337,13 @@ func (m *Manager) Sync() {
 				for i := len(checks) - 1; i >= 0; i-- {
 					c := checks[i]
 					isUp := c.Status == "up" // "up" or "down"
-					mon.RecordResult(isUp, c.Latency, c.Timestamp, c.StatusCode)
+					mon.RecordResult(isUp, c.Latency, c.Timestamp, c.StatusCode, "", false)
 				}
 			}
 
 			go mon.Start()
 			m.monitors[dbM.ID] = mon
-			log.Printf("Scheduled monitor: %s", dbM.Name)
+			log.Printf("Scheduled monitor: %s (Interval: %ds)", dbM.Name, intervalSec)
 		}
 	}
 
@@ -368,4 +387,36 @@ func (m *Manager) GetAll() map[string]*Monitor {
 		res[k] = v
 	}
 	return res
+}
+
+func (m *Manager) retentionWorker() {
+	m.wg.Add(1)
+	defer m.wg.Done()
+
+	prune := func() {
+		days := 30 // Default
+		if val, err := m.store.GetSetting("data_retention_days"); err == nil {
+			if i, err := strconv.Atoi(val); err == nil && i > 0 {
+				days = i
+			}
+		}
+		if err := m.store.PruneMonitorChecks(days); err != nil {
+			log.Printf("Retention error: %v", err)
+		}
+	}
+
+	// Run immediately
+	prune()
+
+	ticker := time.NewTicker(24 * time.Hour) // Run daily
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-m.stopCh:
+			return
+		case <-ticker.C:
+			prune()
+		}
+	}
 }

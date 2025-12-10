@@ -19,15 +19,21 @@ func NewSettingsHandler(store *db.Store, manager *uptime.Manager) *SettingsHandl
 }
 
 func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
-	// For now, we only expose latency_threshold
+	// Latency Threshold
 	val, err := h.store.GetSetting("latency_threshold")
 	if err != nil {
-		// If not set, return default
 		val = "1000"
 	}
 
+	// Data Retention
+	retention, err := h.store.GetSetting("data_retention_days")
+	if err != nil {
+		retention = "30"
+	}
+
 	writeJSON(w, http.StatusOK, map[string]string{
-		"latency_threshold": val,
+		"latency_threshold":   val,
+		"data_retention_days": retention,
 	})
 }
 
@@ -46,14 +52,30 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 			return
 		}
 
-		// Save to DB
 		if err := h.store.SetSetting("latency_threshold", val); err != nil {
-			http.Error(w, "Failed to save setting", http.StatusInternalServerError)
+			http.Error(w, "Failed to save latency_threshold", http.StatusInternalServerError)
+			return
+		}
+		h.manager.SetLatencyThreshold(int64(i))
+	}
+
+	if val, ok := body["data_retention_days"]; ok {
+		// Validate int
+		i, err := strconv.Atoi(val)
+		if err != nil || i < 1 {
+			http.Error(w, "Invalid data_retention_days", http.StatusBadRequest)
 			return
 		}
 
-		// Update Manager
-		h.manager.SetLatencyThreshold(int64(i))
+		if err := h.store.SetSetting("data_retention_days", val); err != nil {
+			http.Error(w, "Failed to save data_retention_days", http.StatusInternalServerError)
+			return
+		}
+		// Manager reads this setting dynamically in retentionWorker,
+		// but we could allow hot-reloading it if we exposed a setter?
+		// For now, the worker reads it every run (daily), so it will pick it up next run.
+		// If we want immediate effect, we'd need to trigger the worker.
+		// But for retention, inevitable delay is fine.
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})

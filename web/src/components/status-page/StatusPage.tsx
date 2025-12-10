@@ -3,7 +3,6 @@ import { Monitor, Group, Incident, useMonitorStore } from "@/lib/store";
 import { CheckCircle2, AlertTriangle, XCircle, Activity, ExternalLink, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { UptimeHistory } from "@/components/ui/monitor-visuals";
 import { useParams } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
@@ -103,9 +102,7 @@ function PublicMonitor({ monitor }: { monitor: Monitor }) {
                 </div>
             </div>
 
-            <div className="flex-1 w-full sm:w-auto px-4 sm:px-8">
-                <UptimeHistory history={monitor.history} />
-            </div>
+
 
             <div className="hidden sm:flex items-center gap-2.5 min-w-[140px] justify-end">
                 <div className={`text-sm font-medium ${statusTextColor} transition-colors`}>

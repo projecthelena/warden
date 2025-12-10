@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log"
 	"time"
 
@@ -38,6 +39,7 @@ type Session struct {
 type Group struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
+	Monitors  []Monitor `json:"monitors"`
 	CreatedAt time.Time `json:"createdAt"`
 }
 
@@ -84,6 +86,7 @@ func (s *Store) migrate() error {
 	CREATE TABLE IF NOT EXISTS groups (
 		id TEXT PRIMARY KEY,
 		name TEXT NOT NULL,
+		icon TEXT DEFAULT 'Server',
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 	CREATE TABLE IF NOT EXISTS monitors (
@@ -92,6 +95,7 @@ func (s *Store) migrate() error {
 		name TEXT NOT NULL,
 		url TEXT NOT NULL,
 		active BOOLEAN DEFAULT TRUE,
+		interval_seconds INTEGER DEFAULT 60,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE
 	);
@@ -147,8 +151,8 @@ func (s *Store) migrate() error {
 	_, _ = s.db.Exec("ALTER TABLE users ADD COLUMN timezone TEXT DEFAULT 'UTC'")
 	// Add status_code column if missing (Migration for rich history)
 	_, _ = s.db.Exec("ALTER TABLE monitor_checks ADD COLUMN status_code INTEGER DEFAULT 0")
-	// Add icon column if missing (Migration for group icons) - Ensuring it exists but ignoring it in logic
-	_, _ = s.db.Exec("ALTER TABLE groups ADD COLUMN icon TEXT DEFAULT 'Server'")
+	// Add interval_seconds column if missing
+	_, _ = s.db.Exec("ALTER TABLE monitors ADD COLUMN interval_seconds INTEGER DEFAULT 60")
 
 	// Seed default global status page
 	// Use INSERT OR IGNORE to prevent overwriting 'public' status of existing page
@@ -159,8 +163,6 @@ func (s *Store) migrate() error {
 
 	return nil
 }
-
-// ... seed implementation remains ...
 
 func (s *Store) Reset() error {
 	// Disable FKs to allow dropping tables regardless of order
@@ -216,12 +218,16 @@ type Monitor struct {
 	Name      string    `json:"name"`
 	URL       string    `json:"url"`
 	Active    bool      `json:"active"`
+	Interval  int       `json:"interval"` // Seconds
 	CreatedAt time.Time `json:"createdAt"`
 }
 
 func (s *Store) CreateMonitor(m Monitor) error {
-	_, err := s.db.Exec("INSERT INTO monitors (id, group_id, name, url, active, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-		m.ID, m.GroupID, m.Name, m.URL, m.Active, time.Now())
+	if m.Interval < 1 {
+		m.Interval = 60 // Default safety
+	}
+	_, err := s.db.Exec("INSERT INTO monitors (id, group_id, name, url, active, interval_seconds, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		m.ID, m.GroupID, m.Name, m.URL, m.Active, m.Interval, time.Now())
 	return err
 }
 
@@ -231,9 +237,9 @@ func (s *Store) CreateEvent(monitorID, eventType, message string) error {
 	return err
 }
 
-// GetMonitors returns all monitors (optionally filtered by group, but for now all)
+// GetMonitors returns all monitors
 func (s *Store) GetMonitors() ([]Monitor, error) {
-	rows, err := s.db.Query("SELECT id, group_id, name, url, active, created_at FROM monitors ORDER BY created_at ASC")
+	rows, err := s.db.Query("SELECT id, group_id, name, url, active, interval_seconds, created_at FROM monitors ORDER BY created_at ASC")
 	if err != nil {
 		return nil, err
 	}
@@ -242,12 +248,30 @@ func (s *Store) GetMonitors() ([]Monitor, error) {
 	var monitors []Monitor
 	for rows.Next() {
 		var m Monitor
-		if err := rows.Scan(&m.ID, &m.GroupID, &m.Name, &m.URL, &m.Active, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.GroupID, &m.Name, &m.URL, &m.Active, &m.Interval, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		monitors = append(monitors, m)
 	}
 	return monitors, nil
+}
+
+func (s *Store) UpdateMonitor(id, name, url string, interval int) error {
+	if interval < 1 {
+		interval = 60
+	}
+	res, err := s.db.Exec("UPDATE monitors SET name = ?, url = ?, interval_seconds = ?, active = ? WHERE id = ?", name, url, interval, true, id)
+	if err != nil {
+		return err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("monitor not found")
+	}
+	return nil
 }
 
 func (s *Store) DeleteMonitor(id string) error {
@@ -272,8 +296,6 @@ func (s *Store) BatchInsertChecks(checks []CheckResult) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
-
 	defer tx.Rollback()
 
 	stmt, err := tx.Prepare("INSERT INTO monitor_checks (monitor_id, status, latency, timestamp, status_code) VALUES (?, ?, ?, ?, ?)")
@@ -312,6 +334,40 @@ func (s *Store) GetMonitorChecks(monitorID string, limit int) ([]CheckResult, er
 		checks = append(checks, c)
 	}
 	return checks, nil
+}
+
+func (s *Store) PruneMonitorChecks(days int) error {
+	_, err := s.db.Exec("DELETE FROM monitor_checks WHERE timestamp < datetime('now', '-' || ? || ' days')", days)
+	return err
+}
+
+func (s *Store) GetUptimeStats(monitorID string) (float64, float64, float64, error) {
+	query := `
+		SELECT 
+			COUNT(CASE WHEN timestamp > datetime('now', '-1 days') THEN 1 END) as total_24h,
+			COUNT(CASE WHEN timestamp > datetime('now', '-1 days') AND status = 'up' THEN 1 END) as up_24h,
+			COUNT(CASE WHEN timestamp > datetime('now', '-7 days') THEN 1 END) as total_7d,
+			COUNT(CASE WHEN timestamp > datetime('now', '-7 days') AND status = 'up' THEN 1 END) as up_7d,
+			COUNT(CASE WHEN timestamp > datetime('now', '-30 days') THEN 1 END) as total_30d,
+			COUNT(CASE WHEN timestamp > datetime('now', '-30 days') AND status = 'up' THEN 1 END) as up_30d
+		FROM monitor_checks
+		WHERE monitor_id = ?
+	`
+	var t24, u24, t7, u7, t30, u30 int
+	err := s.db.QueryRow(query, monitorID).Scan(&t24, &u24, &t7, &u7, &t30, &u30)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+
+	calc := func(up, total int) float64 {
+		if total == 0 {
+			return 100.0 // Assume 100% if no data? Or 0? Usually 100 or null. Let's return 100 for "No Downtime Recorded" vibe.
+		}
+		return (float64(up) / float64(total)) * 100.0
+
+	}
+
+	return calc(u24, t24), calc(u7, t7), calc(u30, t30), nil
 }
 
 func (s *Store) seed() error {
@@ -357,8 +413,8 @@ func (s *Store) seed() error {
 
 	if monitorCount == 0 {
 		log.Println("Seeding default monitor...")
-		_, err := s.db.Exec("INSERT INTO monitors (id, group_id, name, url, active) VALUES (?, ?, ?, ?, ?)",
-			"m-example-monitor-default", "g-default", "Example Monitor", "https://google.com", true)
+		_, err := s.db.Exec("INSERT INTO monitors (id, group_id, name, url, active, interval_seconds) VALUES (?, ?, ?, ?, ?, ?)",
+			"m-example-monitor-default", "g-default", "Example Monitor", "https://google.com", true, 60)
 		if err != nil {
 			return err
 		}
@@ -442,14 +498,41 @@ func (s *Store) GetGroups() ([]Group, error) {
 	defer rows.Close()
 
 	var groups []Group
+	groupMap := make(map[string]*Group)
 	for rows.Next() {
 		var g Group
 		if err := rows.Scan(&g.ID, &g.Name, &g.CreatedAt); err != nil {
 			return nil, err
 		}
+		g.Monitors = []Monitor{} // Initialize empty
 		groups = append(groups, g)
 	}
-	return groups, nil
+
+	// Create map for easy assignment (pointers to slice elements are tricky if slice reallocates)
+	// Better: use index map
+	dbGroups := groups
+	for i := range dbGroups {
+		groupMap[dbGroups[i].ID] = &dbGroups[i]
+	}
+
+	// Fetch Monitors
+	mRows, err := s.db.Query("SELECT id, group_id, name, url, active, interval_seconds, created_at FROM monitors ORDER BY created_at ASC")
+	if err != nil {
+		return nil, err // Return collected groups? Or error? Error is safer.
+	}
+	defer mRows.Close()
+
+	for mRows.Next() {
+		var m Monitor
+		if err := mRows.Scan(&m.ID, &m.GroupID, &m.Name, &m.URL, &m.Active, &m.Interval, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		if g, exists := groupMap[m.GroupID]; exists {
+			g.Monitors = append(g.Monitors, m)
+		}
+	}
+
+	return dbGroups, nil
 }
 
 // Status Pages

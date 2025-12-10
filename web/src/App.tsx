@@ -20,6 +20,7 @@ import { StatusPage } from "./components/status-page/StatusPage";
 import { LoginPage } from "./components/auth/LoginPage";
 import { SettingsView } from "./components/settings/SettingsView";
 import { StatusPagesView } from "./components/status-pages/StatusPagesView";
+import { APIKeysPage } from "./components/settings/APIKeysPage";
 import { Navigate } from "react-router-dom"; // Import the new sheet
 import { Toaster } from "@/components/ui/toaster";
 
@@ -30,21 +31,21 @@ function MonitorCard({ monitor }: { monitor: any }) {
     <>
       <div
         onClick={() => setDetailsOpen(true)}
-        className="flex flex-col sm:flex-row items-center justify-between p-6 border rounded-lg bg-card/40 hover:bg-card/60 transition-all gap-6 cursor-pointer group w-full"
+        className="flex flex-col sm:flex-row items-center justify-between p-4 border rounded-lg bg-card/40 hover:bg-card/60 transition-all gap-4 cursor-pointer group w-full"
       >
-        <div className="space-y-1.5 flex-1 min-w-0 mr-4">
-          <div className="flex items-center gap-3">
-            <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${monitor.status === 'up' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500 animate-pulse'}`} />
-            <span className="font-semibold text-base group-hover:text-blue-400 transition-colors truncate block" title={monitor.name}>{monitor.name}</span>
+        <div className="space-y-1 flex-1 min-w-0 mr-4">
+          <div className="flex items-center gap-2.5">
+            <div className={`w-2 h-2 rounded-full shrink-0 ${monitor.status === 'up' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-rose-500 animate-pulse'}`} />
+            <span className="font-medium text-sm group-hover:text-blue-400 transition-colors truncate block" title={monitor.name}>{monitor.name}</span>
           </div>
-          <div className="text-sm text-muted-foreground font-mono truncate block opacity-70" title={monitor.url}>{monitor.url}</div>
+          <div className="text-xs text-muted-foreground font-mono truncate block opacity-60 ml-4.5" title={monitor.url}>{monitor.url}</div>
         </div>
 
         <div className="flex-none hidden sm:block">
           <UptimeHistory history={monitor.history} />
         </div>
 
-        <div className="flex items-center gap-4 w-[180px] justify-end shrink-0">
+        <div className="flex items-center gap-3 w-[160px] justify-end shrink-0">
           <div className="text-right whitespace-nowrap">
             <div className="text-xs font-mono text-muted-foreground">{monitor.latency}ms</div>
             <div className="text-[10px] text-muted-foreground opacity-50">{monitor.lastCheck}</div>
@@ -68,11 +69,10 @@ function MonitorGroup({ group }: { group: any }) {
 
   return (
     <Card className="bg-slate-900/20 border-slate-800">
-      <CardHeader className="pb-3">
+      <CardHeader className="p-4 pb-2">
         <div className="flex items-center justify-between">
           <div>
             <CardTitle>{group.name}</CardTitle>
-            <CardDescription>ID: {group.id}</CardDescription>
           </div>
           {group.id !== 'default' && (
             <Button variant="ghost" size="icon" onClick={handleDelete} className="text-slate-500 hover:text-red-400 hover:bg-red-950/30">
@@ -81,7 +81,7 @@ function MonitorGroup({ group }: { group: any }) {
           )}
         </div>
       </CardHeader>
-      <CardContent className="space-y-2">
+      <CardContent className="space-y-2 p-4 pt-0">
         {(!group.monitors || group.monitors.length === 0) ? (
           <div className="text-sm text-slate-500 italic py-2">No monitors in this group.</div>
         ) : (
@@ -113,7 +113,7 @@ function Dashboard() {
   }, [fetchMonitors]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {displayedGroups.map(group => (
         <MonitorGroup key={group.id} group={group} />
       ))}
@@ -195,6 +195,7 @@ function AdminLayout() {
               <Route path="/notifications" element={<NotificationsView />} />
               <Route path="/settings" element={<SettingsView />} />
               <Route path="/status-pages" element={<StatusPagesView />} />
+              <Route path="/api-keys" element={<APIKeysPage />} />
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </main>

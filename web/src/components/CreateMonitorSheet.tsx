@@ -24,7 +24,7 @@ import {
 // ... existing imports
 
 interface CreateMonitorSheetProps {
-    onCreate: (name: string, url: string, group: string) => void;
+    onCreate: (name: string, url: string, group: string, interval: number) => void;
     groups: string[];
 }
 
@@ -32,17 +32,19 @@ export function CreateMonitorSheet({ onCreate, groups }: CreateMonitorSheetProps
     const [name, setName] = useState("");
     const [url, setUrl] = useState("");
     const [group, setGroup] = useState("");
+    const [interval, setInterval] = useState(60);
     const [isNewGroup, setIsNewGroup] = useState(false);
     const [open, setOpen] = useState(false);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!name || !url) return;
-        onCreate(name, url, group);
+        onCreate(name, url, group, interval);
         // Reset
         setName("");
         setUrl("");
         setGroup("");
+        setInterval(60);
         setIsNewGroup(false);
         setOpen(false);
     };
@@ -92,6 +94,21 @@ export function CreateMonitorSheet({ onCreate, groups }: CreateMonitorSheetProps
                             onChange={(e) => setUrl(e.target.value)}
                             required
                         />
+                    </div>
+                    <div className="grid gap-2">
+                        <Label htmlFor="interval" className="text-slate-200">Check Frequency</Label>
+                        <Select onValueChange={(v) => setInterval(Number(v))} value={interval.toString()}>
+                            <SelectTrigger className="bg-slate-900 border-slate-800 text-slate-100">
+                                <SelectValue placeholder="Select frequency" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-slate-950 border-slate-800 text-slate-100">
+                                <SelectItem value="10" className="cursor-pointer">10 Seconds</SelectItem>
+                                <SelectItem value="30" className="cursor-pointer">30 Seconds</SelectItem>
+                                <SelectItem value="60" className="cursor-pointer">1 Minute</SelectItem>
+                                <SelectItem value="300" className="cursor-pointer">5 Minutes</SelectItem>
+                                <SelectItem value="600" className="cursor-pointer">10 Minutes</SelectItem>
+                            </SelectContent>
+                        </Select>
                     </div>
                     <div className="grid gap-2">
                         <Label htmlFor="group" className="text-slate-200">Group / Project</Label>

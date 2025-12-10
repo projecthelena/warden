@@ -117,13 +117,13 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 
 	// 5. Construct Response (Reusing Logic from UptimeHandler)
 	type MonitorDTO struct {
-		ID        string   `json:"id"`
-		Name      string   `json:"name"`
-		URL       string   `json:"url"`
-		Status    string   `json:"status"`
-		Latency   int64    `json:"latency"`
-		History   []string `json:"history"`
-		LastCheck string   `json:"lastCheck"`
+		ID        string         `json:"id"`
+		Name      string         `json:"name"`
+		URL       string         `json:"url"`
+		Status    string         `json:"status"`
+		Latency   int64          `json:"latency"`
+		History   []HistoryPoint `json:"history"`
+		LastCheck string         `json:"lastCheck"`
 	}
 
 	type GroupDTO struct {
@@ -144,7 +144,7 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 			statusStr := "down" // Default if not running
 			latency := int64(0)
 			lastCheck := "Never"
-			historyStr := []string{} // Ensure empty array not null
+			var historyPoints []HistoryPoint
 
 			if task != nil {
 				history := task.GetHistory()
@@ -168,7 +168,12 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 								s = "degraded"
 							}
 						}
-						historyStr = append(historyStr, s)
+						historyPoints = append(historyPoints, HistoryPoint{
+							Status:     s,
+							Latency:    h.Latency,
+							Timestamp:  h.Timestamp,
+							StatusCode: h.StatusCode,
+						})
 					}
 				} else {
 					statusStr = "up" // Optimistic or "pending"
@@ -185,7 +190,7 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 				URL:       meta.URL,
 				Status:    statusStr,
 				Latency:   latency,
-				History:   historyStr,
+				History:   historyPoints,
 				LastCheck: lastCheck,
 			})
 		}
