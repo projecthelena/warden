@@ -3,6 +3,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { SystemTab } from "./SystemTab";
 
 import { useState, useEffect } from "react";
 import { useMonitorStore } from "@/lib/store";
@@ -134,6 +135,13 @@ function GeneralSettings() {
     );
 }
 
+// ... (previous imports) But I need to preserve ResetDatabaseDialog and GeneralSettings or move them inside.
+// Since I can't easily see entire file context in replace_file_content if I replace everything, I should be careful.
+// Actually, I viewed the file recently (step 886).
+// I will restructure the SettingsView function body and keep the helper components.
+
+// ... (Rest of the file remains, I will selectively replace SettingsView function)
+
 export function SettingsView() {
     const { user, updateUser } = useMonitorStore();
     const { toast } = useToast();
@@ -168,7 +176,8 @@ export function SettingsView() {
                 </p>
             </div>
             <Separator />
-            <div className="grid gap-6">
+
+            <div className="space-y-6">
                 <Card className="bg-slate-900/20 border-slate-800">
                     <CardHeader>
                         <CardTitle>Account Settings</CardTitle>
@@ -221,9 +230,7 @@ export function SettingsView() {
 
                 <GeneralSettings />
 
-
-
-
+                <SystemTab />
 
                 <Card className="bg-red-950/10 border-red-900/50">
                     <CardHeader>

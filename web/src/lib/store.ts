@@ -108,6 +108,19 @@ export interface APIKey {
     lastUsed?: string;
 }
 
+export interface SystemStats {
+    version: string;
+    dbSize: number;
+    stats: {
+        totalMonitors: number;
+        activeMonitors: number;
+        downMonitors: number;
+        degradedMonitors: number;
+        totalGroups: number;
+        dailyPingsEstimate: number;
+    };
+}
+
 interface MonitorStore {
     groups: Group[];
     overview: OverviewGroup[];
@@ -160,6 +173,8 @@ interface MonitorStore {
     settings: Settings | null;
     fetchSettings: () => Promise<void>;
     updateSettings: (settings: Partial<Settings>) => Promise<void>;
+
+    fetchSystemStats: () => Promise<SystemStats | null>;
 }
 
 export const useMonitorStore = create<MonitorStore>((set, get) => ({
@@ -757,5 +772,17 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
         } catch (error) {
             console.error('Failed to update settings:', error);
         }
+    },
+
+    fetchSystemStats: async () => {
+        try {
+            const res = await fetch("/api/stats", { credentials: "include" });
+            if (res.ok) {
+                return await res.json();
+            }
+        } catch (error) {
+            console.error("Failed to fetch system stats:", error);
+        }
+        return null;
     }
 }));

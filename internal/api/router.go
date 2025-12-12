@@ -103,6 +103,10 @@ func NewRouter(manager *uptime.Manager, store *db.Store) http.Handler {
 			protected.Get("/notifications/channels", notificationH.GetChannels)
 			protected.Post("/notifications/channels", notificationH.CreateChannel)
 			protected.Delete("/notifications/channels/{id}", notificationH.DeleteChannel)
+
+			// System Stats
+			statsH := NewStatsHandler(store)
+			protected.Get("/stats", statsH.GetStats)
 		})
 	})
 

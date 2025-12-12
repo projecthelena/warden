@@ -1050,3 +1050,53 @@ func (s *Store) GetIncidents() ([]Incident, error) {
 	}
 	return incidents, nil
 }
+
+// System Stats
+
+type SystemStats struct {
+	TotalMonitors    int `json:"totalMonitors"`
+	ActiveMonitors   int `json:"activeMonitors"`
+	DownMonitors     int `json:"downMonitors"`
+	DegradedMonitors int `json:"degradedMonitors"`
+	TotalGroups      int `json:"totalGroups"`
+	DailyPings       int `json:"dailyPingsEstimate"`
+}
+
+func (s *Store) GetSystemStats() (*SystemStats, error) {
+	stats := &SystemStats{}
+
+	// Monitor Counts
+	s.db.QueryRow("SELECT COUNT(*) FROM monitors").Scan(&stats.TotalMonitors)
+	s.db.QueryRow("SELECT COUNT(*) FROM monitors WHERE active = 1").Scan(&stats.ActiveMonitors)
+
+	// We don't track status directly in DB "monitors" table except via last check?
+	// Wait, Monitor struct has "Status" but it's not in the CREATE TABLE usually?
+	// Let's check db schema in migrate().
+	// create table monitors: id, group_id, name, url, active, interval_seconds, created_at.
+	// Status is transient or computed. BUT we have `monitor_outages` for down/degraded.
+	// So "Down" means active outage of type "down".
+	s.db.QueryRow("SELECT COUNT(DISTINCT monitor_id) FROM monitor_outages WHERE end_time IS NULL AND type = 'down'").Scan(&stats.DownMonitors)
+	s.db.QueryRow("SELECT COUNT(DISTINCT monitor_id) FROM monitor_outages WHERE end_time IS NULL AND type = 'degraded'").Scan(&stats.DegradedMonitors)
+
+	// Groups
+	s.db.QueryRow("SELECT COUNT(*) FROM groups").Scan(&stats.TotalGroups)
+
+	// Daily Pings Estimate: SUM( 86400 / interval_seconds ) for active monitors
+	// interval_seconds defaults to 60.
+	s.db.QueryRow("SELECT COALESCE(SUM(86400 / interval_seconds), 0) FROM monitors WHERE active = 1").Scan(&stats.DailyPings)
+
+	return stats, nil
+}
+
+func (s *Store) GetDBSize() (int64, error) {
+	// PRAGMA page_count * PRAGMA page_size
+	var pageCount int64
+	var pageSize int64
+	if err := s.db.QueryRow("PRAGMA page_count").Scan(&pageCount); err != nil {
+		return 0, err
+	}
+	if err := s.db.QueryRow("PRAGMA page_size").Scan(&pageSize); err != nil {
+		return 0, err
+	}
+	return pageCount * pageSize, nil
+}

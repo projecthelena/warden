@@ -34,6 +34,15 @@ export const formatNumber = (value: number) =>
 export const milliToCores = (value: number) => value / 1000;
 export const bytesToGiB = (value: number) => value / 1024 / 1024 / 1024;
 
+export function formatBytes(bytes: number, decimals = 2) {
+  if (!+bytes) return '0 Bytes';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+}
+
 export const computeWastePercent = (requested: number, used: number) => {
   if (!requested || requested <= 0) return 0;
   const diff = requested - used;
