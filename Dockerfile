@@ -20,7 +20,8 @@ COPY cmd ./cmd
 COPY internal ./internal
 # Embed frontend
 COPY --from=frontend /app/web/dist ./internal/static/dist
-RUN CGO_ENABLED=1 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /clusteruptime ./cmd/dashboard
+ARG VERSION=dev
+RUN CGO_ENABLED=1 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags "-s -w -X github.com/clusteruptime/clusteruptime/internal/api.Version=${VERSION}" -o /clusteruptime ./cmd/dashboard
 # Prepare data directory
 RUN mkdir -p /data
 

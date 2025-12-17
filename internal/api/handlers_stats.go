@@ -28,7 +28,7 @@ func (h *StatsHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := map[string]interface{}{
-		"version": "v1.0.2", // Hardcoded for now, or fetch from config/build info
+		"version": Version,
 		"dbSize":  dbSize,
 		"stats":   stats,
 	}
