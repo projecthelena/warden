@@ -149,8 +149,8 @@ export function IncidentsView() {
         <div className="space-y-8 max-w-5xl mx-auto">
             <div className="flex items-center justify-between border-b border-border/40 pb-6">
                 <div>
-                    <h2 className="text-xl font-semibold tracking-tight text-foreground">System Events</h2>
-                    <p className="text-sm text-muted-foreground mt-1">Real-time system anomalies and maintenance schedule.</p>
+                    <h2 className="text-xl font-semibold tracking-tight text-foreground">Monitor Events</h2>
+                    <p className="text-sm text-muted-foreground mt-1">Track active downtimes and review historical monitor events.</p>
                 </div>
             </div>
 

@@ -8,7 +8,7 @@ import { useMemo } from "react";
 export const StatusBadge = ({ status }: { status: Monitor['status'] }) => {
     if (status === 'up') {
         return (
-            <Badge variant="outline" className="border-green-800 bg-green-950/50 text-green-400 gap-1 px-2 py-1 w-[105px] justify-center">
+            <Badge variant="outline" className="border-emerald-500/30 text-emerald-500 gap-1 px-2 py-1 w-[105px] justify-center">
                 <ArrowUp className="w-3 h-3" />
                 Operational
             </Badge>
@@ -16,14 +16,14 @@ export const StatusBadge = ({ status }: { status: Monitor['status'] }) => {
     }
     if (status === 'down') {
         return (
-            <Badge variant="destructive" className="bg-red-950/50 border-red-800 text-red-500 gap-1 px-2 py-1 animate-pulse w-[105px] justify-center">
+            <Badge variant="destructive" className="gap-1 px-2 py-1 w-[105px] justify-center animate-pulse">
                 <ArrowDown className="w-3 h-3" />
                 Downtime
             </Badge>
         );
     }
     return (
-        <Badge variant="secondary" className="bg-yellow-950/50 border-yellow-800 text-yellow-500 gap-1 px-2 py-1 w-[105px] justify-center">
+        <Badge variant="secondary" className="gap-1 px-2 py-1 w-[105px] justify-center">
             <AlertTriangle className="w-3 h-3" />
             Degraded
         </Badge>
@@ -90,7 +90,7 @@ export const UptimeHistory = ({ history, interval = 60 }: { history: Monitor['hi
                             />
                         </TooltipTrigger>
                         {slot ? (
-                            <TooltipContent className="text-xs bg-slate-900 border-slate-800 text-slate-200">
+                            <TooltipContent className="text-xs">
                                 <div className="font-semibold mb-1">
                                     {new Date(slot.timestamp).toLocaleTimeString()}
                                 </div>
@@ -113,7 +113,7 @@ export const UptimeHistory = ({ history, interval = 60 }: { history: Monitor['hi
                                 </div>
                             </TooltipContent>
                         ) : (
-                            <TooltipContent className="text-xs bg-slate-900 border-slate-800 text-slate-200">
+                            <TooltipContent className="text-xs">
                                 <div className="font-semibold text-muted-foreground">No Data</div>
                             </TooltipContent>
                         )}

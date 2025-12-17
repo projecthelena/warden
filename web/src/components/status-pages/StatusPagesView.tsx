@@ -69,17 +69,17 @@ export function StatusPagesView() {
                 {allPages.map(page => (
                     <div
                         key={page.slug}
-                        className="flex items-center justify-between p-4 rounded-xl border border-border/50 bg-card/50 hover:bg-accent/50 transition-all duration-200"
+                        className="flex items-center justify-between p-4 rounded-xl border border-border bg-card hover:bg-accent/50 transition-all duration-200"
                     >
                         <div className="space-y-1">
                             <div className="flex items-center gap-3">
                                 <span className="text-base font-medium text-foreground">{page.title}</span>
                                 {page.public ? (
-                                    <Badge variant="default" className="bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/25 border-emerald-500/20 shadow-none font-normal text-xs px-2 py-0.5 h-auto">
+                                    <Badge variant="default" className="shadow-none font-normal text-xs px-2 py-0.5 h-auto">
                                         Active
                                     </Badge>
                                 ) : (
-                                    <Badge variant="secondary" className="bg-slate-800/50 text-slate-500 hover:bg-slate-800/70 border-slate-700/50 shadow-none font-normal text-xs px-2 py-0.5 h-auto">
+                                    <Badge variant="secondary" className="shadow-none font-normal text-xs px-2 py-0.5 h-auto">
                                         Disabled
                                     </Badge>
                                 )}
@@ -91,7 +91,7 @@ export function StatusPagesView() {
                                         href={`/status/${page.slug}`}
                                         target="_blank"
                                         rel="noreferrer"
-                                        className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
                                     >
                                         Visit Page <ExternalLink className="w-3 h-3" />
                                     </a>

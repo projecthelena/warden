@@ -112,13 +112,13 @@ export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSh
         return (
             <div className="flex gap-4">
                 <div className="flex flex-col gap-3">
-                    <Label className="px-1 text-xs text-slate-400 font-medium">{label} Date</Label>
+                    <Label className="px-1 text-xs text-muted-foreground font-medium">{label} Date</Label>
                     <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
                         <PopoverTrigger asChild>
                             <Button
                                 variant="outline"
                                 className={cn(
-                                    "w-40 justify-between font-normal bg-slate-900 border-slate-800 text-slate-100 hover:bg-slate-800 hover:text-slate-100",
+                                    "w-40 justify-between font-normal",
                                     !date && "text-muted-foreground"
                                 )}
                             >
@@ -126,7 +126,7 @@ export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSh
                                 <ChevronDownIcon className="h-4 w-4 opacity-50" />
                             </Button>
                         </PopoverTrigger>
-                        <PopoverContent className="w-auto overflow-hidden p-0 bg-slate-950 border-slate-800" align="start">
+                        <PopoverContent className="w-auto overflow-hidden p-0" align="start">
                             <Calendar
                                 mode="single"
                                 selected={date}
@@ -135,19 +135,18 @@ export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSh
                                     setDate(d);
                                     setPopoverOpen(false);
                                 }}
-                                className="bg-slate-950 text-slate-100"
                             />
                         </PopoverContent>
                     </Popover>
                 </div>
                 <div className="flex flex-col gap-3 flex-1">
-                    <Label className="px-1 text-xs text-slate-400 font-medium">Time</Label>
+                    <Label className="px-1 text-xs text-muted-foreground font-medium">Time</Label>
                     <Input
                         type="time"
                         step="1"
                         value={time}
                         onChange={e => setTime(e.target.value)}
-                        className="bg-slate-900 border-slate-800 text-slate-100 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none"
+                        className="appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none"
                     />
                 </div>
             </div>
@@ -157,14 +156,14 @@ export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSh
     return (
         <Sheet open={open} onOpenChange={(val) => { setOpen(val); if (!val) resetForm(); }}>
             <SheetTrigger asChild>
-                <Button size="sm" className="gap-2 bg-blue-600 hover:bg-blue-700 text-white border-none">
+                <Button size="sm" className="gap-2">
                     <CalendarClock className="w-4 h-4" /> Schedule Maintenance
                 </Button>
             </SheetTrigger>
-            <SheetContent className="bg-slate-950 border-slate-800 text-slate-100 sm:max-w-[500px]">
+            <SheetContent className="sm:max-w-[500px]">
                 <SheetHeader>
-                    <SheetTitle className="text-slate-100">Schedule Maintenance</SheetTitle>
-                    <SheetDescription className="text-slate-400">
+                    <SheetTitle>Schedule Maintenance</SheetTitle>
+                    <SheetDescription>
                         Plan a maintenance window for a specific group.
                     </SheetDescription>
                 </SheetHeader>
@@ -175,7 +174,6 @@ export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSh
                             value={title}
                             onChange={e => setTitle(e.target.value)}
                             required
-                            className="bg-slate-900 border-slate-800"
                             placeholder="e.g. Database Upgrade"
                         />
                     </div>
@@ -183,12 +181,12 @@ export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSh
                     <div className="grid gap-2">
                         <Label>Affected Group</Label>
                         <Select value={selectedGroup} onValueChange={setSelectedGroup}>
-                            <SelectTrigger className="bg-slate-900 border-slate-800">
+                            <SelectTrigger>
                                 <SelectValue placeholder="Select Group" />
                             </SelectTrigger>
-                            <SelectContent className="bg-slate-950 border-slate-800 text-slate-100">
+                            <SelectContent>
                                 {groups.map(g => (
-                                    <SelectItem key={g} value={g} className="focus:bg-slate-800 focus:text-slate-100">{g}</SelectItem>
+                                    <SelectItem key={g} value={g}>{g}</SelectItem>
                                 ))}
                             </SelectContent>
                         </Select>
@@ -209,7 +207,7 @@ export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSh
                             time={endTime}
                             setTime={setEndTime}
                         />
-                        <div className="text-xs text-slate-500 text-right px-1">
+                        <div className="text-xs text-muted-foreground text-right px-1">
                             Time Zone: {Intl.DateTimeFormat().resolvedOptions().timeZone} ({new Date().toLocaleTimeString('en-US', { timeZoneName: 'short' }).split(' ')[2] || 'Local'})
                         </div>
                     </div>
@@ -219,13 +217,12 @@ export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSh
                         <Input
                             value={description}
                             onChange={e => setDescription(e.target.value)}
-                            className="bg-slate-900 border-slate-800"
                             placeholder="Details about the maintenance..."
                         />
                     </div>
 
                     <SheetFooter className="mt-4">
-                        <Button type="submit" className="bg-blue-600 hover:bg-blue-700 w-full">Schedule Maintenance</Button>
+                        <Button type="submit" className="w-full">Schedule Maintenance</Button>
                     </SheetFooter>
                 </form>
             </SheetContent>

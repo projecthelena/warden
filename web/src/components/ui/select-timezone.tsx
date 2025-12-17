@@ -20,31 +20,8 @@ import {
 export function SelectTimezone({ value, onValueChange, className }: { value?: string, onValueChange?: (value: string) => void, className?: string }) {
     const [open, setOpen] = React.useState(false)
 
-    // 1. Get all supported timezones
+    // Memoize timezones to avoid re-calculating on every render
     const allTimezones = React.useMemo(() => Intl.supportedValuesOf('timeZone'), []);
-
-    // 2. Group them by region (e.g. America, Europe, Asia, etc.)
-    const groupedTimezones = React.useMemo(() => {
-        return allTimezones.reduce((acc, tz) => {
-            const parts = tz.split('/');
-            const region = parts.length > 1 ? parts[0] : 'Others';
-
-            if (!acc[region]) {
-                acc[region] = [];
-            }
-            acc[region].push(tz);
-            return acc;
-        }, {} as Record<string, string[]>);
-    }, [allTimezones]);
-
-    // 3. Sort regions
-    const sortedRegions = React.useMemo(() => {
-        return Object.keys(groupedTimezones).sort((a, b) => {
-            if (a === 'Others') return 1;
-            if (b === 'Others') return -1;
-            return a.localeCompare(b);
-        });
-    }, [groupedTimezones]);
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
@@ -66,28 +43,36 @@ export function SelectTimezone({ value, onValueChange, className }: { value?: st
                     <CommandInput placeholder="Search timezone..." />
                     <CommandList>
                         <CommandEmpty>No timezone found.</CommandEmpty>
-                        {sortedRegions.map(region => (
-                            <CommandGroup key={region} heading={region}>
-                                {groupedTimezones[region].map(tz => (
-                                    <CommandItem
-                                        key={tz}
-                                        value={tz}
-                                        onSelect={() => {
-                                            onValueChange?.(tz)
-                                            setOpen(false)
-                                        }}
-                                    >
-                                        <Check
-                                            className={cn(
-                                                "mr-2 h-4 w-4",
-                                                value === tz ? "opacity-100" : "opacity-0"
-                                            )}
-                                        />
-                                        {tz.replace(/_/g, " ")}
-                                    </CommandItem>
-                                ))}
-                            </CommandGroup>
-                        ))}
+                        <CommandGroup>
+                            {allTimezones.map((tz) => (
+                                <CommandItem
+                                    key={tz}
+                                    value={tz}
+                                    onSelect={(currentValue) => {
+                                        // Shadcn Combobox standard:
+                                        // currentValue is the lowercase "value" prop usually, or text content if value missing.
+                                        // But here we explicitly set value={tz}.
+                                        // We want to pass the original 'tz' string (preserving case) if possible, 
+                                        // or we map back if cmdk lowercases it. 
+                                        // Creating a map or found check is safest.
+
+                                        // Simple lookup to ensure correct casing:
+                                        const original = allTimezones.find((t) => t.toLowerCase() === currentValue.toLowerCase()) || currentValue;
+
+                                        onValueChange?.(original)
+                                        setOpen(false)
+                                    }}
+                                >
+                                    <Check
+                                        className={cn(
+                                            "mr-2 h-4 w-4",
+                                            value === tz ? "opacity-100" : "opacity-0"
+                                        )}
+                                    />
+                                    {tz.replace(/_/g, " ")}
+                                </CommandItem>
+                            ))}
+                        </CommandGroup>
                     </CommandList>
                 </Command>
             </PopoverContent>

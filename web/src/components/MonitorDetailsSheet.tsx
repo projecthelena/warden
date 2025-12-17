@@ -229,19 +229,19 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
 
     return (
         <Sheet open={open} onOpenChange={onOpenChange}>
-            <SheetContent className="bg-slate-950 border-slate-800 text-slate-100 sm:max-w-[600px] overflow-y-auto">
+            <SheetContent className="sm:max-w-[600px] overflow-y-auto">
                 <SheetHeader className="mb-6">
                     <div className="flex items-center justify-between">
-                        <SheetTitle className="text-slate-100">{monitor.name}</SheetTitle>
+                        <SheetTitle>{monitor.name}</SheetTitle>
                         <StatusBadge status={monitor.status} />
                     </div>
-                    <SheetDescription className="text-slate-400 font-mono text-xs">
+                    <SheetDescription className="font-mono text-xs">
                         ID: {monitor.id}
                     </SheetDescription>
                 </SheetHeader>
 
                 <Tabs defaultValue="metrics" className="w-full">
-                    <TabsList className="bg-slate-900 border border-slate-800 w-full grid grid-cols-3">
+                    <TabsList className="w-full grid grid-cols-3">
                         <TabsTrigger value="metrics">Metrics</TabsTrigger>
                         <TabsTrigger value="events">Events</TabsTrigger>
                         <TabsTrigger value="settings">Settings</TabsTrigger>
@@ -250,16 +250,16 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                     <TabsContent value="metrics" className="mt-6 space-y-6">
                         {/* Uptime Cards */}
                         <div className="grid grid-cols-3 gap-2">
-                            <div className="bg-slate-900 border border-slate-800 rounded p-3 text-center">
-                                <span className="text-xs text-slate-500 block mb-1">24h Uptime</span>
+                            <div className="bg-card border border-border rounded-lg p-3 text-center shadow-sm">
+                                <span className="text-xs text-muted-foreground block mb-1">24h Uptime</span>
                                 <span className={`text-lg font-semibold ${getUptimeColor(stats.uptime24h)}`}>{formatUptime(stats.uptime24h)}</span>
                             </div>
-                            <div className="bg-slate-900 border border-slate-800 rounded p-3 text-center">
-                                <span className="text-xs text-slate-500 block mb-1">7d Uptime</span>
+                            <div className="bg-card border border-border rounded-lg p-3 text-center shadow-sm">
+                                <span className="text-xs text-muted-foreground block mb-1">7d Uptime</span>
                                 <span className={`text-lg font-semibold ${getUptimeColor(stats.uptime7d)}`}>{formatUptime(stats.uptime7d)}</span>
                             </div>
-                            <div className="bg-slate-900 border border-slate-800 rounded p-3 text-center">
-                                <span className="text-xs text-slate-500 block mb-1">30d Uptime</span>
+                            <div className="bg-card border border-border rounded-lg p-3 text-center shadow-sm">
+                                <span className="text-xs text-muted-foreground block mb-1">30d Uptime</span>
                                 <span className={`text-lg font-semibold ${getUptimeColor(stats.uptime30d)}`}>{formatUptime(stats.uptime30d)}</span>
                             </div>
                         </div>
@@ -267,15 +267,15 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                         {/* Latency Chart */}
                         <div className="space-y-4">
                             <div className="flex items-center justify-between">
-                                <h3 className="text-sm font-medium text-slate-300 flex items-center gap-2">
-                                    <BarChart className="w-4 h-4 text-blue-400" /> Response Time
+                                <h3 className="text-sm font-medium text-foreground flex items-center gap-2">
+                                    <BarChart className="w-4 h-4 text-muted-foreground" /> Response Time
                                 </h3>
-                                <div className="flex bg-slate-900 rounded-lg p-0.5 border border-slate-800">
+                                <div className="flex bg-muted rounded-lg p-0.5 border border-border">
                                     {["1h"].map((r) => (
                                         <button
                                             key={r}
                                             onClick={() => setTimeRange(r)}
-                                            className={`px-3 py-1 text-xs rounded-md transition-all ${timeRange === r ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
+                                            className={`px-3 py-1 text-xs rounded-md transition-all ${timeRange === r ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                                                 }`}
                                         >
                                             {r}
@@ -284,19 +284,19 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                                 </div>
                             </div>
 
-                            <div className="h-[250px] w-full bg-slate-900/40 border border-slate-800/50 rounded-lg p-4">
+                            <div className="h-[250px] w-full bg-card border border-border rounded-lg p-4 shadow-sm">
                                 <ResponsiveContainer width="100%" height="100%">
                                     <AreaChart data={latencyData}>
                                         <defs>
                                             <linearGradient id="colorLatency" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                                                <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                                                <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
+                                                <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
                                             </linearGradient>
                                         </defs>
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
                                         <XAxis
                                             dataKey="timestamp"
-                                            stroke="#64748b"
+                                            stroke="hsl(var(--muted-foreground))"
                                             fontSize={10}
                                             tickFormatter={formatXAxis}
                                             minTickGap={30}
@@ -312,16 +312,21 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                                             ]}
                                         />
                                         <YAxis
-                                            stroke="#64748b"
+                                            stroke="hsl(var(--muted-foreground))"
                                             fontSize={10}
                                             tickFormatter={(val) => `${val}ms`}
                                             width={50}
                                             domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.1)]}
                                         />
                                         <Tooltip
-                                            contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '6px' }}
-                                            itemStyle={{ color: '#e2e8f0', fontSize: '12px' }}
-                                            labelStyle={{ color: '#94a3b8', fontSize: '11px', marginBottom: '4px' }}
+                                            contentStyle={{
+                                                backgroundColor: 'hsl(var(--popover))',
+                                                borderColor: 'hsl(var(--border))',
+                                                borderRadius: 'var(--radius)',
+                                                color: 'hsl(var(--popover-foreground))'
+                                            }}
+                                            itemStyle={{ color: 'hsl(var(--foreground))', fontSize: '12px' }}
+                                            labelStyle={{ color: 'hsl(var(--muted-foreground))', fontSize: '11px', marginBottom: '4px' }}
                                             labelFormatter={(label) => {
                                                 return formatDate(label, user?.timezone);
                                             }}
@@ -337,15 +342,15 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                                                 key={i}
                                                 x1={zone.start}
                                                 x2={zone.end}
-                                                fill="#ef4444"
-                                                fillOpacity={0.3}
+                                                fill="hsl(var(--destructive))"
+                                                fillOpacity={0.1}
                                             />
                                         ))}
 
                                         <Area
                                             type="monotone"
                                             dataKey="latency"
-                                            stroke="#3b82f6"
+                                            stroke="hsl(var(--primary))"
                                             strokeWidth={2}
                                             fillOpacity={1}
                                             fill="url(#colorLatency)"
@@ -359,29 +364,29 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                     </TabsContent>
 
                     <TabsContent value="events" className="mt-6 space-y-4">
-                        <h3 className="text-sm font-medium text-slate-300 mb-4 flex items-center gap-2">
-                            <Activity className="w-4 h-4" /> Activity Log
+                        <h3 className="text-sm font-medium text-foreground mb-4 flex items-center gap-2">
+                            <Activity className="w-4 h-4 text-muted-foreground" /> Activity Log
                         </h3>
                         {monitor.events && monitor.events.length > 0 ? (
-                            <div className="relative border-l border-slate-800 ml-2 space-y-6">
+                            <div className="relative border-l border-border ml-2 space-y-6">
                                 {monitor.events.map((event) => (
                                     <div key={event.id} className="ml-6 relative">
-                                        <div className={`absolute -left-[31px] top-1 w-2.5 h-2.5 rounded-full ring-4 ring-slate-950 ${event.type === 'up' ? 'bg-green-500' :
-                                            event.type === 'down' ? 'bg-red-500' : 'bg-yellow-500'
+                                        <div className={`absolute -left-[31px] top-1 w-2.5 h-2.5 rounded-full ring-4 ring-background ${event.type === 'up' ? 'bg-emerald-500' :
+                                            event.type === 'down' ? 'bg-destructive' : 'bg-yellow-500'
                                             }`} />
                                         <div className="flex flex-col gap-1">
 
-                                            <span className="text-xs text-slate-500 flex items-center gap-1">
+                                            <span className="text-xs text-muted-foreground flex items-center gap-1">
                                                 <Clock className="w-3 h-3" />
                                                 {formatDate(event.timestamp, user?.timezone)}
                                             </span>
-                                            <p className="text-sm text-slate-200">{event.message}</p>
+                                            <p className="text-sm text-foreground">{event.message}</p>
                                         </div>
                                     </div>
                                 ))}
                             </div>
                         ) : (
-                            <div className="text-center py-12 text-slate-500 text-sm border border-dashed border-slate-800 rounded-lg">
+                            <div className="text-center py-12 text-muted-foreground text-sm border border-dashed border-border rounded-lg">
                                 No events recorded yet.
                             </div>
                         )}
@@ -391,19 +396,19 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                         <div className="space-y-4">
                             <div className="grid gap-2">
                                 <Label>Display Name</Label>
-                                <Input value={name} onChange={e => setName(e.target.value)} className="bg-slate-900 border-slate-800" />
+                                <Input value={name} onChange={e => setName(e.target.value)} />
                             </div>
                             <div className="grid gap-2">
                                 <Label>Target URL</Label>
-                                <Input value={url} onChange={e => setUrl(e.target.value)} className="bg-slate-900 border-slate-800 font-mono text-xs" />
+                                <Input value={url} onChange={e => setUrl(e.target.value)} className="font-mono text-xs" />
                             </div>
                             <div className="grid gap-2">
                                 <Label>Check Frequency</Label>
                                 <Select onValueChange={(v) => setInterval(Number(v))} value={interval.toString()}>
-                                    <SelectTrigger className="bg-slate-900 border-slate-800 text-slate-100">
+                                    <SelectTrigger>
                                         <SelectValue placeholder="Select frequency" />
                                     </SelectTrigger>
-                                    <SelectContent className="bg-slate-950 border-slate-800 text-slate-100">
+                                    <SelectContent>
                                         <SelectItem value="10" className="cursor-pointer">10 Seconds</SelectItem>
                                         <SelectItem value="30" className="cursor-pointer">30 Seconds</SelectItem>
                                         <SelectItem value="60" className="cursor-pointer">1 Minute</SelectItem>
@@ -412,38 +417,38 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                                     </SelectContent>
                                 </Select>
                             </div>
-                            <Button onClick={handleSave} className="w-full bg-blue-600 hover:bg-blue-500">
+                            <Button onClick={handleSave} className="w-full">
                                 <Save className="w-4 h-4 mr-2" /> Save Changes
                             </Button>
                         </div>
 
-                        <div className="pt-6 border-t border-slate-800">
-                            <h3 className="text-sm font-medium text-red-500 mb-2">Danger Zone</h3>
-                            <p className="text-xs text-slate-500 mb-4">
+                        <div className="pt-6 border-t border-border">
+                            <h3 className="text-sm font-medium text-destructive mb-2">Danger Zone</h3>
+                            <p className="text-xs text-muted-foreground mb-4">
                                 Deleting this monitor is irreversible. All history will be lost.
                             </p>
                             <AlertDialog>
                                 <AlertDialogTrigger asChild>
-                                    <Button variant="destructive" className="w-full bg-red-900/50 hover:bg-red-900 text-red-200 border border-red-900">
+                                    <Button variant="destructive" className="w-full">
                                         <Trash2 className="w-4 h-4 mr-2" /> Delete Monitor
                                     </Button>
                                 </AlertDialogTrigger>
-                                <AlertDialogContent className="bg-slate-950 border-slate-800 text-slate-100">
+                                <AlertDialogContent>
                                     <AlertDialogHeader>
                                         <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                                        <AlertDialogDescription className="text-slate-400">
+                                        <AlertDialogDescription>
                                             This action cannot be undone. This will permanently delete the monitor
                                             <strong> {monitor.name} </strong> and remove all its data.
                                         </AlertDialogDescription>
                                     </AlertDialogHeader>
                                     <AlertDialogFooter>
-                                        <AlertDialogCancel className="bg-slate-900 border-slate-800 hover:bg-slate-800 text-slate-200">Cancel</AlertDialogCancel>
+                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
                                         <AlertDialogAction
                                             onClick={() => {
                                                 deleteMonitor(monitor.id);
                                                 onOpenChange(false);
                                             }}
-                                            className="bg-red-600 hover:bg-red-700 text-white border-none"
+                                            className="bg-destructive hover:bg-destructive/90 text-destructive-foreground border-none"
                                         >
                                             Delete Monitor
                                         </AlertDialogAction>

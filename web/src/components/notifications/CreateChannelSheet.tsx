@@ -65,13 +65,13 @@ export function CreateChannelSheet({ onCreate }: { onCreate?: (c: any) => void }
                     <Plus className="w-4 h-4" /> Add Channel
                 </Button>
             </SheetTrigger>
-            <SheetContent className="bg-slate-950 border-slate-800 text-slate-100 sm:max-w-[500px]">
+            <SheetContent className="sm:max-w-[500px]">
                 <SheetHeader>
-                    <SheetTitle className="text-slate-100 flex items-center gap-2">
-                        <Bell className="w-5 h-5 text-blue-500" />
+                    <SheetTitle className="flex items-center gap-2">
+                        <Bell className="w-5 h-5" />
                         Add Notification Channel
                     </SheetTitle>
-                    <SheetDescription className="text-slate-400">
+                    <SheetDescription>
                         Connect a new destination to receive alerts.
                     </SheetDescription>
                 </SheetHeader>
@@ -79,21 +79,12 @@ export function CreateChannelSheet({ onCreate }: { onCreate?: (c: any) => void }
                     <div className="grid gap-2">
                         <Label>Channel Type</Label>
                         <Select value={type} onValueChange={(v: any) => setType(v)}>
-                            <SelectTrigger className="bg-slate-900 border-slate-800">
+                            <SelectTrigger>
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="slack">
                                     <div className="flex items-center gap-2"><Slack className="w-4 h-4" /> Slack</div>
-                                </SelectItem>
-                                <SelectItem value="email">
-                                    <div className="flex items-center gap-2"><Mail className="w-4 h-4" /> Email</div>
-                                </SelectItem>
-                                <SelectItem value="discord">
-                                    <div className="flex items-center gap-2"><MessageSquare className="w-4 h-4" /> Discord</div>
-                                </SelectItem>
-                                <SelectItem value="webhook">
-                                    <div className="flex items-center gap-2"><Webhook className="w-4 h-4" /> Generic Webhook</div>
                                 </SelectItem>
                             </SelectContent>
                         </Select>
@@ -102,33 +93,19 @@ export function CreateChannelSheet({ onCreate }: { onCreate?: (c: any) => void }
                     <div className="grid gap-2">
                         <Label>Friendly Name</Label>
                         <Input value={name} onChange={e => setName(e.target.value)} required
-                            className="bg-slate-900 border-slate-800" placeholder="e.g. DevOps Team" />
+                            placeholder="e.g. DevOps Team" />
                     </div>
 
-                    {type === 'email' ? (
-                        <div className="grid gap-2">
-                            <Label>Email Address</Label>
-                            <Input value={email} onChange={e => setEmail(e.target.value)} required
-                                type="email"
-                                className="bg-slate-900 border-slate-800"
-                                placeholder="team@example.com" />
-                            <p className="text-[0.8rem] text-slate-500">
-                                We will send alert summaries to this address.
-                            </p>
-                        </div>
-                    ) : (
-                        <div className="grid gap-2">
-                            <Label>Webhook URL</Label>
-                            <Input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} required
-                                type="url"
-                                className="bg-slate-900 border-slate-800 font-mono text-xs"
-                                placeholder="https://..." />
-                            <p className="text-[0.8rem] text-slate-500">
-                                {type === 'slack' ? 'Incoming Webhook URL from Slack App.' :
-                                    type === 'discord' ? 'Discord Webhook URL.' : 'POST request URL.'}
-                            </p>
-                        </div>
-                    )}
+                    <div className="grid gap-2">
+                        <Label>Webhook URL</Label>
+                        <Input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} required
+                            type="url"
+                            className="font-mono text-xs"
+                            placeholder="https://hooks.slack.com/services/..." />
+                        <p className="text-[0.8rem] text-muted-foreground">
+                            Incoming Webhook URL from Slack App.
+                        </p>
+                    </div>
 
                     <SheetFooter className="mt-4">
                         <Button type="submit">Add Integration</Button>

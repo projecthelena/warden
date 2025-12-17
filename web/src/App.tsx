@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import React from "react";
 import { Routes, Route, useParams, useLocation, useNavigate, Navigate } from "react-router-dom";
 import { useEffect as usePageEffect } from "react"; // Alias to avoid conflict if I used it inside Dashboard, effectively just need simple imports
 import { AppSidebar } from "./components/layout/AppSidebar";
@@ -15,7 +16,7 @@ import { CreateGroupSheet } from "./components/CreateGroupSheet";
 import { CreateMaintenanceSheet } from "./components/incidents/CreateMaintenanceSheet";
 import { MaintenanceView } from "./components/incidents/MaintenanceView";
 import { IncidentsView } from "./components/incidents/IncidentsView";
-import { CreateIncidentSheet } from "./components/incidents/CreateIncidentSheet";
+// import { CreateIncidentSheet } from "./components/incidents/CreateIncidentSheet";
 import { MonitorDetailsSheet } from "./components/MonitorDetailsSheet";
 import { NotificationsView } from "./components/notifications/NotificationsView";
 import { CreateChannelSheet } from "./components/notifications/CreateChannelSheet";
@@ -26,6 +27,14 @@ import { StatusPagesView } from "./components/status-pages/StatusPagesView";
 import { APIKeysPage } from "./components/settings/APIKeysPage";
 import { CreateAPIKeySheet } from "./components/settings/CreateAPIKeySheet";
 import { Toaster } from "@/components/ui/toaster";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb"
 
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -54,11 +63,11 @@ function MonitorCard({ monitor }: { monitor: any }) {
     <>
       <div
         onClick={() => setDetailsOpen(true)}
-        className="flex flex-col sm:flex-row items-center justify-between p-4 border border-slate-800/40 rounded-lg bg-card/40 hover:bg-card/60 transition-all gap-4 cursor-pointer group w-full"
+        className="flex flex-col sm:flex-row items-center justify-between p-4 border border-border rounded-lg bg-card hover:bg-accent/50 transition-all gap-4 cursor-pointer group w-full"
       >
         <div className="space-y-1 flex-1 min-w-0 mr-4">
           <div className="flex items-center gap-2.5">
-            <span className="font-medium text-sm group-hover:text-blue-400 transition-colors truncate block" title={monitor.name}>{monitor.name}</span>
+            <span className="font-medium text-sm group-hover:text-primary transition-colors truncate block" title={monitor.name}>{monitor.name}</span>
           </div>
           <div className="text-xs text-muted-foreground font-mono truncate block opacity-60" title={monitor.url}>{monitor.url}</div>
         </div>
@@ -77,7 +86,7 @@ function MonitorCard({ monitor }: { monitor: any }) {
                     {timeOnly}
                   </div>
                 </TooltipTrigger>
-                <TooltipContent className="bg-slate-900 border-slate-800 text-xs text-slate-200">
+                <TooltipContent className="text-xs">
                   <p>{formattedFullDate}</p>
                 </TooltipContent>
               </Tooltip>
@@ -101,14 +110,14 @@ function MonitorGroup({ group }: { group: any }) {
   };
 
   return (
-    <Card className="bg-slate-900/20 border-slate-800/40">
+    <Card className="border-border bg-card">
       <CardHeader className="p-4 pb-2">
         <div className="flex items-center justify-between">
           <div>
             <CardTitle>{group.name}</CardTitle>
           </div>
           {group.id !== 'default' && (
-            <Button variant="ghost" size="icon" onClick={handleDelete} className="text-slate-500 hover:text-red-400 hover:bg-red-950/30">
+            <Button variant="ghost" size="icon" onClick={handleDelete} className="text-muted-foreground hover:text-destructive">
               <Trash2 className="w-4 h-4" />
             </Button>
           )}
@@ -225,7 +234,7 @@ function Dashboard() {
         </div>
 
         {safeOverview.length === 0 && (
-          <div className="text-center text-muted-foreground py-10 border border-border/50 rounded-xl bg-slate-900/20">
+          <div className="text-center text-muted-foreground py-10 border border-border rounded-xl bg-card">
             No groups found. Create one to get started.
           </div>
         )}
@@ -300,37 +309,73 @@ function AdminLayout() {
   const groupId = location.pathname.startsWith('/groups/') ? location.pathname.split('/')[2] : null;
   const activeGroup = groupId ? safeGroups.find(g => g.id === groupId) : null;
 
-  const isDashboard = location.pathname === '/dashboard' || location.pathname === '/';
-
-  const pageTitle = isIncidents
-    ? "Incidents"
-    : isMaintenance
-      ? "Maintenance"
-      : isNotifications
-        ? "Notifications & Integrations"
-        : isSettings
-          ? "Settings"
-          : isStatusPages
-            ? "Status Pages"
-            : isApiKeys
-              ? "API Keys"
-              : (activeGroup ? activeGroup.name : "System Overview");
-
   const existingGroupNames = (overview || groups || []).map(g => g.name);
+
+  // Breadcrumbs Generator
+  const getBreadcrumbs = () => {
+    // Simple path-based breadcrumbs
+    const pathSegments = location.pathname.split('/').filter(Boolean);
+    const items = [];
+
+    // Home / Dashboard
+    if (pathSegments.length === 0 || pathSegments[0] === 'dashboard') {
+      return [
+        { title: "Dashboard", url: "/dashboard", active: true }
+      ];
+    }
+
+    // Root is always Dashboard for now (conceptually)
+    items.push({ title: "Dashboard", url: "/dashboard", active: false });
+
+    if (isIncidents) items.push({ title: "Incidents", url: "/incidents", active: true });
+    else if (isMaintenance) items.push({ title: "Maintenance", url: "/maintenance", active: true });
+    else if (isNotifications) items.push({ title: "Notifications", url: "/notifications", active: true });
+    else if (isSettings) items.push({ title: "Settings", url: "/settings", active: true });
+    else if (isStatusPages) items.push({ title: "Status Pages", url: "/status-pages", active: true });
+    else if (isApiKeys) items.push({ title: "API Keys", url: "/api-keys", active: true });
+    else if (activeGroup) {
+      items.push({ title: "Groups", url: "/dashboard", active: false }); // Optional intermediate
+      items.push({ title: activeGroup.name, url: `/groups/${activeGroup.id}`, active: true });
+    }
+
+    return items;
+  };
+
+  const breadcrumbs = getBreadcrumbs();
 
   return (
     <SidebarProvider>
       <AppSidebar groups={overview || safeGroups} />
-      <SidebarInset>
-        <header className="flex h-16 shrink-0 items-center gap-2 border-b border-slate-800 bg-[#020617]/50 px-4 backdrop-blur sticky top-0 z-10 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12">
+      <SidebarInset className="bg-background md:rounded-tl-xl md:border-t md:border-l md:border-border/50 overflow-hidden min-h-screen transition-all">
+        <header className="flex h-16 shrink-0 items-center gap-2 border-b border-border/40 bg-background/95 px-4 backdrop-blur sticky top-0 z-10">
           <div className="flex items-center gap-2">
             <SidebarTrigger className="-ml-1" />
             <Separator orientation="vertical" className="mr-2 h-4" />
-            <div className="font-semibold">{pageTitle}</div>
+            <Breadcrumb>
+              <BreadcrumbList>
+                {breadcrumbs.map((item, index) => (
+                  <React.Fragment key={item.url}>
+                    {index > 0 && <BreadcrumbSeparator />}
+                    <BreadcrumbItem>
+                      {item.active ? (
+                        <BreadcrumbPage>{item.title}</BreadcrumbPage>
+                      ) : (
+                        <BreadcrumbLink href={item.url} onClick={(e) => {
+                          e.preventDefault();
+                          navigate(item.url);
+                        }}>
+                          {item.title}
+                        </BreadcrumbLink>
+                      )}
+                    </BreadcrumbItem>
+                  </React.Fragment>
+                ))}
+              </BreadcrumbList>
+            </Breadcrumb>
           </div>
           <div className="ml-auto flex items-center gap-2">
             {isIncidents ? (
-              <CreateIncidentSheet onCreate={addIncident} groups={existingGroupNames} />
+              null
             ) : isMaintenance ? (
               <CreateMaintenanceSheet onCreate={addMaintenance} groups={existingGroupNames} />
             ) : isNotifications ? (
@@ -339,10 +384,12 @@ function AdminLayout() {
               null
             ) : isApiKeys ? (
               <CreateAPIKeySheet />
+            ) : isStatusPages ? (
+              null
             ) : ( // Dashboard
               <>
-                {!activeGroup && <CreateGroupSheet onCreate={addGroup} />}
-                <CreateMonitorSheet onCreate={addMonitor} groups={existingGroupNames} />
+                {!groupId && <CreateGroupSheet onCreate={addGroup} />}
+                <CreateMonitorSheet onCreate={addMonitor} groups={existingGroupNames} defaultGroup={activeGroup?.name} />
               </>
             )}
           </div>
