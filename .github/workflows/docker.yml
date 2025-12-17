@@ -49,6 +49,8 @@ jobs:
           tags: |
             type=raw,value=${{ inputs.version }}
             type=raw,value=latest
+          flavor: |
+            suffix=-${{ matrix.arch }}
 
       - name: Build and push (${{ matrix.platform }})
         uses: docker/build-push-action@v6
