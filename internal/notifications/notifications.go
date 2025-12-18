@@ -124,23 +124,26 @@ func (n *SlackNotifier) Send(event NotificationEvent) error {
 
 	// 4. Construct Payload
 	color := "#36a64f" // Green (Up)
-	if event.Type == EventDown {
+	switch event.Type {
+	case EventDown:
 		color = "#dc3545" // Red
-	} else if event.Type == EventDegraded {
+	case EventDegraded:
 		color = "#ffc107" // Yellow
 	}
 
 	emoji := ":white_check_mark:"
-	if event.Type == EventDown {
+	switch event.Type {
+	case EventDown:
 		emoji = ":rotating_light:"
-	} else if event.Type == EventDegraded {
+	case EventDegraded:
 		emoji = ":warning:"
 	}
 
 	title := "Monitor Recovered"
-	if event.Type == EventDown {
+	switch event.Type {
+	case EventDown:
 		title = "Monitor Down"
-	} else if event.Type == EventDegraded {
+	case EventDegraded:
 		title = "Monitor Degraded"
 	}
 
@@ -196,7 +199,7 @@ func sendJSON(url string, payload interface{}) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("request failed with status code %d", resp.StatusCode)

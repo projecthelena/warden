@@ -25,7 +25,7 @@ func (h *Router) CheckSetup(w http.ResponseWriter, r *http.Request) {
 
 	val, _ := h.store.GetSetting("setup_completed")
 
-	json.NewEncoder(w).Encode(map[string]bool{
+	_ = json.NewEncoder(w).Encode(map[string]bool{
 		"isSetup": hasUsers || val == "true",
 	})
 }
@@ -113,24 +113,28 @@ func (h *Router) PerformSetup(w http.ResponseWriter, r *http.Request) {
 
 		for i, d := range defaults {
 			id := fmt.Sprintf("m-default-%d", i)
-			h.store.CreateMonitor(db.Monitor{
+			if err := h.store.CreateMonitor(db.Monitor{
 				ID:       id,
 				GroupID:  "g-default",
 				Name:     d.Name,
 				URL:      d.URL,
 				Active:   true,
 				Interval: 60,
-			})
+			}); err != nil {
+				// We don't have logger here easily.
+				// We can ignore it safely as this is "best effort" defaults
+				_ = err
+			}
 		}
 	}
 
 	// Mark as completed
-	h.store.SetSetting("setup_completed", "true")
+	_ = h.store.SetSetting("setup_completed", "true")
 
 	// Trigger immediate check for new monitors
 	h.manager.Sync()
 
-	json.NewEncoder(w).Encode(map[string]bool{
+	_ = json.NewEncoder(w).Encode(map[string]bool{
 		"success": true,
 	})
 }

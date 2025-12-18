@@ -20,7 +20,9 @@ func NewIncidentHandler(store *db.Store) *IncidentHandler {
 
 func generateIncidentID() string {
 	b := make([]byte, 8)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		return "inc-" + time.Now().Format("20060102150405")
+	}
 	return hex.EncodeToString(b)
 }
 
@@ -67,7 +69,7 @@ func (h *IncidentHandler) CreateIncident(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(incident)
+	_ = json.NewEncoder(w).Encode(incident)
 }
 
 func (h *IncidentHandler) GetIncidents(w http.ResponseWriter, r *http.Request) {
@@ -117,5 +119,5 @@ func (h *IncidentHandler) GetIncidents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(dtos)
+	_ = json.NewEncoder(w).Encode(dtos)
 }

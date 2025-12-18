@@ -79,7 +79,7 @@ func (h *CRUDHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(g)
+	_ = json.NewEncoder(w).Encode(g)
 }
 
 func (h *CRUDHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
@@ -122,7 +122,7 @@ func (h *CRUDHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(req)
+	_ = json.NewEncoder(w).Encode(req)
 }
 
 func (h *CRUDHandler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
@@ -157,7 +157,7 @@ func (h *CRUDHandler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
 	h.manager.Sync()
 
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(m)
+	_ = json.NewEncoder(w).Encode(m)
 }
 
 func (h *CRUDHandler) GetGroups(w http.ResponseWriter, r *http.Request) {
@@ -166,7 +166,7 @@ func (h *CRUDHandler) GetGroups(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(groups)
+	_ = json.NewEncoder(w).Encode(groups)
 }
 
 func (h *CRUDHandler) UpdateMonitor(w http.ResponseWriter, r *http.Request) {

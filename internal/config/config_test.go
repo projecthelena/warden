@@ -10,13 +10,13 @@ func TestLoad(t *testing.T) {
 	oldListen := os.Getenv("LISTEN_ADDR")
 	oldDB := os.Getenv("DB_PATH")
 	defer func() {
-		os.Setenv("LISTEN_ADDR", oldListen)
-		os.Setenv("DB_PATH", oldDB)
+		_ = os.Setenv("LISTEN_ADDR", oldListen)
+		_ = os.Setenv("DB_PATH", oldDB)
 	}()
 
 	t.Run("Defaults", func(t *testing.T) {
-		os.Unsetenv("LISTEN_ADDR")
-		os.Unsetenv("DB_PATH")
+		_ = os.Unsetenv("LISTEN_ADDR")
+		_ = os.Unsetenv("DB_PATH")
 
 		cfg, err := Load()
 		if err != nil {
@@ -32,8 +32,8 @@ func TestLoad(t *testing.T) {
 	})
 
 	t.Run("Env Overrides", func(t *testing.T) {
-		os.Setenv("LISTEN_ADDR", ":8080")
-		os.Setenv("DB_PATH", "/tmp/test.db")
+		_ = os.Setenv("LISTEN_ADDR", ":8080")
+		_ = os.Setenv("DB_PATH", "/tmp/test.db")
 
 		cfg, err := Load()
 		if err != nil {

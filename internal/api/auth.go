@@ -12,6 +12,10 @@ import (
 	"github.com/clusteruptime/clusteruptime/internal/db"
 )
 
+type contextKey string
+
+const contextKeyUserID contextKey = "userID"
+
 type AuthHandler struct {
 	store  *db.Store
 	config *config.Config
@@ -42,7 +46,10 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	// Generate Token
 	tokenBytes := make([]byte, 32)
-	rand.Read(tokenBytes)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
+		return
+	}
 	token := hex.EncodeToString(tokenBytes)
 	expiresAt := time.Now().Add(24 * time.Hour)
 
@@ -74,7 +81,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	c, err := r.Cookie("auth_token")
 	if err == nil {
-		h.store.DeleteSession(c.Value)
+		_ = h.store.DeleteSession(c.Value)
 	}
 
 	// Clear Cookie
@@ -153,7 +160,7 @@ func (h *AuthHandler) AuthMiddleware(next http.Handler) http.Handler {
 				// Valid API Key. Identify as generic API user or specific if linked.
 				// For now, API Key grants full access.
 				// We can inject a special Context value to indicate API Key usage.
-				ctx := context.WithValue(r.Context(), "userID", int64(0)) // 0 or -1 to indicate API User
+				ctx := context.WithValue(r.Context(), contextKeyUserID, int64(0)) // 0 or -1 to indicate API User
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
@@ -175,7 +182,7 @@ func (h *AuthHandler) AuthMiddleware(next http.Handler) http.Handler {
 		}
 
 		// 4. Inject UserID into Context
-		ctx := context.WithValue(r.Context(), "userID", sess.UserID)
+		ctx := context.WithValue(r.Context(), contextKeyUserID, sess.UserID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

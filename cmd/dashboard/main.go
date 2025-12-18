@@ -36,7 +36,7 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to init database:", err) // Changed logger.Fatalf to log.Fatal
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Init Uptime Manager
 	manager := uptime.NewManager(store)

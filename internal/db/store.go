@@ -327,7 +327,7 @@ func (s *Store) GetActiveOutages() ([]MonitorOutage, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var outages []MonitorOutage
 	for rows.Next() {
@@ -353,7 +353,7 @@ func (s *Store) GetResolvedOutages(since time.Time) ([]MonitorOutage, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var outages []MonitorOutage
 	for rows.Next() {
@@ -376,7 +376,7 @@ func (s *Store) GetMonitors() ([]Monitor, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var monitors []Monitor
 	for rows.Next() {
@@ -429,13 +429,13 @@ func (s *Store) BatchInsertChecks(checks []CheckResult) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	stmt, err := tx.Prepare("INSERT INTO monitor_checks (monitor_id, status, latency, timestamp, status_code) VALUES (?, ?, ?, ?, ?)")
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 
 	for _, c := range checks {
 		_, err := stmt.Exec(c.MonitorID, c.Status, c.Latency, c.Timestamp, c.StatusCode)
@@ -456,7 +456,7 @@ func (s *Store) GetMonitorChecks(monitorID string, limit int) ([]CheckResult, er
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var checks []CheckResult
 	for rows.Next() {
@@ -619,7 +619,7 @@ func (s *Store) GetGroups() ([]Group, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var groups []Group
 	groupMap := make(map[string]*Group)
@@ -644,7 +644,7 @@ func (s *Store) GetGroups() ([]Group, error) {
 	if err != nil {
 		return nil, err // Return collected groups? Or error? Error is safer.
 	}
-	defer mRows.Close()
+	defer func() { _ = mRows.Close() }()
 
 	for mRows.Next() {
 		var m Monitor
@@ -677,7 +677,7 @@ func (s *Store) GetStatusPages() ([]StatusPage, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var pages []StatusPage
 	for rows.Next() {
@@ -772,7 +772,7 @@ func (s *Store) ListAPIKeys() ([]APIKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var keys []APIKey
 	for rows.Next() {
@@ -832,7 +832,7 @@ func (s *Store) GetNotificationChannels() ([]NotificationChannel, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var channels []NotificationChannel
 	for rows.Next() {
@@ -861,7 +861,7 @@ func (s *Store) ValidateAPIKey(key string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var id int64
@@ -900,7 +900,7 @@ func (s *Store) GetMonitorEvents(monitorID string, limit int) ([]MonitorEvent, e
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var events []MonitorEvent
 	for rows.Next() {
@@ -941,7 +941,7 @@ func (s *Store) GetSystemEvents(limit int) ([]SystemEvent, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var events []SystemEvent
 	for rows.Next() {
@@ -991,7 +991,7 @@ func (s *Store) GetLatencyStats(monitorID string, hours int) ([]LatencyPoint, er
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var points []LatencyPoint
 	for rows.Next() {
@@ -1036,7 +1036,7 @@ func (s *Store) GetIncidents(since time.Time) ([]Incident, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var incidents []Incident
 	for rows.Next() {
@@ -1068,8 +1068,12 @@ func (s *Store) GetSystemStats() (*SystemStats, error) {
 	stats := &SystemStats{}
 
 	// Monitor Counts
-	s.db.QueryRow("SELECT COUNT(*) FROM monitors").Scan(&stats.TotalMonitors)
-	s.db.QueryRow("SELECT COUNT(*) FROM monitors WHERE active = 1").Scan(&stats.ActiveMonitors)
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM monitors").Scan(&stats.TotalMonitors); err != nil {
+		log.Printf("Failed to scan total monitors: %v", err)
+	}
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM monitors WHERE active = 1").Scan(&stats.ActiveMonitors); err != nil {
+		log.Printf("Failed to scan active monitors: %v", err)
+	}
 
 	// We don't track status directly in DB "monitors" table except via last check?
 	// Wait, Monitor struct has "Status" but it's not in the CREATE TABLE usually?
@@ -1077,15 +1081,23 @@ func (s *Store) GetSystemStats() (*SystemStats, error) {
 	// create table monitors: id, group_id, name, url, active, interval_seconds, created_at.
 	// Status is transient or computed. BUT we have `monitor_outages` for down/degraded.
 	// So "Down" means active outage of type "down".
-	s.db.QueryRow("SELECT COUNT(DISTINCT monitor_id) FROM monitor_outages WHERE end_time IS NULL AND type = 'down'").Scan(&stats.DownMonitors)
-	s.db.QueryRow("SELECT COUNT(DISTINCT monitor_id) FROM monitor_outages WHERE end_time IS NULL AND type = 'degraded'").Scan(&stats.DegradedMonitors)
+	if err := s.db.QueryRow("SELECT COUNT(DISTINCT monitor_id) FROM monitor_outages WHERE end_time IS NULL AND type = 'down'").Scan(&stats.DownMonitors); err != nil {
+		log.Printf("Failed to scan down monitors: %v", err)
+	}
+	if err := s.db.QueryRow("SELECT COUNT(DISTINCT monitor_id) FROM monitor_outages WHERE end_time IS NULL AND type = 'degraded'").Scan(&stats.DegradedMonitors); err != nil {
+		log.Printf("Failed to scan degraded monitors: %v", err)
+	}
 
 	// Groups
-	s.db.QueryRow("SELECT COUNT(*) FROM groups").Scan(&stats.TotalGroups)
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM groups").Scan(&stats.TotalGroups); err != nil {
+		log.Printf("Failed to scan groups: %v", err)
+	}
 
 	// Daily Pings Estimate: SUM( 86400 / interval_seconds ) for active monitors
 	// interval_seconds defaults to 60.
-	s.db.QueryRow("SELECT COALESCE(SUM(86400 / interval_seconds), 0) FROM monitors WHERE active = 1").Scan(&stats.DailyPings)
+	if err := s.db.QueryRow("SELECT COALESCE(SUM(86400 / interval_seconds), 0) FROM monitors WHERE active = 1").Scan(&stats.DailyPings); err != nil {
+		log.Printf("Failed to scan daily pings: %v", err)
+	}
 
 	return stats, nil
 }

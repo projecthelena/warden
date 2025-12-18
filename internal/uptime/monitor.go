@@ -62,6 +62,7 @@ func (m *Monitor) schedule() {
 	defer func() {
 		if r := recover(); r != nil {
 			// Ignore panic on closed channel
+			_ = r
 		}
 	}()
 	select {

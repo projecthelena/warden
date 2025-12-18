@@ -79,7 +79,9 @@ func main() {
 			}
 		}
 		log.Println("Deleting group...")
-		deleteGroup(client, groupID)
+		if err := deleteGroup(client, groupID); err != nil {
+			log.Printf("Failed to delete group: %v", err)
+		}
 		log.Println("Cleanup done.")
 	}
 }
@@ -91,7 +93,7 @@ func login(client *http.Client, username, password string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("status %d", resp.StatusCode)
 	}
@@ -105,13 +107,15 @@ func createGroup(client *http.Client, name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 200 && resp.StatusCode != 201 {
 		body, _ := io.ReadAll(resp.Body)
 		return "", fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
 	}
 	var res map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&res)
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return "", err
+	}
 	return res["id"].(string), nil
 }
 
@@ -127,12 +131,14 @@ func createMonitor(client *http.Client, name, url, groupID string) (string, erro
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 200 && resp.StatusCode != 201 {
 		return "", fmt.Errorf("status %d", resp.StatusCode)
 	}
 	var res map[string]interface{} // API currently returns the monitor object
-	json.NewDecoder(resp.Body).Decode(&res)
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return "", err
+	}
 
 	// Depending on API response structure, ID might be direct or nested?
 	// Based on handlers_monitors.go, it returns the monitor JSON.
@@ -149,7 +155,7 @@ func deleteMonitor(client *http.Client, id string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("status %d", resp.StatusCode)
 	}
@@ -162,7 +168,7 @@ func deleteGroup(client *http.Client, id string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("status %d", resp.StatusCode)
 	}

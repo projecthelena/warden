@@ -24,7 +24,9 @@ func TestUpdateMonitor(t *testing.T) {
 	crudH, _, s := setupTest(t)
 
 	// Seed monitor
-	s.CreateMonitor(db.Monitor{ID: "m1", GroupID: "g-default", Name: "Old", URL: "http://old.com", Interval: 60})
+	if err := s.CreateMonitor(db.Monitor{ID: "m1", GroupID: "g-default", Name: "Old", URL: "http://old.com", Interval: 60}); err != nil {
+		t.Fatalf("Failed to create monitor: %v", err)
+	}
 
 	// Request Update
 	payload := map[string]interface{}{
