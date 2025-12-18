@@ -43,6 +43,7 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
     }, [channel, open]);
 
     const handleSave = () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const config: any = {};
         if (type === 'email') {
             config.email = email;
@@ -79,7 +80,7 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
                 <div className="grid gap-6 py-6">
                     <div className="grid gap-2">
                         <Label>Channel Type</Label>
-                        <Select value={type} onValueChange={(v: any) => setType(v)}>
+                        <Select value={type} onValueChange={(v: NotificationChannel['type']) => setType(v)}>
                             <SelectTrigger className="bg-slate-900 border-slate-800">
                                 <SelectValue />
                             </SelectTrigger>

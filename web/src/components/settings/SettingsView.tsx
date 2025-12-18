@@ -79,7 +79,7 @@ function GeneralSettings() {
     // Fetch settings on mount
     useEffect(() => {
         fetchSettings();
-    }, []);
+    }, [fetchSettings]);
 
     // Update state when settings load
     useEffect(() => {

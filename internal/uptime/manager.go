@@ -154,7 +154,7 @@ func (m *Manager) worker() {
 			isUp = false
 			errMsg = err.Error()
 		} else {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			statusCode = resp.StatusCode
 			if resp.StatusCode >= 400 {
 				isUp = false
@@ -228,7 +228,7 @@ func (m *Manager) resultProcessor() {
 							_ = m.store.CloseOutage(res.MonitorID)
 							_ = m.store.CreateOutage(res.MonitorID, "down", message)
 						}()
-						go m.store.CreateEvent(res.MonitorID, "down", message)
+						go func() { _ = m.store.CreateEvent(res.MonitorID, "down", message) }()
 						m.notifier.Enqueue(notifications.NotificationEvent{
 							MonitorID:   res.MonitorID,
 							MonitorName: mon.GetName(),
@@ -243,7 +243,9 @@ func (m *Manager) resultProcessor() {
 							_ = m.store.CloseOutage(res.MonitorID)
 							_ = m.store.CreateOutage(res.MonitorID, "degraded", "High latency detected (>"+strconv.FormatInt(threshold, 10)+"ms)")
 						}()
-						go m.store.CreateEvent(res.MonitorID, "degraded", "High latency detected (>"+strconv.FormatInt(threshold, 10)+"ms)")
+						go func() {
+							_ = m.store.CreateEvent(res.MonitorID, "degraded", "High latency detected (>"+strconv.FormatInt(threshold, 10)+"ms)")
+						}()
 						m.notifier.Enqueue(notifications.NotificationEvent{
 							MonitorID:   res.MonitorID,
 							MonitorName: mon.GetName(),
@@ -261,7 +263,7 @@ func (m *Manager) resultProcessor() {
 							_ = m.store.CloseOutage(res.MonitorID)
 							_ = m.store.CreateOutage(res.MonitorID, "down", message)
 						}()
-						go m.store.CreateEvent(res.MonitorID, "down", message)
+						go func() { _ = m.store.CreateEvent(res.MonitorID, "down", message) }()
 						m.notifier.Enqueue(notifications.NotificationEvent{
 							MonitorID:   res.MonitorID,
 							MonitorName: mon.GetName(),
@@ -273,8 +275,8 @@ func (m *Manager) resultProcessor() {
 						log.Printf("Monitor %s is DOWN: %s", res.MonitorID, message)
 					} else if !active && res.Status {
 						// DOWN -> UP
-						go m.store.CloseOutage(res.MonitorID)
-						go m.store.CreateEvent(res.MonitorID, "recovered", "Monitor recovered")
+						go func() { _ = m.store.CloseOutage(res.MonitorID) }()
+						go func() { _ = m.store.CreateEvent(res.MonitorID, "recovered", "Monitor recovered") }()
 						m.notifier.Enqueue(notifications.NotificationEvent{
 							MonitorID:   res.MonitorID,
 							MonitorName: mon.GetName(),
@@ -294,7 +296,9 @@ func (m *Manager) resultProcessor() {
 								_ = m.store.CloseOutage(res.MonitorID)
 								_ = m.store.CreateOutage(res.MonitorID, "degraded", "High latency detected (>"+strconv.FormatInt(threshold, 10)+"ms)")
 							}()
-							go m.store.CreateEvent(res.MonitorID, "degraded", "High latency detected (>"+strconv.FormatInt(threshold, 10)+"ms)")
+							go func() {
+								_ = m.store.CreateEvent(res.MonitorID, "degraded", "High latency detected (>"+strconv.FormatInt(threshold, 10)+"ms)")
+							}()
 							m.notifier.Enqueue(notifications.NotificationEvent{
 								MonitorID:   res.MonitorID,
 								MonitorName: mon.GetName(),
@@ -307,8 +311,8 @@ func (m *Manager) resultProcessor() {
 							// Degraded -> Normal (Optional: Log it? Or just let it be silent?)
 							// For now, let's just log "recovered" from degradation?
 							// Or maybe "Latency normalized"?
-							go m.store.CloseOutage(res.MonitorID)
-							go m.store.CreateEvent(res.MonitorID, "recovered", "Latency normalized")
+							go func() { _ = m.store.CloseOutage(res.MonitorID) }()
+							go func() { _ = m.store.CreateEvent(res.MonitorID, "recovered", "Latency normalized") }()
 						}
 					}
 				}

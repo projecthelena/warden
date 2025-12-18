@@ -190,7 +190,7 @@ func (h *UptimeHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (h *UptimeHandler) GetMonitorUptime(w http.ResponseWriter, r *http.Request) {
@@ -213,7 +213,7 @@ func (h *UptimeHandler) GetMonitorUptime(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 func (h *UptimeHandler) GetMonitorLatency(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
@@ -223,7 +223,7 @@ func (h *UptimeHandler) GetMonitorLatency(w http.ResponseWriter, r *http.Request
 	}
 
 	rangeStr := r.URL.Query().Get("range")
-	hours := 24 // Default
+	var hours int
 	switch rangeStr {
 	case "1h":
 		hours = 1
@@ -244,7 +244,7 @@ func (h *UptimeHandler) GetMonitorLatency(w http.ResponseWriter, r *http.Request
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(points)
+	_ = json.NewEncoder(w).Encode(points)
 }
 
 func (h *UptimeHandler) GetOverview(w http.ResponseWriter, r *http.Request) {
@@ -310,5 +310,5 @@ func (h *UptimeHandler) GetOverview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(OverviewResponse{Groups: overview})
+	_ = json.NewEncoder(w).Encode(OverviewResponse{Groups: overview})
 }

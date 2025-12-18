@@ -1,14 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useMonitorStore, StatusPage } from "@/lib/store";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { ExternalLink, Globe, Lock } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
 export function StatusPagesView() {
-    const { fetchStatusPages, toggleStatusPage, groups } = useMonitorStore();
+    const { fetchStatusPages, toggleStatusPage } = useMonitorStore();
     const [pages, setPages] = useState<StatusPage[]>([]);
     const { toast } = useToast();
 
@@ -17,20 +15,14 @@ export function StatusPagesView() {
     // If a group doesn't have a configured page yet, we might want to show it as "Disabled" default?
     // Or we rely on backend having seeded them? 
     // Current backend implementation only seeded "all". 
-    // We should probably auto-generate the list in UI based on Groups + All, 
-    // and matching them with backend config.
-
-    const load = async () => {
+    const load = useCallback(async () => {
         const data = await fetchStatusPages();
         setPages(data);
-    };
-
-    // Backend now returns the unified list of all potential status pages (Global + Groups)
-    // so we don't need to manually merge with 'groups' store state.
+    }, [fetchStatusPages]);
 
     useEffect(() => {
         load();
-    }, []);
+    }, [load]);
 
     const handleToggle = async (slug: string, currentStatus: boolean, title: string, groupId?: string | null) => {
         try {

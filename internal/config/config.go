@@ -5,14 +5,16 @@ import (
 )
 
 type Config struct {
-	ListenAddr string
-	DBPath     string
+	ListenAddr   string
+	DBPath       string
+	CookieSecure bool
 }
 
 func Default() Config {
 	return Config{
-		ListenAddr: ":9096",
-		DBPath:     "clusteruptime.db",
+		ListenAddr:   ":9096",
+		DBPath:       "clusteruptime.db",
+		CookieSecure: false,
 	}
 }
 
@@ -25,6 +27,10 @@ func Load() (*Config, error) {
 
 	if dbPath := os.Getenv("DB_PATH"); dbPath != "" {
 		cfg.DBPath = dbPath
+	}
+
+	if os.Getenv("COOKIE_SECURE") == "true" {
+		cfg.CookieSecure = true
 	}
 
 	return &cfg, nil

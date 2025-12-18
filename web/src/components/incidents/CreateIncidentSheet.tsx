@@ -3,7 +3,6 @@ import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea"; // Need to ensure Textarea exists, or use Input
 import {
     Sheet,
     SheetContent,
@@ -12,7 +11,6 @@ import {
     SheetHeader,
     SheetTitle,
     SheetTrigger,
-    SheetClose,
 } from "@/components/ui/sheet";
 import {
     Select,
@@ -98,7 +96,7 @@ export function CreateIncidentSheet({ onCreate, groups }: CreateIncidentSheetPro
                         </div>
                         <div className="grid gap-2">
                             <Label>Severity</Label>
-                            <Select value={severity} onValueChange={(v: any) => setSeverity(v)}>
+                            <Select value={severity} onValueChange={(v: Incident['severity']) => setSeverity(v)}>
                                 <SelectTrigger className="bg-slate-900 border-slate-800">
                                     <SelectValue />
                                 </SelectTrigger>

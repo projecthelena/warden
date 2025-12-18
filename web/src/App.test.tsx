@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import App from './App';
-import { BrowserRouter, MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router-dom';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { useMonitorStore } from './lib/store';
 
@@ -24,6 +24,7 @@ describe('App Routing', () => {
 
     it('renders SetupPage when setup is NOT complete', async () => {
         // Mock state for hook usage
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (useMonitorStore as any).mockReturnValue({
             checkAuth: mockCheckAuth,
             checkSetupStatus: mockCheckSetupStatus,
@@ -47,6 +48,7 @@ describe('App Routing', () => {
         // Mock state: Setup IS complete
         mockCheckSetupStatus.mockResolvedValue(true);
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (useMonitorStore as any).mockReturnValue({
             checkAuth: mockCheckAuth,
             checkSetupStatus: mockCheckSetupStatus,

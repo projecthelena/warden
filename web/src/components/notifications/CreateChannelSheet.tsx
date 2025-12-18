@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Bell, Mail, Slack, Webhook, MessageSquare } from "lucide-react";
+import { Plus, Bell, Slack } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/select";
 import { useMonitorStore, NotificationChannel } from "@/lib/store";
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function CreateChannelSheet({ onCreate }: { onCreate?: (c: any) => void }) {
     const { addChannel } = useMonitorStore();
     const [name, setName] = useState("");
@@ -32,6 +33,7 @@ export function CreateChannelSheet({ onCreate }: { onCreate?: (c: any) => void }
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const config: any = {};
         if (type === 'email') {
             config.email = email;
@@ -78,7 +80,7 @@ export function CreateChannelSheet({ onCreate }: { onCreate?: (c: any) => void }
                 <form onSubmit={handleSubmit} className="grid gap-6 py-6">
                     <div className="grid gap-2">
                         <Label>Channel Type</Label>
-                        <Select value={type} onValueChange={(v: any) => setType(v)}>
+                        <Select value={type} onValueChange={(v: NotificationChannel['type']) => setType(v)}>
                             <SelectTrigger>
                                 <SelectValue />
                             </SelectTrigger>

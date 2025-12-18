@@ -35,7 +35,7 @@ export function MaintenanceView() {
 
     useEffect(() => {
         fetchIncidents();
-    }, []);
+    }, [fetchIncidents]);
 
     // Filter maintenance
     const scheduled = incidents.filter(i => i.type === 'maintenance' && i.status !== 'completed');

@@ -1,4 +1,4 @@
-.PHONY: backend frontend build docker test clean dev-backend dev-frontend dev-bundle
+.PHONY: backend frontend build docker test clean dev-backend dev-frontend dev-bundle lint lint-frontend lint-backend
 
 BACKEND_ENV ?= LISTEN_ADDR=:9096
 BIN_DIR ?= $(PWD)/bin
@@ -41,6 +41,14 @@ docker:
 
 test:
 	go test ./...
+
+lint-frontend:
+	cd web && npm run lint
+
+lint-backend:
+	golangci-lint run
+
+lint: lint-frontend lint-backend
 
 clean:
 	rm -rf web/node_modules web/dist $(BIN_DIR)

@@ -1,7 +1,7 @@
 
 import { useEffect, useState } from "react";
 import { useMonitorStore, SystemStats } from "@/lib/store";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatBytes } from "@/lib/utils";
 import { Activity, Database, Server, ServerCrash, ServerOff } from "lucide-react";
 

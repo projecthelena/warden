@@ -1,12 +1,10 @@
 "use client"
 
 import {
-    Folder,
     MoreHorizontal,
     Trash2,
     Server,
     Pencil,
-    type LucideIcon,
 } from "lucide-react"
 import {
     DropdownMenu,

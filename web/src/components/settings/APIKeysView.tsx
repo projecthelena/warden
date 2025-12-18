@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useMonitorStore, APIKey } from "@/lib/store";
+import { useMonitorStore } from "@/lib/store";
 import { useToast } from "@/components/ui/use-toast";
-import { Trash2, Key, Copy, Code } from "lucide-react";
+import { Trash2, Key } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 import {
@@ -24,25 +24,15 @@ export function APIKeysView() {
     const { toast } = useToast();
 
     useEffect(() => {
-        loadKeys();
-    }, []);
-
-    const loadKeys = async () => {
         setLoading(true);
-        await fetchAPIKeys();
-        setLoading(false);
-    };
+        fetchAPIKeys().finally(() => setLoading(false));
+    }, [fetchAPIKeys]);
 
     const handleDelete = async (id: number) => {
         await deleteAPIKey(id);
         await fetchAPIKeys();
         toast({ title: "Revoked", description: "API Key revoked successfully." });
     };
-
-    const copyPrefix = (prefix: string) => {
-        navigator.clipboard.writeText(prefix);
-        toast({ title: "Copied", description: "Key prefix copied" });
-    }
 
     return (
         <div className="space-y-6">

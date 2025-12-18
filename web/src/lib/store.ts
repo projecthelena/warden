@@ -164,6 +164,7 @@ interface MonitorStore {
     // Status Pages
     fetchStatusPages: () => Promise<StatusPage[]>;
     toggleStatusPage: (slug: string, publicStatus: boolean, title?: string, groupId?: string) => Promise<void>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     fetchPublicStatusBySlug: (slug: string) => Promise<any>;
 
     // API Keys
@@ -181,7 +182,14 @@ interface MonitorStore {
 
     // Setup
     checkSetupStatus: () => Promise<boolean>;
-    performSetup: (data: any) => Promise<boolean>;
+    performSetup: (data: SetupPayload) => Promise<boolean>;
+}
+
+export interface SetupPayload {
+    username?: string;
+    password?: string;
+    timezone?: string;
+    createDefaults?: boolean;
 }
 
 export const useMonitorStore = create<MonitorStore>((set, get) => ({
@@ -211,7 +219,7 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
         return false;
     },
 
-    performSetup: async (data: any) => {
+    performSetup: async (data: SetupPayload) => {
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
@@ -461,10 +469,10 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
                 description: `Group "${name}" created successfully.`,
             });
             return group.id;
-        } catch (error: any) {
+        } catch (error: unknown) {
             toast({
                 title: "Failed to create group",
-                description: error.message,
+                description: (error as Error).message,
                 variant: "destructive",
             });
             return undefined;
@@ -491,10 +499,10 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
                 title: "Group Updated",
                 description: `Group "${name}" updated successfully.`,
             });
-        } catch (error: any) {
+        } catch (error: unknown) {
             toast({
                 title: "Failed to update group",
-                description: error.message,
+                description: (error as Error).message,
                 variant: "destructive",
             });
         }

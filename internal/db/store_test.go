@@ -60,9 +60,13 @@ func TestCreateAndGetMonitor(t *testing.T) {
 
 func TestUpdateMonitor(t *testing.T) {
 	s := newTestStore(t)
-	s.CreateGroup(Group{ID: "g1", Name: "G1"})
+	if err := s.CreateGroup(Group{ID: "g1", Name: "G1"}); err != nil {
+		t.Fatalf("CreateGroup failed: %v", err)
+	}
 	m := Monitor{ID: "m1", GroupID: "g1", Name: "Old", URL: "http://old.com", Interval: 60}
-	s.CreateMonitor(m)
+	if err := s.CreateMonitor(m); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
 
 	err := s.UpdateMonitor("m1", "New Name", "http://new.com", 300)
 	if err != nil {
@@ -94,9 +98,15 @@ func TestUpdateMonitor_NotFound(t *testing.T) {
 
 func TestGetGroupsWithMonitors(t *testing.T) {
 	s := newTestStore(t)
-	s.CreateGroup(Group{ID: "g1", Name: "G1"})
-	s.CreateMonitor(Monitor{ID: "m1", GroupID: "g1", Name: "M1", Interval: 10})
-	s.CreateMonitor(Monitor{ID: "m2", GroupID: "g1", Name: "M2", Interval: 20})
+	if err := s.CreateGroup(Group{ID: "g1", Name: "G1"}); err != nil {
+		t.Fatalf("CreateGroup failed: %v", err)
+	}
+	if err := s.CreateMonitor(Monitor{ID: "m1", GroupID: "g1", Name: "M1", Interval: 10}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+	if err := s.CreateMonitor(Monitor{ID: "m2", GroupID: "g1", Name: "M2", Interval: 20}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
 
 	groups, err := s.GetGroups()
 	if err != nil {
@@ -114,7 +124,7 @@ func TestGetGroupsWithMonitors(t *testing.T) {
 func TestSettingsResult(t *testing.T) {
 	s := newTestStore(t)
 
-	val, err := s.GetSetting("missing")
+	_, err := s.GetSetting("missing")
 	if err == nil {
 		t.Error("Expected error for missing setting")
 	}
@@ -123,7 +133,7 @@ func TestSettingsResult(t *testing.T) {
 		t.Fatalf("SetSetting failed: %v", err)
 	}
 
-	val, err = s.GetSetting("foo")
+	val, err := s.GetSetting("foo")
 	if err != nil {
 		t.Fatalf("GetSetting failed: %v", err)
 	}
@@ -131,7 +141,7 @@ func TestSettingsResult(t *testing.T) {
 		t.Errorf("Expected 'bar', got '%s'", val)
 	}
 
-	s.SetSetting("foo", "baz")
+	_ = s.SetSetting("foo", "baz")
 	val, _ = s.GetSetting("foo")
 	if val != "baz" {
 		t.Errorf("Expected 'baz', got '%s'", val)
@@ -141,8 +151,12 @@ func TestSettingsResult(t *testing.T) {
 func TestMonitorOutages(t *testing.T) {
 	s := newTestStore(t)
 	// Create Group & Monitor Dependencies
-	s.CreateGroup(Group{ID: "g1", Name: "G1"})
-	s.CreateMonitor(Monitor{ID: "m1", GroupID: "g1", Name: "M1", Interval: 60})
+	if err := s.CreateGroup(Group{ID: "g1", Name: "G1"}); err != nil {
+		t.Fatalf("CreateGroup failed: %v", err)
+	}
+	if err := s.CreateMonitor(Monitor{ID: "m1", GroupID: "g1", Name: "M1", Interval: 60}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
 
 	// 1. Create Outage
 	if err := s.CreateOutage("m1", "down", "Connection refused"); err != nil {
@@ -180,7 +194,7 @@ func TestMonitorOutages(t *testing.T) {
 	}
 
 	// 5. Verify Resolved History
-	history, err := s.GetResolvedOutages(10)
+	history, err := s.GetResolvedOutages(time.Time{})
 	if err != nil {
 		t.Fatalf("GetResolvedOutages failed: %v", err)
 	}
@@ -285,7 +299,9 @@ func TestCascadingDeletion(t *testing.T) {
 
 	// Verify Event Gone? (Need a way to check events directly or assume FK works if checks worked)
 	var eventCount int
-	s.db.QueryRow("SELECT COUNT(*) FROM monitor_events WHERE monitor_id = 'm-del'").Scan(&eventCount)
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM monitor_events WHERE monitor_id = 'm-del'").Scan(&eventCount); err != nil {
+		t.Fatalf("Failed to scan event count: %v", err)
+	}
 	if eventCount != 0 {
 		t.Errorf("Expected 0 events after monitor deletion, got %d", eventCount)
 	}
@@ -300,7 +316,9 @@ func TestCascadingDeletion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Re-create monitor failed: %v", err)
 	}
-	s.BatchInsertChecks(checks)
+	if err := s.BatchInsertChecks(checks); err != nil {
+		t.Fatalf("BatchInsertChecks failed: %v", err)
+	}
 
 	// Delete Group
 	if err := s.DeleteGroup("g-del"); err != nil {

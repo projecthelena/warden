@@ -32,7 +32,9 @@ func TestGetChannels(t *testing.T) {
 		Enabled:   true,
 		CreatedAt: time.Now(),
 	}
-	store.CreateNotificationChannel(channel)
+	if err := store.CreateNotificationChannel(channel); err != nil {
+		t.Fatalf("Failed to create channel: %v", err)
+	}
 
 	req, _ := http.NewRequest("GET", "/api/notifications/channels", nil)
 	rr := httptest.NewRecorder()
@@ -44,7 +46,9 @@ func TestGetChannels(t *testing.T) {
 	}
 
 	var response map[string][]db.NotificationChannel
-	json.Unmarshal(rr.Body.Bytes(), &response)
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Errorf("Failed to unmarshal response: %v", err)
+	}
 
 	if len(response["channels"]) != 1 {
 		t.Errorf("expected 1 channel, got %d", len(response["channels"]))
@@ -84,7 +88,9 @@ func TestCreateChannel(t *testing.T) {
 func TestDeleteChannel(t *testing.T) {
 	store := newTestStore(t)
 	handler := NewNotificationChannelsHandler(store)
-	store.CreateNotificationChannel(db.NotificationChannel{ID: "nc1", Type: "slack", Name: "To Delete", Config: "{}", Enabled: true})
+	if err := store.CreateNotificationChannel(db.NotificationChannel{ID: "nc1", Type: "slack", Name: "To Delete", Config: "{}", Enabled: true}); err != nil {
+		t.Fatalf("Failed to create channel: %v", err)
+	}
 
 	// Setup CHI router to handle params
 	r := chi.NewRouter()

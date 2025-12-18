@@ -33,14 +33,16 @@ func TestMonitor_DegradedThreshold(t *testing.T) {
 
 	// 3. Create Monitor
 	monID := "m-slow"
-	store.CreateMonitor(db.Monitor{
+	if err := store.CreateMonitor(db.Monitor{
 		ID:       monID,
 		GroupID:  "g-default",
 		Name:     "Slow Monitor",
 		URL:      ts.URL,
 		Active:   true,
 		Interval: 1, // 1 second
-	})
+	}); err != nil {
+		t.Fatalf("Failed to create monitor: %v", err)
+	}
 
 	// 4. Sycn to start
 	m.Sync()
@@ -111,14 +113,16 @@ func TestMonitor_StatusCodes(t *testing.T) {
 	defer ts.Close()
 
 	monID := "m-status"
-	store.CreateMonitor(db.Monitor{
+	if err := store.CreateMonitor(db.Monitor{
 		ID:       monID,
 		GroupID:  "g-default",
 		Name:     "Status Monitor",
 		URL:      ts.URL,
 		Active:   true,
 		Interval: 1,
-	})
+	}); err != nil {
+		t.Fatalf("Failed to create monitor: %v", err)
+	}
 	m.Sync()
 
 	// Case 1: 200 OK
@@ -177,14 +181,16 @@ func TestMonitor_EventLifecycle(t *testing.T) {
 	defer ts.Close()
 
 	monID := "m-lifecycle"
-	store.CreateMonitor(db.Monitor{
+	if err := store.CreateMonitor(db.Monitor{
 		ID:       monID,
 		GroupID:  "g-default",
 		Name:     "Lifecycle Monitor",
 		URL:      ts.URL,
 		Active:   true,
 		Interval: 1,
-	})
+	}); err != nil {
+		t.Fatalf("Failed to create monitor: %v", err)
+	}
 	m.SetLatencyThreshold(100)
 	m.Sync()
 
@@ -263,14 +269,16 @@ func TestMonitor_ErrorTypes(t *testing.T) {
 	// Case 1: Connection Refused (Closed Port)
 	// Pick a random port that is likely closed? Or localhost:1
 	monID := "m-refused"
-	store.CreateMonitor(db.Monitor{
+	if err := store.CreateMonitor(db.Monitor{
 		ID:       monID,
 		GroupID:  "g-default",
 		Name:     "Refused Monitor",
 		URL:      "http://localhost:65432", // Unlikely to be open
 		Active:   true,
 		Interval: 1,
-	})
+	}); err != nil {
+		t.Fatalf("Failed to create monitor: %v", err)
+	}
 	m.Sync()
 	time.Sleep(2 * time.Second)
 

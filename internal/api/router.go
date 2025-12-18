@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/clusteruptime/clusteruptime/internal/config"
 	"github.com/clusteruptime/clusteruptime/internal/db"
 	"github.com/clusteruptime/clusteruptime/internal/static"
 	"github.com/clusteruptime/clusteruptime/internal/uptime"
@@ -18,7 +19,7 @@ type Router struct {
 }
 
 // NewRouter builds the HTTP router serving both JSON APIs and static assets.
-func NewRouter(manager *uptime.Manager, store *db.Store) http.Handler {
+func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -32,7 +33,7 @@ func NewRouter(manager *uptime.Manager, store *db.Store) http.Handler {
 	}
 
 	// Instantiate Handlers
-	authH := NewAuthHandler(store)
+	authH := NewAuthHandler(store, cfg)
 	uptimeH := NewUptimeHandler(manager, store)
 	crudH := NewCRUDHandler(store, manager)
 	statsH := NewStatsHandler(store)

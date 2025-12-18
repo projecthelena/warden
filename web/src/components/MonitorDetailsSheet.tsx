@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Monitor, useMonitorStore } from "@/lib/store";
 import { formatDate } from "@/lib/utils";
 import {
@@ -46,6 +46,7 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
     const [url, setUrl] = useState(monitor.url);
     const [interval, setInterval] = useState(monitor.interval || 60);
     const [stats, setStats] = useState({ uptime24h: 100, uptime7d: 100, uptime30d: 100 });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [latencyData, setLatencyData] = useState<any[]>([]);
     const [timeRange, setTimeRange] = useState("1h");
 
@@ -56,6 +57,27 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
             setInterval(monitor.interval || 60);
         }
     }, [open, monitor]);
+
+    const fetchLatency = useCallback((id: string, range: string) => {
+        fetch(`/api/monitors/${id}/latency?range=${range}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data) {
+                    const sortedData = data
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        .map((point: any) => ({
+                            ...point,
+                            timestamp: new Date(point.timestamp).getTime()
+                        }))
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        .sort((a: any, b: any) => a.timestamp - b.timestamp);
+
+                    const filledData = processChartData(sortedData, range);
+                    setLatencyData(filledData);
+                }
+            })
+            .catch(err => console.error("Failed to fetch latency", err));
+    }, []);
 
     useEffect(() => {
         if (open && monitor.id) {
@@ -68,27 +90,9 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
             // Fetch Latency Data
             fetchLatency(monitor.id, timeRange);
         }
-    }, [open, monitor.id, timeRange]);
+    }, [open, monitor.id, timeRange, fetchLatency]);
 
-    const fetchLatency = (id: string, range: string) => {
-        fetch(`/api/monitors/${id}/latency?range=${range}`)
-            .then(res => res.json())
-            .then(data => {
-                if (data) {
-                    const sortedData = data
-                        .map((point: any) => ({
-                            ...point,
-                            timestamp: new Date(point.timestamp).getTime()
-                        }))
-                        .sort((a: any, b: any) => a.timestamp - b.timestamp);
-
-                    const filledData = processChartData(sortedData, range);
-                    setLatencyData(filledData);
-                }
-            })
-            .catch(err => console.error("Failed to fetch latency", err));
-    }
-
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const processChartData = (data: any[], range: string) => {
         const now = Date.now();
         let step = 60 * 60 * 1000;
@@ -168,6 +172,7 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
     // Ideally, we keep the raw data for failure zones, OR we compute failure zones from raw data before aggregation.
     // The current implementation uses 'latencyData' which IS the processed data.
     // If a bucket has 'failed: true', it counts as a failure zone.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const getFailureZones = (data: any[]) => {
         const zones = [];
         let zoneStart = null;
@@ -308,7 +313,7 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                                                     if (timeRange === "1h") return now - 60 * 60 * 1000;
                                                     return dataMin;
                                                 },
-                                                (dataMax: number) => Date.now()
+                                                (_dataMax: number) => Date.now()
                                             ]}
                                         />
                                         <YAxis
@@ -330,6 +335,7 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                                             labelFormatter={(label) => {
                                                 return formatDate(label, user?.timezone);
                                             }}
+                                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
                                             formatter={(value: any, name: any, props: any) => {
                                                 if (props.payload.failed) return ['Failed', 'Status'];
                                                 return [value != null ? `${value}ms` : 'No Data', 'Latency'];
@@ -337,6 +343,7 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                                         />
 
                                         {/* Failure Zones */}
+                                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                                         {getFailureZones(latencyData).map((zone: any, i: number) => (
                                             <ReferenceArea
                                                 key={i}

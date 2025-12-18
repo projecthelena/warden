@@ -4,7 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { useMonitorStore, Incident, SystemIncident } from "@/lib/store";
 import { Calendar, CheckCircle2, ArrowDownCircle, AlertTriangle, Clock } from "lucide-react";
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { cn, formatDate } from "@/lib/utils";
 
 function IncidentCard({ incident, timezone }: { incident: Incident, timezone?: string }) {
@@ -113,15 +113,14 @@ function SystemEventRow({ event, active, timezone }: { event: SystemIncident; ac
 }
 
 export function IncidentsView() {
-    const { incidents, systemEvents, fetchSystemEvents, fetchIncidents, user } = useMonitorStore();
+    const { incidents, systemEvents, fetchSystemEvents, fetchIncidents } = useMonitorStore();
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
-    const { pathname } = useLocation();
 
     useEffect(() => {
         fetchSystemEvents();
         fetchIncidents();
-    }, []);
+    }, [fetchSystemEvents, fetchIncidents]);
 
     const currentTab = searchParams.get('tab') || 'active';
 

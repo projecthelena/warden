@@ -36,7 +36,7 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to init database:", err) // Changed logger.Fatalf to log.Fatal
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Init Uptime Manager
 	manager := uptime.NewManager(store)
@@ -44,7 +44,7 @@ func main() {
 	defer manager.Stop()
 
 	// Init Router
-	r := api.NewRouter(manager, store) // Changed monitor to manager
+	r := api.NewRouter(manager, store, cfg) // Changed monitor to manager
 
 	srv := &http.Server{
 		Addr:    cfg.ListenAddr,

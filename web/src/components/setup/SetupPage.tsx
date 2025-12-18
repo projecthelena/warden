@@ -1,24 +1,17 @@
 import { useState } from 'react';
 import { useMonitorStore } from '../../lib/store';
-import { useNavigate } from 'react-router-dom';
+
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle, ArrowRight, Check, Rocket, Globe, Clock, ShieldCheck } from 'lucide-react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 import { SelectTimezone } from '@/components/ui/select-timezone';
 
-// Get all supported timezones from browser
-const TIMEZONES = Intl.supportedValuesOf('timeZone');
-
 export function SetupPage() {
     const { performSetup, login } = useMonitorStore();
-    const navigate = useNavigate();
 
     // States
     const [step, setStep] = useState(0); // 0: Welcome, 1: Account, 2: Timezone, 3: Defaults
@@ -65,7 +58,7 @@ export function SetupPage() {
             if (success) {
                 // Login implicitly or explicitly?
                 // Try to login, if successful, reload. If setup was success, backend blocked re-setup.
-                const loginResult = await login(formData.username, formData.password);
+                await login(formData.username, formData.password);
 
                 // Force reload to clear all states and re-run App.tsx logic fresh
                 window.location.href = "/";
@@ -88,25 +81,7 @@ export function SetupPage() {
     };
 
     // Animation variants
-    const slideVariants = {
-        enter: (direction: number) => ({
-            x: direction > 0 ? 50 : -50,
-            opacity: 0,
-            filter: "blur(10px)"
-        }),
-        center: {
-            zIndex: 1,
-            x: 0,
-            opacity: 1,
-            filter: "blur(0px)"
-        },
-        exit: (direction: number) => ({
-            zIndex: 0,
-            x: direction < 0 ? 50 : -50,
-            opacity: 0,
-            filter: "blur(10px)"
-        })
-    };
+    // Animation variants
 
     return (
         <div className="min-h-screen bg-[#020617] text-slate-100 flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans selection:bg-blue-500/30">

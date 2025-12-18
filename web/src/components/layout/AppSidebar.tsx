@@ -5,20 +5,10 @@ import * as React from "react"
 import { Link, useLocation } from "react-router-dom"
 import {
     Activity,
-    Bell,
-    BookOpen,
-    Bot,
-    Calendar,
-    Command,
-    Frame,
     LayoutDashboard,
     LifeBuoy,
-    Map,
-    PieChart,
-    Send,
     Settings2,
     Siren,
-    Zap,
 } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
@@ -37,7 +27,7 @@ import { Group, OverviewGroup, useMonitorStore } from "@/lib/store"
 
 export function AppSidebar({ groups, ...props }: React.ComponentProps<typeof Sidebar> & { groups: (Group | OverviewGroup)[] }) {
     const { user } = useMonitorStore();
-    const { pathname, search } = useLocation();
+    const { pathname } = useLocation();
 
     const data = {
         user: {
@@ -128,9 +118,9 @@ export function AppSidebar({ groups, ...props }: React.ComponentProps<typeof Sid
             </SidebarHeader>
             <SidebarContent>
                 <NavMain items={data.navMain} groups={groups} settings={data.navSettings} />
-                <NavSecondary items={data.navSecondary} className="mt-auto" />
             </SidebarContent>
             <SidebarFooter>
+                <NavSecondary items={data.navSecondary} />
                 <NavUser user={data.user} />
             </SidebarFooter>
         </Sidebar>

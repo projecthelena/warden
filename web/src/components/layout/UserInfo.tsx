@@ -18,7 +18,7 @@ import {
     SidebarMenuItem,
     useSidebar,
 } from "@/components/ui/sidebar";
-import { BadgeCheck, Bell, ChevronsUpDown, CreditCard, LogOut, Sparkles, Settings } from "lucide-react";
+import { Bell, ChevronsUpDown, LogOut, Settings } from "lucide-react";
 import { useMonitorStore } from "@/lib/store";
 import { useNavigate } from "react-router-dom";
 

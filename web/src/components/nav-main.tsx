@@ -50,9 +50,11 @@ export function NavMain({
   const { state } = useSidebar()
   const { pathname } = useLocation();
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const renderItems = (items: any[]) => {
     return items.map((item) => {
       const isMainActive = item.isActive ?? (item.url === pathname);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const isSubActive = item.items?.some((sub: any) => pathname === sub.url || pathname.startsWith(sub.url + "/"));
       const isOpen = isSubActive || (isMainActive && !!item.items?.length);
 
@@ -72,6 +74,7 @@ export function NavMain({
               </CollapsibleTrigger>
               <CollapsibleContent>
                 <SidebarMenuSub>
+                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                   {item.items?.map((subItem: any) => (
                     <SidebarMenuSubItem key={subItem.title}>
                       <SidebarMenuSubButton asChild isActive={pathname === subItem.url}>

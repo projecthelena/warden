@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react"
 
 const TOAST_LIMIT = 1
-const TOAST_REMOVE_DELAY = 1000000
 
 type ToastType = {
     id: string
@@ -11,9 +10,10 @@ type ToastType = {
     variant?: "default" | "destructive"
 }
 
-let listeners: Array<(state: ToastType[]) => void> = []
+const listeners: Array<(state: ToastType[]) => void> = []
 let memoryState: ToastType[] = []
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function dispatch(action: any) {
     memoryState = reducer(memoryState, action)
     listeners.forEach((listener) => {
@@ -21,6 +21,7 @@ function dispatch(action: any) {
     })
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function reducer(state: ToastType[], action: any) {
     switch (action.type) {
         case "ADD_TOAST":

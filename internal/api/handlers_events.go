@@ -38,7 +38,8 @@ func (h *EventHandler) GetSystemEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resolvedOutages, err := h.store.GetResolvedOutages(100)
+	since := time.Now().Add(-7 * 24 * time.Hour)
+	resolvedOutages, err := h.store.GetResolvedOutages(since)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to fetch history")
 		return

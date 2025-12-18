@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useMonitorStore, NotificationChannel } from "@/lib/store";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Trash2, Slack, Mail, Webhook, MessageSquare, BellOff } from "lucide-react";
+import { Slack, Mail, Webhook, MessageSquare, BellOff } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ChannelDetailsSheet } from "./ChannelDetailsSheet";
 
@@ -12,7 +12,7 @@ export function NotificationsView() {
 
     useEffect(() => {
         fetchChannels();
-    }, []);
+    }, [fetchChannels]);
 
     const handleChannelClick = (channel: NotificationChannel) => {
         setSelectedChannel(channel);
@@ -29,6 +29,7 @@ export function NotificationsView() {
         }
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const getDisplayValue = (config: any) => {
         if (config.email) return config.email;
         if (config.webhookUrl) return config.webhookUrl.replace('https://', '').substring(0, 20) + '...';

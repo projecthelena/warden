@@ -67,11 +67,13 @@ func (h *MaintenanceHandler) CreateMaintenance(w http.ResponseWriter, r *http.Re
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(maintenance)
+	_ = json.NewEncoder(w).Encode(maintenance)
 }
 
 func (h *MaintenanceHandler) GetMaintenance(w http.ResponseWriter, r *http.Request) {
-	allEvents, err := h.store.GetIncidents()
+	// Return all maintenance for now, or maybe only active/future?
+	// Using zero time returns all history + active
+	allEvents, err := h.store.GetIncidents(time.Time{})
 	if err != nil {
 		http.Error(w, "Failed to fetch maintenance events", http.StatusInternalServerError)
 		return
@@ -116,5 +118,5 @@ func (h *MaintenanceHandler) GetMaintenance(w http.ResponseWriter, r *http.Reque
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(dtos)
+	_ = json.NewEncoder(w).Encode(dtos)
 }

@@ -37,7 +37,7 @@ jobs:
         working-directory: web
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
 
@@ -46,3 +46,12 @@ jobs:
           export GOMODCACHE="$GITHUB_WORKSPACE/.gocache"
           export GOCACHE="$GITHUB_WORKSPACE/.gocache/go"
           go test ./...
+
+      - name: Go Lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.6
+
+      - name: Frontend Lint
+        run: npm run lint
+        working-directory: web

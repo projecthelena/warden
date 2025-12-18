@@ -93,6 +93,8 @@ func (h *NotificationChannelsHandler) DeleteChannel(w http.ResponseWriter, r *ht
 
 func generateRandomString(n int) string {
 	b := make([]byte, n)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		return "rnd"
+	}
 	return hex.EncodeToString(b)
 }

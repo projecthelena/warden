@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import * as React from "react";
 import type { LegendProps, TooltipProps } from "recharts";
 import { Tooltip as RechartsTooltip } from "recharts";
@@ -30,7 +31,7 @@ ChartContainer.displayName = "ChartContainer";
 
 export const useChartConfig = () => React.useContext(ChartConfigContext);
 
-export interface ChartTooltipProps extends TooltipProps<number, string> {}
+export interface ChartTooltipProps extends TooltipProps<number, string> { }
 
 export const ChartTooltip = ({ content, ...props }: ChartTooltipProps) => (
   <RechartsTooltip content={content ?? <ChartTooltipContent />} {...props} />
@@ -61,7 +62,7 @@ export const ChartTooltipContent = ({ active, payload, label, formatter, hideLab
   );
 };
 
-export interface ChartLegendContentProps extends Pick<LegendProps, "payload"> {}
+export interface ChartLegendContentProps extends Pick<LegendProps, "payload"> { }
 
 export const ChartLegendContent = ({ payload }: ChartLegendContentProps) => {
   const config = useChartConfig();

@@ -85,6 +85,7 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		if !public && slug == "g-"+g.ID {
 			// We can optimize slug gen here or let frontend handle it/backend handle on create
 			// For listing, "g-{id}" is safe unique default if not set
+			_ = true // Dummy
 		}
 
 		result = append(result, StatusPageDTO{

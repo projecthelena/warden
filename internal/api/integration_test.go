@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/clusteruptime/clusteruptime/internal/config"
 	"github.com/clusteruptime/clusteruptime/internal/db"
 	"github.com/clusteruptime/clusteruptime/internal/uptime"
 )
@@ -24,7 +25,9 @@ func TestAPIKeyIntegrationFlow(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	store, _ := db.NewStore(dbPath)
 	manager := uptime.NewManager(store)
-	router := NewRouter(manager, store)
+	// Use default config for testing
+	cfg := config.Default()
+	router := NewRouter(manager, store, &cfg)
 
 	ts := httptest.NewServer(router)
 	defer ts.Close()
@@ -65,7 +68,9 @@ func TestAPIKeyIntegrationFlow(t *testing.T) {
 	}
 	if resp.StatusCode != 200 {
 		buf := new(bytes.Buffer)
-		buf.ReadFrom(resp.Body)
+		if _, err := buf.ReadFrom(resp.Body); err != nil {
+			t.Fatalf("Failed to read response body: %v", err)
+		}
 		t.Fatalf("Setup failed: %d %s", resp.StatusCode, buf.String())
 	}
 
@@ -75,7 +80,9 @@ func TestAPIKeyIntegrationFlow(t *testing.T) {
 		t.Fatalf("Failed to check setup status: %v", err)
 	}
 	var statusAfter map[string]bool
-	json.NewDecoder(resp.Body).Decode(&statusAfter)
+	if err := json.NewDecoder(resp.Body).Decode(&statusAfter); err != nil {
+		t.Fatalf("Failed to decode status: %v", err)
+	}
 	if !statusAfter["isSetup"] {
 		t.Fatal("Expected isSetup to be true after setup")
 	}
@@ -114,7 +121,9 @@ func TestAPIKeyIntegrationFlow(t *testing.T) {
 		t.Fatalf("Create API Key failed: %d", resp.StatusCode)
 	}
 	var keyResp map[string]string
-	json.NewDecoder(resp.Body).Decode(&keyResp)
+	if err := json.NewDecoder(resp.Body).Decode(&keyResp); err != nil {
+		t.Fatalf("Failed to decode key response: %v", err)
+	}
 	apiKey := keyResp["key"]
 	if apiKey == "" {
 		t.Fatal("Empty API Key returned")
@@ -137,11 +146,15 @@ func TestAPIKeyIntegrationFlow(t *testing.T) {
 	}
 	if resp.StatusCode != 201 {
 		buf := new(bytes.Buffer)
-		buf.ReadFrom(resp.Body)
+		if _, err := buf.ReadFrom(resp.Body); err != nil {
+			t.Fatalf("Failed to read response body: %v", err)
+		}
 		t.Fatalf("Create Group failed: %d Body: %s", resp.StatusCode, buf.String())
 	}
 	var groupResp map[string]string
-	json.NewDecoder(resp.Body).Decode(&groupResp)
+	if err := json.NewDecoder(resp.Body).Decode(&groupResp); err != nil {
+		t.Fatalf("Failed to decode group response: %v", err)
+	}
 	groupID := groupResp["id"]
 	if groupID == "" {
 		t.Fatal("Empty Group ID")
@@ -165,12 +178,14 @@ func TestAPIKeyIntegrationFlow(t *testing.T) {
 	}
 	if resp.StatusCode != 201 {
 		buf := new(bytes.Buffer)
-		buf.ReadFrom(resp.Body)
+		if _, err := buf.ReadFrom(resp.Body); err != nil {
+			t.Fatalf("Failed to read response body: %v", err)
+		}
 		t.Fatalf("Create Monitor failed: %d Body: %s", resp.StatusCode, buf.String())
 	}
 
 	// Check if monitor is in DB
-	checkMon, err := store.GetMonitors()
+	checkMon, _ := store.GetMonitors()
 	found := false
 	for _, m := range checkMon {
 		if strings.Contains(m.Name, "Go Monitor") {

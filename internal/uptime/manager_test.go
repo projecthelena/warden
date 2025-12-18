@@ -29,7 +29,9 @@ func TestManager_Sync(t *testing.T) {
 		Active:   true,
 		Interval: 60,
 	}
-	s.CreateMonitor(mon)
+	if err := s.CreateMonitor(mon); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
 
 	// Sync
 	m.Sync()
@@ -47,7 +49,9 @@ func TestManager_Sync(t *testing.T) {
 	}
 
 	// Update in DB (change interval)
-	s.UpdateMonitor("m-test-1", "Test Monitor", "http://example.com", 120)
+	if err := s.UpdateMonitor("m-test-1", "Test Monitor", "http://example.com", 120); err != nil {
+		t.Fatalf("Failed to update monitor: %v", err)
+	}
 
 	// Sync again
 	m.Sync()
@@ -66,14 +70,16 @@ func TestManager_Sync(t *testing.T) {
 func TestManager_Stop(t *testing.T) {
 	m, s := newTestManager(t)
 
-	s.CreateMonitor(db.Monitor{
+	if err := s.CreateMonitor(db.Monitor{
 		ID:       "m-stop",
 		GroupID:  "g-default",
 		Name:     "Stop Test",
 		URL:      "http://example.com",
 		Active:   true,
 		Interval: 60,
-	})
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
 
 	m.Sync()
 
@@ -89,7 +95,9 @@ func TestManager_Stop(t *testing.T) {
 
 func TestManager_OutageLogic(t *testing.T) {
 	m, s := newTestManager(t)
-	s.CreateGroup(db.Group{ID: "g-test", Name: "Test Group"})
+	if err := s.CreateGroup(db.Group{ID: "g-test", Name: "Test Group"}); err != nil {
+		t.Fatalf("CreateGroup failed: %v", err)
+	}
 
 	// 1. Create Monitor
 	mon := db.Monitor{
@@ -100,7 +108,9 @@ func TestManager_OutageLogic(t *testing.T) {
 		Active:   true,
 		Interval: 1, // Fast interval
 	}
-	s.CreateMonitor(mon)
+	if err := s.CreateMonitor(mon); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
 	m.Start()
 
 	// Wait for check cycle (Failed)

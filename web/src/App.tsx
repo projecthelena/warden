@@ -1,25 +1,21 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import React from "react";
 import { Routes, Route, useParams, useLocation, useNavigate, Navigate } from "react-router-dom";
-import { useEffect as usePageEffect } from "react"; // Alias to avoid conflict if I used it inside Dashboard, effectively just need simple imports
 import { AppSidebar } from "./components/layout/AppSidebar";
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "./components/ui/sidebar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "./components/ui/separator";
 
-import { useMonitorStore } from "./lib/store";
-import { formatDate } from "./lib/utils";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./components/ui/card";
-import { StatusBadge, UptimeHistory } from "./components/ui/monitor-visuals";
+import { useMonitorStore, Group, OverviewGroup } from "./lib/store";
+import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { Button } from "./components/ui/button";
-import { Plus, Trash2, LayoutDashboard, ChevronRight } from "lucide-react";
+import { Trash2, ChevronRight } from "lucide-react";
+import { MonitorCard } from "./components/MonitorCard";
 import { CreateMonitorSheet } from "./components/CreateMonitorSheet";
 import { CreateGroupSheet } from "./components/CreateGroupSheet";
 import { CreateMaintenanceSheet } from "./components/incidents/CreateMaintenanceSheet";
 import { MaintenanceView } from "./components/incidents/MaintenanceView";
 import { IncidentsView } from "./components/incidents/IncidentsView";
-// import { CreateIncidentSheet } from "./components/incidents/CreateIncidentSheet";
-import { MonitorDetailsSheet } from "./components/MonitorDetailsSheet";
 import { NotificationsView } from "./components/notifications/NotificationsView";
 import { CreateChannelSheet } from "./components/notifications/CreateChannelSheet";
 import { StatusPage } from "./components/status-page/StatusPage";
@@ -38,71 +34,9 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
 
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-
-function MonitorCard({ monitor }: { monitor: any }) {
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const { user } = useMonitorStore();
-
-  const formattedFullDate = formatDate(monitor.lastCheck, user?.timezone);
-
-  // Format just the time (e.g. 9:41 PM)
-  const timeOnly = useMemo(() => {
-    if (!monitor.lastCheck || monitor.lastCheck === 'Never') return monitor.lastCheck || '';
-    try {
-      return new Intl.DateTimeFormat('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        timeZone: user?.timezone,
-      }).format(new Date(monitor.lastCheck));
-    } catch (e) {
-      return monitor.lastCheck;
-    }
-  }, [monitor.lastCheck, user?.timezone]);
 
 
-  return (
-    <>
-      <div
-        onClick={() => setDetailsOpen(true)}
-        className="flex flex-col sm:flex-row items-center justify-between p-4 border border-border rounded-lg bg-card hover:bg-accent/50 transition-all gap-4 cursor-pointer group w-full"
-      >
-        <div className="space-y-1 flex-1 min-w-0 mr-4">
-          <div className="flex items-center gap-2.5">
-            <span className="font-medium text-sm group-hover:text-primary transition-colors truncate block" title={monitor.name}>{monitor.name}</span>
-          </div>
-          <div className="text-xs text-muted-foreground font-mono truncate block opacity-60" title={monitor.url}>{monitor.url}</div>
-        </div>
-
-        <div className="flex-none hidden sm:block">
-          <UptimeHistory history={monitor.history} interval={monitor.interval} />
-        </div>
-
-        <div className="flex items-center gap-3 w-[160px] justify-end shrink-0">
-          <div className="text-right whitespace-nowrap">
-            <div className="text-xs font-mono text-muted-foreground">{monitor.latency}ms</div>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="text-[10px] text-muted-foreground opacity-50 hover:opacity-100 cursor-help transition-opacity">
-                    {timeOnly}
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent className="text-xs">
-                  <p>{formattedFullDate}</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-          <StatusBadge status={monitor.status} />
-        </div>
-      </div>
-      <MonitorDetailsSheet monitor={monitor} open={detailsOpen} onOpenChange={setDetailsOpen} />
-    </>
-  )
-}
-
-function MonitorGroup({ group }: { group: any }) {
+function MonitorGroup({ group }: { group: Group }) {
   const { deleteGroup } = useMonitorStore();
 
   const handleDelete = () => {
@@ -129,7 +63,7 @@ function MonitorGroup({ group }: { group: any }) {
         {(!group.monitors || group.monitors.length === 0) ? (
           <div className="text-sm text-slate-500 italic py-2">No monitors in this group.</div>
         ) : (
-          group.monitors.map((m: any) => (
+          group.monitors.map((m) => (
             <MonitorCard key={m.id} monitor={m} />
           ))
         )}
@@ -140,7 +74,7 @@ function MonitorGroup({ group }: { group: any }) {
 
 // New Lightweight Group Card for Overview
 // New Lightweight Group Card for Overview (Status Page Style)
-function GroupOverviewCard({ group }: { group: any }) {
+function GroupOverviewCard({ group }: { group: OverviewGroup }) {
   const navigate = useNavigate();
 
   const statusColor =
@@ -266,12 +200,8 @@ function AdminLayout() {
     user,
     groups,
     overview,
-    checkAuth,
     fetchOverview,
-    addIncident,
     addMaintenance,
-    addChannel,
-    updateUser,
     isAuthChecked,
     addGroup,
     addMonitor
@@ -282,7 +212,7 @@ function AdminLayout() {
   // Ensure overview is loaded for Sidebar
   useEffect(() => {
     fetchOverview();
-  }, []);
+  }, [fetchOverview]);
 
   const safeGroups = groups || [];
 
@@ -434,7 +364,7 @@ const App = () => {
       setLoading(false);
     };
     init();
-  }, []);
+  }, [checkSetupStatus, checkAuth]);
 
   if (loading) {
     return (

@@ -71,7 +71,7 @@ export const UptimeHistory = ({ history, interval = 60 }: { history: Monitor['hi
         // i=0 (end of loop): endTime = now. This is newest.
         // So slots will be [oldest, ..., newest]. Correct.
         return slots;
-    }, [history, safeInterval, now]);
+    }, [history, now, checkWindow]);
 
     return (
         <TooltipProvider delayDuration={0}>
