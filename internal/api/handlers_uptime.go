@@ -272,33 +272,37 @@ func (h *UptimeHandler) GetOverview(w http.ResponseWriter, r *http.Request) {
 		monitors := groupMap[g.ID]
 		status := "up" // Default to up if no monitors or all up
 
-		if len(monitors) == 0 {
-			status = "up"
+		if h.manager.IsGroupInMaintenance(g.ID) {
+			status = "maintenance"
 		} else {
-			anyDown := false
-			anyDegraded := false
+			if len(monitors) == 0 {
+				status = "up"
+			} else {
+				anyDown := false
+				anyDegraded := false
 
-			for _, m := range monitors {
-				if !m.Active {
-					continue
-				}
-				task := h.manager.GetMonitor(m.ID)
-				if task != nil {
-					isUp, latency, hasHistory, isDegraded := task.GetLastStatus()
-					if hasHistory && !isUp {
-						anyDown = true
-						break // Critical priority
+				for _, m := range monitors {
+					if !m.Active {
+						continue
 					}
-					if hasHistory && isUp && (isDegraded || latency > threshold) {
-						anyDegraded = true
+					task := h.manager.GetMonitor(m.ID)
+					if task != nil {
+						isUp, latency, hasHistory, isDegraded := task.GetLastStatus()
+						if hasHistory && !isUp {
+							anyDown = true
+							break // Critical priority
+						}
+						if hasHistory && isUp && (isDegraded || latency > threshold) {
+							anyDegraded = true
+						}
 					}
 				}
-			}
 
-			if anyDown {
-				status = "down"
-			} else if anyDegraded {
-				status = "degraded"
+				if anyDown {
+					status = "down"
+				} else if anyDegraded {
+					status = "degraded"
+				}
 			}
 		}
 

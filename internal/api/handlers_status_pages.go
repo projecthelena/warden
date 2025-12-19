@@ -3,6 +3,8 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/clusteruptime/clusteruptime/internal/db"
 	"github.com/clusteruptime/clusteruptime/internal/uptime"
@@ -71,7 +73,7 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 
 	// B. Group Pages
 	for _, g := range groups {
-		slug := "g-" + g.ID // default slug
+		slug := strings.TrimPrefix(g.ID, "g-") // default slug (clean)
 		title := g.Name
 		public := false
 
@@ -79,13 +81,6 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 			slug = cfg.Slug
 			title = cfg.Title
 			public = cfg.Public
-		}
-
-		// Simple slug generation if not configured
-		if !public && slug == "g-"+g.ID {
-			// We can optimize slug gen here or let frontend handle it/backend handle on create
-			// For listing, "g-{id}" is safe unique default if not set
-			_ = true // Dummy
 		}
 
 		result = append(result, StatusPageDTO{
@@ -125,6 +120,7 @@ func (h *StatusPageHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 // This needs access to Uptime manager to get real-time data.
 // We will need to inject Manager into StatusPageHandler or refactor.
 // For now, let's inject Manager.
+// Public: Get status data if enabled
 // Public: Get status data if enabled
 func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
@@ -275,10 +271,93 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 		})
 	}
 
+	// 6. Fetch Incidents and Outages
+	type IncidentResponseDTO struct {
+		ID             string     `json:"id"`
+		Title          string     `json:"title"`
+		Description    string     `json:"description"`
+		Type           string     `json:"type"`
+		Severity       string     `json:"severity"`
+		Status         string     `json:"status"`
+		StartTime      time.Time  `json:"startTime"`
+		EndTime        *time.Time `json:"endTime,omitempty"`
+		AffectedGroups []string   `json:"affectedGroups"`
+	}
+
+	activeIncidents := []IncidentResponseDTO{}
+
+	// A. Auto-detected Outages
+	activeOutages, err := h.store.GetActiveOutages()
+	if err == nil {
+		for _, o := range activeOutages {
+			// Filter by Group if needed
+			if page.GroupID != nil && o.GroupID != *page.GroupID {
+				continue
+			}
+
+			activeIncidents = append(activeIncidents, IncidentResponseDTO{
+				ID:             "auto-" + o.MonitorID, // Temporary ID
+				Title:          "Service Disruption: " + o.MonitorName,
+				Description:    o.Summary,
+				Type:           "incident",
+				Severity:       "critical",
+				Status:         "investigating",
+				StartTime:      o.StartTime,
+				AffectedGroups: []string{o.GroupID},
+			})
+		}
+	}
+
+	// B. Manual Incidents
+	allIncidents, err := h.store.GetIncidents(time.Time{})
+	if err == nil {
+		for _, inc := range allIncidents {
+			if inc.Status == "completed" || inc.Status == "resolved" {
+				continue
+			}
+
+			// Parse Groups
+			var mappedGroups []string
+			if inc.AffectedGroups != "" {
+				_ = json.Unmarshal([]byte(inc.AffectedGroups), &mappedGroups)
+			}
+
+			// Filter by Group
+			if page.GroupID != nil {
+				affected := false
+				if len(mappedGroups) == 0 {
+					// Assume global?
+				} else {
+					for _, gID := range mappedGroups {
+						if gID == *page.GroupID {
+							affected = true
+							break
+						}
+					}
+				}
+				if !affected {
+					continue
+				}
+			}
+
+			activeIncidents = append(activeIncidents, IncidentResponseDTO{
+				ID:             inc.ID,
+				Title:          inc.Title,
+				Description:    inc.Description,
+				Type:           inc.Type,
+				Severity:       inc.Severity,
+				Status:         inc.Status,
+				StartTime:      inc.StartTime,
+				EndTime:        inc.EndTime,
+				AffectedGroups: mappedGroups,
+			})
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"title":     page.Title,
 		"public":    true,
 		"groups":    groupDTOs,
-		"incidents": []any{}, // TODO: Fetch Incidents
+		"incidents": activeIncidents,
 	})
 }

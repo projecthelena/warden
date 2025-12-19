@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Plus } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,48 +23,144 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-// ... existing imports
+import { Group } from "@/lib/store";
+import { useCreateGroupMutation, useCreateMonitorMutation } from "@/hooks/useMonitors";
+import { useToast } from "@/components/ui/use-toast";
 
 interface CreateMonitorSheetProps {
-    onCreate: (name: string, url: string, group: string, interval: number) => void;
-    groups: string[];
+    groups: Group[];
     defaultGroup?: string;
 }
 
-export function CreateMonitorSheet({ onCreate, groups, defaultGroup }: CreateMonitorSheetProps) {
+export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetProps) {
     const [name, setName] = useState("");
     const [url, setUrl] = useState("");
-    const [group, setGroup] = useState(defaultGroup || "");
+    // Removed unused groupName state
+
+    const [selectedGroupId, setSelectedGroupId] = useState<string>("");
+    const [urlError, setUrlError] = useState(false);
+    const [nameError, setNameError] = useState(false);
+    const [groupError, setGroupError] = useState(false);
 
     // Sync group state when defaultGroup changes
     useEffect(() => {
         if (defaultGroup) {
-            setGroup(defaultGroup);
+            // Find ID for the default group name
+            const found = groups.find(g => g.name === defaultGroup);
+            if (found) setSelectedGroupId(found.id);
         }
-    }, [defaultGroup]);
+    }, [defaultGroup, groups]);
+
     const [interval, setInterval] = useState(60);
     const [isNewGroup, setIsNewGroup] = useState(false);
+    const [newGroupName, setNewGroupName] = useState(""); // For new group input
+
     const [open, setOpen] = useState(false);
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const createGroup = useCreateGroupMutation();
+    const createMonitor = useCreateMonitorMutation();
+    const { toast } = useToast();
+    const navigate = useNavigate();
+
+    // Clear error on change if needed
+    useEffect(() => {
+        if (urlError) setUrlError(false);
+    }, [url, urlError]);
+
+    useEffect(() => {
+        if (nameError) setNameError(false);
+    }, [name, nameError]);
+
+    useEffect(() => {
+        if (groupError) setGroupError(false);
+    }, [selectedGroupId, newGroupName, isNewGroup, groupError]);
+
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!name || !url) return;
-        onCreate(name, url, group, interval);
-        // Reset
-        setName("");
-        setUrl("");
-        setGroup("");
-        setInterval(60);
-        setIsNewGroup(false);
-        setOpen(false);
+
+        let finalGroupId = selectedGroupId;
+
+        try {
+            // Client-side Validation
+            // 1. Validate URL
+            try {
+                new URL(url);
+            } catch {
+                setUrlError(true);
+                toast({ title: "Invalid URL", description: "Please enter a valid URL (e.g. https://example.com)", variant: "destructive" });
+                return;
+            }
+
+            // 2. Validate Duplicate Name (in loaded groups)
+            // Flatten all monitors
+            const allMonitors = groups.flatMap(g => g.monitors);
+            if (allMonitors.some(m => m.name.toLowerCase() === name.toLowerCase())) {
+                setNameError(true);
+                toast({ title: "Duplicate Name", description: "A monitor with this name already exists.", variant: "destructive" });
+                return;
+            }
+
+            if (isNewGroup) {
+                if (!newGroupName) {
+                    setGroupError(true);
+                    toast({ title: "Error", description: "Group name is required", variant: "destructive" });
+                    return;
+                }
+                const newGroup = await createGroup.mutateAsync(newGroupName);
+                finalGroupId = newGroup.id;
+            } else {
+                if (!finalGroupId) {
+                    // Fallback to default group or error?
+                    // If simple setup, maybe they select nothing?
+                    // Let's enforce selection.
+                    if (groups.length > 0) {
+                        setGroupError(true);
+                        toast({ title: "Error", description: "Please select a group", variant: "destructive" });
+                        return;
+                    }
+                    // If no groups exist and proper UI didn't force creation, create default
+                    const def = await createGroup.mutateAsync("Default");
+                    finalGroupId = def.id;
+                }
+            }
+
+            await createMonitor.mutateAsync({
+                name,
+                url,
+                groupId: finalGroupId,
+                interval
+            });
+
+            toast({ title: "Monitor Created", description: `Monitor "${name}" active and checking.` });
+
+            // Reset
+            setName("");
+            setUrl("");
+            setNewGroupName("");
+            setSelectedGroupId("");
+            setInterval(60);
+            setIsNewGroup(false);
+            setOpen(false);
+
+            // Redirect to the group page
+            if (finalGroupId) {
+                navigate(`/groups/${finalGroupId}`);
+            }
+
+        } catch (err) {
+            console.error(err);
+            toast({ title: "Error", description: "Failed to create monitor", variant: "destructive" });
+        }
     };
 
     const handleGroupChange = (value: string) => {
         if (value === "___create_new___") {
             setIsNewGroup(true);
-            setGroup("");
+            setSelectedGroupId("");
         } else {
-            setGroup(value);
+            setSelectedGroupId(value);
+            setIsNewGroup(false); // Ensure we switch back if they picked from list
         }
     };
 
@@ -88,6 +186,7 @@ export function CreateMonitorSheet({ onCreate, groups, defaultGroup }: CreateMon
                             placeholder="e.g. Production API"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
+                            className={cn(nameError && "border-red-500 focus-visible:ring-red-500")}
                             required
                         />
                     </div>
@@ -96,7 +195,7 @@ export function CreateMonitorSheet({ onCreate, groups, defaultGroup }: CreateMon
                         <Input
                             id="url"
                             placeholder="https://api.example.com/health"
-                            className="font-mono text-sm"
+                            className={cn("font-mono text-sm", urlError && "border-red-500 focus-visible:ring-red-500")}
                             value={url}
                             onChange={(e) => setUrl(e.target.value)}
                             required
@@ -124,8 +223,9 @@ export function CreateMonitorSheet({ onCreate, groups, defaultGroup }: CreateMon
                                 <Input
                                     id="group"
                                     placeholder="Enter new group name"
-                                    value={group}
-                                    onChange={(e) => setGroup(e.target.value)}
+                                    value={newGroupName}
+                                    onChange={(e) => setNewGroupName(e.target.value)}
+                                    className={cn(groupError && "border-red-500 focus-visible:ring-red-500")}
                                     autoFocus
                                 />
                                 <Button
@@ -137,15 +237,15 @@ export function CreateMonitorSheet({ onCreate, groups, defaultGroup }: CreateMon
                                 </Button>
                             </div>
                         ) : (
-                            <Select onValueChange={handleGroupChange} value={group}>
-                                <SelectTrigger>
+                            <Select onValueChange={handleGroupChange} value={selectedGroupId}>
+                                <SelectTrigger className={cn(groupError && "border-red-500 focus:ring-red-500")}>
                                     <SelectValue placeholder="Select a group" />
                                 </SelectTrigger>
                                 <SelectContent>
                                     {groups.length > 0 ? (
                                         groups.map((g) => (
-                                            <SelectItem key={g} value={g} className="cursor-pointer">
-                                                {g}
+                                            <SelectItem key={g.id} value={g.id} className="cursor-pointer">
+                                                {g.name}
                                             </SelectItem>
                                         ))
                                     ) : (
@@ -170,8 +270,8 @@ export function CreateMonitorSheet({ onCreate, groups, defaultGroup }: CreateMon
                         <SheetClose asChild>
                             <Button variant="outline" className="mr-2">Cancel</Button>
                         </SheetClose>
-                        <Button type="submit">
-                            Create Monitor
+                        <Button type="submit" disabled={createMonitor.isPending || createGroup.isPending}>
+                            {createMonitor.isPending ? "Creating..." : "Create Monitor"}
                         </Button>
                     </SheetFooter>
                 </form>

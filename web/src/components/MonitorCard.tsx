@@ -3,13 +3,24 @@ import { useMonitorStore, Monitor } from "@/lib/store";
 import { formatDate } from "@/lib/utils";
 import { StatusBadge, UptimeHistory } from "@/components/ui/monitor-visuals";
 import { MonitorDetailsSheet } from "@/components/MonitorDetailsSheet";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
-export function MonitorCard({ monitor }: { monitor: Monitor }) {
+export function MonitorCard({ monitor, groupId }: { monitor: Monitor, groupId: string }) {
     const [detailsOpen, setDetailsOpen] = useState(false);
-    const { user } = useMonitorStore();
+    const { user, incidents } = useMonitorStore();
 
     const formattedFullDate = formatDate(monitor.lastCheck, user?.timezone);
+
+    // Check for active maintenance
+    const isMaintenance = useMemo(() => {
+        return incidents.some(i =>
+            i.type === 'maintenance' &&
+            i.status !== 'completed' &&
+            i.status !== 'resolved' &&
+            i.affectedGroups.includes(groupId)
+        );
+    }, [incidents, groupId]);
 
     // Format just the time (e.g. 9:41 PM)
     const timeOnly = useMemo(() => {
@@ -30,7 +41,10 @@ export function MonitorCard({ monitor }: { monitor: Monitor }) {
         <>
             <div
                 onClick={() => setDetailsOpen(true)}
-                className="flex flex-col sm:flex-row items-center justify-between p-4 border border-border rounded-lg bg-card hover:bg-accent/50 transition-all gap-4 cursor-pointer group w-full"
+                className={cn(
+                    "flex flex-col sm:flex-row items-center justify-between p-4 border border-border rounded-lg bg-card hover:bg-accent/50 transition-all gap-4 cursor-pointer group w-full",
+                    isMaintenance && "border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10"
+                )}
             >
                 <div className="space-y-1 flex-1 min-w-0 mr-4">
                     <div className="flex items-center gap-2.5">
@@ -46,20 +60,18 @@ export function MonitorCard({ monitor }: { monitor: Monitor }) {
                 <div className="flex items-center gap-3 w-[160px] justify-end shrink-0">
                     <div className="text-right whitespace-nowrap">
                         <div className="text-xs font-mono text-muted-foreground">{monitor.latency}ms</div>
-                        <TooltipProvider>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <div className="text-[10px] text-muted-foreground opacity-50 hover:opacity-100 cursor-help transition-opacity">
-                                        {timeOnly}
-                                    </div>
-                                </TooltipTrigger>
-                                <TooltipContent className="text-xs">
-                                    <p>{formattedFullDate}</p>
-                                </TooltipContent>
-                            </Tooltip>
-                        </TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <div className="text-[10px] text-muted-foreground opacity-50 hover:opacity-100 cursor-help transition-opacity">
+                                    {timeOnly}
+                                </div>
+                            </TooltipTrigger>
+                            <TooltipContent className="text-xs">
+                                <p>{formattedFullDate}</p>
+                            </TooltipContent>
+                        </Tooltip>
                     </div>
-                    <StatusBadge status={monitor.status} />
+                    <StatusBadge status={monitor.status} isMaintenance={isMaintenance} />
                 </div>
             </div>
             <MonitorDetailsSheet monitor={monitor} open={detailsOpen} onOpenChange={setDetailsOpen} />

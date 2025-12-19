@@ -51,7 +51,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := hex.EncodeToString(tokenBytes)
-	expiresAt := time.Now().Add(24 * time.Hour)
+	expiresAt := time.Now().Add(30 * 24 * time.Hour)
 
 	if err := h.store.CreateSession(user.ID, token, expiresAt); err != nil {
 		writeError(w, http.StatusInternalServerError, "session error")
@@ -65,7 +65,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		Expires:  expiresAt,
 		HttpOnly: true,
 		Path:     "/",
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 		Secure:   h.config.CookieSecure,
 	})
 

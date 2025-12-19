@@ -25,6 +25,7 @@ import { StatusPagesView } from "./components/status-pages/StatusPagesView";
 import { APIKeysPage } from "./components/settings/APIKeysPage";
 import { CreateAPIKeySheet } from "./components/settings/CreateAPIKeySheet";
 import { Toaster } from "@/components/ui/toaster";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -36,13 +37,27 @@ import {
 
 
 
-function MonitorGroup({ group }: { group: Group }) {
-  const { deleteGroup } = useMonitorStore();
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 
-  const handleDelete = () => {
-    if (confirm(`Are you sure you want to delete group "${group.name}"?`)) {
-      deleteGroup(group.id);
-    }
+import { useDeleteGroupMutation } from "@/hooks/useMonitors";
+
+function MonitorGroup({ group }: { group: Group }) {
+  const mutation = useDeleteGroupMutation();
+  const navigate = useNavigate();
+
+  const handleDelete = async () => {
+    await mutation.mutateAsync(group.id);
+    navigate('/dashboard');
   };
 
   return (
@@ -53,9 +68,28 @@ function MonitorGroup({ group }: { group: Group }) {
             <CardTitle>{group.name}</CardTitle>
           </div>
           {group.id !== 'default' && (
-            <Button variant="ghost" size="icon" onClick={handleDelete} className="text-muted-foreground hover:text-destructive">
-              <Trash2 className="w-4 h-4" />
-            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive">
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This action cannot be undone. This will permanently delete the group
+                    "{group.name}" and all monitors associated with it.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           )}
         </div>
       </CardHeader>
@@ -64,7 +98,7 @@ function MonitorGroup({ group }: { group: Group }) {
           <div className="text-sm text-slate-500 italic py-2">No monitors in this group.</div>
         ) : (
           group.monitors.map((m) => (
-            <MonitorCard key={m.id} monitor={m} />
+            <MonitorCard key={m.id} monitor={m} groupId={group.id} />
           ))
         )}
       </CardContent>
@@ -79,15 +113,18 @@ function GroupOverviewCard({ group }: { group: OverviewGroup }) {
 
   const statusColor =
     group.status === 'up' ? 'bg-green-500' :
-      group.status === 'degraded' ? 'bg-yellow-500' : 'bg-red-500';
+      group.status === 'degraded' ? 'bg-yellow-500' :
+        group.status === 'maintenance' ? 'bg-blue-500' : 'bg-red-500';
 
   const statusText =
     group.status === 'up' ? 'Operational' :
-      group.status === 'degraded' ? 'Degraded' : 'Down';
+      group.status === 'degraded' ? 'Degraded' :
+        group.status === 'maintenance' ? 'Maintenance' : 'Unavailable';
 
   const statusTextColor =
     group.status === 'up' ? 'text-green-500' :
-      group.status === 'degraded' ? 'text-yellow-500' : 'text-red-500';
+      group.status === 'degraded' ? 'text-yellow-500' :
+        group.status === 'maintenance' ? 'text-blue-500' : 'text-red-500';
 
   return (
     <Card
@@ -109,7 +146,7 @@ function GroupOverviewCard({ group }: { group: OverviewGroup }) {
             {statusText}
           </div>
           <div className="relative flex items-center justify-center">
-            {group.status !== 'up' && (
+            {group.status !== 'up' && group.status !== 'maintenance' && (
               <span className={`absolute inline-flex h-full w-full rounded-full ${statusColor} opacity-75 animate-ping`} />
             )}
             <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${statusColor}`} />
@@ -126,34 +163,50 @@ function GroupOverviewCard({ group }: { group: OverviewGroup }) {
 
 function Dashboard() {
   const { groupId } = useParams();
-  const { groups, overview, fetchMonitors, fetchOverview } = useMonitorStore();
+  const { groups, incidents, fetchIncidents } = useMonitorStore();
   const safeGroups = groups || [];
 
-  // Poll for updates based on view
   useEffect(() => {
-    // Initial fetch
-    if (groupId) {
-      fetchMonitors(groupId);
-    } else {
-      fetchOverview();
+    fetchIncidents();
+  }, [fetchIncidents]);
+
+  // Filter groups if a specific group ID is selected
+  const displayGroups = groupId
+    ? safeGroups.filter(g => g.id === groupId)
+    : safeGroups;
+
+  // Derive overview stats from the full groups data (Client-side aggregation)
+  const derivedOverview = safeGroups.map(group => {
+    // Check for maintenance first
+    const now = new Date();
+    const isMaintenance = incidents.some(i =>
+      i.type === 'maintenance' &&
+      i.status !== 'completed' &&
+      i.affectedGroups.includes(group.id) &&
+      new Date(i.startTime) <= now &&
+      (!i.endTime || new Date(i.endTime) > now)
+    );
+
+    if (isMaintenance) {
+      return { ...group, status: 'maintenance' as const };
     }
 
-    const interval = setInterval(() => {
-      if (groupId) {
-        fetchMonitors(groupId);
-      } else {
-        fetchOverview();
-      }
-    }, 60000); // 60 seconds
-
-    return () => clearInterval(interval);
-  }, [fetchMonitors, fetchOverview, groupId]);
+    let status: 'up' | 'down' | 'degraded' | 'maintenance' = 'up';
+    if (!group.monitors || group.monitors.length === 0) {
+      status = 'up';
+    } else {
+      const anyDown = group.monitors.some(m => m.status === 'down');
+      const anyDegraded = group.monitors.some(m => m.status === 'degraded');
+      if (anyDown) status = 'down';
+      else if (anyDegraded) status = 'degraded';
+    }
+    return { ...group, status };
+  });
 
   if (!groupId) {
     // Overview Mode
-    const safeOverview = overview || [];
-    const downGroups = safeOverview.filter(g => g.status === 'down').length;
-    const degradedGroups = safeOverview.filter(g => g.status === 'degraded').length;
+    const downGroups = derivedOverview.filter(g => g.status === 'down').length;
+    const degradedGroups = derivedOverview.filter(g => g.status === 'degraded').length;
     const isHealthy = downGroups === 0 && degradedGroups === 0;
 
     return (
@@ -164,18 +217,18 @@ function Dashboard() {
           </h2>
           <p className={`text-sm ${isHealthy ? 'text-muted-foreground' : 'text-red-400'}`}>
             {isHealthy
-              ? `Monitoring ${safeOverview.length} check groups. Everything looks good.`
+              ? `Monitoring ${derivedOverview.length} check groups. Everything looks good.`
               : `${downGroups} groups down, ${degradedGroups} degraded.`}
           </p>
         </div>
 
-        {safeOverview.length === 0 && (
+        {derivedOverview.length === 0 && (
           <div className="text-center text-muted-foreground py-10 border border-border rounded-xl bg-card">
             No groups found. Create one to get started.
           </div>
         )}
         <div className="grid gap-3">
-          {safeOverview.map(group => (
+          {derivedOverview.map(group => (
             <GroupOverviewCard key={group.id} group={group} />
           ))}
         </div>
@@ -184,35 +237,38 @@ function Dashboard() {
   }
 
   // Detail Mode (Single Group)
-  // We filter from 'groups' state which should now contain only this group's data (populated by fetchMonitors(groupId))
-  // However, fetchMonitors replaces the whole 'groups' array.
   return (
     <div className="space-y-8">
-      {safeGroups.map(group => (
+      {displayGroups.map(group => (
         <MonitorGroup key={group.id} group={group} />
       ))}
     </div>
   )
 }
 
+import { useMonitorsQuery } from "@/hooks/useMonitors";
+import { useSystemEventsQuery } from "@/hooks/useSystemEvents";
+
 function AdminLayout() {
   const {
     user,
     groups,
-    overview,
-    fetchOverview,
+    // overview, // Unused
+    // fetchOverview, // Replaced by useMonitorsQuery
     addMaintenance,
     isAuthChecked,
     addGroup,
-    addMonitor
+    // addMonitor // Unused
   } = useMonitorStore();
+
+  useMonitorsQuery(); // Handles polling
+  useSystemEventsQuery(); // Handles polling events
+
   const location = useLocation();
   const navigate = useNavigate();
 
   // Ensure overview is loaded for Sidebar
-  useEffect(() => {
-    fetchOverview();
-  }, [fetchOverview]);
+  // useEffect removed as query handles it
 
   const safeGroups = groups || [];
 
@@ -240,8 +296,6 @@ function AdminLayout() {
   const isApiKeys = location.pathname === '/api-keys';
   const groupId = location.pathname.startsWith('/groups/') ? location.pathname.split('/')[2] : null;
   const activeGroup = groupId ? safeGroups.find(g => g.id === groupId) : null;
-
-  const existingGroupNames = (overview || groups || []).map(g => g.name);
 
   // Breadcrumbs Generator
   const getBreadcrumbs = () => {
@@ -277,72 +331,74 @@ function AdminLayout() {
 
   return (
     <SidebarProvider>
-      <AppSidebar groups={overview || safeGroups} />
-      <SidebarInset className="bg-background md:rounded-tl-xl md:border-t md:border-l md:border-border/50 overflow-hidden min-h-screen transition-all">
-        <header className="flex h-16 shrink-0 items-center gap-2 border-b border-border/40 bg-background/95 px-4 backdrop-blur sticky top-0 z-10">
-          <div className="flex items-center gap-2">
-            <SidebarTrigger className="-ml-1" />
-            <Separator orientation="vertical" className="mr-2 h-4" />
-            <Breadcrumb>
-              <BreadcrumbList>
-                {breadcrumbs.map((item, index) => (
-                  <React.Fragment key={`${item.url}-${index}`}>
-                    {index > 0 && <BreadcrumbSeparator />}
-                    <BreadcrumbItem>
-                      {item.active ? (
-                        <BreadcrumbPage>{item.title}</BreadcrumbPage>
-                      ) : (
-                        <BreadcrumbLink href={item.url} onClick={(e) => {
-                          e.preventDefault();
-                          navigate(item.url);
-                        }}>
-                          {item.title}
-                        </BreadcrumbLink>
-                      )}
-                    </BreadcrumbItem>
-                  </React.Fragment>
-                ))}
-              </BreadcrumbList>
-            </Breadcrumb>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            {isIncidents ? (
-              null
-            ) : isMaintenance ? (
-              <CreateMaintenanceSheet onCreate={addMaintenance} groups={existingGroupNames} />
-            ) : isNotifications ? (
-              <CreateChannelSheet />
-            ) : isSettings ? (
-              null
-            ) : isApiKeys ? (
-              <CreateAPIKeySheet />
-            ) : isStatusPages ? (
-              null
-            ) : ( // Dashboard
-              <>
-                {!groupId && <CreateGroupSheet onCreate={addGroup} />}
-                <CreateMonitorSheet onCreate={addMonitor} groups={existingGroupNames} defaultGroup={activeGroup?.name} />
-              </>
-            )}
-          </div>
-        </header>
-        <ScrollArea className="flex-1 p-4 pt-0 h-[calc(100vh-4rem)]">
-          <main className="max-w-5xl mx-auto space-y-6 py-6">
-            <Routes>
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/groups/:groupId" element={<Dashboard />} />
-              <Route path="/incidents" element={<IncidentsView />} />
-              <Route path="/maintenance" element={<MaintenanceView />} />
-              <Route path="/notifications" element={<NotificationsView />} />
-              <Route path="/settings" element={<SettingsView />} />
-              <Route path="/status-pages" element={<StatusPagesView />} />
-              <Route path="/api-keys" element={<APIKeysPage />} />
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            </Routes>
-          </main>
-        </ScrollArea>
-      </SidebarInset>
-      <Toaster />
+      <TooltipProvider delayDuration={0}>
+        <AppSidebar groups={safeGroups} />
+        <SidebarInset className="bg-background md:rounded-tl-xl md:border-t md:border-l md:border-border/50 overflow-hidden min-h-screen transition-all">
+          <header className="flex h-16 shrink-0 items-center gap-2 border-b border-border/40 bg-background/95 px-4 backdrop-blur sticky top-0 z-10">
+            <div className="flex items-center gap-2">
+              <SidebarTrigger className="-ml-1" />
+              <Separator orientation="vertical" className="mr-2 h-4" />
+              <Breadcrumb>
+                <BreadcrumbList>
+                  {breadcrumbs.map((item, index) => (
+                    <React.Fragment key={`${item.url}-${index}`}>
+                      {index > 0 && <BreadcrumbSeparator />}
+                      <BreadcrumbItem>
+                        {item.active ? (
+                          <BreadcrumbPage>{item.title}</BreadcrumbPage>
+                        ) : (
+                          <BreadcrumbLink href={item.url} onClick={(e) => {
+                            e.preventDefault();
+                            navigate(item.url);
+                          }}>
+                            {item.title}
+                          </BreadcrumbLink>
+                        )}
+                      </BreadcrumbItem>
+                    </React.Fragment>
+                  ))}
+                </BreadcrumbList>
+              </Breadcrumb>
+            </div>
+            <div className="ml-auto flex items-center gap-2">
+              {isIncidents ? (
+                null
+              ) : isMaintenance ? (
+                <CreateMaintenanceSheet onCreate={addMaintenance} groups={safeGroups} />
+              ) : isNotifications ? (
+                <CreateChannelSheet />
+              ) : isSettings ? (
+                null
+              ) : isApiKeys ? (
+                <CreateAPIKeySheet />
+              ) : isStatusPages ? (
+                null
+              ) : ( // Dashboard
+                <>
+                  {!groupId && <CreateGroupSheet onCreate={addGroup} />}
+                  <CreateMonitorSheet groups={safeGroups} defaultGroup={activeGroup?.name} />
+                </>
+              )}
+            </div>
+          </header>
+          <ScrollArea className="flex-1 p-4 pt-0 h-[calc(100vh-4rem)]">
+            <main className="max-w-5xl mx-auto space-y-6 py-6">
+              <Routes>
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/groups/:groupId" element={<Dashboard />} />
+                <Route path="/incidents" element={<IncidentsView />} />
+                <Route path="/maintenance" element={<MaintenanceView />} />
+                <Route path="/notifications" element={<NotificationsView />} />
+                <Route path="/settings" element={<SettingsView />} />
+                <Route path="/status-pages" element={<StatusPagesView />} />
+                <Route path="/api-keys" element={<APIKeysPage />} />
+                <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              </Routes>
+            </main>
+          </ScrollArea>
+        </SidebarInset>
+        <Toaster />
+      </TooltipProvider>
     </SidebarProvider>
   )
 }
@@ -359,7 +415,7 @@ const App = () => {
       const done = await checkSetupStatus();
       // state is updated in store by checkSetupStatus
       if (done) {
-        checkAuth();
+        await checkAuth();
       }
       setLoading(false);
     };

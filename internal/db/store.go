@@ -1053,6 +1053,20 @@ func (s *Store) GetIncidents(since time.Time) ([]Incident, error) {
 	return incidents, nil
 }
 
+func (s *Store) UpdateIncident(i Incident) error {
+	_, err := s.db.Exec(`
+		UPDATE incidents 
+		SET title=?, description=?, type=?, severity=?, status=?, start_time=?, end_time=?, affected_groups=?
+		WHERE id=?
+	`, i.Title, i.Description, i.Type, i.Severity, i.Status, i.StartTime, i.EndTime, i.AffectedGroups, i.ID)
+	return err
+}
+
+func (s *Store) DeleteIncident(id string) error {
+	_, err := s.db.Exec("DELETE FROM incidents WHERE id = ?", id)
+	return err
+}
+
 // System Stats
 
 type SystemStats struct {

@@ -5,8 +5,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/clusteruptime/clusteruptime/internal/db"
 	"github.com/clusteruptime/clusteruptime/internal/uptime"
@@ -137,6 +139,53 @@ func (h *CRUDHandler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 1. Basic Validation
+	if req.Name == "" || req.URL == "" || req.GroupID == "" {
+		http.Error(w, "Name, URL, and GroupID are required", http.StatusBadRequest)
+		return
+	}
+
+	// 2. Validate URL
+	if _, err := url.ParseRequestURI(req.URL); err != nil {
+		http.Error(w, "Invalid URL format", http.StatusBadRequest)
+		return
+	}
+
+	// 3. Validate Interval
+	if req.Interval < 10 {
+		http.Error(w, "Interval must be at least 10 seconds", http.StatusBadRequest)
+		return
+	}
+
+	// 4. Validate Group Exists
+	groups, err := h.store.GetGroups()
+	if err != nil {
+		http.Error(w, "System error checking groups", http.StatusInternalServerError)
+		return
+	}
+	groupExists := false
+	for _, g := range groups {
+		if g.ID == req.GroupID {
+			groupExists = true
+			break
+		}
+	}
+	if !groupExists {
+		http.Error(w, "Selected group does not exist", http.StatusNotFound)
+		return
+	}
+
+	// 5. Validate Duplicate Name (Simulate unique constraint)
+	monitors, err := h.store.GetMonitors()
+	if err == nil {
+		for _, m := range monitors {
+			if strings.EqualFold(m.Name, req.Name) {
+				http.Error(w, "A monitor with this name already exists", http.StatusConflict)
+				return
+			}
+		}
+	}
+
 	id := generateID(req.Name, "m-")
 
 	m := db.Monitor{
@@ -155,6 +204,18 @@ func (h *CRUDHandler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
 
 	// Notify Engine to start monitoring this new URL immediately
 	h.manager.Sync()
+
+	// Wait for the first ping results (max 5 seconds) to ensure "Wow effect" in UI
+	// This ensures that when the frontend fetches the list immediately after this returns,
+	// the first check is likely already done.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		mon := h.manager.GetMonitor(id)
+		if mon != nil && len(mon.GetHistory()) > 0 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(m)
@@ -205,6 +266,7 @@ func (h *CRUDHandler) DeleteMonitor(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	h.manager.RemoveMonitor(id)
 	h.manager.Sync()
 	w.WriteHeader(http.StatusOK)
 }

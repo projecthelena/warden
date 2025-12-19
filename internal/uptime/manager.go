@@ -1,6 +1,7 @@
 package uptime
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 	"strconv"
@@ -39,6 +40,9 @@ type Manager struct {
 
 	latencyThreshold int64
 
+	// Active Maintenance Windows
+	maintenanceWindows []db.Incident
+
 	notifier *notifications.Service
 }
 
@@ -50,13 +54,14 @@ const (
 
 func NewManager(store *db.Store) *Manager {
 	m := &Manager{
-		store:            store,
-		monitors:         make(map[string]*Monitor),
-		jobQueue:         make(chan Job, 1000),         // Buffer for bursts
-		resultQueue:      make(chan CheckResult, 1000), // Buffer for results
-		stopCh:           make(chan struct{}),
-		latencyThreshold: 1000, // Default
-		notifier:         notifications.NewService(store),
+		store:              store,
+		monitors:           make(map[string]*Monitor),
+		maintenanceWindows: make([]db.Incident, 0),
+		jobQueue:           make(chan Job, 1000),         // Buffer for bursts
+		resultQueue:        make(chan CheckResult, 1000), // Buffer for results
+		stopCh:             make(chan struct{}),
+		latencyThreshold:   1000, // Default
+		notifier:           notifications.NewService(store),
 	}
 
 	// Load settings
@@ -211,6 +216,37 @@ func (m *Manager) resultProcessor() {
 				threshold := m.latencyThreshold
 				m.mu.RUnlock()
 
+				// 3. Maintenance Check (Dynamic)
+				m.mu.RLock()
+				isMaint := false
+				now := time.Now().UTC()
+				for _, w := range m.maintenanceWindows {
+					if now.After(w.StartTime) && (w.EndTime == nil || now.Before(*w.EndTime)) {
+						// Window is active, check group
+						if w.AffectedGroups != "" {
+							// Optimization: We could cache the unmarshaled groups but for MVP this is okay, or we assume low volume of maintenance
+							// Better: Check string contains? No, risky.
+							// Let's Unmarshal. Ideally this struct field should be parsed once.
+							// For safety in this hot path, let's optimize in Sync?
+							// Actually, let's just do a quick string check if the ID is unique enough, or Unmarshal.
+							// Given valid JSON ["id"], searching for "id" is safe.
+							// But to be 100% correct, let's Unmarshal.
+							var groups []string
+							_ = json.Unmarshal([]byte(w.AffectedGroups), &groups)
+							for _, g := range groups {
+								if g == mon.GetGroupID() {
+									isMaint = true
+									break
+								}
+							}
+						}
+					}
+					if isMaint {
+						break
+					}
+				}
+				m.mu.RUnlock()
+
 				isDegraded := res.Status && res.Latency > threshold
 				res.IsDegraded = isDegraded // Update result for storage
 
@@ -229,14 +265,17 @@ func (m *Manager) resultProcessor() {
 							_ = m.store.CreateOutage(res.MonitorID, "down", message)
 						}()
 						go func() { _ = m.store.CreateEvent(res.MonitorID, "down", message) }()
-						m.notifier.Enqueue(notifications.NotificationEvent{
-							MonitorID:   res.MonitorID,
-							MonitorName: mon.GetName(),
-							MonitorURL:  mon.GetTargetURL(),
-							Type:        notifications.EventDown,
-							Message:     message,
-							Time:        res.Timestamp,
-						})
+
+						if !isMaint {
+							m.notifier.Enqueue(notifications.NotificationEvent{
+								MonitorID:   res.MonitorID,
+								MonitorName: mon.GetName(),
+								MonitorURL:  mon.GetTargetURL(),
+								Type:        notifications.EventDown,
+								Message:     message,
+								Time:        res.Timestamp,
+							})
+						}
 						log.Printf("Monitor %s is DOWN (Initial)", res.MonitorID)
 					} else if isDegraded {
 						go func() {
@@ -246,14 +285,16 @@ func (m *Manager) resultProcessor() {
 						go func() {
 							_ = m.store.CreateEvent(res.MonitorID, "degraded", "High latency detected (>"+strconv.FormatInt(threshold, 10)+"ms)")
 						}()
-						m.notifier.Enqueue(notifications.NotificationEvent{
-							MonitorID:   res.MonitorID,
-							MonitorName: mon.GetName(),
-							MonitorURL:  mon.GetTargetURL(),
-							Type:        notifications.EventDegraded,
-							Message:     "High latency detected (> " + strconv.FormatInt(threshold, 10) + "ms)",
-							Time:        res.Timestamp,
-						})
+						if !isMaint {
+							m.notifier.Enqueue(notifications.NotificationEvent{
+								MonitorID:   res.MonitorID,
+								MonitorName: mon.GetName(),
+								MonitorURL:  mon.GetTargetURL(),
+								Type:        notifications.EventDegraded,
+								Message:     "High latency detected (> " + strconv.FormatInt(threshold, 10) + "ms)",
+								Time:        res.Timestamp,
+							})
+						}
 					}
 				} else {
 					// Handle Transitions
@@ -264,27 +305,32 @@ func (m *Manager) resultProcessor() {
 							_ = m.store.CreateOutage(res.MonitorID, "down", message)
 						}()
 						go func() { _ = m.store.CreateEvent(res.MonitorID, "down", message) }()
-						m.notifier.Enqueue(notifications.NotificationEvent{
-							MonitorID:   res.MonitorID,
-							MonitorName: mon.GetName(),
-							MonitorURL:  mon.GetTargetURL(),
-							Type:        notifications.EventDown,
-							Message:     message,
-							Time:        res.Timestamp,
-						})
+
+						if !isMaint {
+							m.notifier.Enqueue(notifications.NotificationEvent{
+								MonitorID:   res.MonitorID,
+								MonitorName: mon.GetName(),
+								MonitorURL:  mon.GetTargetURL(),
+								Type:        notifications.EventDown,
+								Message:     message,
+								Time:        res.Timestamp,
+							})
+						}
 						log.Printf("Monitor %s is DOWN: %s", res.MonitorID, message)
 					} else if !active && res.Status {
 						// DOWN -> UP
 						go func() { _ = m.store.CloseOutage(res.MonitorID) }()
 						go func() { _ = m.store.CreateEvent(res.MonitorID, "recovered", "Monitor recovered") }()
-						m.notifier.Enqueue(notifications.NotificationEvent{
-							MonitorID:   res.MonitorID,
-							MonitorName: mon.GetName(),
-							MonitorURL:  mon.GetTargetURL(),
-							Type:        notifications.EventUp,
-							Message:     "Monitor Recovered",
-							Time:        res.Timestamp,
-						})
+						if !isMaint {
+							m.notifier.Enqueue(notifications.NotificationEvent{
+								MonitorID:   res.MonitorID,
+								MonitorName: mon.GetName(),
+								MonitorURL:  mon.GetTargetURL(),
+								Type:        notifications.EventUp,
+								Message:     "Monitor Recovered",
+								Time:        res.Timestamp,
+							})
+						}
 						log.Printf("Monitor %s RECOVERED", res.MonitorID)
 					}
 
@@ -299,14 +345,17 @@ func (m *Manager) resultProcessor() {
 							go func() {
 								_ = m.store.CreateEvent(res.MonitorID, "degraded", "High latency detected (>"+strconv.FormatInt(threshold, 10)+"ms)")
 							}()
-							m.notifier.Enqueue(notifications.NotificationEvent{
-								MonitorID:   res.MonitorID,
-								MonitorName: mon.GetName(),
-								MonitorURL:  mon.GetTargetURL(),
-								Type:        notifications.EventDegraded,
-								Message:     "High latency detected (> " + strconv.FormatInt(threshold, 10) + "ms)",
-								Time:        res.Timestamp,
-							})
+
+							if !isMaint {
+								m.notifier.Enqueue(notifications.NotificationEvent{
+									MonitorID:   res.MonitorID,
+									MonitorName: mon.GetName(),
+									MonitorURL:  mon.GetTargetURL(),
+									Type:        notifications.EventDegraded,
+									Message:     "High latency detected (> " + strconv.FormatInt(threshold, 10) + "ms)",
+									Time:        res.Timestamp,
+								})
+							}
 						} else if wasDegraded && !isDegraded {
 							// Degraded -> Normal (Optional: Log it? Or just let it be silent?)
 							// For now, let's just log "recovered" from degradation?
@@ -359,8 +408,23 @@ func (m *Manager) Sync() {
 		return
 	}
 
+	// Fetch Maintenance Windows
+	var activeWindows []db.Incident
+	incidents, err := m.store.GetIncidents(time.Time{})
+	if err == nil {
+		for _, i := range incidents {
+			// Keep all scheduled/in-progress maintenance
+			if i.Type == "maintenance" && i.Status != "completed" && i.Status != "resolved" {
+				activeWindows = append(activeWindows, i)
+			}
+		}
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	// Update maintenance windows
+	m.maintenanceWindows = activeWindows
 
 	activeIDs := make(map[string]bool)
 
@@ -394,7 +458,7 @@ func (m *Manager) Sync() {
 
 		if _, exists := m.monitors[dbM.ID]; !exists {
 			// Start new monitor passing the JobQueue
-			mon := NewMonitor(dbM.ID, dbM.Name, dbM.URL, interval, m.jobQueue)
+			mon := NewMonitor(dbM.ID, dbM.GroupID, dbM.Name, dbM.URL, interval, m.jobQueue)
 			// ...
 
 			// Hydrate history from DB
@@ -433,6 +497,19 @@ func (m *Manager) GetMonitor(id string) *Monitor {
 	return m.monitors[id]
 }
 
+// RemoveMonitor explicitly stops and removes a monitor.
+// This is useful for immediate cleanup after deletion.
+func (m *Manager) RemoveMonitor(id string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if mon, exists := m.monitors[id]; exists {
+		mon.Stop()
+		delete(m.monitors, id)
+		log.Printf("Explicitly stopped monitor: %s", id)
+	}
+}
+
 func (m *Manager) SetLatencyThreshold(ms int64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -456,6 +533,32 @@ func (m *Manager) GetAll() map[string]*Monitor {
 		res[k] = v
 	}
 	return res
+}
+
+// IsGroupInMaintenance checks if a specific group is currently in an active maintenance window
+func (m *Manager) IsGroupInMaintenance(groupID string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	now := time.Now().UTC()
+	for _, w := range m.maintenanceWindows {
+		// Check time window
+		if now.After(w.StartTime) && (w.EndTime == nil || now.Before(*w.EndTime)) {
+			// Check affected groups
+			if w.AffectedGroups != "" {
+				var groups []string
+				// Optimization: could cache unmarshal or simple string contains if confident
+				if err := json.Unmarshal([]byte(w.AffectedGroups), &groups); err == nil {
+					for _, g := range groups {
+						if g == groupID {
+							return true
+						}
+					}
+				}
+			}
+		}
+	}
+	return false
 }
 
 func (m *Manager) retentionWorker() {

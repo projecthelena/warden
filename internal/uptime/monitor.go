@@ -16,6 +16,7 @@ type Status struct {
 
 type Monitor struct {
 	id       string
+	groupID  string
 	name     string
 	url      string
 	interval time.Duration
@@ -25,9 +26,10 @@ type Monitor struct {
 	jobQueue chan<- Job
 }
 
-func NewMonitor(id, name, url string, interval time.Duration, jobQueue chan<- Job) *Monitor {
+func NewMonitor(id, groupID, name, url string, interval time.Duration, jobQueue chan<- Job) *Monitor {
 	return &Monitor{
 		id:       id,
+		groupID:  groupID,
 		name:     name,
 		url:      url,
 		interval: interval,
@@ -110,6 +112,10 @@ func (m *Monitor) GetName() string {
 
 func (m *Monitor) GetTargetURL() string {
 	return m.url
+}
+
+func (m *Monitor) GetGroupID() string {
+	return m.groupID
 }
 
 func (m *Monitor) GetInterval() time.Duration {

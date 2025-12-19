@@ -41,7 +41,7 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 	apiKeyH := NewAPIKeyHandler(store)
 	adminH := NewAdminHandler(store, manager)
 	incidentH := NewIncidentHandler(store)
-	maintH := NewMaintenanceHandler(store)
+	maintH := NewMaintenanceHandler(store, manager)
 	eventH := NewEventHandler(store, manager)
 	statusPageH := NewStatusPageHandler(store, manager)
 	notifH := NewNotificationChannelsHandler(store)
@@ -83,6 +83,9 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 			protected.Get("/incidents", incidentH.GetIncidents)
 			protected.Post("/incidents", incidentH.CreateIncident)
 			protected.Post("/maintenance", maintH.CreateMaintenance)
+			protected.Get("/maintenance", maintH.GetMaintenance)
+			protected.Put("/maintenance/{id}", maintH.UpdateMaintenance)
+			protected.Delete("/maintenance/{id}", maintH.DeleteMaintenance)
 
 			// Settings
 			protected.Get("/settings", settingsH.GetSettings)

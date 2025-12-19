@@ -70,7 +70,7 @@ export interface Incident {
 export interface OverviewGroup {
     id: string;
     name: string;
-    status: 'up' | 'down' | 'degraded';
+    status: 'up' | 'down' | 'degraded' | 'maintenance';
 }
 
 export interface Settings {
@@ -142,6 +142,8 @@ interface MonitorStore {
     fetchPublicStatus: () => Promise<void>;
     fetchOverview: () => Promise<void>;
     fetchMonitors: (groupId?: string) => Promise<void>;
+    setGroups: (groups: Group[]) => void; // For React Query Sync
+    setSystemEvents: (events: { active: SystemIncident[], history: SystemIncident[] }) => void;
     fetchSystemEvents: () => Promise<void>;
     addGroup: (name: string) => Promise<string | undefined>;
     updateGroup: (id: string, name: string) => Promise<void>;
@@ -203,6 +205,10 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
     isSetupComplete: false,
     apiKeys: [],
     settings: null,
+
+    // Sync Actions
+    setGroups: (groups: Group[]) => set({ groups }),
+    setSystemEvents: (events: { active: SystemIncident[], history: SystemIncident[] }) => set({ systemEvents: events }),
 
     // Actions
     checkSetupStatus: async () => {

@@ -30,13 +30,13 @@ import { Incident } from "@/lib/store";
 
 interface CreateMaintenanceSheetProps {
     onCreate: (incident: Omit<Incident, 'id'>) => void;
-    groups: string[];
+    groups: { id: string; name: string }[];
 }
 
 export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSheetProps) {
     const [title, setTitle] = useState("");
     const [description, setDescription] = useState("");
-    const [selectedGroup, setSelectedGroup] = useState<string>("");
+    const [selectedGroupId, setSelectedGroupId] = useState<string>("");
 
     // Separate Date and Time states
     const [startDate, setStartDate] = useState<Date>();
@@ -49,7 +49,7 @@ export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSh
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
 
-        if (!selectedGroup) {
+        if (!selectedGroupId) {
             alert("Please select an affected group");
             return;
         }
@@ -76,7 +76,7 @@ export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSh
             status: 'scheduled',
             startTime: start.toISOString(),
             endTime: end.toISOString(),
-            affectedGroups: [selectedGroup]
+            affectedGroups: [selectedGroupId]
         });
 
         setOpen(false);
@@ -86,7 +86,7 @@ export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSh
     const resetForm = () => {
         setTitle("");
         setDescription("");
-        setSelectedGroup("");
+        setSelectedGroupId("");
         setStartDate(undefined);
         setStartTime("10:00:00");
         setEndDate(undefined);
@@ -180,13 +180,13 @@ export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSh
 
                     <div className="grid gap-2">
                         <Label>Affected Group</Label>
-                        <Select value={selectedGroup} onValueChange={setSelectedGroup}>
+                        <Select value={selectedGroupId} onValueChange={setSelectedGroupId}>
                             <SelectTrigger>
                                 <SelectValue placeholder="Select Group" />
                             </SelectTrigger>
                             <SelectContent>
                                 {groups.map(g => (
-                                    <SelectItem key={g} value={g}>{g}</SelectItem>
+                                    <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
                                 ))}
                             </SelectContent>
                         </Select>

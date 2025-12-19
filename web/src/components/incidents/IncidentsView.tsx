@@ -4,7 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { useMonitorStore, Incident, SystemIncident } from "@/lib/store";
 import { Calendar, CheckCircle2, ArrowDownCircle, AlertTriangle, Clock } from "lucide-react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { cn, formatDate } from "@/lib/utils";
 
 function IncidentCard({ incident, timezone }: { incident: Incident, timezone?: string }) {
@@ -35,6 +35,7 @@ function IncidentCard({ incident, timezone }: { incident: Incident, timezone?: s
 }
 
 function SystemEventRow({ event, active, timezone }: { event: SystemIncident; active: boolean; timezone?: string }) {
+    const navigate = useNavigate();
     const isDown = event.type === 'down';
 
     // Minimalist Icon & Color Logic
@@ -58,7 +59,10 @@ function SystemEventRow({ event, active, timezone }: { event: SystemIncident; ac
     }
 
     return (
-        <div className="group flex items-center justify-between py-3 px-4 -mx-4 hover:bg-muted/30 rounded-lg transition-colors">
+        <div
+            onClick={() => navigate(`/groups/${event.groupId}`)}
+            className="group flex items-center justify-between py-3 px-4 -mx-4 hover:bg-muted/30 rounded-lg transition-colors cursor-pointer"
+        >
             <div className="flex items-center gap-4">
                 {/* Status Indicator Icon */}
                 <div className={cn("flex items-center justify-center w-8 h-8 rounded-full bg-background border border-border/50", active ? "shadow-sm" : "opacity-70")}>
@@ -73,9 +77,9 @@ function SystemEventRow({ event, active, timezone }: { event: SystemIncident; ac
                     <div className="flex items-center gap-2 text-sm">
                         {event.groupName && (
                             <>
-                                <Link to={`/?group=${event.groupId}`} className="text-muted-foreground hover:text-foreground hover:underline transition-colors">
+                                <span className="text-muted-foreground hover:text-foreground transition-colors">
                                     {event.groupName}
-                                </Link>
+                                </span>
                                 <span className="text-muted-foreground/30">/</span>
                             </>
                         )}
@@ -84,7 +88,7 @@ function SystemEventRow({ event, active, timezone }: { event: SystemIncident; ac
                         </span>
                         {active && (
                             <Badge variant="secondary" className={cn("ml-2 rounded-sm px-1.5 py-0 text-[10px] font-medium uppercase tracking-wider border-0", bgBadge)}>
-                                {event.type}
+                                {event.type === 'down' ? 'UNAVAILABLE' : event.type}
                             </Badge>
                         )}
                     </div>

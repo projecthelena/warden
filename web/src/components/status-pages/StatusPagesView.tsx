@@ -1,13 +1,12 @@
-import { useEffect, useState, useCallback } from "react";
-import { useMonitorStore, StatusPage } from "@/lib/store";
+import { useStatusPagesQuery, useToggleStatusPageMutation } from "@/hooks/useStatusPages";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { ExternalLink } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
 export function StatusPagesView() {
-    const { fetchStatusPages, toggleStatusPage } = useMonitorStore();
-    const [pages, setPages] = useState<StatusPage[]>([]);
+    const { data: pages = [], isLoading } = useStatusPagesQuery();
+    const toggleMutation = useToggleStatusPageMutation();
     const { toast } = useToast();
 
     // Map existing groups to potential status pages + Global 'all'
@@ -15,14 +14,7 @@ export function StatusPagesView() {
     // If a group doesn't have a configured page yet, we might want to show it as "Disabled" default?
     // Or we rely on backend having seeded them? 
     // Current backend implementation only seeded "all". 
-    const load = useCallback(async () => {
-        const data = await fetchStatusPages();
-        setPages(data);
-    }, [fetchStatusPages]);
 
-    useEffect(() => {
-        load();
-    }, [load]);
 
     const handleToggle = async (slug: string, currentStatus: boolean, title: string, groupId?: string | null) => {
         try {
@@ -38,15 +30,16 @@ export function StatusPagesView() {
                 }
             }
 
-            await toggleStatusPage(targetSlug, !currentStatus, title, groupId || undefined);
+            await toggleMutation.mutateAsync({ slug: targetSlug, public: !currentStatus, title, groupId: groupId || undefined });
             toast({ title: "Status Page Updated", description: `${title} is now ${!currentStatus ? 'Public' : 'Private'}` });
-            load();
         } catch (e) {
             toast({ title: "Error", description: "Failed to update status page", variant: "destructive" });
         }
     };
 
-    const allPages = pages;
+    const allPages = Array.isArray(pages) ? pages : [];
+
+    if (isLoading) return <div>Loading...</div>;
 
     return (
         <div className="space-y-6">
