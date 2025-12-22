@@ -70,7 +70,7 @@ function MonitorGroup({ group }: { group: Group }) {
           {group.id !== 'default' && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive">
+                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" data-testid="delete-group-trigger">
                   <Trash2 className="w-4 h-4" />
                 </Button>
               </AlertDialogTrigger>
@@ -84,7 +84,7 @@ function MonitorGroup({ group }: { group: Group }) {
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                  <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90" data-testid="delete-group-confirm">
                     Delete
                   </AlertDialogAction>
                 </AlertDialogFooter>
@@ -267,6 +267,8 @@ function AdminLayout() {
   const location = useLocation();
   const navigate = useNavigate();
 
+  console.log('DEBUG: App Render Path:', location.pathname);
+
   // Ensure overview is loaded for Sidebar
   // useEffect removed as query handles it
 
@@ -288,12 +290,12 @@ function AdminLayout() {
     return <Navigate to="/login" replace />;
   }
 
-  const isIncidents = location.pathname === '/incidents';
-  const isMaintenance = location.pathname === '/maintenance';
-  const isNotifications = location.pathname === '/notifications';
-  const isSettings = location.pathname === '/settings';
-  const isStatusPages = location.pathname === '/status-pages';
-  const isApiKeys = location.pathname === '/api-keys';
+  const isIncidents = location.pathname.startsWith('/incidents');
+  const isMaintenance = location.pathname.startsWith('/maintenance');
+  const isNotifications = location.pathname.startsWith('/notifications');
+  const isSettings = location.pathname.startsWith('/settings') && !location.pathname.startsWith('/settings/api-keys');
+  const isStatusPages = location.pathname.startsWith('/status-pages');
+  const isApiKeys = location.pathname.startsWith('/settings/api-keys') || location.pathname.startsWith('/api-keys'); // Backwards compat or just use new
   const groupId = location.pathname.startsWith('/groups/') ? location.pathname.split('/')[2] : null;
   const activeGroup = groupId ? safeGroups.find(g => g.id === groupId) : null;
 
@@ -318,7 +320,7 @@ function AdminLayout() {
     else if (isNotifications) items.push({ title: "Notifications", url: "/notifications", active: true });
     else if (isSettings) items.push({ title: "Settings", url: "/settings", active: true });
     else if (isStatusPages) items.push({ title: "Status Pages", url: "/status-pages", active: true });
-    else if (isApiKeys) items.push({ title: "API Keys", url: "/api-keys", active: true });
+    else if (isApiKeys) items.push({ title: "API Keys", url: "/settings/api-keys", active: true });
     else if (activeGroup) {
       items.push({ title: "Groups", url: "/dashboard", active: false }); // Optional intermediate
       items.push({ title: activeGroup.name, url: `/groups/${activeGroup.id}`, active: true });
@@ -379,6 +381,7 @@ function AdminLayout() {
                   <CreateMonitorSheet groups={safeGroups} defaultGroup={activeGroup?.name} />
                 </>
               )}
+              <Button data-testid="debug-button-always">DebugAlways</Button>
             </div>
           </header>
           <ScrollArea className="flex-1 p-4 pt-0 h-[calc(100vh-4rem)]">
@@ -391,7 +394,7 @@ function AdminLayout() {
                 <Route path="/notifications" element={<NotificationsView />} />
                 <Route path="/settings" element={<SettingsView />} />
                 <Route path="/status-pages" element={<StatusPagesView />} />
-                <Route path="/api-keys" element={<APIKeysPage />} />
+                <Route path="/settings/api-keys" element={<APIKeysPage />} />
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
               </Routes>
             </main>
@@ -399,7 +402,7 @@ function AdminLayout() {
         </SidebarInset>
         <Toaster />
       </TooltipProvider>
-    </SidebarProvider>
+    </SidebarProvider >
   )
 }
 
@@ -425,7 +428,7 @@ const App = () => {
   if (loading) {
     return (
       <div className="min-h-screen bg-[#020617] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" data-testid="loading-spinner"></div>
       </div>
     );
   }

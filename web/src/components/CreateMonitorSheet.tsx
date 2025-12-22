@@ -167,7 +167,7 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
     return (
         <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
-                <Button className="gap-2" size="sm">
+                <Button className="gap-2" size="sm" data-testid="create-monitor-trigger">
                     <Plus className="w-4 h-4" /> New Monitor
                 </Button>
             </SheetTrigger>
@@ -188,6 +188,7 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                             onChange={(e) => setName(e.target.value)}
                             className={cn(nameError && "border-red-500 focus-visible:ring-red-500")}
                             required
+                            data-testid="create-monitor-name-input"
                         />
                     </div>
                     <div className="grid gap-2">
@@ -199,6 +200,7 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                             value={url}
                             onChange={(e) => setUrl(e.target.value)}
                             required
+                            data-testid="create-monitor-url-input"
                         />
                     </div>
                     <div className="grid gap-2">
@@ -238,7 +240,7 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                             </div>
                         ) : (
                             <Select onValueChange={handleGroupChange} value={selectedGroupId}>
-                                <SelectTrigger className={cn(groupError && "border-red-500 focus:ring-red-500")}>
+                                <SelectTrigger className={cn(groupError && "border-red-500 focus:ring-red-500")} data-testid="create-monitor-group-select">
                                     <SelectValue placeholder="Select a group" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -270,7 +272,7 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                         <SheetClose asChild>
                             <Button variant="outline" className="mr-2">Cancel</Button>
                         </SheetClose>
-                        <Button type="submit" disabled={createMonitor.isPending || createGroup.isPending}>
+                        <Button type="submit" disabled={createMonitor.isPending || createGroup.isPending} data-testid="create-monitor-submit-btn">
                             {createMonitor.isPending ? "Creating..." : "Create Monitor"}
                         </Button>
                     </SheetFooter>

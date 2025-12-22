@@ -50,3 +50,14 @@ thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Testing & Coverage
+web/playwright-report/
+web/test-results/
+web/blob-report/
+web/coverage/
+coverage/
+*.lcov
+junit.xml
+
+dashboard

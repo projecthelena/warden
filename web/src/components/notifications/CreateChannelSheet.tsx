@@ -63,7 +63,7 @@ export function CreateChannelSheet({ onCreate }: { onCreate?: (c: any) => void }
     return (
         <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
-                <Button size="sm" className="gap-2">
+                <Button size="sm" className="gap-2" data-testid="create-channel-trigger">
                     <Plus className="w-4 h-4" /> Add Channel
                 </Button>
             </SheetTrigger>
@@ -81,11 +81,11 @@ export function CreateChannelSheet({ onCreate }: { onCreate?: (c: any) => void }
                     <div className="grid gap-2">
                         <Label>Channel Type</Label>
                         <Select value={type} onValueChange={(v: NotificationChannel['type']) => setType(v)}>
-                            <SelectTrigger>
+                            <SelectTrigger data-testid="channel-type-select">
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="slack">
+                                <SelectItem value="slack" data-testid="channel-type-slack">
                                     <div className="flex items-center gap-2"><Slack className="w-4 h-4" /> Slack</div>
                                 </SelectItem>
                             </SelectContent>
@@ -95,7 +95,8 @@ export function CreateChannelSheet({ onCreate }: { onCreate?: (c: any) => void }
                     <div className="grid gap-2">
                         <Label>Friendly Name</Label>
                         <Input value={name} onChange={e => setName(e.target.value)} required
-                            placeholder="e.g. DevOps Team" />
+                            placeholder="e.g. DevOps Team"
+                            data-testid="channel-name-input" />
                     </div>
 
                     <div className="grid gap-2">
@@ -103,14 +104,15 @@ export function CreateChannelSheet({ onCreate }: { onCreate?: (c: any) => void }
                         <Input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} required
                             type="url"
                             className="font-mono text-xs"
-                            placeholder="https://hooks.slack.com/services/..." />
+                            placeholder="https://hooks.slack.com/services/..."
+                            data-testid="channel-webhook-input" />
                         <p className="text-[0.8rem] text-muted-foreground">
                             Incoming Webhook URL from Slack App.
                         </p>
                     </div>
 
                     <SheetFooter className="mt-4">
-                        <Button type="submit">Add Integration</Button>
+                        <Button type="submit" data-testid="create-channel-submit">Add Integration</Button>
                     </SheetFooter>
                 </form>
             </SheetContent>

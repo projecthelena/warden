@@ -54,7 +54,7 @@ export function CreateAPIKeySheet() {
     return (
         <Sheet open={isOpen} onOpenChange={handleOpenChange}>
             <SheetTrigger asChild>
-                <Button size="sm">
+                <Button size="sm" data-testid="create-apikey-trigger">
                     <Plus className="w-4 h-4 mr-2" />
                     Create API Key
                 </Button>
@@ -75,10 +75,11 @@ export function CreateAPIKeySheet() {
                                 value={newKeyName}
                                 onChange={(e) => setNewKeyName(e.target.value)}
                                 placeholder="e.g. CI/CD Pipeline"
+                                data-testid="apikey-name-input"
                             />
                         </div>
                         <SheetFooter>
-                            <Button onClick={handleCreate} disabled={!newKeyName}>Generate Key</Button>
+                            <Button onClick={handleCreate} disabled={!newKeyName} data-testid="apikey-create-submit">Generate Key</Button>
                         </SheetFooter>
                     </div>
                 ) : (

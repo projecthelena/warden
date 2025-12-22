@@ -155,3 +155,70 @@ func TestManager_OutageLogic(t *testing.T) {
 
 	m.Stop()
 }
+
+func TestManager_LatencyThreshold(t *testing.T) {
+	m, _ := newTestManager(t)
+
+	if m.GetLatencyThreshold() != 1000 {
+		t.Errorf("Expected default 1000, got %d", m.GetLatencyThreshold())
+	}
+
+	m.SetLatencyThreshold(500)
+	if m.GetLatencyThreshold() != 500 {
+		t.Errorf("Expected 500, got %d", m.GetLatencyThreshold())
+	}
+}
+
+func TestManager_IsGroupInMaintenance(t *testing.T) {
+	m, s := newTestManager(t)
+
+	// 1. Create Maintenance Window (Active)
+	startTime := time.Now().Add(-1 * time.Hour)
+	endTime := time.Now().Add(1 * time.Hour)
+
+	incident := db.Incident{
+		ID:             "inc-maint",
+		Title:          "Maintenance",
+		Type:           "maintenance",
+		Status:         "scheduled",
+		StartTime:      startTime,
+		EndTime:        &endTime,
+		AffectedGroups: `["g1"]`,
+	}
+	// Direct insert or use Store method
+	if err := s.CreateIncident(incident); err != nil {
+		t.Fatalf("Failed to create maintenance: %v", err)
+	}
+
+	// 2. Sync Manager (loads maintenance)
+	m.Sync()
+
+	// 3. Verify
+	if !m.IsGroupInMaintenance("g1") {
+		t.Error("Group g1 should be in maintenance")
+	}
+	if m.IsGroupInMaintenance("g2") {
+		t.Error("Group g2 should NOT be in maintenance")
+	}
+
+	// 4. Test Future Maintenance
+	futureStart := time.Now().Add(1 * time.Hour)
+	futureEnd := time.Now().Add(2 * time.Hour)
+	incidentFuture := db.Incident{
+		ID:             "inc-future",
+		Title:          "Future",
+		Type:           "maintenance",
+		Status:         "scheduled",
+		StartTime:      futureStart,
+		EndTime:        &futureEnd,
+		AffectedGroups: `["g2"]`,
+	}
+	if err := s.CreateIncident(incidentFuture); err != nil {
+		t.Fatalf("Failed to create future maintenance: %v", err)
+	}
+	m.Sync()
+
+	if m.IsGroupInMaintenance("g2") {
+		t.Error("Group g2 should not be in maintenance (future)")
+	}
+}

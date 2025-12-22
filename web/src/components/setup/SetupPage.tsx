@@ -118,6 +118,7 @@ export function SetupPage() {
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -20 }}
                             className="text-center space-y-8"
+                            data-testid="setup-welcome"
                         >
                             <div className="space-y-4">
                                 <h1 className="text-5xl md:text-6xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-b from-white to-slate-400 pb-2">
@@ -132,6 +133,7 @@ export function SetupPage() {
                                 onClick={() => setStep(1)}
                                 size="lg"
                                 className="h-14 px-8 text-lg rounded-full bg-white text-black hover:bg-slate-200 transition-all hover:scale-105 shadow-[0_0_20px_rgba(255,255,255,0.1)] group"
+                                data-testid="setup-start-btn"
                             >
                                 Get Started <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
                             </Button>
@@ -164,6 +166,7 @@ export function SetupPage() {
                                         onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                                         className="h-14 text-lg bg-slate-900/50 border-slate-800 focus:border-blue-500/50 focus:ring-blue-500/20 rounded-xl"
                                         placeholder="e.g. admin"
+                                        data-testid="setup-username-input"
                                     />
                                 </div>
                                 <div className="space-y-2">
@@ -175,6 +178,7 @@ export function SetupPage() {
                                         className="h-14 text-lg bg-slate-900/50 border-slate-800 focus:border-blue-500/50 focus:ring-blue-500/20 rounded-xl"
                                         placeholder="Min 8 chars, 1 number, 1 special char"
                                         onKeyDown={(e) => e.key === 'Enter' && nextStep()}
+                                        data-testid="setup-password-input"
                                     />
                                 </div>
                             </div>
@@ -186,7 +190,7 @@ export function SetupPage() {
                                 </motion.div>
                             )}
 
-                            <Button onClick={nextStep} className="w-full h-14 text-lg rounded-xl bg-blue-600 hover:bg-blue-500 transition-all shadow-lg shadow-blue-900/20">
+                            <Button onClick={nextStep} className="w-full h-14 text-lg rounded-xl bg-blue-600 hover:bg-blue-500 transition-all shadow-lg shadow-blue-900/20" data-testid="setup-continue-btn">
                                 Continue
                             </Button>
                         </motion.div>
@@ -219,7 +223,7 @@ export function SetupPage() {
                                 </div>
                             </div>
 
-                            <Button onClick={nextStep} className="w-full h-14 text-lg rounded-xl bg-indigo-600 hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-900/20">
+                            <Button onClick={nextStep} className="w-full h-14 text-lg rounded-xl bg-indigo-600 hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-900/20" data-testid="setup-continue-btn-2">
                                 Continue
                             </Button>
                         </motion.div>
@@ -274,6 +278,7 @@ export function SetupPage() {
                                 onClick={handleSubmit}
                                 disabled={loading}
                                 className="w-full h-16 text-xl font-semibold rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 transition-all shadow-lg shadow-blue-900/20"
+                                data-testid="setup-launch-btn"
                             >
                                 {loading ? "Configuring..." : "Launch Dashboard"}
                             </Button>

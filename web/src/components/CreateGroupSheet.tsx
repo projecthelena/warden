@@ -41,7 +41,7 @@ export function CreateGroupSheet({ onCreate }: CreateGroupSheetProps) {
     return (
         <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-2">
+                <Button variant="outline" size="sm" className="gap-2" data-testid="create-group-trigger">
                     <FolderPlus className="w-4 h-4" /> New Group
                 </Button>
             </SheetTrigger>
@@ -61,13 +61,14 @@ export function CreateGroupSheet({ onCreate }: CreateGroupSheetProps) {
                             value={name}
                             onChange={(e) => setName(e.target.value)}
                             required
+                            data-testid="create-group-name-input"
                         />
                     </div>
                     <SheetFooter className="mt-4">
                         <SheetClose asChild>
                             <Button variant="outline" className="mr-2">Cancel</Button>
                         </SheetClose>
-                        <Button type="submit">
+                        <Button type="submit" data-testid="create-group-submit-btn">
                             Create Group
                         </Button>
                     </SheetFooter>

@@ -156,7 +156,7 @@ export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSh
     return (
         <Sheet open={open} onOpenChange={(val) => { setOpen(val); if (!val) resetForm(); }}>
             <SheetTrigger asChild>
-                <Button size="sm" className="gap-2">
+                <Button size="sm" className="gap-2" data-testid="create-maintenance-trigger">
                     <CalendarClock className="w-4 h-4" /> Schedule Maintenance
                 </Button>
             </SheetTrigger>
@@ -175,13 +175,14 @@ export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSh
                             onChange={e => setTitle(e.target.value)}
                             required
                             placeholder="e.g. Database Upgrade"
+                            data-testid="maintenance-title-input"
                         />
                     </div>
 
                     <div className="grid gap-2">
                         <Label>Affected Group</Label>
                         <Select value={selectedGroupId} onValueChange={setSelectedGroupId}>
-                            <SelectTrigger>
+                            <SelectTrigger data-testid="maintenance-group-select">
                                 <SelectValue placeholder="Select Group" />
                             </SelectTrigger>
                             <SelectContent>
@@ -222,7 +223,7 @@ export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSh
                     </div>
 
                     <SheetFooter className="mt-4">
-                        <Button type="submit" className="w-full">Schedule Maintenance</Button>
+                        <Button type="submit" className="w-full" data-testid="create-maintenance-submit">Schedule Maintenance</Button>
                     </SheetFooter>
                 </form>
             </SheetContent>

@@ -125,7 +125,7 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
                 <Separator className="bg-slate-800 my-4" />
 
                 <SheetFooter className="flex-col sm:flex-row gap-2">
-                    <Button variant="destructive" onClick={handleDelete} className="w-full sm:w-auto">
+                    <Button variant="destructive" onClick={handleDelete} className="w-full sm:w-auto" data-testid="delete-channel-btn">
                         <Trash2 className="w-4 h-4 mr-2" /> Delete Channel
                     </Button>
                     <Button onClick={handleSave} className="w-full sm:w-auto ml-auto">

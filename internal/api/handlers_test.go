@@ -7,21 +7,29 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/clusteruptime/clusteruptime/internal/config"
 	"github.com/clusteruptime/clusteruptime/internal/db"
 	"github.com/clusteruptime/clusteruptime/internal/uptime"
 	"github.com/go-chi/chi/v5"
 )
 
-func setupTest(t *testing.T) (*CRUDHandler, *SettingsHandler, *db.Store) {
+func setupTest(t *testing.T) (*CRUDHandler, *SettingsHandler, *AuthHandler, http.Handler, *db.Store) {
 	store, _ := db.NewStore(":memory:")
 	manager := uptime.NewManager(store)
 	crudH := NewCRUDHandler(store, manager)
 	settingsH := NewSettingsHandler(store, manager)
-	return crudH, settingsH, store
+
+	cfg := config.Default()
+	authH := NewAuthHandler(store, &cfg)
+
+	// Create full router to test middleware if needed
+	router := NewRouter(manager, store, &cfg)
+
+	return crudH, settingsH, authH, router, store
 }
 
 func TestUpdateMonitor(t *testing.T) {
-	crudH, _, s := setupTest(t)
+	crudH, _, _, _, s := setupTest(t)
 
 	// Seed monitor
 	if err := s.CreateMonitor(db.Monitor{ID: "m1", GroupID: "g-default", Name: "Old", URL: "http://old.com", Interval: 60}); err != nil {
@@ -71,7 +79,7 @@ func TestUpdateMonitor(t *testing.T) {
 }
 
 func TestUpdateSettings(t *testing.T) {
-	_, settingsH, s := setupTest(t)
+	_, settingsH, _, _, s := setupTest(t)
 
 	payload := map[string]string{
 		"data_retention_days": "45",

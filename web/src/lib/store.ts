@@ -157,7 +157,7 @@ interface MonitorStore {
     resolveIncident: (id: string) => void;
     fetchIncidents: () => Promise<void>;
     addChannel: (channel: Omit<NotificationChannel, 'id' | 'enabled'>) => Promise<void>;
-    // updateChannel: (id: string, updates: Partial<NotificationChannel>) => void; // Not supported yet
+    updateChannel: (id: string, updates: Partial<NotificationChannel>) => void;
     deleteChannel: (id: string) => Promise<void>;
     fetchChannels: () => Promise<void>;
 
@@ -736,6 +736,26 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
         } catch (e) {
             console.error(e);
             toast({ title: "Error", description: "Failed to add channel.", variant: "destructive" });
+        }
+    },
+
+    updateChannel: async (id, updates) => {
+        try {
+            const res = await fetch(`/api/notifications/channels/${id}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(updates),
+                credentials: "include"
+            });
+            if (res.ok) {
+                toast({ title: "Channel Updated", description: "Channel configuration updated." });
+                get().fetchChannels();
+            } else {
+                toast({ title: "Error", description: "Failed to update channel.", variant: "destructive" });
+            }
+        } catch (e) {
+            console.error(e);
+            toast({ title: "Error", description: "Failed to update channel.", variant: "destructive" });
         }
     },
 

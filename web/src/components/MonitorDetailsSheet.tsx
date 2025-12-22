@@ -249,7 +249,7 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                     <TabsList className="w-full grid grid-cols-3">
                         <TabsTrigger value="metrics">Metrics</TabsTrigger>
                         <TabsTrigger value="events">Events</TabsTrigger>
-                        <TabsTrigger value="settings">Settings</TabsTrigger>
+                        <TabsTrigger value="settings" data-testid="monitor-settings-tab">Settings</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="metrics" className="mt-6 space-y-6">
@@ -403,16 +403,16 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                         <div className="space-y-4">
                             <div className="grid gap-2">
                                 <Label>Display Name</Label>
-                                <Input value={name} onChange={e => setName(e.target.value)} />
+                                <Input value={name} onChange={e => setName(e.target.value)} data-testid="monitor-edit-name-input" />
                             </div>
                             <div className="grid gap-2">
                                 <Label>Target URL</Label>
-                                <Input value={url} onChange={e => setUrl(e.target.value)} className="font-mono text-xs" />
+                                <Input value={url} onChange={e => setUrl(e.target.value)} className="font-mono text-xs" data-testid="monitor-edit-url-input" />
                             </div>
                             <div className="grid gap-2">
                                 <Label>Check Frequency</Label>
                                 <Select onValueChange={(v) => setInterval(Number(v))} value={interval.toString()}>
-                                    <SelectTrigger>
+                                    <SelectTrigger data-testid="monitor-edit-interval-select">
                                         <SelectValue placeholder="Select frequency" />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -424,7 +424,7 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                                     </SelectContent>
                                 </Select>
                             </div>
-                            <Button onClick={handleSave} className="w-full">
+                            <Button onClick={handleSave} className="w-full" data-testid="monitor-edit-save-btn">
                                 <Save className="w-4 h-4 mr-2" /> Save Changes
                             </Button>
                         </div>
@@ -436,7 +436,7 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                             </p>
                             <AlertDialog>
                                 <AlertDialogTrigger asChild>
-                                    <Button variant="destructive" className="w-full">
+                                    <Button variant="destructive" className="w-full" data-testid="delete-monitor-trigger">
                                         <Trash2 className="w-4 h-4 mr-2" /> Delete Monitor
                                     </Button>
                                 </AlertDialogTrigger>
@@ -456,10 +456,12 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                                                 onOpenChange(false);
                                             }}
                                             className="bg-destructive hover:bg-destructive/90 text-destructive-foreground border-none"
+                                            data-testid="delete-monitor-confirm"
                                         >
                                             Delete Monitor
                                         </AlertDialogAction>
                                     </AlertDialogFooter>
+
                                 </AlertDialogContent>
                             </AlertDialog>
                         </div>

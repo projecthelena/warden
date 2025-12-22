@@ -54,3 +54,9 @@ clean:
 	rm -rf web/node_modules web/dist $(BIN_DIR)
 	rm -rf internal/static/dist/*
 	touch internal/static/dist/.gitkeep
+
+e2e:
+	cd web && npm run test:e2e
+
+e2e-ui:
+	cd web && npm run test:e2e:ui

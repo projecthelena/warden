@@ -83,7 +83,7 @@ export function AppSidebar({ groups, ...props }: React.ComponentProps<typeof Sid
                     },
                     {
                         title: "API Keys",
-                        url: "/api-keys",
+                        url: "/settings/api-keys",
                     },
                 ],
             },

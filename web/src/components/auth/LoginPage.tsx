@@ -51,7 +51,7 @@ export function LoginPage() {
                 <Card>
                     <form onSubmit={handleLogin}>
                         <CardHeader className="space-y-1">
-                            <CardTitle className="text-xl">Sign in</CardTitle>
+                            <CardTitle className="text-xl" data-testid="login-header">Sign in</CardTitle>
                             <CardDescription>
                                 Enter your credentials to continue
                             </CardDescription>
@@ -75,6 +75,7 @@ export function LoginPage() {
                                     value={username}
                                     onChange={e => setUsername(e.target.value)}
                                     required
+                                    data-testid="login-username-input"
                                 />
                             </div>
                             <div className="grid gap-2">
@@ -85,11 +86,12 @@ export function LoginPage() {
                                     value={password}
                                     onChange={e => setPassword(e.target.value)}
                                     required
+                                    data-testid="login-password-input"
                                 />
                             </div>
                         </CardContent>
                         <CardFooter>
-                            <Button className="w-full" type="submit" disabled={isLoading}>
+                            <Button className="w-full" type="submit" disabled={isLoading} data-testid="login-submit-btn">
                                 {isLoading ? (
                                     <div className="flex items-center gap-2">
                                         <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
