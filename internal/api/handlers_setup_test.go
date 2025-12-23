@@ -1,8 +1,11 @@
 package api
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/clusteruptime/clusteruptime/internal/db"
@@ -10,26 +13,73 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-func TestCheckSetup(t *testing.T) {
+func TestPerformSetup_Validation(t *testing.T) {
 	s, _ := db.NewStore(":memory:")
 	m := uptime.NewManager(s)
+	r := &Router{Mux: chi.NewRouter(), manager: m, store: s}
 
-	// Router struct
-	r := &Router{
-		Mux:     chi.NewRouter(),
-		manager: m,
-		store:   s,
+	tests := []struct {
+		name       string
+		username   string
+		password   string
+		wantStatus int
+	}{
+		{
+			name:       "Valid Setup",
+			username:   "valid-user",
+			password:   "Password123!",
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "Username Too Long",
+			username:   strings.Repeat("a", 33),
+			password:   "Password123!",
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "Valid with Dot and Dash",
+			username:   "valid.user-name",
+			password:   "Password123!",
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "Invalid characters (Space)",
+			username:   "User Name",
+			password:   "Password123!",
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "Invalid characters (Uppercase)",
+			username:   "ValidUser",
+			password:   "Password123!",
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "Password too short",
+			username:   "valid",
+			password:   "short",
+			wantStatus: http.StatusBadRequest,
+		},
 	}
 
-	req := httptest.NewRequest("GET", "/api/setup/status", nil)
-	w := httptest.NewRecorder()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := s.Reset(); err != nil {
+				t.Fatalf("failed to reset store: %v", err)
+			}
+			body, _ := json.Marshal(map[string]interface{}{
+				"username": tt.username,
+				"password": tt.password,
+				"timezone": "UTC",
+			})
+			req := httptest.NewRequest("POST", "/api/setup", bytes.NewBuffer(body))
+			w := httptest.NewRecorder()
 
-	r.CheckSetup(w, req)
+			r.PerformSetup(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected 200, got %d", w.Code)
+			if w.Code != tt.wantStatus {
+				t.Errorf("Test %s: Expected status %d, got %d. Body: %s", tt.name, tt.wantStatus, w.Code, w.Body.String())
+			}
+		})
 	}
-	// Default state is not setup (unless NewStore seeds admin? No, setup does that)
-	// Actually NewStore implementation details matter.
-	// Assuming initially isSetup=false if no users.
 }

@@ -30,6 +30,8 @@ type Session struct {
 }
 
 func (s *Store) Authenticate(username, password string) (*User, error) {
+	// username = strings.ToLower(strings.TrimSpace(username)) // REMOVED for Strict Mode
+	username = strings.TrimSpace(username) // Only trim valid white space
 	var u User
 	row := s.db.QueryRow("SELECT id, username, password_hash, created_at, COALESCE(timezone, 'UTC') FROM users WHERE username = ?", username)
 	err := row.Scan(&u.ID, &u.Username, &u.Password, &u.CreatedAt, &u.Timezone)
@@ -107,6 +109,21 @@ func (s *Store) UpdateUser(id int64, password, timezone string) error {
 	}
 	_, err := s.db.Exec("UPDATE users SET timezone = ? WHERE id = ?", timezone, id)
 	return err
+}
+
+func (s *Store) VerifyPassword(userID int64, password string) error {
+	var hash string
+	err := s.db.QueryRow("SELECT password_hash FROM users WHERE id = ?", userID).Scan(&hash)
+	if err == sql.ErrNoRows {
+		return ErrUserNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)); err != nil {
+		return ErrInvalidPass
+	}
+	return nil
 }
 
 func (s *Store) DeleteSession(token string) error {

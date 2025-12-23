@@ -73,7 +73,14 @@ export function LoginPage() {
                                     type="text"
                                     placeholder="username"
                                     value={username}
-                                    onChange={e => setUsername(e.target.value)}
+                                    onChange={e => {
+                                        setUsername(e.target.value);
+                                        if (/[A-Z]/.test(e.target.value)) {
+                                            setError("Username must be lowercase.");
+                                        } else {
+                                            setError(null);
+                                        }
+                                    }}
                                     required
                                     data-testid="login-username-input"
                                 />

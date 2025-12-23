@@ -36,6 +36,12 @@ func TestUserLifecycle(t *testing.T) {
 		t.Errorf("Expected ErrUserNotFound, got %v", err)
 	}
 
+	// 3b. Strict Login Verification (Case Sensitive)
+	_, err = s.Authenticate("Admin", "secret123")
+	if err != ErrUserNotFound {
+		t.Errorf("Expected ErrUserNotFound for 'Admin' (Strict Mode), got %v", err)
+	}
+
 	// 4. Update User
 	if err := s.UpdateUser(user.ID, "newpass456", "EST"); err != nil {
 		t.Fatalf("UpdateUser failed: %v", err)

@@ -98,7 +98,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	// Simple check if middleware passed user
-	userID, ok := r.Context().Value("userID").(int64)
+	userID, ok := r.Context().Value(contextKeyUserID).(int64)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
@@ -122,12 +122,13 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 }
 
 type UpdateUserRequest struct {
-	Password string `json:"password,omitempty"`
-	Timezone string `json:"timezone,omitempty"`
+	Password        string `json:"password,omitempty"`
+	CurrentPassword string `json:"currentPassword,omitempty"`
+	Timezone        string `json:"timezone,omitempty"`
 }
 
 func (h *AuthHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value("userID").(int64)
+	userID, ok := r.Context().Value(contextKeyUserID).(int64)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
@@ -137,6 +138,18 @@ func (h *AuthHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
 		return
+	}
+
+	// Verify Current Password if changing password
+	if req.Password != "" {
+		if req.CurrentPassword == "" {
+			writeError(w, http.StatusBadRequest, "current password required to change password")
+			return
+		}
+		if err := h.store.VerifyPassword(userID, req.CurrentPassword); err != nil {
+			writeError(w, http.StatusUnauthorized, "current password incorrect")
+			return
+		}
 	}
 
 	if err := h.store.UpdateUser(userID, req.Password, req.Timezone); err != nil {

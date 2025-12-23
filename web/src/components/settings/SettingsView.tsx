@@ -162,15 +162,21 @@ export function SettingsView() {
         const formData = new FormData(e.currentTarget);
         const timezone = formData.get("timezone") as string;
         const password = formData.get("password") as string;
+        const currentPassword = formData.get("currentPassword") as string;
 
         try {
             await updateUser({
                 timezone,
-                password: password || undefined
+                password: password || undefined,
+                currentPassword: currentPassword || undefined
             });
             toast({ title: "Settings updated", description: "Your profile has been updated successfully." });
         } catch (error) {
-            toast({ title: "Error", description: "Failed to update settings", variant: "destructive" });
+            toast({
+                title: "Error",
+                description: error instanceof Error ? error.message : "Failed to update settings",
+                variant: "destructive"
+            });
         } finally {
             setIsLoading(false);
         }
@@ -198,7 +204,7 @@ export function SettingsView() {
                         <form onSubmit={handleUpdateProfile} className="space-y-4">
                             <div className="grid gap-2">
                                 <Label>Username</Label>
-                                <Input value={user?.name || ''} disabled className="max-w-md" />
+                                <Input value={user?.username || user?.name || ''} disabled className="max-w-md" />
                             </div>
                             <div className="grid gap-2">
                                 <Label>Timezone</Label>
@@ -212,12 +218,18 @@ export function SettingsView() {
                             <Separator />
 
                             <div className="grid gap-2">
-                                <Label>New Password</Label>
+                                <Label>Change Password</Label>
+                                <Input
+                                    name="currentPassword"
+                                    type="password"
+                                    placeholder="Current Password (Required)"
+                                    className="max-w-md"
+                                />
                                 <Input
                                     name="password"
                                     type="password"
-                                    placeholder="Leave empty to keep current"
-                                    className="max-w-md"
+                                    placeholder="New Password"
+                                    className="max-w-md mt-2"
                                 />
                             </div>
 

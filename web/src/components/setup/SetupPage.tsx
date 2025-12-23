@@ -33,6 +33,14 @@ export function SetupPage() {
                 setError("Please fill in all fields.");
                 return;
             }
+            if (/[A-Z]/.test(formData.username)) {
+                setError("Username must be lowercase.");
+                return;
+            }
+            if (!/^[a-z0-9._-]+$/.test(formData.username)) {
+                setError("Username contains invalid characters. Allowed: lowercase letters, numbers, ., -, _");
+                return;
+            }
             if (formData.password.length < 8) {
                 setError("Password must be at least 8 characters.");
                 return;
@@ -141,6 +149,7 @@ export function SetupPage() {
                                         value={formData.username}
                                         onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                                         placeholder="e.g. admin"
+                                        maxLength={32}
                                         data-testid="setup-username-input"
                                     />
                                 </div>

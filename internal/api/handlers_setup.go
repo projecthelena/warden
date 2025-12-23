@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
+	"strings"
 
 	"github.com/clusteruptime/clusteruptime/internal/db"
 )
@@ -51,6 +53,19 @@ func (h *Router) PerformSetup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Username and password required", http.StatusBadRequest)
 		return
 	}
+
+	// Username Validation
+	req.Username = strings.TrimSpace(req.Username)
+	if len(req.Username) > 32 {
+		http.Error(w, "Username too long (max 32 chars)", http.StatusBadRequest)
+		return
+	}
+	validUsername := regexp.MustCompile(`^[a-z0-9._-]+$`)
+	if !validUsername.MatchString(req.Username) {
+		http.Error(w, "Username invalid: must be lowercase, alphanumeric, dots, underscores, or dashes only", http.StatusBadRequest)
+		return
+	}
+
 	if len(req.Password) < 8 {
 		http.Error(w, "Password must be at least 8 characters", http.StatusBadRequest)
 		return

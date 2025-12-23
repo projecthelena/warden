@@ -68,7 +68,7 @@ test.describe('Custom Username Setup', () => {
         const setupPage = new SetupPage(page);
         await expect(setupPage.welcomeHeader).toBeVisible({ timeout: 10000 });
 
-        const customUser = `CustomUser_${Date.now()}`;
+        const customUser = `customuser_${Date.now()}`;
         const customPass = generateStrongPassword();
 
         console.log(`>> Setting up with User: ${customUser}`);
