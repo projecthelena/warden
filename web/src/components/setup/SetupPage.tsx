@@ -4,10 +4,11 @@ import { useMonitorStore } from '../../lib/store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { AlertCircle, ArrowRight, Check, Rocket, Globe, Clock, ShieldCheck } from 'lucide-react';
-import { motion, AnimatePresence } from "framer-motion";
-import { cn } from "@/lib/utils";
-
+import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Checkbox } from '@/components/ui/checkbox';
+import { AlertCircle, Activity } from 'lucide-react';
 import { SelectTimezone } from '@/components/ui/select-timezone';
 
 export function SetupPage() {
@@ -54,22 +55,21 @@ export function SetupPage() {
         setLoading(true);
 
         try {
-            const success = await performSetup(formData);
-            if (success) {
-                // Login implicitly or explicitly?
-                // Try to login, if successful, reload. If setup was success, backend blocked re-setup.
-                await login(formData.username, formData.password);
-
-                // Force reload to clear all states and re-run App.tsx logic fresh
+            const result = await performSetup(formData);
+            if (result.success) {
+                const loginRes = await login(formData.username, formData.password);
+                if (!loginRes.success) {
+                    setError("Setup successful but login failed: " + loginRes.error);
+                    setLoading(false);
+                    return;
+                }
                 window.location.href = "/";
             } else {
-                // If success is false, maybe it failed or maybe it's already set up?
-                // Check status
                 const isDone = await useMonitorStore.getState().checkSetupStatus();
                 if (isDone) {
                     window.location.href = "/";
                 } else {
-                    setError("Setup failed. Please check logs or try again.");
+                    setError(result.error || "Setup failed. Please check logs or try again.");
                     setLoading(false);
                 }
             }
@@ -80,219 +80,172 @@ export function SetupPage() {
         }
     };
 
-    // Animation variants
-    // Animation variants
-
     return (
-        <div className="min-h-screen bg-[#020617] text-slate-100 flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans selection:bg-blue-500/30">
-            {/* Ambient Background */}
-            <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
-                <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-600/10 rounded-full blur-[120px]" />
-                <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-indigo-600/10 rounded-full blur-[120px]" />
-            </div>
+        <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4 sm:p-8">
+            <Card className="w-full max-w-[550px] border-0 sm:border bg-card/50 sm:bg-card shadow-none sm:shadow-xl sm:ring-1 ring-border/5">
+                <CardHeader className="space-y-6 pt-10 px-8 text-center">
+                    <div className="mx-auto bg-primary/10 rounded-2xl w-14 h-14 flex items-center justify-center mb-2">
+                        <Activity className="w-7 h-7 text-primary" />
+                    </div>
 
-            {/* Logo Header - Always visible but subtle */}
-            <div className="absolute top-8 left-8 flex items-center gap-2 opacity-50">
-                <Rocket className="w-5 h-5 text-blue-400" />
-                <span className="font-semibold text-lg tracking-tight">ClusterUptime</span>
-            </div>
+                    <div className="space-y-2">
+                        <h1 className="text-3xl font-bold tracking-tight" data-testid={step === 0 ? "setup-welcome" : undefined}>
+                            {step === 0 && "Welcome to ClusterUptime"}
+                            {step === 1 && "Create Admin Account"}
+                            {step === 2 && "Select Timezone"}
+                            {step === 3 && "Almost Done"}
+                        </h1>
+                        <p className="text-muted-foreground text-lg max-w-sm mx-auto leading-relaxed">
+                            {step === 0 && "Your self-hosted monitoring solution is just steps away."}
+                            {step === 1 && "Secure your instance with a new admin account."}
+                            {step === 2 && "Configure the default timezone for your dashboards."}
+                            {step === 3 && "Review your settings and launch the platform."}
+                        </p>
+                    </div>
 
-            {/* Progress Bar (Only visible after welcome) */}
-            {step > 0 && (
-                <div className="absolute top-0 left-0 w-full h-1 bg-slate-800">
-                    <motion.div
-                        className="h-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]"
-                        initial={{ width: 0 }}
-                        animate={{ width: `${(step / 3) * 100}%` }}
-                        transition={{ duration: 0.5, ease: "easeInOut" }}
-                    />
-                </div>
-            )}
-
-            <div className="w-full max-w-lg z-10 relative">
-                <AnimatePresence mode='wait'>
-                    {step === 0 && (
-                        <motion.div
-                            key="step0"
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -20 }}
-                            className="text-center space-y-8"
-                            data-testid="setup-welcome"
-                        >
-                            <div className="space-y-4">
-                                <h1 className="text-5xl md:text-6xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-b from-white to-slate-400 pb-2">
-                                    Welcome.
-                                </h1>
-                                <p className="text-xl text-slate-400 font-light max-w-sm mx-auto leading-relaxed">
-                                    Let's get your monitoring instance configured in just a few seconds.
-                                </p>
-                            </div>
-
-                            <Button
-                                onClick={() => setStep(1)}
-                                size="lg"
-                                className="h-14 px-8 text-lg rounded-full bg-white text-black hover:bg-slate-200 transition-all hover:scale-105 shadow-[0_0_20px_rgba(255,255,255,0.1)] group"
-                                data-testid="setup-start-btn"
-                            >
-                                Get Started <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                            </Button>
-                        </motion.div>
+                    {step > 0 && (
+                        <div className="flex items-center justify-center gap-2 mt-2">
+                            {[
+                                { num: 1, label: "Account" },
+                                { num: 2, label: "Timezone" },
+                                { num: 3, label: "Finish" },
+                            ].map((s, idx) => {
+                                const isActive = step === s.num;
+                                const isCompleted = step > s.num;
+                                return (
+                                    <div key={s.num} className="flex items-center">
+                                        <div className={`flex items-center gap-2 px-3 py-1 rounded-full transition-colors ${isActive ? "bg-primary/10 text-primary font-medium" :
+                                            isCompleted ? "text-primary/70" : "text-muted-foreground/40"
+                                            }`}>
+                                            <span className="text-sm">{s.label}</span>
+                                        </div>
+                                        {idx < 2 && (
+                                            <div className="w-4 h-[1px] bg-border mx-1" />
+                                        )}
+                                    </div>
+                                )
+                            })}
+                        </div>
                     )}
+                </CardHeader>
 
-                    {step === 1 && (
-                        <motion.div
-                            key="step1"
-                            initial={{ opacity: 0, x: 20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: -20 }}
-                            className="space-y-8"
-                        >
-                            <div className="space-y-2">
-                                <div className="flex items-center gap-2 text-blue-400 mb-2">
-                                    <ShieldCheck className="w-5 h-5" />
-                                    <span className="text-sm font-medium uppercase tracking-wider">Step 1 of 3</span>
-                                </div>
-                                <h2 className="text-4xl font-bold">Admin Access</h2>
-                                <p className="text-slate-400 text-lg">Create the owner account for this instance.</p>
-                            </div>
-
-                            <div className="space-y-5">
-                                <div className="space-y-2">
-                                    <Label className="text-slate-300 ml-1">Username</Label>
+                {step > 0 && (
+                    <CardContent className="px-8 py-6 space-y-8">
+                        {step === 1 && (
+                            <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <div className="space-y-2.5">
+                                    <Label htmlFor="username" className="text-base font-medium ml-1">Username</Label>
                                     <Input
+                                        id="username"
                                         autoFocus
+                                        className="h-12 text-lg bg-background/50"
                                         value={formData.username}
                                         onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                                        className="h-14 text-lg bg-slate-900/50 border-slate-800 focus:border-blue-500/50 focus:ring-blue-500/20 rounded-xl"
                                         placeholder="e.g. admin"
                                         data-testid="setup-username-input"
                                     />
                                 </div>
-                                <div className="space-y-2">
-                                    <Label className="text-slate-300 ml-1">Password</Label>
+                                <div className="space-y-2.5">
+                                    <Label htmlFor="password" className="text-base font-medium ml-1">Password</Label>
                                     <Input
+                                        id="password"
                                         type="password"
+                                        className="h-12 text-lg bg-background/50"
                                         value={formData.password}
                                         onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                                        className="h-14 text-lg bg-slate-900/50 border-slate-800 focus:border-blue-500/50 focus:ring-blue-500/20 rounded-xl"
                                         placeholder="Min 8 chars, 1 number, 1 special char"
                                         onKeyDown={(e) => e.key === 'Enter' && nextStep()}
                                         data-testid="setup-password-input"
                                     />
                                 </div>
                             </div>
+                        )}
 
-                            {error && (
-                                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-2 text-red-400 bg-red-950/20 p-3 rounded-lg border border-red-900/30">
-                                    <AlertCircle className="w-5 h-5 shrink-0" />
-                                    <span>{error}</span>
-                                </motion.div>
-                            )}
-
-                            <Button onClick={nextStep} className="w-full h-14 text-lg rounded-xl bg-blue-600 hover:bg-blue-500 transition-all shadow-lg shadow-blue-900/20" data-testid="setup-continue-btn">
-                                Continue
-                            </Button>
-                        </motion.div>
-                    )}
-
-                    {step === 2 && (
-                        <motion.div
-                            key="step2"
-                            initial={{ opacity: 0, x: 20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: -20 }}
-                            className="space-y-8"
-                        >
-                            <div className="space-y-2">
-                                <div className="flex items-center gap-2 text-indigo-400 mb-2">
-                                    <Clock className="w-5 h-5" />
-                                    <span className="text-sm font-medium uppercase tracking-wider">Step 2 of 3</span>
-                                </div>
-                                <h2 className="text-4xl font-bold">Local Time</h2>
-                                <p className="text-slate-400 text-lg">Set the default timezone for your dashboards.</p>
-                            </div>
-
-                            <div className="space-y-2 p-1">
-                                <div className="space-y-2 p-1">
+                        {step === 2 && (
+                            <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <div className="space-y-2.5">
+                                    <Label className="text-base font-medium ml-1">Timezone</Label>
                                     <SelectTimezone
                                         value={formData.timezone}
                                         onValueChange={(val) => setFormData({ ...formData, timezone: val })}
-                                        className="h-16 text-xl px-6 bg-slate-900/50 border-slate-800 rounded-xl focus:ring-indigo-500/20 w-full"
+                                        className="h-12 text-lg w-full bg-background/50"
                                     />
-                                </div>
-                            </div>
-
-                            <Button onClick={nextStep} className="w-full h-14 text-lg rounded-xl bg-indigo-600 hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-900/20" data-testid="setup-continue-btn-2">
-                                Continue
-                            </Button>
-                        </motion.div>
-                    )}
-
-                    {step === 3 && (
-                        <motion.div
-                            key="step3"
-                            initial={{ opacity: 0, x: 20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: -20 }}
-                            className="space-y-8"
-                        >
-                            <div className="space-y-2">
-                                <div className="flex items-center gap-2 text-emerald-400 mb-2">
-                                    <Globe className="w-5 h-5" />
-                                    <span className="text-sm font-medium uppercase tracking-wider">Step 3 of 3</span>
-                                </div>
-                                <h2 className="text-4xl font-bold">Quick Start</h2>
-                                <p className="text-slate-400 text-lg">Bootstrap your instance with example data?</p>
-                            </div>
-
-                            <div
-                                onClick={() => setFormData(f => ({ ...f, createDefaults: !f.createDefaults }))}
-                                className={cn(
-                                    "cursor-pointer group relative flex items-center gap-6 p-6 rounded-2xl border-2 transition-all duration-300",
-                                    formData.createDefaults
-                                        ? "bg-emerald-950/10 border-emerald-500/50 shadow-[0_0_30px_rgba(16,185,129,0.1)]"
-                                        : "bg-slate-900/30 border-slate-800 hover:border-slate-700"
-                                )}
-                            >
-                                <div className={cn(
-                                    "w-8 h-8 rounded-full border-2 flex items-center justify-center transition-colors",
-                                    formData.createDefaults
-                                        ? "bg-emerald-500 border-emerald-500 text-black"
-                                        : "border-slate-600 group-hover:border-slate-500"
-                                )}>
-                                    {formData.createDefaults && <Check className="w-5 h-5 font-bold" />}
-                                </div>
-
-                                <div className="flex-1">
-                                    <h3 className={cn("text-xl font-semibold mb-1", formData.createDefaults ? "text-emerald-400" : "text-slate-300")}>
-                                        Create Default Monitors
-                                    </h3>
-                                    <p className="text-slate-400">
-                                        We'll add checks for Google, GitHub, and Cloudflare DNS so you aren't staring at a blank screen.
+                                    <p className="text-sm text-muted-foreground ml-1">
+                                        Current detected: {Intl.DateTimeFormat().resolvedOptions().timeZone}
                                     </p>
                                 </div>
                             </div>
+                        )}
 
+                        {step === 3 && (
+                            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <div className="flex items-start space-x-4 p-5 rounded-xl border bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer" onClick={() => setFormData(f => ({ ...f, createDefaults: !f.createDefaults }))}>
+                                    <Checkbox
+                                        id="createDefaults"
+                                        checked={formData.createDefaults}
+                                        onCheckedChange={(checked) => setFormData({ ...formData, createDefaults: checked as boolean })}
+                                        className="mt-1"
+                                    />
+                                    <div className="space-y-1 select-none">
+                                        <Label htmlFor="createDefaults" className="text-lg font-semibold cursor-pointer">
+                                            Create Default Monitors
+                                        </Label>
+                                        <p className="text-muted-foreground leading-relaxed">
+                                            Bootstrap your experience with example monitors for Google, GitHub, and major DNS providers.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {error && (
+                            <Alert variant="destructive" className="animate-in fade-in zoom-in-95">
+                                <AlertCircle className="h-5 w-5" />
+                                <AlertDescription className="ml-2 text-base font-medium">{error}</AlertDescription>
+                            </Alert>
+                        )}
+                    </CardContent>
+                )}
+
+                <CardFooter className="px-8 pb-10">
+                    <div className="w-full space-y-4">
+                        {step === 0 && (
+                            <Button
+                                onClick={() => setStep(1)}
+                                className="w-full h-12 text-lg font-semibold rounded-lg shadow-lg shadow-primary/20"
+                                data-testid="setup-start-btn"
+                            >
+                                Get Started
+                            </Button>
+                        )}
+
+                        {(step === 1 || step === 2) && (
+                            <Button
+                                onClick={nextStep}
+                                className="w-full h-12 text-lg font-medium rounded-lg"
+                                data-testid={step === 2 ? "setup-continue-btn-2" : "setup-continue-btn"}
+                            >
+                                Continue
+                            </Button>
+                        )}
+
+                        {step === 3 && (
                             <Button
                                 onClick={handleSubmit}
                                 disabled={loading}
-                                className="w-full h-16 text-xl font-semibold rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 transition-all shadow-lg shadow-blue-900/20"
+                                className="w-full h-14 text-xl font-bold rounded-lg shadow-xl shadow-primary/20"
                                 data-testid="setup-launch-btn"
                             >
-                                {loading ? "Configuring..." : "Launch Dashboard"}
+                                {loading ? "Launching..." : "Launch Dashboard"}
                             </Button>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-            </div>
+                        )}
+                    </div>
+                </CardFooter>
+            </Card>
 
-            {/* Footer / Copyright */}
-            <div className="absolute bottom-6 text-center text-slate-600 text-sm">
-                © {new Date().getFullYear()} ClusterUptime. Self-hosted & Open Source.
+            <div className="fixed bottom-6 text-center text-xs text-muted-foreground animate-in fade-in duration-1000">
+                <p>© {new Date().getFullYear()} ClusterUptime. Self-hosted & Open Source.</p>
             </div>
         </div>
     );
 }
-
-// Helper to calculate direction for slides (optional, simplified to fade/slide for now in variants)

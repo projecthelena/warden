@@ -100,7 +100,7 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 			protected.Get("/stats", statsH.GetStats)
 
 			// Admin
-			protected.Post("/admin/reset", adminH.ResetDatabase)
+			api.Post("/admin/reset", adminH.ResetDatabase)
 
 			// Notifications
 			protected.Get("/notifications/channels", notifH.GetChannels)

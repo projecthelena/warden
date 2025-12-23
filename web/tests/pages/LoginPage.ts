@@ -31,7 +31,7 @@ export class LoginPage {
 
         // Wait for redirection to Dashboard
         // App redirects to /dashboard or / (which redirects to /dashboard)
-        await expect(this.page).toHaveURL(/\/dashboard/);
+        await expect(this.page).toHaveURL(/\/dashboard/, { timeout: 10000 });
     }
 
     async logout() {

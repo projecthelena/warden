@@ -184,7 +184,7 @@ interface MonitorStore {
 
     // Setup
     checkSetupStatus: () => Promise<boolean>;
-    performSetup: (data: SetupPayload) => Promise<boolean>;
+    performSetup: (data: SetupPayload) => Promise<{ success: boolean; error?: string }>;
 }
 
 export interface SetupPayload {
@@ -240,13 +240,20 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
 
             if (res.ok) {
                 set({ isSetupComplete: true });
-                return true;
+                return { success: true };
             } else {
-                return false;
+                const text = await res.text();
+                // try parse json
+                try {
+                    const json = JSON.parse(text);
+                    return { success: false, error: json.error || text };
+                } catch {
+                    return { success: false, error: text || "Unknown server error" };
+                }
             }
         } catch (e) {
             console.error("Setup failed or timed out", e);
-            return false;
+            return { success: false, error: "Network connection refused or timeout" };
         }
     },
     fetchSystemEvents: async () => {

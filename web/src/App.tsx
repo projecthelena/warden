@@ -433,11 +433,12 @@ const App = () => {
     );
   }
 
-  // If setup is NOT complete, force setup page for all routes except static assets if any
+  // If setup is NOT complete, force setup page for all routes
   if (!isSetupComplete) {
     return (
       <Routes>
-        <Route path="*" element={<SetupPage />} />
+        <Route path="/setup" element={<SetupPage />} />
+        <Route path="*" element={<Navigate to="/setup" replace />} />
       </Routes>
     )
   }

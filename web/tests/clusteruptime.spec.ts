@@ -6,6 +6,10 @@ import { DashboardPage } from './pages/DashboardPage';
 test.describe('ClusterUptime Smoke Tests', () => {
 
     test('Full System Flow & Edge Cases', async ({ page }) => {
+        // Force clear any storage/cookies to ensure fresh start
+        await page.context().clearCookies();
+        // await page.evaluate(() => localStorage.clear()); // Causes SecurityError sometimes on initial blank page
+
         const loginPage = new LoginPage(page);
         const setupPage = new SetupPage(page);
         const dashboardPage = new DashboardPage(page);
@@ -14,7 +18,6 @@ test.describe('ClusterUptime Smoke Tests', () => {
         await dashboardPage.goto();
 
         // 2. Handle Setup or Login
-        // 2. Handle Setup
         if (await setupPage.isVisible()) {
             console.log('>> Setup Required.');
             await setupPage.completeSetup();
