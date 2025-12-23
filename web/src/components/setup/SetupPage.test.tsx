@@ -41,17 +41,22 @@ describe('SetupPage', () => {
         fireEvent.click(screen.getByRole('button', { name: /Get Started/i }));
 
         await waitFor(() => {
-            expect(screen.getByText(/Admin Access/i)).toBeInTheDocument();
+            expect(screen.getByText(/Create Admin Account/i)).toBeInTheDocument();
         });
     });
 
     it('completes the full setup flow', async () => {
-        const mockPerformSetup = vi.fn().mockResolvedValue(true);
+        const mockPerformSetup = vi.fn().mockResolvedValue({ success: true });
         const mockLogin = vi.fn().mockResolvedValue({ success: true });
 
         mockUseMonitorStore.mockReturnValue({
             performSetup: mockPerformSetup,
             login: mockLogin,
+        });
+
+        // Mock static getState for fallback check
+        mockUseMonitorStore.getState = vi.fn().mockReturnValue({
+            checkSetupStatus: vi.fn().mockResolvedValue(true)
         });
 
         // Mock window.location
@@ -68,18 +73,18 @@ describe('SetupPage', () => {
 
         // Step 1: Welcome -> Get Started
         fireEvent.click(screen.getByRole('button', { name: /Get Started/i }));
-        await waitFor(() => expect(screen.getByText(/Admin Access/i)).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByText(/Create Admin Account/i)).toBeInTheDocument());
 
         // Step 2: Form Input
         fireEvent.change(screen.getByPlaceholderText(/e.g. admin/i), { target: { value: 'admin' } });
         fireEvent.change(screen.getByPlaceholderText(/Min 8 chars/i), { target: { value: 'Pass123!@' } });
 
         fireEvent.click(screen.getByRole('button', { name: /Continue/i }));
-        await waitFor(() => expect(screen.getByText(/Local Time/i)).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByText(/Select Timezone/i)).toBeInTheDocument());
 
         // Step 3: Timezone (Just click continue, default is selected)
         fireEvent.click(screen.getByRole('button', { name: /Continue/i }));
-        await waitFor(() => expect(screen.getByText(/Quick Start/i)).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByText(/Almost Done/i)).toBeInTheDocument());
 
         // Step 4: Submit
         fireEvent.click(screen.getByRole('button', { name: /Launch Dashboard/i }));

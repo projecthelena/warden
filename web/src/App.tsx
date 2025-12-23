@@ -381,7 +381,6 @@ function AdminLayout() {
                   <CreateMonitorSheet groups={safeGroups} defaultGroup={activeGroup?.name} />
                 </>
               )}
-              <Button data-testid="debug-button-always">DebugAlways</Button>
             </div>
           </header>
           <ScrollArea className="flex-1 p-4 pt-0 h-[calc(100vh-4rem)]">

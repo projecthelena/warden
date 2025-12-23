@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -85,6 +86,7 @@ func (s *Store) HasUsers() (bool, error) {
 
 // CreateUser creates a new user.
 func (s *Store) CreateUser(username, password, timezone string) error {
+	username = strings.ToLower(strings.TrimSpace(username))
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return err

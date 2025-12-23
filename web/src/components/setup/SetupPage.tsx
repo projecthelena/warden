@@ -21,7 +21,7 @@ export function SetupPage() {
 
     // Form Data
     const [formData, setFormData] = useState({
-        username: 'admin',
+        username: '',
         password: '',
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', // Auto-detect default
         createDefaults: true
