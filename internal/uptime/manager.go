@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,6 +27,7 @@ type CheckResult struct {
 	StatusCode int
 	Error      string
 	IsDegraded bool
+	CertExpiry *time.Time // SSL certificate NotAfter (nil if not HTTPS or unavailable)
 }
 
 type Manager struct {
@@ -38,7 +40,9 @@ type Manager struct {
 	stopCh      chan struct{}
 	wg          sync.WaitGroup
 
-	latencyThreshold int64
+	latencyThreshold    int64
+	sslExpiryThreshold  int // days before expiry to alert (default 30)
+	sslLastNotified     map[string]time.Time // monitorID -> last SSL notification time (24h dedup)
 
 	// Active Maintenance Windows
 	maintenanceWindows []db.Incident
@@ -61,6 +65,8 @@ func NewManager(store *db.Store) *Manager {
 		resultQueue:        make(chan CheckResult, 1000), // Buffer for results
 		stopCh:             make(chan struct{}),
 		latencyThreshold:   1000, // Default
+		sslExpiryThreshold: 30,   // Default 30 days
+		sslLastNotified:    make(map[string]time.Time),
 		notifier:           notifications.NewService(store),
 	}
 
@@ -68,6 +74,11 @@ func NewManager(store *db.Store) *Manager {
 	if val, err := store.GetSetting("latency_threshold"); err == nil {
 		if i, err := strconv.Atoi(val); err == nil {
 			m.latencyThreshold = int64(i)
+		}
+	}
+	if val, err := store.GetSetting("ssl_expiry_threshold_days"); err == nil {
+		if i, err := strconv.Atoi(val); err == nil && i > 0 {
+			m.sslExpiryThreshold = i
 		}
 	}
 
@@ -133,17 +144,20 @@ func (m *Manager) Reset() {
 		mon.Stop()
 		delete(m.monitors, id)
 	}
+	m.sslLastNotified = make(map[string]time.Time)
 }
 
 func (m *Manager) worker() {
 	defer m.wg.Done()
+
+	transport := &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     30 * time.Second,
+	}
 	client := &http.Client{
-		Timeout: 5 * time.Second,
-		Transport: &http.Transport{
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 10,
-			IdleConnTimeout:     30 * time.Second,
-		},
+		Timeout:   5 * time.Second,
+		Transport: transport,
 	}
 
 	for job := range m.jobQueue {
@@ -154,6 +168,7 @@ func (m *Manager) worker() {
 		isUp := true
 		var errMsg string
 		statusCode := 0
+		var certExpiry *time.Time
 
 		if err != nil {
 			isUp = false
@@ -163,6 +178,11 @@ func (m *Manager) worker() {
 			statusCode = resp.StatusCode
 			if resp.StatusCode >= 400 {
 				isUp = false
+			}
+			// Extract SSL certificate expiry for HTTPS URLs
+			if resp.TLS != nil && len(resp.TLS.PeerCertificates) > 0 {
+				notAfter := resp.TLS.PeerCertificates[0].NotAfter
+				certExpiry = &notAfter
 			}
 		}
 
@@ -174,6 +194,7 @@ func (m *Manager) worker() {
 			Timestamp:  start,
 			StatusCode: statusCode,
 			Error:      errMsg,
+			CertExpiry: certExpiry,
 		}
 	}
 }
@@ -365,6 +386,47 @@ func (m *Manager) resultProcessor() {
 						}
 					}
 				}
+
+				// SSL Certificate Expiry Check
+				if res.CertExpiry != nil && strings.HasPrefix(res.URL, "https") {
+					m.mu.RLock()
+					sslThreshold := m.sslExpiryThreshold
+					m.mu.RUnlock()
+
+					daysUntilExpiry := int(time.Until(*res.CertExpiry).Hours() / 24)
+					if daysUntilExpiry <= sslThreshold {
+						// Dedup: only notify once per 24h per monitor
+						m.mu.RLock()
+						lastNotified, notifiedBefore := m.sslLastNotified[res.MonitorID]
+						m.mu.RUnlock()
+
+						if !notifiedBefore || time.Since(lastNotified) >= 24*time.Hour {
+							m.mu.Lock()
+							m.sslLastNotified[res.MonitorID] = time.Now()
+							m.mu.Unlock()
+
+							var msg string
+							if daysUntilExpiry < 0 {
+								msg = "SSL certificate expired " + strconv.Itoa(-daysUntilExpiry) + " days ago (" + res.CertExpiry.Format("2006-01-02") + ")"
+							} else {
+								msg = "SSL certificate expires in " + strconv.Itoa(daysUntilExpiry) + " days (" + res.CertExpiry.Format("2006-01-02") + ")"
+							}
+							go func() { _ = m.store.CreateEvent(res.MonitorID, "ssl_expiring", msg) }()
+
+							if !isMaint {
+								m.notifier.Enqueue(notifications.NotificationEvent{
+									MonitorID:   res.MonitorID,
+									MonitorName: mon.GetName(),
+									MonitorURL:  mon.GetTargetURL(),
+									Type:        notifications.EventSSLExpiring,
+									Message:     msg,
+									Time:        res.Timestamp,
+								})
+							}
+							log.Printf("Monitor %s: SSL certificate expiring in %d days", res.MonitorID, daysUntilExpiry)
+						}
+					}
+				}
 			}
 
 			// 3. Insert Check Result
@@ -485,6 +547,7 @@ func (m *Manager) Sync() {
 		if !activeIDs[id] {
 			mon.Stop()
 			delete(m.monitors, id)
+			delete(m.sslLastNotified, id)
 			log.Printf("Stopped monitor: %s", id)
 		}
 	}
@@ -506,6 +569,7 @@ func (m *Manager) RemoveMonitor(id string) {
 	if mon, exists := m.monitors[id]; exists {
 		mon.Stop()
 		delete(m.monitors, id)
+		delete(m.sslLastNotified, id)
 		log.Printf("Explicitly stopped monitor: %s", id)
 	}
 }
@@ -520,6 +584,18 @@ func (m *Manager) GetLatencyThreshold() int64 {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.latencyThreshold
+}
+
+func (m *Manager) SetSSLExpiryThreshold(days int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sslExpiryThreshold = days
+}
+
+func (m *Manager) GetSSLExpiryThreshold() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.sslExpiryThreshold
 }
 
 // GetAll returns all running monitors

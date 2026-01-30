@@ -75,6 +75,7 @@ function GeneralSettings() {
     const { toast } = useToast();
     const [threshold, setThreshold] = useState(settings?.latency_threshold || "1000");
     const [retention, setRetention] = useState(settings?.data_retention_days || "30");
+    const [sslExpiry, setSslExpiry] = useState(settings?.ssl_expiry_threshold_days || "30");
 
     // Fetch settings on mount
     useEffect(() => {
@@ -86,13 +87,15 @@ function GeneralSettings() {
         if (settings) {
             setThreshold(settings.latency_threshold || "1000");
             setRetention(settings.data_retention_days || "30");
+            setSslExpiry(settings.ssl_expiry_threshold_days || "30");
         }
     }, [settings]);
 
     const handleSave = async () => {
         await updateSettings({
             latency_threshold: threshold,
-            data_retention_days: retention
+            data_retention_days: retention,
+            ssl_expiry_threshold_days: sslExpiry
         });
         toast({ title: "Settings Saved", description: "Global settings updated." });
     };
@@ -127,6 +130,19 @@ function GeneralSettings() {
                         type="number"
                         value={retention}
                         onChange={(e) => setRetention(e.target.value)}
+                        className="max-w-[200px]"
+                    />
+                </div>
+                <div className="grid gap-2">
+                    <Label htmlFor="sslExpiry">SSL Expiry Threshold (Days)</Label>
+                    <div className="text-sm text-muted-foreground mb-2">
+                        Alert when an HTTPS monitor's SSL certificate expires within this many days.
+                    </div>
+                    <Input
+                        id="sslExpiry"
+                        type="number"
+                        value={sslExpiry}
+                        onChange={(e) => setSslExpiry(e.target.value)}
                         className="max-w-[200px]"
                     />
                 </div>

@@ -3,7 +3,7 @@ import { toast } from "@/components/ui/use-toast";
 
 export interface MonitorEvent {
     id: string;
-    type: 'up' | 'down' | 'degraded';
+    type: 'up' | 'down' | 'degraded' | 'ssl_expiring';
     timestamp: string;
     message: string;
 }
@@ -77,6 +77,7 @@ export interface OverviewGroup {
 export interface Settings {
     latency_threshold: string;
     data_retention_days: string;
+    ssl_expiry_threshold_days: string;
 }
 
 export interface StatusPage {
@@ -879,7 +880,7 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
             });
             set((state) => ({
                 settings: {
-                    ...(state.settings || { latency_threshold: "1000", data_retention_days: "30" }),
+                    ...(state.settings || { latency_threshold: "1000", data_retention_days: "30", ssl_expiry_threshold_days: "30" }),
                     ...newSettings
                 }
             }));

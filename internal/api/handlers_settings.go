@@ -31,6 +31,12 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		retention = "30"
 	}
 
+	// SSL Expiry Threshold
+	sslExpiry, err := h.store.GetSetting("ssl_expiry_threshold_days")
+	if err != nil {
+		sslExpiry = "30"
+	}
+
 	// Slack Notifications
 	slackEnabled, _ := h.store.GetSetting("notifications.slack.enabled")
 	slackWebhook, _ := h.store.GetSetting("notifications.slack.webhook_url")
@@ -39,6 +45,7 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{
 		"latency_threshold":               val,
 		"data_retention_days":             retention,
+		"ssl_expiry_threshold_days":       sslExpiry,
 		"notifications.slack.enabled":     slackEnabled,
 		"notifications.slack.webhook_url": slackWebhook,
 		"notifications.slack.notify_on":   slackNotifyOn,
@@ -79,11 +86,20 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 			http.Error(w, "Failed to save data_retention_days", http.StatusInternalServerError)
 			return
 		}
-		// Manager reads this setting dynamically in retentionWorker,
-		// but we could allow hot-reloading it if we exposed a setter?
-		// For now, the worker reads it every run (daily), so it will pick it up next run.
-		// If we want immediate effect, we'd need to trigger the worker.
-		// But for retention, inevitable delay is fine.
+	}
+
+	if val, ok := body["ssl_expiry_threshold_days"]; ok {
+		i, err := strconv.Atoi(val)
+		if err != nil || i < 1 {
+			http.Error(w, "Invalid ssl_expiry_threshold_days", http.StatusBadRequest)
+			return
+		}
+
+		if err := h.store.SetSetting("ssl_expiry_threshold_days", val); err != nil {
+			http.Error(w, "Failed to save ssl_expiry_threshold_days", http.StatusInternalServerError)
+			return
+		}
+		h.manager.SetSSLExpiryThreshold(i)
 	}
 
 	// Notifications Keys
