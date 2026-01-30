@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/clusteruptime/clusteruptime/internal/db"
 	"github.com/clusteruptime/clusteruptime/internal/uptime"
@@ -37,6 +38,12 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		sslExpiry = "30"
 	}
 
+	// Notification Timezone
+	notificationTimezone, err := h.store.GetSetting("notification_timezone")
+	if err != nil {
+		notificationTimezone = "UTC"
+	}
+
 	// Slack Notifications
 	slackEnabled, _ := h.store.GetSetting("notifications.slack.enabled")
 	slackWebhook, _ := h.store.GetSetting("notifications.slack.webhook_url")
@@ -46,6 +53,7 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		"latency_threshold":               val,
 		"data_retention_days":             retention,
 		"ssl_expiry_threshold_days":       sslExpiry,
+		"notification_timezone":           notificationTimezone,
 		"notifications.slack.enabled":     slackEnabled,
 		"notifications.slack.webhook_url": slackWebhook,
 		"notifications.slack.notify_on":   slackNotifyOn,
@@ -100,6 +108,19 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		h.manager.SetSSLExpiryThreshold(i)
+	}
+
+	if val, ok := body["notification_timezone"]; ok {
+		// Validate timezone
+		if _, err := time.LoadLocation(val); err != nil {
+			http.Error(w, "Invalid notification_timezone", http.StatusBadRequest)
+			return
+		}
+
+		if err := h.store.SetSetting("notification_timezone", val); err != nil {
+			http.Error(w, "Failed to save notification_timezone", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	// Notifications Keys

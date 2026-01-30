@@ -78,6 +78,7 @@ export interface Settings {
     latency_threshold: string;
     data_retention_days: string;
     ssl_expiry_threshold_days: string;
+    notification_timezone: string;
 }
 
 export interface StatusPage {
@@ -100,6 +101,17 @@ export interface SystemIncident {
     startedAt: string;
     resolvedAt?: string;
     duration: string;
+}
+
+export interface SSLWarning {
+    id: string;
+    monitorId: string;
+    monitorName: string;
+    groupName: string;
+    groupId: string;
+    type: 'ssl_expiring';
+    message: string;
+    timestamp: string;
 }
 
 export interface APIKey {
@@ -127,7 +139,7 @@ interface MonitorStore {
     groups: Group[];
     overview: OverviewGroup[];
     incidents: Incident[]; // Manual incidents
-    systemEvents: { active: SystemIncident[], history: SystemIncident[] }; // Auto events
+    systemEvents: { active: SystemIncident[], history: SystemIncident[], sslWarnings: SSLWarning[] }; // Auto events
     channels: NotificationChannel[];
     user: User | null;
     isAuthChecked: boolean;
@@ -145,7 +157,7 @@ interface MonitorStore {
     fetchOverview: () => Promise<void>;
     fetchMonitors: (groupId?: string) => Promise<void>;
     setGroups: (groups: Group[]) => void; // For React Query Sync
-    setSystemEvents: (events: { active: SystemIncident[], history: SystemIncident[] }) => void;
+    setSystemEvents: (events: { active: SystemIncident[], history: SystemIncident[], sslWarnings: SSLWarning[] }) => void;
     fetchSystemEvents: () => Promise<void>;
     addGroup: (name: string) => Promise<string | undefined>;
     updateGroup: (id: string, name: string) => Promise<void>;
@@ -200,7 +212,7 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
     groups: [],
     overview: [],
     incidents: [],
-    systemEvents: { active: [], history: [] },
+    systemEvents: { active: [], history: [], sslWarnings: [] },
     channels: [],
     user: null,
     isAuthChecked: false,
@@ -210,7 +222,7 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
 
     // Sync Actions
     setGroups: (groups: Group[]) => set({ groups }),
-    setSystemEvents: (events: { active: SystemIncident[], history: SystemIncident[] }) => set({ systemEvents: events }),
+    setSystemEvents: (events: { active: SystemIncident[], history: SystemIncident[], sslWarnings: SSLWarning[] }) => set({ systemEvents: events }),
 
     // Actions
     checkSetupStatus: async () => {
@@ -263,7 +275,13 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
             const res = await fetch("/api/events", { credentials: "include" });
             if (res.ok) {
                 const data = await res.json();
-                set({ systemEvents: data });
+                set({
+                    systemEvents: {
+                        active: data.active || [],
+                        history: data.history || [],
+                        sslWarnings: data.sslWarnings || []
+                    }
+                });
             }
         } catch (e) {
             console.error(e);
@@ -880,7 +898,7 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
             });
             set((state) => ({
                 settings: {
-                    ...(state.settings || { latency_threshold: "1000", data_retention_days: "30", ssl_expiry_threshold_days: "30" }),
+                    ...(state.settings || { latency_threshold: "1000", data_retention_days: "30", ssl_expiry_threshold_days: "30", notification_timezone: "UTC" }),
                     ...newSettings
                 }
             }));
