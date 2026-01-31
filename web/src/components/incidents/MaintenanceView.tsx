@@ -211,7 +211,7 @@ export function MaintenanceView() {
 
             toast({ title: "Maintenance Ended", description: "The maintenance window has been closed." });
             fetchIncidents();
-        } catch (e) {
+        } catch (_e) {
             toast({ variant: "destructive", title: "Error", description: "Could not end maintenance." });
         }
     };
@@ -223,7 +223,7 @@ export function MaintenanceView() {
             if (!res.ok) throw new Error("Failed to delete");
             toast({ title: "Deleted", description: "Maintenance window deleted." });
             fetchIncidents();
-        } catch (e) {
+        } catch (_e) {
             toast({ variant: "destructive", title: "Error", description: "Could not delete maintenance." });
         } finally {
             setDeletingId(null);
@@ -250,7 +250,7 @@ export function MaintenanceView() {
             toast({ title: "Updated", description: "Maintenance details updated." });
             fetchIncidents();
             setEditingIncident(null);
-        } catch (e) {
+        } catch (_e) {
             toast({ variant: "destructive", title: "Error", description: "Could not update maintenance." });
         }
     };

@@ -15,17 +15,20 @@ test.describe('ClusterUptime Smoke Tests', () => {
         const setupPage = new SetupPage(page);
         const dashboardPage = new DashboardPage(page);
 
-        // 1. Initial Load
+        // 1. Initial Load - wait for app to stabilize
         await dashboardPage.goto();
+        await page.waitForLoadState('networkidle');
 
-        // 2. Handle Setup or Login
-        if (await setupPage.isVisible()) {
+        // 2. Handle Setup or Login based on URL (more reliable than element visibility)
+        const currentUrl = page.url();
+        if (currentUrl.includes('/setup')) {
             console.log('>> Setup Required.');
             await setupPage.completeSetup();
         }
 
-        // 3. Handle Login (Check again, as Setup might have redirected to Login)
-        if (await loginPage.isVisible()) {
+        // 3. Handle Login (Check URL after setup might have redirected)
+        await page.waitForLoadState('networkidle');
+        if (page.url().includes('/login')) {
             console.log('>> Login Required.');
             await loginPage.login();
         } else {

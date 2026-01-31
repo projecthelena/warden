@@ -75,7 +75,6 @@ function GeneralSettings() {
     const { toast } = useToast();
     const [threshold, setThreshold] = useState(settings?.latency_threshold || "1000");
     const [retention, setRetention] = useState(settings?.data_retention_days || "30");
-    const [sslExpiry, setSslExpiry] = useState(settings?.ssl_expiry_threshold_days || "30");
 
     // Fetch settings on mount
     useEffect(() => {
@@ -87,15 +86,13 @@ function GeneralSettings() {
         if (settings) {
             setThreshold(settings.latency_threshold || "1000");
             setRetention(settings.data_retention_days || "30");
-            setSslExpiry(settings.ssl_expiry_threshold_days || "30");
         }
     }, [settings]);
 
     const handleSave = async () => {
         await updateSettings({
             latency_threshold: threshold,
-            data_retention_days: retention,
-            ssl_expiry_threshold_days: sslExpiry
+            data_retention_days: retention
         });
         toast({ title: "Settings Saved", description: "Global settings updated." });
     };
@@ -133,31 +130,17 @@ function GeneralSettings() {
                         className="max-w-[200px]"
                     />
                 </div>
-                <div className="grid gap-2">
-                    <Label htmlFor="sslExpiry">SSL Expiry Threshold (Days)</Label>
-                    <div className="text-sm text-muted-foreground mb-2">
-                        Alert when an HTTPS monitor's SSL certificate expires within this many days.
-                    </div>
-                    <Input
-                        id="sslExpiry"
-                        type="number"
-                        value={sslExpiry}
-                        onChange={(e) => setSslExpiry(e.target.value)}
-                        className="max-w-[200px]"
-                    />
+                <div className="rounded-lg border border-border/50 bg-muted/30 p-4">
+                    <Label className="text-sm font-medium">SSL Certificate Warnings</Label>
+                    <p className="text-sm text-muted-foreground mt-1">
+                        Notifications are sent at 30, 14, 7, and 1 days before certificate expiry (at mid-day in your configured timezone).
+                    </p>
                 </div>
                 <Button onClick={handleSave} className="w-fit">Save Settings</Button>
             </CardContent>
         </Card>
     );
 }
-
-// ... (previous imports) But I need to preserve ResetDatabaseDialog and GeneralSettings or move them inside.
-// Since I can't easily see entire file context in replace_file_content if I replace everything, I should be careful.
-// Actually, I viewed the file recently (step 886).
-// I will restructure the SettingsView function body and keep the helper components.
-
-// ... (Rest of the file remains, I will selectively replace SettingsView function)
 
 export function SettingsView() {
     const { user, updateUser } = useMonitorStore();

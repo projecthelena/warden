@@ -224,21 +224,6 @@ func TestManager_IsGroupInMaintenance(t *testing.T) {
 	}
 }
 
-func TestManager_SSLExpiryThreshold(t *testing.T) {
-	m, _ := newTestManager(t)
-
-	// Default should be 30 days
-	if m.GetSSLExpiryThreshold() != 30 {
-		t.Errorf("Expected default SSL expiry threshold 30, got %d", m.GetSSLExpiryThreshold())
-	}
-
-	// Test setter
-	m.SetSSLExpiryThreshold(14)
-	if m.GetSSLExpiryThreshold() != 14 {
-		t.Errorf("Expected 14, got %d", m.GetSSLExpiryThreshold())
-	}
-}
-
 func TestSSLNotificationThresholds(t *testing.T) {
 	// Verify the thresholds are correct
 	expected := []int{30, 14, 7, 1}
@@ -350,58 +335,56 @@ func TestSSLThresholdState_TrackNotifiedThresholds(t *testing.T) {
 	}
 }
 
-func TestManager_NotificationTimezoneLoaded(t *testing.T) {
-	m, s := newTestManager(t)
+func TestManager_UserTimezoneLoaded(t *testing.T) {
+	// Create a fresh store for this test
+	store, err := db.NewStore(":memory:")
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	m := NewManager(store)
 
-	// Set a specific timezone
-	if err := s.SetSetting("notification_timezone", "America/New_York"); err != nil {
-		t.Fatalf("SetSetting failed: %v", err)
+	// Create a user with a specific timezone
+	if err := store.CreateUser("admin", "password123", "America/New_York"); err != nil {
+		t.Fatalf("CreateUser failed: %v", err)
 	}
 
-	// Sync to load the timezone
+	// Sync to load the timezone from user
 	m.Sync()
 
-	// Verify timezone is cached (internal check via behavior)
-	// Since notificationTimezone is private, we verify indirectly
-	// by checking the sync doesn't panic with valid timezone
-	// and the setting is retrievable
-	tz, err := s.GetSetting("notification_timezone")
+	// Verify user timezone is set
+	user, err := store.GetUser(1)
 	if err != nil {
-		t.Fatalf("GetSetting failed: %v", err)
+		t.Fatalf("GetUser failed: %v", err)
 	}
-	if tz != "America/New_York" {
-		t.Errorf("Expected America/New_York, got %s", tz)
+	if user.Timezone != "America/New_York" {
+		t.Errorf("Expected America/New_York, got %s", user.Timezone)
 	}
 }
 
-func TestManager_NotificationTimezoneDefaultsToUTC(t *testing.T) {
-	m, s := newTestManager(t)
+func TestManager_TimezoneDefaultsToUTC(t *testing.T) {
+	m, _ := newTestManager(t)
 
-	// Don't set any timezone - should default to UTC
-
-	// Sync
+	// Don't create any user - should default to UTC
+	// Sync should not panic
 	m.Sync()
-
-	// Verify default is used (indirectly through setting)
-	tz, _ := s.GetSetting("notification_timezone")
-	// If not set, it should either be empty or "UTC" after migration
-	if tz != "" && tz != "UTC" {
-		t.Logf("Timezone setting: %s (may be empty before first use)", tz)
-	}
 }
 
 func TestManager_InvalidTimezoneHandling(t *testing.T) {
-	m, s := newTestManager(t)
+	// Create a fresh store for this test to avoid conflicts
+	store, err := db.NewStore(":memory:")
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	m := NewManager(store)
 
-	// Set an invalid timezone
-	if err := s.SetSetting("notification_timezone", "Invalid/Timezone"); err != nil {
-		t.Fatalf("SetSetting failed: %v", err)
+	// Create user with invalid timezone (edge case - shouldn't normally happen)
+	// The CreateUser doesn't validate timezone, so we test the fallback
+	if err := store.CreateUser("admin", "password123", "Invalid/Timezone"); err != nil {
+		t.Fatalf("CreateUser failed: %v", err)
 	}
 
 	// Sync should not panic and should fall back to UTC
 	m.Sync()
-
-	// If we got here without panic, the fallback works
 }
 
 func TestManager_RemoveMonitorCleansSSLState(t *testing.T) {

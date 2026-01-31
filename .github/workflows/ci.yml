@@ -60,7 +60,9 @@ jobs:
         working-directory: web
 
       - name: Backend Unit Tests
-        run: go test ./...
+        run: |
+          go clean -testcache
+          go test ./...
 
       # 5. Build (Required for E2E)
       - name: Build Frontend
@@ -83,4 +85,4 @@ jobs:
         working-directory: web
         env:
           PLAYWRIGHT_BASE_URL: http://localhost:9096
-        run: npm run test:e2e
+        run: npx playwright test --fail-on-flaky-tests

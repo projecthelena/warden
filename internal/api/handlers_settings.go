@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/clusteruptime/clusteruptime/internal/db"
 	"github.com/clusteruptime/clusteruptime/internal/uptime"
@@ -32,18 +31,6 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		retention = "30"
 	}
 
-	// SSL Expiry Threshold
-	sslExpiry, err := h.store.GetSetting("ssl_expiry_threshold_days")
-	if err != nil {
-		sslExpiry = "30"
-	}
-
-	// Notification Timezone
-	notificationTimezone, err := h.store.GetSetting("notification_timezone")
-	if err != nil {
-		notificationTimezone = "UTC"
-	}
-
 	// Slack Notifications
 	slackEnabled, _ := h.store.GetSetting("notifications.slack.enabled")
 	slackWebhook, _ := h.store.GetSetting("notifications.slack.webhook_url")
@@ -52,8 +39,6 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{
 		"latency_threshold":               val,
 		"data_retention_days":             retention,
-		"ssl_expiry_threshold_days":       sslExpiry,
-		"notification_timezone":           notificationTimezone,
 		"notifications.slack.enabled":     slackEnabled,
 		"notifications.slack.webhook_url": slackWebhook,
 		"notifications.slack.notify_on":   slackNotifyOn,
@@ -92,33 +77,6 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 
 		if err := h.store.SetSetting("data_retention_days", val); err != nil {
 			http.Error(w, "Failed to save data_retention_days", http.StatusInternalServerError)
-			return
-		}
-	}
-
-	if val, ok := body["ssl_expiry_threshold_days"]; ok {
-		i, err := strconv.Atoi(val)
-		if err != nil || i < 1 {
-			http.Error(w, "Invalid ssl_expiry_threshold_days", http.StatusBadRequest)
-			return
-		}
-
-		if err := h.store.SetSetting("ssl_expiry_threshold_days", val); err != nil {
-			http.Error(w, "Failed to save ssl_expiry_threshold_days", http.StatusInternalServerError)
-			return
-		}
-		h.manager.SetSSLExpiryThreshold(i)
-	}
-
-	if val, ok := body["notification_timezone"]; ok {
-		// Validate timezone
-		if _, err := time.LoadLocation(val); err != nil {
-			http.Error(w, "Invalid notification_timezone", http.StatusBadRequest)
-			return
-		}
-
-		if err := h.store.SetSetting("notification_timezone", val); err != nil {
-			http.Error(w, "Failed to save notification_timezone", http.StatusInternalServerError)
 			return
 		}
 	}

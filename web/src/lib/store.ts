@@ -66,8 +66,6 @@ export interface Incident {
     affectedGroups: string[];
 }
 
-
-
 export interface OverviewGroup {
     id: string;
     name: string;
@@ -77,8 +75,6 @@ export interface OverviewGroup {
 export interface Settings {
     latency_threshold: string;
     data_retention_days: string;
-    ssl_expiry_threshold_days: string;
-    notification_timezone: string;
 }
 
 export interface StatusPage {
@@ -898,7 +894,7 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
             });
             set((state) => ({
                 settings: {
-                    ...(state.settings || { latency_threshold: "1000", data_retention_days: "30", ssl_expiry_threshold_days: "30", notification_timezone: "UTC" }),
+                    ...(state.settings || { latency_threshold: "1000", data_retention_days: "30" }),
                     ...newSettings
                 }
             }));

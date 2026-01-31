@@ -107,23 +107,11 @@ func NewSlackNotifier(configJSON string) *SlackNotifier {
 }
 
 func (n *SlackNotifier) Send(event NotificationEvent) error {
-	// 1. Get Webhook URL from config
 	url, ok := n.config["webhookUrl"].(string)
 	if !ok || url == "" {
 		return fmt.Errorf("webhookUrl missing or invalid")
 	}
 
-	// 2. Optional: Notify On Filter (if added to channel config later)
-	// For now, assume all enabled channels want all alerts?
-	// Or we can add it to the config map.
-	// Let's implement basic filtering if present in config.
-	/*
-		if notifyOn, ok := n.config["notifyOn"].(string); ok && notifyOn == "down" && event.Type != EventDown {
-			// Logic similar to before...
-		}
-	*/
-
-	// 4. Construct Payload
 	color := "#36a64f" // Green (Up)
 	switch event.Type {
 	case EventDown:
@@ -185,7 +173,6 @@ func (n *SlackNotifier) Send(event NotificationEvent) error {
 		},
 	}
 
-	// 5. Send Request
 	return sendJSON(url, payload)
 }
 

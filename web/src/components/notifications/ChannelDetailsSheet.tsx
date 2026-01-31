@@ -66,13 +66,13 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
 
     return (
         <Sheet open={open} onOpenChange={onOpenChange}>
-            <SheetContent className="bg-slate-950 border-slate-800 text-slate-100 sm:max-w-[500px]">
+            <SheetContent className="sm:max-w-[500px]">
                 <SheetHeader>
-                    <SheetTitle className="text-slate-100 flex items-center gap-2">
-                        <Bell className="w-5 h-5 text-blue-500" />
+                    <SheetTitle className="flex items-center gap-2">
+                        <Bell className="w-5 h-5 text-primary" />
                         Edit Channel
                     </SheetTitle>
-                    <SheetDescription className="text-slate-400">
+                    <SheetDescription>
                         Update configuration or remove this channel.
                     </SheetDescription>
                 </SheetHeader>
@@ -81,7 +81,7 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
                     <div className="grid gap-2">
                         <Label>Channel Type</Label>
                         <Select value={type} onValueChange={(v: NotificationChannel['type']) => setType(v)}>
-                            <SelectTrigger className="bg-slate-900 border-slate-800">
+                            <SelectTrigger>
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -103,26 +103,27 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
 
                     <div className="grid gap-2">
                         <Label>Friendly Name</Label>
-                        <Input value={name} onChange={e => setName(e.target.value)}
-                            className="bg-slate-900 border-slate-800" />
+                        <Input value={name} onChange={e => setName(e.target.value)} />
                     </div>
 
                     {type === 'email' ? (
                         <div className="grid gap-2">
                             <Label>Email Address</Label>
-                            <Input value={email} onChange={e => setEmail(e.target.value)}
-                                className="bg-slate-900 border-slate-800" />
+                            <Input value={email} onChange={e => setEmail(e.target.value)} />
                         </div>
                     ) : (
                         <div className="grid gap-2">
                             <Label>Webhook URL</Label>
-                            <Input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)}
-                                className="bg-slate-900 border-slate-800 font-mono text-xs" />
+                            <Input
+                                value={webhookUrl}
+                                onChange={e => setWebhookUrl(e.target.value)}
+                                className="font-mono text-xs"
+                            />
                         </div>
                     )}
                 </div>
 
-                <Separator className="bg-slate-800 my-4" />
+                <Separator className="my-4" />
 
                 <SheetFooter className="flex-col sm:flex-row gap-2">
                     <Button variant="destructive" onClick={handleDelete} className="w-full sm:w-auto" data-testid="delete-channel-btn">
