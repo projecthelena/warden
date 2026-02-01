@@ -18,13 +18,14 @@ type APIKey struct {
 }
 
 func (s *Store) CreateAPIKey(name string) (string, error) {
-	// Generate random key
-	keyBytes := make([]byte, 24)
+	// Generate random key with 256-bit entropy (32 bytes)
+	// SECURITY: 256 bits provides adequate security strength for long-lived credentials
+	keyBytes := make([]byte, 32)
 	if _, err := rand.Read(keyBytes); err != nil {
 		return "", err
 	}
 	rawKey := "sk_live_" + hex.EncodeToString(keyBytes)
-	prefix := rawKey[:12] // "sk_live_" + first 4 hex chars = 8+4 = 12? No sk_live_ is 8 chars. + 4 = 12. Correct.
+	prefix := rawKey[:12] // "sk_live_" + first 4 hex chars
 
 	// Hash key
 	hash, err := bcrypt.GenerateFromPassword([]byte(rawKey), bcrypt.DefaultCost)

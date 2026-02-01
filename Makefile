@@ -1,4 +1,4 @@
-.PHONY: backend frontend build docker test clean dev-backend dev-frontend dev-bundle lint lint-frontend lint-backend
+.PHONY: backend frontend build docker test clean dev-backend dev-frontend dev-bundle lint lint-frontend lint-backend security
 
 BACKEND_ENV ?= LISTEN_ADDR=:9096
 BIN_DIR ?= $(PWD)/bin
@@ -49,6 +49,10 @@ lint-backend:
 	golangci-lint run
 
 lint: lint-frontend lint-backend
+
+security:
+	@command -v gosec >/dev/null 2>&1 || { echo "Installing gosec..."; go install github.com/securego/gosec/v2/cmd/gosec@latest; }
+	gosec -exclude-dir=web ./...
 
 clean:
 	rm -rf web/node_modules web/dist $(BIN_DIR)

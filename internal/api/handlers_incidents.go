@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
@@ -64,7 +65,8 @@ func (h *IncidentHandler) CreateIncident(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.store.CreateIncident(incident); err != nil {
-		http.Error(w, "Failed to create incident: "+err.Error(), http.StatusInternalServerError)
+		log.Printf("ERROR: Failed to create incident: %v", err)
+		http.Error(w, "Failed to create incident", http.StatusInternalServerError)
 		return
 	}
 

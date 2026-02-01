@@ -2,11 +2,14 @@ package api
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -15,6 +18,10 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
+
+// validHostPattern validates host header format (hostname:port or hostname)
+// SECURITY: Prevents Host header injection attacks in OAuth redirect URLs
+var validHostPattern = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-\.]*[a-zA-Z0-9])?(:\d{1,5})?$`)
 
 // maxUserInfoSize limits the size of the Google userinfo response to prevent memory exhaustion
 const maxUserInfoSize = 1024 * 1024 // 1MB
@@ -94,6 +101,14 @@ func (h *SSOHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 			scheme = "https"
 		}
 		host := r.Host
+
+		// SECURITY: Validate Host header to prevent header injection attacks
+		if !validHostPattern.MatchString(host) {
+			log.Printf("AUDIT: [SSO] Invalid Host header detected: %s", host)
+			http.Redirect(w, r, "/login?error=invalid_request", http.StatusTemporaryRedirect)
+			return
+		}
+
 		oauthConfig.RedirectURL = fmt.Sprintf("%s://%s%s", scheme, host, oauthConfig.RedirectURL)
 	}
 
@@ -106,13 +121,14 @@ func (h *SSOHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 	state := hex.EncodeToString(stateBytes)
 
 	// Store state in a short-lived cookie
+	// SECURITY: Use SameSite=Strict to prevent CSRF attacks on OAuth flow
 	http.SetCookie(w, &http.Cookie{
 		Name:     "oauth_state",
 		Value:    state,
 		MaxAge:   300, // 5 minutes
 		HttpOnly: true,
 		Path:     "/",
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 		Secure:   h.config.CookieSecure,
 	})
 
@@ -146,7 +162,7 @@ func (h *SSOHandler) clearStateCookie(w http.ResponseWriter) {
 		MaxAge:   -1,
 		HttpOnly: true,
 		Path:     "/",
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 		Secure:   h.config.CookieSecure,
 	})
 }
@@ -162,7 +178,8 @@ func (h *SSOHandler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	state := r.URL.Query().Get("state")
-	if state == "" || state != stateCookie.Value {
+	// SECURITY: Use constant-time comparison to prevent timing attacks on state validation
+	if state == "" || subtle.ConstantTimeCompare([]byte(state), []byte(stateCookie.Value)) != 1 {
 		h.clearStateCookie(w)
 		http.Redirect(w, r, "/login?error=invalid_state", http.StatusTemporaryRedirect)
 		return
@@ -196,6 +213,14 @@ func (h *SSOHandler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 			scheme = "https"
 		}
 		host := r.Host
+
+		// SECURITY: Validate Host header to prevent header injection attacks
+		if !validHostPattern.MatchString(host) {
+			log.Printf("AUDIT: [SSO] Invalid Host header detected in callback: %s", host)
+			http.Redirect(w, r, "/login?error=invalid_request", http.StatusTemporaryRedirect)
+			return
+		}
+
 		oauthConfig.RedirectURL = fmt.Sprintf("%s://%s%s", scheme, host, oauthConfig.RedirectURL)
 	}
 
@@ -203,6 +228,21 @@ func (h *SSOHandler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 	token, err := oauthConfig.Exchange(r.Context(), code)
 	if err != nil {
 		http.Redirect(w, r, "/login?error=token_exchange_failed", http.StatusTemporaryRedirect)
+		return
+	}
+
+	// SECURITY: Validate the OAuth token response
+	// Check that we received a valid access token
+	if !token.Valid() {
+		log.Printf("AUDIT: [SSO] Invalid OAuth token received from Google")
+		http.Redirect(w, r, "/login?error=invalid_token", http.StatusTemporaryRedirect)
+		return
+	}
+
+	// Verify token type is Bearer (standard OAuth2 access token type)
+	if token.TokenType != "" && token.TokenType != "Bearer" {
+		log.Printf("AUDIT: [SSO] Unexpected token type from Google: %s", token.TokenType)
+		http.Redirect(w, r, "/login?error=invalid_token_type", http.StatusTemporaryRedirect)
 		return
 	}
 
@@ -276,15 +316,25 @@ func (h *SSOHandler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 	autoProvision, _ := h.store.GetSetting("sso.google.auto_provision")
 
 	// Find or create user
+	clientIP := extractIP(r)
 	user, err := h.store.FindOrCreateSSOUser("google", googleUser.ID, googleUser.Email, googleUser.Name, googleUser.Picture, autoProvision != "false")
 	if err != nil {
 		if err == db.ErrUserNotFound {
+			log.Printf("AUDIT: [SSO] Google login denied - user not found for email %s from IP %s", googleUser.Email, clientIP)
 			http.Redirect(w, r, "/login?error=user_not_found", http.StatusTemporaryRedirect)
 			return
 		}
+		if err == db.ErrAccountLinkingNeed {
+			// Account exists with password - user must link SSO through settings
+			log.Printf("AUDIT: [SSO] Google login denied - account linking required for email %s from IP %s", googleUser.Email, clientIP)
+			http.Redirect(w, r, "/login?error=account_exists_link_required", http.StatusTemporaryRedirect)
+			return
+		}
+		log.Printf("AUDIT: [SSO] Google login failed - user creation error for email %s from IP %s: %v", googleUser.Email, clientIP, err)
 		http.Redirect(w, r, "/login?error=user_creation_failed", http.StatusTemporaryRedirect)
 		return
 	}
+	log.Printf("AUDIT: [SSO] Successful Google login for user '%s' (ID: %d, email: %s) from IP %s", user.Username, user.ID, googleUser.Email, clientIP)
 
 	// Create session (same as regular login)
 	tokenBytes := make([]byte, 32)

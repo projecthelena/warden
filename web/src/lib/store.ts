@@ -211,7 +211,6 @@ export interface SetupPayload {
     username?: string;
     password?: string;
     timezone?: string;
-    createDefaults?: boolean;
 }
 
 export const useMonitorStore = create<MonitorStore>((set, get) => ({
@@ -254,7 +253,8 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(data),
-                signal: controller.signal
+                signal: controller.signal,
+                credentials: "include" // Important for receiving auth cookie
             });
             clearTimeout(timeoutId);
 

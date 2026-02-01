@@ -52,8 +52,9 @@ func main() {
 	r := api.NewRouter(manager, store, cfg) // Changed monitor to manager
 
 	srv := &http.Server{
-		Addr:    cfg.ListenAddr,
-		Handler: r,
+		Addr:              cfg.ListenAddr,
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second, // Prevent Slowloris attacks
 	}
 
 	go func() {

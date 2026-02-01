@@ -1,21 +1,24 @@
 package api
 
 import (
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/clusteruptime/clusteruptime/internal/db"
 )
 
 type SetupRequest struct {
-	Username       string `json:"username"`
-	Password       string `json:"password"`
-	Timezone       string `json:"timezone"`
-	CreateDefaults bool   `json:"createDefaults"` // Just a flag for simplicity
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Timezone string `json:"timezone"`
 }
 
 func (h *Router) CheckSetup(w http.ResponseWriter, r *http.Request) {
@@ -33,13 +36,41 @@ func (h *Router) CheckSetup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Router) PerformSetup(w http.ResponseWriter, r *http.Request) {
-	// Double check security
-	hasUsers, _ := h.store.HasUsers()
-	val, _ := h.store.GetSetting("setup_completed")
+	clientIP := extractIP(r)
 
-	if hasUsers || val == "true" {
+	// SECURITY: Atomic check for setup completion to prevent race conditions
+	// This prevents multiple concurrent requests from creating multiple admin users
+	isComplete, err := h.store.IsSetupComplete()
+	if err != nil {
+		log.Printf("AUDIT: [SETUP] Database error checking setup status from IP %s: %v", clientIP, err)
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	if isComplete {
+		log.Printf("AUDIT: [SECURITY] Setup attempt from IP %s denied - setup already completed", clientIP)
 		http.Error(w, "Setup already completed", http.StatusForbidden)
 		return
+	}
+
+	// ADMIN_SECRET is now OPTIONAL
+	// If configured, validate it. If not configured, allow setup (like Uptime Kuma, Portainer, Grafana).
+	if h.config.AdminSecret != "" {
+		secretHeader := r.Header.Get("X-Admin-Secret")
+		authHeader := r.Header.Get("Authorization")
+		bearerSecret := ""
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			bearerSecret = strings.TrimPrefix(authHeader, "Bearer ")
+		}
+
+		// Use constant-time comparison to prevent timing attacks
+		headerMatch := subtle.ConstantTimeCompare([]byte(secretHeader), []byte(h.config.AdminSecret)) == 1
+		bearerMatch := bearerSecret != "" && subtle.ConstantTimeCompare([]byte(bearerSecret), []byte(h.config.AdminSecret)) == 1
+
+		if !headerMatch && !bearerMatch {
+			log.Printf("AUDIT: [SECURITY] Setup attempt from IP %s denied - invalid admin secret", clientIP)
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
 	}
 
 	var req SetupRequest
@@ -66,11 +97,11 @@ func (h *Router) PerformSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Password validation: 8+ chars, at least one number, at least one special character
 	if len(req.Password) < 8 {
 		http.Error(w, "Password must be at least 8 characters", http.StatusBadRequest)
 		return
 	}
-	// Check for a number
 	hasNumber := false
 	for _, c := range req.Password {
 		if c >= '0' && c <= '9' {
@@ -82,7 +113,6 @@ func (h *Router) PerformSetup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Password must contain at least one number", http.StatusBadRequest)
 		return
 	}
-	// Check for special character (simple check for non-alphanumeric)
 	hasSpecial := false
 	for _, c := range req.Password {
 		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') {
@@ -101,45 +131,31 @@ func (h *Router) PerformSetup(w http.ResponseWriter, r *http.Request) {
 
 	// Create User
 	if err := h.store.CreateUser(req.Username, req.Password, req.Timezone); err != nil {
-		log.Printf("Failed to create user: %v", err)
+		log.Printf("AUDIT: [SETUP] Failed to create user from IP %s: %v", clientIP, err)
 		http.Error(w, "Failed to create user", http.StatusInternalServerError)
 		return
 	}
+	log.Printf("AUDIT: [SETUP] Admin user '%s' created from IP %s", req.Username, clientIP)
 
-	// Optional: Create Defaults
-	if req.CreateDefaults {
-		// Create Default Group if not exists (seed might have created it? seed only checks count)
-		// Let's manually ensure it.
-		// Actually, seed() runs on startup. So Group "Default" likely exists if groupCount was 0 initially.
-		// But monitors were removed from seed? No, only user seed was removed.
-		// Wait, did I verify seed logic for monitors?
-		// Monitor seeding depends on monitor count. If 0, it creates example.
-		// If user wants defaults, we can add more specific ones or just rely on the fact that
-		// the seed() function might have run?
-		// Actually, seed() runs BEFORE http server starts. So default group/monitor might already exist.
-		// If user wants "Create Defaults", maybe we add Google/GitHub specifically?
+	// Always create default monitors (no toggle needed - gives immediate value)
+	defaults := []struct{ Name, URL string }{
+		{"Google", "https://google.com"},
+		{"GitHub", "https://github.com"},
+		{"Cloudflare DNS", "https://1.1.1.1"},
+	}
 
-		// Let's add a couple of common ones to the 'g-default' group.
-		defaults := []struct{ Name, URL string }{
-			{"Google", "https://google.com"},
-			{"GitHub", "https://github.com"},
-			{"Cloudflare DNS", "https://1.1.1.1"},
-		}
-
-		for i, d := range defaults {
-			id := fmt.Sprintf("m-default-%d", i)
-			if err := h.store.CreateMonitor(db.Monitor{
-				ID:       id,
-				GroupID:  "g-default",
-				Name:     d.Name,
-				URL:      d.URL,
-				Active:   true,
-				Interval: 60,
-			}); err != nil {
-				// We don't have logger here easily.
-				// We can ignore it safely as this is "best effort" defaults
-				_ = err
-			}
+	for i, d := range defaults {
+		id := fmt.Sprintf("m-default-%d", i)
+		if err := h.store.CreateMonitor(db.Monitor{
+			ID:       id,
+			GroupID:  "g-default",
+			Name:     d.Name,
+			URL:      d.URL,
+			Active:   true,
+			Interval: 60,
+		}); err != nil {
+			// Best effort - ignore errors
+			_ = err
 		}
 	}
 
@@ -149,7 +165,56 @@ func (h *Router) PerformSetup(w http.ResponseWriter, r *http.Request) {
 	// Trigger immediate check for new monitors
 	h.manager.Sync()
 
-	_ = json.NewEncoder(w).Encode(map[string]bool{
+	// Auto-login: Create session and set cookie
+	// First, authenticate to get user ID
+	user, err := h.store.Authenticate(req.Username, req.Password)
+	if err != nil {
+		// User was created but auth failed - shouldn't happen but handle gracefully
+		log.Printf("AUDIT: [SETUP] Auto-login failed for '%s': %v", req.Username, err)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+		})
+		return
+	}
+
+	// Generate session token
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		log.Printf("AUDIT: [SETUP] Failed to generate session token: %v", err)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+		})
+		return
+	}
+	token := hex.EncodeToString(tokenBytes)
+	expiresAt := time.Now().Add(30 * 24 * time.Hour)
+
+	if err := h.store.CreateSession(user.ID, token, expiresAt); err != nil {
+		log.Printf("AUDIT: [SETUP] Failed to create session: %v", err)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+		})
+		return
+	}
+
+	// Set auth cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     "auth_token",
+		Value:    token,
+		Expires:  expiresAt,
+		HttpOnly: true,
+		Path:     "/",
+		SameSite: http.SameSiteLaxMode,
+		Secure:   h.config.CookieSecure,
+	})
+
+	log.Printf("AUDIT: [SETUP] Auto-login successful for '%s' from IP %s", req.Username, clientIP)
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"success": true,
+		"user": map[string]any{
+			"username": user.Username,
+			"id":       user.ID,
+		},
 	})
 }

@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
@@ -78,7 +79,8 @@ func (h *MaintenanceHandler) CreateMaintenance(w http.ResponseWriter, r *http.Re
 	}
 
 	if err := h.store.CreateIncident(maintenance); err != nil {
-		http.Error(w, "Failed to schedule maintenance: "+err.Error(), http.StatusInternalServerError)
+		log.Printf("ERROR: Failed to schedule maintenance: %v", err)
+		http.Error(w, "Failed to schedule maintenance", http.StatusInternalServerError)
 		return
 	}
 
@@ -196,7 +198,8 @@ func (h *MaintenanceHandler) UpdateMaintenance(w http.ResponseWriter, r *http.Re
 	}
 
 	if err := h.store.UpdateIncident(incident); err != nil {
-		http.Error(w, "Failed to update maintenance: "+err.Error(), http.StatusInternalServerError)
+		log.Printf("ERROR: Failed to update maintenance %s: %v", id, err)
+		http.Error(w, "Failed to update maintenance", http.StatusInternalServerError)
 		return
 	}
 
@@ -228,7 +231,8 @@ func (h *MaintenanceHandler) DeleteMaintenance(w http.ResponseWriter, r *http.Re
 	}
 
 	if err := h.store.DeleteIncident(id); err != nil {
-		http.Error(w, "Failed to delete maintenance: "+err.Error(), http.StatusInternalServerError)
+		log.Printf("ERROR: Failed to delete maintenance %s: %v", id, err)
+		http.Error(w, "Failed to delete maintenance", http.StatusInternalServerError)
 		return
 	}
 

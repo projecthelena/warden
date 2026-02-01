@@ -17,7 +17,13 @@ func (s *Store) GetSetting(key string) (string, error) {
 }
 
 func (s *Store) SetSetting(key, value string) error {
-	_, err := s.db.Exec(s.rebind("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"), key, value)
+	var err error
+	if s.IsPostgres() {
+		_, err = s.db.Exec("INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = excluded.value", key, value)
+	} else {
+		// SQLite: INSERT OR REPLACE
+		_, err = s.db.Exec("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", key, value)
+	}
 	return err
 }
 

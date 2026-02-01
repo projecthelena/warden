@@ -185,6 +185,30 @@ func (s *Store) seed() error {
 	return nil
 }
 
+// allowedResetTables is a whitelist of table names that can be dropped during reset.
+// SECURITY: This prevents potential SQL injection if table names were ever derived from user input.
+var allowedResetTables = map[string]bool{
+	"users":                 true,
+	"sessions":              true,
+	"groups":                true,
+	"monitors":              true,
+	"monitor_checks":        true,
+	"monitor_events":        true,
+	"status_pages":          true,
+	"api_keys":              true,
+	"settings":              true,
+	"monitor_outages":       true,
+	"notification_channels": true,
+	"incidents":             true,
+	"goose_db_version":      true,
+}
+
+// isValidTableName checks if a table name is in the allowed whitelist.
+// SECURITY: Defense in depth - validates table names even though they're currently hardcoded.
+func isValidTableName(table string) bool {
+	return allowedResetTables[table]
+}
+
 func (s *Store) Reset() error {
 	// Disable FKs to allow dropping tables regardless of order
 	if s.dialect == DialectSQLite {
@@ -201,6 +225,11 @@ func (s *Store) Reset() error {
 	}
 
 	for _, table := range tables {
+		// SECURITY: Validate table name against whitelist before using in query
+		if !isValidTableName(table) {
+			return fmt.Errorf("invalid table name: %s", table)
+		}
+
 		if s.dialect == DialectPostgres {
 			// PostgreSQL: use CASCADE to handle foreign key constraints
 			if _, err := s.db.Exec("DROP TABLE IF EXISTS " + table + " CASCADE"); err != nil {

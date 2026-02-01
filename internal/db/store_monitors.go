@@ -229,18 +229,19 @@ func (s *Store) GetMonitorChecks(monitorID string, limit int) ([]CheckResult, er
 }
 
 func (s *Store) PruneMonitorChecks(days int) error {
-	var query string
-	if s.IsPostgres() {
-		query = fmt.Sprintf("DELETE FROM monitor_checks WHERE timestamp < NOW() - INTERVAL '%d days'", days)
-	} else {
-		query = "DELETE FROM monitor_checks WHERE timestamp < datetime('now', '-' || ? || ' days')"
+	// SECURITY: Validate input to prevent any potential issues
+	if days < 1 || days > 3650 { // Max 10 years
+		return fmt.Errorf("invalid retention days: must be between 1 and 3650")
 	}
 
+	var err error
 	if s.IsPostgres() {
-		_, err := s.db.Exec(query)
-		return err
+		// PostgreSQL: Use parameterized INTERVAL with MAKE_INTERVAL function
+		_, err = s.db.Exec("DELETE FROM monitor_checks WHERE timestamp < NOW() - MAKE_INTERVAL(days => $1)", days)
+	} else {
+		// SQLite: Use parameterized query
+		_, err = s.db.Exec("DELETE FROM monitor_checks WHERE timestamp < datetime('now', '-' || ? || ' days')", days)
 	}
-	_, err := s.db.Exec(query, days)
 	return err
 }
 
@@ -373,6 +374,11 @@ func (s *Store) GetActiveSSLWarnings() ([]SSLWarningEvent, error) {
 }
 
 func (s *Store) GetLatencyStats(monitorID string, hours int) ([]LatencyPoint, error) {
+	// SECURITY: Validate input
+	if hours < 1 || hours > 8760 { // Max 1 year
+		return nil, fmt.Errorf("invalid hours: must be between 1 and 8760")
+	}
+
 	var query string
 	var groupBy string
 
@@ -384,6 +390,7 @@ func (s *Store) GetLatencyStats(monitorID string, hours int) ([]LatencyPoint, er
 		} else {
 			groupBy = "TO_CHAR(timestamp, 'YYYY-MM-DD')"
 		}
+		// Use MAKE_INTERVAL for parameterized interval
 		query = fmt.Sprintf(`
 			SELECT
 				%s as ts_group,
@@ -391,10 +398,10 @@ func (s *Store) GetLatencyStats(monitorID string, hours int) ([]LatencyPoint, er
 				MAX(CASE WHEN status != 'up' THEN 1 ELSE 0 END) as failed
 			FROM monitor_checks
 			WHERE monitor_id = $1
-			AND timestamp > NOW() - INTERVAL '%d hours'
+			AND timestamp > NOW() - MAKE_INTERVAL(hours => $2)
 			GROUP BY ts_group
 			ORDER BY ts_group ASC
-		`, groupBy, hours)
+		`, groupBy)
 	} else {
 		if hours <= 1 {
 			groupBy = "strftime('%Y-%m-%d %H:%M:00', timestamp)"
@@ -419,7 +426,7 @@ func (s *Store) GetLatencyStats(monitorID string, hours int) ([]LatencyPoint, er
 	var rows *sql.Rows
 	var err error
 	if s.IsPostgres() {
-		rows, err = s.db.Query(query, monitorID)
+		rows, err = s.db.Query(query, monitorID, hours)
 	} else {
 		rows, err = s.db.Query(query, monitorID, hours)
 	}

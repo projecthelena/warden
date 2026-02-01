@@ -5,17 +5,10 @@ import { LoginPage } from '../pages/LoginPage';
 test.describe('Password Update Flow', () => {
     // We need a fresh user for this test to avoid messing up the main admin
     const TEST_USER = `user_${Date.now()}`;
-    const TEST_PASS = 'InitialPass123!';
-    const NEW_PASS = 'NewPass456!';
+    const TEST_PASS = 'InitialPass1!'; // Strong password: 8+ chars, number, special char
+    const NEW_PASS = 'NewSecure2@'; // Strong password: 8+ chars, number, special char
 
     test.beforeAll(async ({ request }) => {
-        // 1. Create a user via API (Reset DB first to ensure state? No, let's just use API to create user if possible?
-        // Actually, our system is single-tenant. We should reset DB or use existing admin.
-        // Let's rely on the standard "Reset DB" mechanism to have a clean slate.
-        // But reset removes all users. So we must go through setup or use the backdoor if exists.
-        // Our setup creates "admin" user usually.
-        // Let's use the X-Admin-Secret to reset DB and then Setup API to create a known user.
-
         const resetRes = await request.post('http://localhost:9096/api/admin/reset', {
             headers: { 'X-Admin-Secret': 'clusteruptime-e2e-magic-key' }
         });
@@ -23,11 +16,11 @@ test.describe('Password Update Flow', () => {
 
         // 2. Perform Setup
         const setupRes = await request.post('http://localhost:9096/api/setup', {
+            headers: { 'X-Admin-Secret': 'clusteruptime-e2e-magic-key' },
             data: {
                 username: TEST_USER,
                 password: TEST_PASS,
-                timezone: 'UTC',
-                createDefaults: true
+                timezone: 'UTC'
             }
         });
         expect(setupRes.ok()).toBeTruthy();
@@ -50,7 +43,7 @@ test.describe('Password Update Flow', () => {
         await expect(toastError).toBeVisible();
 
         // 2. Try with WRONG current password
-        await page.fill('input[name="currentPassword"]', 'WrongPass123!');
+        await page.fill('input[name="currentPassword"]', 'WrongPass1!');
         await page.click('button[type="submit"]');
 
         const toastWrong = page.locator("ol li", { hasText: 'current password incorrect' });
@@ -78,11 +71,11 @@ test.describe('Password Update Flow', () => {
         expect(resetRes.ok()).toBeTruthy();
 
         const setupRes = await request.post('http://localhost:9096/api/setup', {
+            headers: { 'X-Admin-Secret': 'clusteruptime-e2e-magic-key' },
             data: {
                 username: 'admin',
                 password: 'password123!',
-                timezone: 'UTC',
-                createDefaults: true
+                timezone: 'UTC'
             }
         });
         expect(setupRes.ok()).toBeTruthy();

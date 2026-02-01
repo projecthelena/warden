@@ -18,6 +18,7 @@ type Config struct {
 	DBURL        string // PostgreSQL connection URL (only used when DBType is "postgres")
 	CookieSecure bool
 	AdminSecret  string
+	TrustProxy   bool // Trust X-Forwarded-For headers (only enable behind a trusted reverse proxy)
 }
 
 func Default() Config {
@@ -63,6 +64,14 @@ func Load() (*Config, error) {
 
 	if secret := os.Getenv("ADMIN_SECRET"); secret != "" {
 		cfg.AdminSecret = secret
+	}
+
+	// TRUST_PROXY: Enable only when running behind a trusted reverse proxy (nginx, Traefik, etc.)
+	// SECURITY WARNING: If enabled without a trusted proxy, attackers can spoof their IP address
+	// via X-Forwarded-For headers, bypassing rate limiting and IP-based security controls.
+	// Leave disabled (default) when exposing the server directly to the internet.
+	if os.Getenv("TRUST_PROXY") == "true" {
+		cfg.TrustProxy = true
 	}
 
 	return &cfg, nil

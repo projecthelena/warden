@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crypto/subtle"
 	"log"
 	"net/http"
 	"strings"
@@ -20,55 +21,54 @@ func NewAdminHandler(store *db.Store, manager *uptime.Manager, cfg *config.Confi
 	return &AdminHandler{store: store, manager: manager, config: cfg}
 }
 
+// ResetDatabase performs a full database reset. REQUIRES ADMIN_SECRET.
+// This is a destructive operation that should only be used for testing/development.
 func (h *AdminHandler) ResetDatabase(w http.ResponseWriter, r *http.Request) {
-	// 1. Check Admin Secret (Stateless bypass for CI/Tests)
-	if h.config.AdminSecret != "" {
-		// Support both Header and Bearer token
-		secretHeader := r.Header.Get("X-Admin-Secret")
-		authHeader := r.Header.Get("Authorization")
-		bearerSecret := ""
-		if strings.HasPrefix(authHeader, "Bearer ") {
-			bearerSecret = strings.TrimPrefix(authHeader, "Bearer ")
-		}
+	clientIP := extractIP(r)
 
-		if secretHeader == h.config.AdminSecret || (bearerSecret != "" && bearerSecret == h.config.AdminSecret) {
-			log.Println("ADMIN: Resetting database via Admin Secret bypass.")
-			h.performReset(w)
-			return
-		}
-	}
-
-	// 2. Check Standard Auth (Cookie)
-	c, err := r.Cookie("auth_token")
-	if err != nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-	sess, err := h.store.GetSession(c.Value)
-	if err != nil || sess == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	// SECURITY: Database reset ALWAYS requires ADMIN_SECRET
+	// Regular session authentication is NOT sufficient for this destructive operation
+	if h.config.AdminSecret == "" {
+		log.Printf("AUDIT: [SECURITY] Database reset attempt from IP %s denied - ADMIN_SECRET not configured", clientIP)
+		writeError(w, http.StatusForbidden, "admin operations not available")
 		return
 	}
 
-	// (Optional: Check if user is admin? For now system is single-tenant or all-admin)
+	// Support both X-Admin-Secret header and Authorization: Bearer token
+	secretHeader := r.Header.Get("X-Admin-Secret")
+	authHeader := r.Header.Get("Authorization")
+	bearerSecret := ""
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		bearerSecret = strings.TrimPrefix(authHeader, "Bearer ")
+	}
 
-	log.Println("ADMIN: Initiating full database reset requested by user", sess.UserID)
-	h.performReset(w)
+	// Use constant-time comparison to prevent timing attacks
+	headerMatch := subtle.ConstantTimeCompare([]byte(secretHeader), []byte(h.config.AdminSecret)) == 1
+	bearerMatch := bearerSecret != "" && subtle.ConstantTimeCompare([]byte(bearerSecret), []byte(h.config.AdminSecret)) == 1
+
+	if !headerMatch && !bearerMatch {
+		log.Printf("AUDIT: [SECURITY] Database reset attempt from IP %s denied - invalid admin secret", clientIP)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	log.Printf("AUDIT: [ADMIN] Database reset initiated from IP %s", clientIP)
+	h.performReset(w, clientIP)
 }
 
-func (h *AdminHandler) performReset(w http.ResponseWriter) {
+func (h *AdminHandler) performReset(w http.ResponseWriter, clientIP string) {
 	// Stop all monitoring before wiping DB to prevent FK violations
 	h.manager.Reset()
 
 	if err := h.store.Reset(); err != nil {
-		log.Printf("Failed to reset database: %v", err)
-		writeError(w, http.StatusInternalServerError, "Failed to reset database")
+		log.Printf("AUDIT: [ADMIN] Database reset FAILED from IP %s: %v", clientIP, err)
+		writeError(w, http.StatusInternalServerError, "operation failed")
 		return
 	}
 
 	// Sync manager to start monitoring new seed data
 	h.manager.Sync()
 
-	log.Println("ADMIN: Database reset successful.")
+	log.Printf("AUDIT: [ADMIN] Database reset COMPLETED successfully from IP %s", clientIP)
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Database reset successfully"})
 }

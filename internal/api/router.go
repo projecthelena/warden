@@ -10,12 +10,47 @@ import (
 	"github.com/clusteruptime/clusteruptime/internal/uptime"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"golang.org/x/time/rate"
 )
 
 type Router struct {
 	*chi.Mux
 	manager *uptime.Manager
 	store   *db.Store
+	config  *config.Config
+}
+
+// SecurityHeaders middleware adds essential security headers to all responses.
+func SecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-XSS-Protection", "1; mode=block")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		// Permissions-Policy restricts access to browser features
+		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// SecureHeadersWithConfig returns middleware that adds security headers including HSTS when HTTPS is enabled.
+func SecureHeadersWithConfig(cookieSecure bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.Header().Set("X-Frame-Options", "DENY")
+			w.Header().Set("X-XSS-Protection", "1; mode=block")
+			w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+			w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+
+			// HSTS: Only enable when using secure cookies (HTTPS deployment)
+			if cookieSecure {
+				w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // NewRouter builds the HTTP router serving both JSON APIs and static assets.
@@ -23,17 +58,34 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.RealIP)
+
+	// SECURITY: Only trust X-Forwarded-For headers when behind a trusted reverse proxy.
+	// If TrustProxy is false (default), we use the direct connection IP to prevent
+	// attackers from spoofing their IP address and bypassing rate limiting.
+	if cfg.TrustProxy {
+		r.Use(middleware.RealIP)
+	}
+
+	r.Use(SecureHeadersWithConfig(cfg.CookieSecure))
+
+	// Rate limiter for general API requests (100 requests/second with burst of 200)
+	// This is high enough to not interfere with normal usage but prevents abuse
+	apiLimiter := NewIPRateLimiter(rate.Limit(100), 200)
+	// Stricter limiter for auth endpoints (10 requests/minute with burst of 10)
+	authLimiter := NewIPRateLimiter(rate.Limit(10.0/60.0), 10)
+	// Login-specific limiter with exponential backoff
+	loginLimiter := NewLoginRateLimiter()
 
 	// Base Router for setup methods attached to *Router
 	apiRouter := &Router{
 		Mux:     r,
 		manager: manager,
 		store:   store,
+		config:  cfg,
 	}
 
 	// Instantiate Handlers
-	authH := NewAuthHandler(store, cfg)
+	authH := NewAuthHandler(store, cfg, loginLimiter)
 	ssoH := NewSSOHandler(store, cfg)
 	uptimeH := NewUptimeHandler(manager, store)
 	crudH := NewCRUDHandler(store, manager)
@@ -48,16 +100,22 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 	notifH := NewNotificationChannelsHandler(store)
 
 	r.Route("/api", func(api chi.Router) {
-		// Public routes
-		api.Post("/auth/login", authH.Login)
-		api.Post("/auth/logout", authH.Logout)
-		api.Get("/setup/status", apiRouter.CheckSetup)
-		api.Post("/setup", apiRouter.PerformSetup)
+		// Apply general rate limiting to all API routes
+		api.Use(RateLimitMiddleware(apiLimiter))
 
-		// SSO routes (public)
-		api.Get("/auth/sso/status", ssoH.GetSSOStatus)
-		api.Get("/auth/sso/google", ssoH.GoogleLogin)
-		api.Get("/auth/sso/google/callback", ssoH.GoogleCallback)
+		// Public routes with stricter rate limiting for auth
+		api.Group(func(auth chi.Router) {
+			auth.Use(RateLimitMiddleware(authLimiter))
+			auth.Post("/auth/login", authH.Login)
+			auth.Post("/auth/logout", authH.Logout)
+			auth.Get("/setup/status", apiRouter.CheckSetup)
+			auth.Post("/setup", apiRouter.PerformSetup)
+
+			// SSO routes (public)
+			auth.Get("/auth/sso/status", ssoH.GetSSOStatus)
+			auth.Get("/auth/sso/google", ssoH.GoogleLogin)
+			auth.Get("/auth/sso/google/callback", ssoH.GoogleCallback)
+		})
 
 		// Public Status Pages
 		api.Get("/s/{slug}", statusPageH.GetPublicStatus)
@@ -108,8 +166,8 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 			// Stats
 			protected.Get("/stats", statsH.GetStats)
 
-			// Admin
-			api.Post("/admin/reset", adminH.ResetDatabase)
+			// Admin (requires ADMIN_SECRET - this is a destructive operation)
+			protected.Post("/admin/reset", adminH.ResetDatabase)
 
 			// Notifications
 			protected.Get("/notifications/channels", notifH.GetChannels)

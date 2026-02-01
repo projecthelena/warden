@@ -20,7 +20,8 @@ func setupTest(t *testing.T) (*CRUDHandler, *SettingsHandler, *AuthHandler, http
 	settingsH := NewSettingsHandler(store, manager)
 
 	cfg := config.Default()
-	authH := NewAuthHandler(store, &cfg)
+	loginLimiter := NewLoginRateLimiter()
+	authH := NewAuthHandler(store, &cfg, loginLimiter)
 
 	// Create full router to test middleware if needed
 	router := NewRouter(manager, store, &cfg)

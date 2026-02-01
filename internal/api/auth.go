@@ -5,7 +5,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/clusteruptime/clusteruptime/internal/config"
@@ -16,13 +19,19 @@ type contextKey string
 
 const contextKeyUserID contextKey = "userID"
 
+// APIKeyUserID is used to identify requests authenticated via API key
+// SECURITY: Use -1 to distinguish from real user IDs (which are positive)
+// This prevents authorization bypass if handlers assume userID > 0 means valid user
+const APIKeyUserID int64 = -1
+
 type AuthHandler struct {
-	store  *db.Store
-	config *config.Config
+	store        *db.Store
+	config       *config.Config
+	loginLimiter *LoginRateLimiter
 }
 
-func NewAuthHandler(store *db.Store, cfg *config.Config) *AuthHandler {
-	return &AuthHandler{store: store, config: cfg}
+func NewAuthHandler(store *db.Store, cfg *config.Config, loginLimiter *LoginRateLimiter) *AuthHandler {
+	return &AuthHandler{store: store, config: cfg, loginLimiter: loginLimiter}
 }
 
 type LoginRequest struct {
@@ -31,17 +40,52 @@ type LoginRequest struct {
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
+	// Extract client IP for rate limiting
+	ip := extractIP(r)
+
+	// Check if IP is currently blocked due to too many failed attempts
+	if h.loginLimiter != nil && !h.loginLimiter.Allow(ip) {
+		blockDuration := h.loginLimiter.BlockDuration(ip)
+		w.Header().Set("Retry-After", fmt.Sprintf("%d", int(blockDuration.Seconds())+1))
+		writeError(w, http.StatusTooManyRequests, "too many failed login attempts, please try again later")
+		return
+	}
+
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 
+	// Check if username is currently blocked (distributed brute force protection)
+	if h.loginLimiter != nil && !h.loginLimiter.AllowUsername(req.Username) {
+		blockDuration := h.loginLimiter.UsernameBlockDuration(req.Username)
+		w.Header().Set("Retry-After", fmt.Sprintf("%d", int(blockDuration.Seconds())+1))
+		writeError(w, http.StatusTooManyRequests, "too many failed login attempts for this account, please try again later")
+		return
+	}
+
 	user, err := h.store.Authenticate(req.Username, req.Password)
 	if err != nil {
-		// Avoid leaking specific error details in prod usually, but specific errors help debugging
+		// AUDIT: Log failed authentication attempt (username only, never password)
+		log.Printf("AUDIT: [AUTH] Failed login attempt for user '%s' from IP %s", req.Username, ip)
+
+		// Record failed attempt for rate limiting (both IP and username)
+		if h.loginLimiter != nil {
+			h.loginLimiter.RecordFailure(ip)
+			h.loginLimiter.RecordUsernameFailure(req.Username)
+		}
 		writeError(w, http.StatusUnauthorized, "invalid credentials")
 		return
+	}
+
+	// AUDIT: Log successful authentication
+	log.Printf("AUDIT: [AUTH] Successful login for user '%s' (ID: %d) from IP %s", user.Username, user.ID, ip)
+
+	// Clear rate limit on successful login (both IP and username)
+	if h.loginLimiter != nil {
+		h.loginLimiter.RecordSuccess(ip)
+		h.loginLimiter.RecordUsernameSuccess(req.Username)
 	}
 
 	// Generate Token
@@ -104,6 +148,12 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// SECURITY: API keys cannot access user-specific endpoints
+	if userID == APIKeyUserID {
+		writeError(w, http.StatusForbidden, "API keys cannot access user profile")
+		return
+	}
+
 	user, err := h.store.GetUser(userID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "user not found")
@@ -118,7 +168,8 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 	if avatar == "" {
 		// Generate a UI Avatars URL as fallback
-		avatar = "https://ui-avatars.com/api/?name=" + displayName + "&background=random"
+		// SECURITY: URL-encode displayName to prevent XSS
+		avatar = "https://ui-avatars.com/api/?name=" + url.QueryEscape(displayName) + "&background=random"
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -147,6 +198,12 @@ func (h *AuthHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// SECURITY: API keys cannot modify user settings
+	if userID == APIKeyUserID {
+		writeError(w, http.StatusForbidden, "API keys cannot modify user settings")
+		return
+	}
+
 	var req UpdateUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
@@ -170,6 +227,21 @@ func (h *AuthHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// If password was changed, invalidate all other sessions for security
+	if req.Password != "" {
+		// AUDIT: Log password change
+		clientIP := extractIP(r)
+		log.Printf("AUDIT: [AUTH] Password changed for user ID %d from IP %s - invalidating other sessions", userID, clientIP)
+
+		// Get current session token to preserve it
+		currentToken := ""
+		if c, err := r.Cookie("auth_token"); err == nil {
+			currentToken = c.Value
+		}
+		// Delete all other sessions for this user
+		_ = h.store.DeleteUserSessions(userID, currentToken)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]string{"message": "settings updated"})
 }
 
@@ -183,10 +255,9 @@ func (h *AuthHandler) AuthMiddleware(next http.Handler) http.Handler {
 			token := authHeader[7:]
 			valid, err := h.store.ValidateAPIKey(token)
 			if err == nil && valid {
-				// Valid API Key. Identify as generic API user or specific if linked.
-				// For now, API Key grants full access.
-				// We can inject a special Context value to indicate API Key usage.
-				ctx := context.WithValue(r.Context(), contextKeyUserID, int64(0)) // 0 or -1 to indicate API User
+				// Valid API Key - use special negative ID to distinguish from real users
+				// SECURITY: APIKeyUserID (-1) prevents confusion with real user IDs
+				ctx := context.WithValue(r.Context(), contextKeyUserID, APIKeyUserID)
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}

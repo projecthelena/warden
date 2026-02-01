@@ -54,7 +54,13 @@ jobs:
         run: npm run lint
         working-directory: web
 
-      # 4. Unit Tests
+      # 4. Security Scanning
+      - name: Go Security Scan (gosec)
+        uses: securego/gosec@master
+        with:
+          args: -exclude-dir=web ./...
+
+      # 5. Unit Tests
       - name: Frontend Unit Tests
         run: npm run test
         working-directory: web
@@ -64,7 +70,7 @@ jobs:
           go clean -testcache
           go test ./...
 
-      # 5. Build (Required for E2E)
+      # 6. Build (Required for E2E)
       - name: Build Frontend
         working-directory: web
         run: npm run build
@@ -72,7 +78,7 @@ jobs:
       - name: Build Backend (Production Binary)
         run: go build -o clusteruptime ./cmd/dashboard
 
-      # 6. E2E Tests
+      # 7. E2E Tests
       - name: Start Full Stack
         env:
           ADMIN_SECRET: clusteruptime-e2e-magic-key
