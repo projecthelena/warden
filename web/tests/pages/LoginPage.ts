@@ -25,13 +25,29 @@ export class LoginPage {
     }
 
     async login(username = 'admin', password = 'password123!') {
+        // Wait for login page to be ready
+        await this.page.waitForLoadState('networkidle');
+        await expect(this.header).toBeVisible();
+
+        // Fill credentials
         await this.usernameInput.fill(username);
         await this.passwordInput.fill(password);
+
+        // Check if form auto-submitted during fill (race condition in CI)
+        // Give a brief moment for any auto-navigation to start
+        await this.page.waitForTimeout(100);
+
+        // If already navigating away from login, just wait for dashboard
+        if (!this.page.url().includes('/login')) {
+            await expect(this.page).toHaveURL(/\/dashboard/, { timeout: 15000 });
+            return;
+        }
+
+        // Still on login page - submit form explicitly
         await this.submitBtn.click();
 
-        // Wait for redirection to Dashboard
-        // App redirects to /dashboard or / (which redirects to /dashboard)
-        await expect(this.page).toHaveURL(/\/dashboard/, { timeout: 10000 });
+        // Wait for navigation to dashboard
+        await expect(this.page).toHaveURL(/\/dashboard/, { timeout: 15000 });
     }
 
     async logout() {

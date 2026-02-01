@@ -24,11 +24,22 @@ type IncidentDTO struct {
 	MonitorName string     `json:"monitorName"`
 	GroupName   string     `json:"groupName"`
 	GroupID     string     `json:"groupId"`
-	Type        string     `json:"type"` // down, degraded
+	Type        string     `json:"type"` // down, degraded, ssl_expiring
 	Message     string     `json:"message"`
 	StartedAt   time.Time  `json:"startedAt"`
 	ResolvedAt  *time.Time `json:"resolvedAt"` // Null if active
 	Duration    string     `json:"duration"`
+}
+
+type SSLWarningDTO struct {
+	ID          string    `json:"id"`
+	MonitorID   string    `json:"monitorId"`
+	MonitorName string    `json:"monitorName"`
+	GroupName   string    `json:"groupName"`
+	GroupID     string    `json:"groupId"`
+	Type        string    `json:"type"` // always "ssl_expiring"
+	Message     string    `json:"message"`
+	Timestamp   time.Time `json:"timestamp"`
 }
 
 func (h *EventHandler) GetSystemEvents(w http.ResponseWriter, r *http.Request) {
@@ -80,6 +91,27 @@ func (h *EventHandler) GetSystemEvents(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	// Fetch SSL warnings
+	sslWarningsDB, err := h.store.GetActiveSSLWarnings()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to fetch SSL warnings")
+		return
+	}
+
+	var sslWarnings []SSLWarningDTO
+	for _, w := range sslWarningsDB {
+		sslWarnings = append(sslWarnings, SSLWarningDTO{
+			ID:          fmt.Sprintf("%d", w.ID),
+			MonitorID:   w.MonitorID,
+			MonitorName: w.MonitorName,
+			GroupName:   w.GroupName,
+			GroupID:     w.GroupID,
+			Type:        "ssl_expiring",
+			Message:     w.Message,
+			Timestamp:   w.Timestamp,
+		})
+	}
+
 	// Returns empty arrays if nil
 	if active == nil {
 		active = []IncidentDTO{}
@@ -87,10 +119,14 @@ func (h *EventHandler) GetSystemEvents(w http.ResponseWriter, r *http.Request) {
 	if history == nil {
 		history = []IncidentDTO{}
 	}
+	if sslWarnings == nil {
+		sslWarnings = []SSLWarningDTO{}
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"active":  active,
-		"history": history,
+		"active":      active,
+		"history":     history,
+		"sslWarnings": sslWarnings,
 	})
 }
 

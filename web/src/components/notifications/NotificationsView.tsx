@@ -68,25 +68,21 @@ export function NotificationsView() {
                 ))}
             </div>
 
-            {
-                selectedChannel && (
-                    <ChannelDetailsSheet
-                        channel={selectedChannel}
-                        open={detailsOpen}
-                        onOpenChange={setDetailsOpen}
-                    />
-                )
-            }
+            {selectedChannel && (
+                <ChannelDetailsSheet
+                    channel={selectedChannel}
+                    open={detailsOpen}
+                    onOpenChange={setDetailsOpen}
+                />
+            )}
 
-            {
-                channels.length === 0 && (
-                    <div className="flex flex-col items-center justify-center p-12 border border-dashed border-slate-800 rounded-lg text-slate-500">
-                        <BellOff className="w-12 h-12 mb-4 opacity-50" />
-                        <h3 className="text-lg font-medium text-slate-300 mb-1">No Notification Channels</h3>
-                        <p className="text-sm">Add a channel to receive alerts when monitors go down.</p>
-                    </div>
-                )
-            }
-        </div >
+            {channels.length === 0 && (
+                <div className="flex flex-col items-center justify-center p-12 border border-dashed border-border rounded-lg text-muted-foreground">
+                    <BellOff className="w-12 h-12 mb-4 opacity-50" />
+                    <h3 className="text-lg font-medium text-foreground mb-1">No Notification Channels</h3>
+                    <p className="text-sm">Add a channel to receive alerts when monitors go down.</p>
+                </div>
+            )}
+        </div>
     )
 }

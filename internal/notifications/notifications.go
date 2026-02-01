@@ -15,9 +15,10 @@ import (
 type EventType string
 
 const (
-	EventDown     EventType = "down"
-	EventUp       EventType = "up"
-	EventDegraded EventType = "degraded"
+	EventDown        EventType = "down"
+	EventUp          EventType = "up"
+	EventDegraded    EventType = "degraded"
+	EventSSLExpiring EventType = "ssl_expiring"
 )
 
 // NotificationEvent represents the data needed to send a notification
@@ -106,29 +107,19 @@ func NewSlackNotifier(configJSON string) *SlackNotifier {
 }
 
 func (n *SlackNotifier) Send(event NotificationEvent) error {
-	// 1. Get Webhook URL from config
 	url, ok := n.config["webhookUrl"].(string)
 	if !ok || url == "" {
 		return fmt.Errorf("webhookUrl missing or invalid")
 	}
 
-	// 2. Optional: Notify On Filter (if added to channel config later)
-	// For now, assume all enabled channels want all alerts?
-	// Or we can add it to the config map.
-	// Let's implement basic filtering if present in config.
-	/*
-		if notifyOn, ok := n.config["notifyOn"].(string); ok && notifyOn == "down" && event.Type != EventDown {
-			// Logic similar to before...
-		}
-	*/
-
-	// 4. Construct Payload
 	color := "#36a64f" // Green (Up)
 	switch event.Type {
 	case EventDown:
 		color = "#dc3545" // Red
 	case EventDegraded:
 		color = "#ffc107" // Yellow
+	case EventSSLExpiring:
+		color = "#ff8c00" // Orange
 	}
 
 	emoji := ":white_check_mark:"
@@ -137,6 +128,8 @@ func (n *SlackNotifier) Send(event NotificationEvent) error {
 		emoji = ":rotating_light:"
 	case EventDegraded:
 		emoji = ":warning:"
+	case EventSSLExpiring:
+		emoji = ":lock:"
 	}
 
 	title := "Monitor Recovered"
@@ -145,6 +138,8 @@ func (n *SlackNotifier) Send(event NotificationEvent) error {
 		title = "Monitor Down"
 	case EventDegraded:
 		title = "Monitor Degraded"
+	case EventSSLExpiring:
+		title = "SSL Certificate Expiring"
 	}
 
 	payload := map[string]interface{}{
@@ -178,7 +173,6 @@ func (n *SlackNotifier) Send(event NotificationEvent) error {
 		},
 	}
 
-	// 5. Send Request
 	return sendJSON(url, payload)
 }
 

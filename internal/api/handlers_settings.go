@@ -79,11 +79,6 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 			http.Error(w, "Failed to save data_retention_days", http.StatusInternalServerError)
 			return
 		}
-		// Manager reads this setting dynamically in retentionWorker,
-		// but we could allow hot-reloading it if we exposed a setter?
-		// For now, the worker reads it every run (daily), so it will pick it up next run.
-		// If we want immediate effect, we'd need to trigger the worker.
-		// But for retention, inevitable delay is fine.
 	}
 
 	// Notifications Keys

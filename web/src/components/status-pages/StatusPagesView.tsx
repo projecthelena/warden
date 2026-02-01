@@ -32,7 +32,7 @@ export function StatusPagesView() {
 
             await toggleMutation.mutateAsync({ slug: targetSlug, public: !currentStatus, title, groupId: groupId || undefined });
             toast({ title: "Status Page Updated", description: `${title} is now ${!currentStatus ? 'Public' : 'Private'}` });
-        } catch (e) {
+        } catch (_e) {
             toast({ title: "Error", description: "Failed to update status page", variant: "destructive" });
         }
     };

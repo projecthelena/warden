@@ -379,7 +379,8 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                                 {monitor.events.map((event) => (
                                     <div key={event.id} className="ml-6 relative">
                                         <div className={`absolute -left-[31px] top-1 w-2.5 h-2.5 rounded-full ring-4 ring-background ${event.type === 'up' ? 'bg-emerald-500' :
-                                            event.type === 'down' ? 'bg-destructive' : 'bg-yellow-500'
+                                            event.type === 'down' ? 'bg-destructive' :
+                                            event.type === 'ssl_expiring' ? 'bg-orange-500' : 'bg-yellow-500'
                                             }`} />
                                         <div className="flex flex-col gap-1">
 

@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,6 +27,16 @@ type CheckResult struct {
 	StatusCode int
 	Error      string
 	IsDegraded bool
+	CertExpiry *time.Time // SSL certificate NotAfter (nil if not HTTPS or unavailable)
+}
+
+// SSL notification thresholds in days
+var sslNotificationThresholds = []int{30, 14, 7, 1}
+
+// sslThresholdState tracks which thresholds have been notified for a certificate
+type sslThresholdState struct {
+	CertExpiry time.Time    // Track cert expiry to detect renewal
+	Notified   map[int]bool // threshold -> notified
 }
 
 type Manager struct {
@@ -39,6 +50,12 @@ type Manager struct {
 	wg          sync.WaitGroup
 
 	latencyThreshold int64
+
+	// Track SSL notification thresholds per monitor
+	sslNotifiedThresholds map[string]*sslThresholdState
+
+	// Cached notification timezone (loaded during Sync)
+	notificationTimezone *time.Location
 
 	// Active Maintenance Windows
 	maintenanceWindows []db.Incident
@@ -54,14 +71,16 @@ const (
 
 func NewManager(store *db.Store) *Manager {
 	m := &Manager{
-		store:              store,
-		monitors:           make(map[string]*Monitor),
-		maintenanceWindows: make([]db.Incident, 0),
-		jobQueue:           make(chan Job, 1000),         // Buffer for bursts
-		resultQueue:        make(chan CheckResult, 1000), // Buffer for results
-		stopCh:             make(chan struct{}),
-		latencyThreshold:   1000, // Default
-		notifier:           notifications.NewService(store),
+		store:                 store,
+		monitors:              make(map[string]*Monitor),
+		maintenanceWindows:    make([]db.Incident, 0),
+		jobQueue:              make(chan Job, 1000),         // Buffer for bursts
+		resultQueue:           make(chan CheckResult, 1000), // Buffer for results
+		stopCh:                make(chan struct{}),
+		latencyThreshold:      1000, // Default
+		sslNotifiedThresholds: make(map[string]*sslThresholdState),
+		notificationTimezone:  time.UTC, // Default to UTC
+		notifier:              notifications.NewService(store),
 	}
 
 	// Load settings
@@ -133,17 +152,20 @@ func (m *Manager) Reset() {
 		mon.Stop()
 		delete(m.monitors, id)
 	}
+	m.sslNotifiedThresholds = make(map[string]*sslThresholdState)
 }
 
 func (m *Manager) worker() {
 	defer m.wg.Done()
+
+	transport := &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     30 * time.Second,
+	}
 	client := &http.Client{
-		Timeout: 5 * time.Second,
-		Transport: &http.Transport{
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 10,
-			IdleConnTimeout:     30 * time.Second,
-		},
+		Timeout:   5 * time.Second,
+		Transport: transport,
 	}
 
 	for job := range m.jobQueue {
@@ -154,6 +176,7 @@ func (m *Manager) worker() {
 		isUp := true
 		var errMsg string
 		statusCode := 0
+		var certExpiry *time.Time
 
 		if err != nil {
 			isUp = false
@@ -163,6 +186,11 @@ func (m *Manager) worker() {
 			statusCode = resp.StatusCode
 			if resp.StatusCode >= 400 {
 				isUp = false
+			}
+			// Extract SSL certificate expiry for HTTPS URLs
+			if resp.TLS != nil && len(resp.TLS.PeerCertificates) > 0 {
+				notAfter := resp.TLS.PeerCertificates[0].NotAfter
+				certExpiry = &notAfter
 			}
 		}
 
@@ -174,6 +202,7 @@ func (m *Manager) worker() {
 			Timestamp:  start,
 			StatusCode: statusCode,
 			Error:      errMsg,
+			CertExpiry: certExpiry,
 		}
 	}
 }
@@ -216,21 +245,13 @@ func (m *Manager) resultProcessor() {
 				threshold := m.latencyThreshold
 				m.mu.RUnlock()
 
-				// 3. Maintenance Check (Dynamic)
+				// Check if monitor is in maintenance
 				m.mu.RLock()
 				isMaint := false
 				now := time.Now().UTC()
 				for _, w := range m.maintenanceWindows {
 					if now.After(w.StartTime) && (w.EndTime == nil || now.Before(*w.EndTime)) {
-						// Window is active, check group
 						if w.AffectedGroups != "" {
-							// Optimization: We could cache the unmarshaled groups but for MVP this is okay, or we assume low volume of maintenance
-							// Better: Check string contains? No, risky.
-							// Let's Unmarshal. Ideally this struct field should be parsed once.
-							// For safety in this hot path, let's optimize in Sync?
-							// Actually, let's just do a quick string check if the ID is unique enough, or Unmarshal.
-							// Given valid JSON ["id"], searching for "id" is safe.
-							// But to be 100% correct, let's Unmarshal.
 							var groups []string
 							_ = json.Unmarshal([]byte(w.AffectedGroups), &groups)
 							for _, g := range groups {
@@ -365,13 +386,92 @@ func (m *Manager) resultProcessor() {
 						}
 					}
 				}
+
+				// SSL Certificate Expiry Check - Threshold-based notifications at mid-day
+				// Fixed thresholds: 30, 14, 7, 1 days
+				if res.CertExpiry != nil && strings.HasPrefix(res.URL, "https") {
+					daysUntilExpiry := int(time.Until(*res.CertExpiry).Hours() / 24)
+					// Only process if within the maximum threshold (30 days)
+					if daysUntilExpiry <= sslNotificationThresholds[0] {
+						// Find the matching notification threshold (smallest applicable)
+						// Thresholds: [30, 14, 7, 1] - iterate to find smallest t where daysUntilExpiry <= t
+						matchedThreshold := -1
+						for _, t := range sslNotificationThresholds {
+							if daysUntilExpiry <= t {
+								matchedThreshold = t // Keep updating to get smallest match
+							}
+						}
+
+						// Check if we should notify (mid-day window + threshold not yet notified)
+						shouldNotify := false
+						if matchedThreshold > 0 {
+							// Use cached notification timezone
+							m.mu.RLock()
+							loc := m.notificationTimezone
+							m.mu.RUnlock()
+
+							// Check if current time is in mid-day window (11:00 AM - 1:00 PM)
+							nowLocal := time.Now().In(loc)
+							hour := nowLocal.Hour()
+							isMidDay := hour >= 11 && hour < 13
+
+							if isMidDay {
+								m.mu.Lock()
+								state, exists := m.sslNotifiedThresholds[res.MonitorID]
+
+								// Check if certificate was renewed (expiry date changed)
+								if exists && !state.CertExpiry.Equal(*res.CertExpiry) {
+									// Certificate renewed, reset all thresholds
+									state = nil
+									exists = false
+								}
+
+								if !exists {
+									state = &sslThresholdState{
+										CertExpiry: *res.CertExpiry,
+										Notified:   make(map[int]bool),
+									}
+									m.sslNotifiedThresholds[res.MonitorID] = state
+								}
+
+								// Check if this threshold was already notified
+								if !state.Notified[matchedThreshold] {
+									state.Notified[matchedThreshold] = true
+									shouldNotify = true
+								}
+								m.mu.Unlock()
+							}
+						}
+
+						if shouldNotify {
+							var msg string
+							if daysUntilExpiry < 0 {
+								msg = "SSL certificate expired " + strconv.Itoa(-daysUntilExpiry) + " days ago (" + res.CertExpiry.Format("2006-01-02") + ")"
+							} else {
+								msg = "SSL certificate expires in " + strconv.Itoa(daysUntilExpiry) + " days (" + res.CertExpiry.Format("2006-01-02") + ")"
+							}
+							go func() { _ = m.store.CreateEvent(res.MonitorID, "ssl_expiring", msg) }()
+
+							if !isMaint {
+								m.notifier.Enqueue(notifications.NotificationEvent{
+									MonitorID:   res.MonitorID,
+									MonitorName: mon.GetName(),
+									MonitorURL:  mon.GetTargetURL(),
+									Type:        notifications.EventSSLExpiring,
+									Message:     msg,
+									Time:        res.Timestamp,
+								})
+							}
+							log.Printf("Monitor %s: SSL certificate expiring in %d days (threshold: %d)", res.MonitorID, daysUntilExpiry, matchedThreshold)
+						}
+					}
+				}
 			}
 
-			// 3. Insert Check Result
-			// 2. Update In-Memory State
+			// Update in-memory state
 			m.updateMonitorState(res)
 
-			// 2. Add to Batch (for DB persistence)
+			// Add to batch for DB persistence
 			statusStr := "down"
 			if res.Status {
 				statusStr = "up"
@@ -420,8 +520,19 @@ func (m *Manager) Sync() {
 		}
 	}
 
+	// Load user timezone for notifications (from first/admin user)
+	notifTZ := time.UTC
+	if user, err := m.store.GetUser(1); err == nil && user.Timezone != "" {
+		if loc, err := time.LoadLocation(user.Timezone); err == nil {
+			notifTZ = loc
+		}
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	// Update cached settings
+	m.notificationTimezone = notifTZ
 
 	// Update maintenance windows
 	m.maintenanceWindows = activeWindows
@@ -457,9 +568,8 @@ func (m *Manager) Sync() {
 		}
 
 		if _, exists := m.monitors[dbM.ID]; !exists {
-			// Start new monitor passing the JobQueue
+			// Start new monitor
 			mon := NewMonitor(dbM.ID, dbM.GroupID, dbM.Name, dbM.URL, interval, m.jobQueue)
-			// ...
 
 			// Hydrate history from DB
 			checks, err := m.store.GetMonitorChecks(dbM.ID, 50)
@@ -485,6 +595,7 @@ func (m *Manager) Sync() {
 		if !activeIDs[id] {
 			mon.Stop()
 			delete(m.monitors, id)
+			delete(m.sslNotifiedThresholds, id)
 			log.Printf("Stopped monitor: %s", id)
 		}
 	}
@@ -506,6 +617,7 @@ func (m *Manager) RemoveMonitor(id string) {
 	if mon, exists := m.monitors[id]; exists {
 		mon.Stop()
 		delete(m.monitors, id)
+		delete(m.sslNotifiedThresholds, id)
 		log.Printf("Explicitly stopped monitor: %s", id)
 	}
 }

@@ -31,7 +31,7 @@ export function MonitorCard({ monitor, groupId }: { monitor: Monitor, groupId: s
                 minute: '2-digit',
                 timeZone: user?.timezone,
             }).format(new Date(monitor.lastCheck));
-        } catch (e) {
+        } catch (_e) {
             return monitor.lastCheck;
         }
     }, [monitor.lastCheck, user?.timezone]);

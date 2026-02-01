@@ -283,6 +283,51 @@ func (s *Store) GetMonitorEvents(monitorID string, limit int) ([]MonitorEvent, e
 	return events, nil
 }
 
+// SSLWarningEvent represents an SSL certificate expiry warning event
+type SSLWarningEvent struct {
+	ID          int       `json:"id"`
+	MonitorID   string    `json:"monitorId"`
+	MonitorName string    `json:"monitorName"`
+	GroupName   string    `json:"groupName"`
+	GroupID     string    `json:"groupId"`
+	Message     string    `json:"message"`
+	Timestamp   time.Time `json:"timestamp"`
+}
+
+// GetActiveSSLWarnings returns the most recent ssl_expiring event per monitor from the last 7 days
+func (s *Store) GetActiveSSLWarnings() ([]SSLWarningEvent, error) {
+	query := `
+		SELECT e.id, e.monitor_id, m.name, g.name, g.id, e.message, e.timestamp
+		FROM monitor_events e
+		JOIN monitors m ON e.monitor_id = m.id
+		JOIN groups g ON m.group_id = g.id
+		WHERE e.type = 'ssl_expiring'
+		AND e.timestamp >= datetime('now', '-7 days')
+		AND e.id = (
+			SELECT MAX(e2.id) FROM monitor_events e2
+			WHERE e2.monitor_id = e.monitor_id
+			AND e2.type = 'ssl_expiring'
+			AND e2.timestamp >= datetime('now', '-7 days')
+		)
+		ORDER BY e.timestamp DESC
+	`
+	rows, err := s.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var warnings []SSLWarningEvent
+	for rows.Next() {
+		var w SSLWarningEvent
+		if err := rows.Scan(&w.ID, &w.MonitorID, &w.MonitorName, &w.GroupName, &w.GroupID, &w.Message, &w.Timestamp); err != nil {
+			return nil, err
+		}
+		warnings = append(warnings, w)
+	}
+	return warnings, nil
+}
+
 func (s *Store) GetLatencyStats(monitorID string, hours int) ([]LatencyPoint, error) {
 	var query string
 	var groupBy string

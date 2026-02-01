@@ -203,3 +203,198 @@ func TestMonitorOutages(t *testing.T) {
 		t.Error("Expected EndTime to be set")
 	}
 }
+
+func TestGetActiveSSLWarnings_Empty(t *testing.T) {
+	s := newTestStore(t)
+
+	// No monitors, no events
+	warnings, err := s.GetActiveSSLWarnings()
+	if err != nil {
+		t.Fatalf("GetActiveSSLWarnings failed: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("Expected 0 warnings, got %d", len(warnings))
+	}
+}
+
+func TestGetActiveSSLWarnings_SingleMonitor(t *testing.T) {
+	s := newTestStore(t)
+
+	// Setup
+	if err := s.CreateGroup(Group{ID: "g1", Name: "Production"}); err != nil {
+		t.Fatalf("CreateGroup failed: %v", err)
+	}
+	if err := s.CreateMonitor(Monitor{ID: "m1", GroupID: "g1", Name: "API Server", URL: "https://api.example.com", Interval: 60}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Create SSL expiring event
+	if err := s.CreateEvent("m1", "ssl_expiring", "SSL certificate expires in 14 days (2025-02-15)"); err != nil {
+		t.Fatalf("CreateEvent failed: %v", err)
+	}
+
+	// Verify
+	warnings, err := s.GetActiveSSLWarnings()
+	if err != nil {
+		t.Fatalf("GetActiveSSLWarnings failed: %v", err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("Expected 1 warning, got %d", len(warnings))
+	}
+	if warnings[0].MonitorID != "m1" {
+		t.Errorf("Expected MonitorID m1, got %s", warnings[0].MonitorID)
+	}
+	if warnings[0].MonitorName != "API Server" {
+		t.Errorf("Expected MonitorName 'API Server', got %s", warnings[0].MonitorName)
+	}
+	if warnings[0].GroupName != "Production" {
+		t.Errorf("Expected GroupName 'Production', got %s", warnings[0].GroupName)
+	}
+	if warnings[0].GroupID != "g1" {
+		t.Errorf("Expected GroupID g1, got %s", warnings[0].GroupID)
+	}
+	if warnings[0].Message != "SSL certificate expires in 14 days (2025-02-15)" {
+		t.Errorf("Unexpected message: %s", warnings[0].Message)
+	}
+}
+
+func TestGetActiveSSLWarnings_MultipleMonitors(t *testing.T) {
+	s := newTestStore(t)
+
+	// Setup
+	if err := s.CreateGroup(Group{ID: "g1", Name: "Production"}); err != nil {
+		t.Fatalf("CreateGroup failed: %v", err)
+	}
+	if err := s.CreateGroup(Group{ID: "g2", Name: "Staging"}); err != nil {
+		t.Fatalf("CreateGroup failed: %v", err)
+	}
+	if err := s.CreateMonitor(Monitor{ID: "m1", GroupID: "g1", Name: "API", Interval: 60}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+	if err := s.CreateMonitor(Monitor{ID: "m2", GroupID: "g1", Name: "Web", Interval: 60}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+	if err := s.CreateMonitor(Monitor{ID: "m3", GroupID: "g2", Name: "Staging API", Interval: 60}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Create SSL events for different monitors
+	_ = s.CreateEvent("m1", "ssl_expiring", "SSL certificate expires in 7 days")
+	_ = s.CreateEvent("m2", "ssl_expiring", "SSL certificate expires in 30 days")
+	_ = s.CreateEvent("m3", "ssl_expiring", "SSL certificate expires in 1 day")
+
+	warnings, err := s.GetActiveSSLWarnings()
+	if err != nil {
+		t.Fatalf("GetActiveSSLWarnings failed: %v", err)
+	}
+	if len(warnings) != 3 {
+		t.Fatalf("Expected 3 warnings, got %d", len(warnings))
+	}
+
+	// Verify all monitors are represented
+	monitorIDs := make(map[string]bool)
+	for _, w := range warnings {
+		monitorIDs[w.MonitorID] = true
+	}
+	if !monitorIDs["m1"] || !monitorIDs["m2"] || !monitorIDs["m3"] {
+		t.Error("Expected all 3 monitors in warnings")
+	}
+}
+
+func TestGetActiveSSLWarnings_OnlyLatestPerMonitor(t *testing.T) {
+	s := newTestStore(t)
+
+	// Setup
+	if err := s.CreateGroup(Group{ID: "g1", Name: "G1"}); err != nil {
+		t.Fatalf("CreateGroup failed: %v", err)
+	}
+	if err := s.CreateMonitor(Monitor{ID: "m1", GroupID: "g1", Name: "M1", Interval: 60}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Create multiple SSL events for same monitor (simulating different threshold notifications)
+	_ = s.CreateEvent("m1", "ssl_expiring", "SSL certificate expires in 30 days")
+	_ = s.CreateEvent("m1", "ssl_expiring", "SSL certificate expires in 14 days")
+	_ = s.CreateEvent("m1", "ssl_expiring", "SSL certificate expires in 7 days")
+
+	warnings, err := s.GetActiveSSLWarnings()
+	if err != nil {
+		t.Fatalf("GetActiveSSLWarnings failed: %v", err)
+	}
+
+	// Should only return the latest event per monitor
+	if len(warnings) != 1 {
+		t.Fatalf("Expected 1 warning (latest only), got %d", len(warnings))
+	}
+	if warnings[0].Message != "SSL certificate expires in 7 days" {
+		t.Errorf("Expected latest message '...7 days', got %s", warnings[0].Message)
+	}
+}
+
+func TestGetActiveSSLWarnings_IgnoresOtherEventTypes(t *testing.T) {
+	s := newTestStore(t)
+
+	// Setup
+	if err := s.CreateGroup(Group{ID: "g1", Name: "G1"}); err != nil {
+		t.Fatalf("CreateGroup failed: %v", err)
+	}
+	if err := s.CreateMonitor(Monitor{ID: "m1", GroupID: "g1", Name: "M1", Interval: 60}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Create different event types
+	_ = s.CreateEvent("m1", "down", "Monitor is down")
+	_ = s.CreateEvent("m1", "degraded", "High latency")
+	_ = s.CreateEvent("m1", "recovered", "Monitor recovered")
+	_ = s.CreateEvent("m1", "ssl_expiring", "SSL certificate expires in 7 days")
+
+	warnings, err := s.GetActiveSSLWarnings()
+	if err != nil {
+		t.Fatalf("GetActiveSSLWarnings failed: %v", err)
+	}
+
+	// Should only return ssl_expiring events
+	if len(warnings) != 1 {
+		t.Fatalf("Expected 1 warning, got %d", len(warnings))
+	}
+	if warnings[0].Message != "SSL certificate expires in 7 days" {
+		t.Errorf("Unexpected message: %s", warnings[0].Message)
+	}
+}
+
+func TestGetActiveSSLWarnings_DeletedMonitorExcluded(t *testing.T) {
+	s := newTestStore(t)
+
+	// Setup
+	if err := s.CreateGroup(Group{ID: "g1", Name: "G1"}); err != nil {
+		t.Fatalf("CreateGroup failed: %v", err)
+	}
+	if err := s.CreateMonitor(Monitor{ID: "m1", GroupID: "g1", Name: "M1", Interval: 60}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+	if err := s.CreateMonitor(Monitor{ID: "m2", GroupID: "g1", Name: "M2", Interval: 60}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Create SSL events
+	_ = s.CreateEvent("m1", "ssl_expiring", "SSL expiring m1")
+	_ = s.CreateEvent("m2", "ssl_expiring", "SSL expiring m2")
+
+	// Delete one monitor (cascades to events)
+	if err := s.DeleteMonitor("m1"); err != nil {
+		t.Fatalf("DeleteMonitor failed: %v", err)
+	}
+
+	warnings, err := s.GetActiveSSLWarnings()
+	if err != nil {
+		t.Fatalf("GetActiveSSLWarnings failed: %v", err)
+	}
+
+	// Should only return m2's warning
+	if len(warnings) != 1 {
+		t.Fatalf("Expected 1 warning, got %d", len(warnings))
+	}
+	if warnings[0].MonitorID != "m2" {
+		t.Errorf("Expected MonitorID m2, got %s", warnings[0].MonitorID)
+	}
+}

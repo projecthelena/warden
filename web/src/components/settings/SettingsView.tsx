@@ -130,18 +130,17 @@ function GeneralSettings() {
                         className="max-w-[200px]"
                     />
                 </div>
+                <div className="rounded-lg border border-border/50 bg-muted/30 p-4">
+                    <Label className="text-sm font-medium">SSL Certificate Warnings</Label>
+                    <p className="text-sm text-muted-foreground mt-1">
+                        Notifications are sent at 30, 14, 7, and 1 days before certificate expiry (at mid-day in your configured timezone).
+                    </p>
+                </div>
                 <Button onClick={handleSave} className="w-fit">Save Settings</Button>
             </CardContent>
         </Card>
     );
 }
-
-// ... (previous imports) But I need to preserve ResetDatabaseDialog and GeneralSettings or move them inside.
-// Since I can't easily see entire file context in replace_file_content if I replace everything, I should be careful.
-// Actually, I viewed the file recently (step 886).
-// I will restructure the SettingsView function body and keep the helper components.
-
-// ... (Rest of the file remains, I will selectively replace SettingsView function)
 
 export function SettingsView() {
     const { user, updateUser } = useMonitorStore();

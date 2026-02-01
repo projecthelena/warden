@@ -2,8 +2,8 @@
 import { useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { useMonitorStore, Incident, SystemIncident } from "@/lib/store";
-import { Calendar, CheckCircle2, ArrowDownCircle, AlertTriangle, Clock } from "lucide-react";
+import { useMonitorStore, Incident, SystemIncident, SSLWarning } from "@/lib/store";
+import { Calendar, CheckCircle2, ArrowDownCircle, AlertTriangle, Clock, ShieldAlert } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { cn, formatDate } from "@/lib/utils";
 
@@ -116,8 +116,56 @@ function SystemEventRow({ event, active, timezone }: { event: SystemIncident; ac
     )
 }
 
+function SSLWarningRow({ warning, timezone }: { warning: SSLWarning; timezone?: string }) {
+    const navigate = useNavigate();
+
+    return (
+        <div
+            onClick={() => navigate(`/groups/${warning.groupId}`)}
+            className="group flex items-center justify-between py-3 px-4 -mx-4 hover:bg-muted/30 rounded-lg transition-colors cursor-pointer"
+        >
+            <div className="flex items-center gap-4">
+                {/* Status Indicator Icon */}
+                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-background border border-border/50 shadow-sm">
+                    <ShieldAlert className="w-4 h-4 text-orange-500" />
+                </div>
+
+                <div className="space-y-0.5">
+                    <div className="flex items-center gap-2 text-sm">
+                        {warning.groupName && (
+                            <>
+                                <span className="text-muted-foreground hover:text-foreground transition-colors">
+                                    {warning.groupName}
+                                </span>
+                                <span className="text-muted-foreground/30">/</span>
+                            </>
+                        )}
+                        <span className="font-medium text-foreground">
+                            {warning.monitorName}
+                        </span>
+                        <Badge variant="outline" className="ml-2 rounded-sm px-1.5 py-0 text-[10px] font-medium uppercase tracking-wider border-orange-500/30 bg-orange-500/10 text-orange-500">
+                            SSL WARNING
+                        </Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground/70 font-mono">
+                        {warning.message}
+                    </div>
+                </div>
+            </div>
+
+            <div className="flex items-center gap-4 text-xs text-muted-foreground tabular-nums">
+                <span className="flex items-center gap-1.5 opacity-50 group-hover:opacity-100 transition-opacity">
+                    <Clock className="w-3 h-3" />
+                    {formatDate(warning.timestamp, timezone)}
+                </span>
+            </div>
+        </div>
+    );
+}
+
 export function IncidentsView() {
-    const { incidents, systemEvents, fetchSystemEvents, fetchIncidents } = useMonitorStore();
+    const { incidents, systemEvents, fetchSystemEvents, fetchIncidents, user } = useMonitorStore();
+    const timezone = user?.timezone;
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
 
@@ -141,12 +189,13 @@ export function IncidentsView() {
 
     const activeSystemEvents = systemEvents?.active || [];
     const historySystemEvents = systemEvents?.history || [];
+    const sslWarnings = systemEvents?.sslWarnings || [];
 
     // Split Active Events
     const downtimeEvents = activeSystemEvents.filter(e => e.type === 'down');
     const degradedEvents = activeSystemEvents.filter(e => e.type === 'degraded');
 
-    const totalActive = activeIncidents.length + activeSystemEvents.length;
+    const totalActive = activeIncidents.length + activeSystemEvents.length + sslWarnings.length;
 
     return (
         <div className="space-y-8 max-w-5xl mx-auto">
@@ -188,7 +237,7 @@ export function IncidentsView() {
                         <div className="space-y-3 animation-in fade-in slide-in-from-bottom-2 duration-500">
                             <h3 className="text-xs font-semibold text-red-500 uppercase tracking-widest pl-1">Critical Outages</h3>
                             <div className="rounded-xl border border-red-900/20 bg-red-950/5 overflow-hidden px-4">
-                                {downtimeEvents.map((e, i) => <SystemEventRow key={e.id + i} event={e} active={true} />)}
+                                {downtimeEvents.map((e, i) => <SystemEventRow key={e.id + i} event={e} active={true} timezone={timezone} />)}
                             </div>
                         </div>
                     )}
@@ -198,7 +247,17 @@ export function IncidentsView() {
                         <div className="space-y-3 animation-in fade-in slide-in-from-bottom-3 duration-500">
                             <h3 className="text-xs font-semibold text-yellow-500 uppercase tracking-widest pl-1">Performance Issues</h3>
                             <div className="rounded-xl border border-yellow-900/20 bg-yellow-950/5 overflow-hidden px-4">
-                                {degradedEvents.map((e, i) => <SystemEventRow key={e.id + i} event={e} active={true} />)}
+                                {degradedEvents.map((e, i) => <SystemEventRow key={e.id + i} event={e} active={true} timezone={timezone} />)}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* SSL Certificate Warnings Section */}
+                    {sslWarnings.length > 0 && (
+                        <div className="space-y-3 animation-in fade-in slide-in-from-bottom-3 duration-500">
+                            <h3 className="text-xs font-semibold text-orange-500 uppercase tracking-widest pl-1">Certificate Warnings</h3>
+                            <div className="rounded-xl border border-orange-900/20 bg-orange-950/5 overflow-hidden px-4">
+                                {sslWarnings.map((w, i) => <SSLWarningRow key={w.id + i} warning={w} timezone={timezone} />)}
                             </div>
                         </div>
                     )}
@@ -208,7 +267,7 @@ export function IncidentsView() {
                         <div className="space-y-3 animation-in fade-in slide-in-from-bottom-4 duration-500">
                             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest pl-1">Reported Incidents</h3>
                             <div className="space-y-3">
-                                {activeIncidents.map(i => <IncidentCard key={i.id} incident={i} />)}
+                                {activeIncidents.map(i => <IncidentCard key={i.id} incident={i} timezone={timezone} />)}
                             </div>
                         </div>
                     )}
@@ -220,11 +279,11 @@ export function IncidentsView() {
                     )}
 
                     <div className="divide-y divide-border/30">
-                        {historySystemEvents.map((e, i) => <SystemEventRow key={e.id + i} event={e} active={false} />)}
+                        {historySystemEvents.map((e, i) => <SystemEventRow key={e.id + i} event={e} active={false} timezone={timezone} />)}
                     </div>
 
                     <div className="pt-6 space-y-3">
-                        {history.map(i => <IncidentCard key={i.id} incident={i} />)}
+                        {history.map(i => <IncidentCard key={i.id} incident={i} timezone={timezone} />)}
                     </div>
                 </TabsContent>
             </Tabs>
