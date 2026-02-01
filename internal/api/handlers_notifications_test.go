@@ -13,7 +13,7 @@ import (
 )
 
 func newTestStore(t *testing.T) *db.Store {
-	store, err := db.NewStore(":memory:")
+	store, err := db.NewStore(db.NewTestConfig())
 	if err != nil {
 		t.Fatalf("Failed to create test store: %v", err)
 	}

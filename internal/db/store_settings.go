@@ -9,7 +9,7 @@ import (
 
 func (s *Store) GetSetting(key string) (string, error) {
 	var value string
-	err := s.db.QueryRow("SELECT value FROM settings WHERE key = ?", key).Scan(&value)
+	err := s.db.QueryRow(s.rebind("SELECT value FROM settings WHERE key = ?"), key).Scan(&value)
 	if err != nil {
 		return "", err
 	}
@@ -17,7 +17,7 @@ func (s *Store) GetSetting(key string) (string, error) {
 }
 
 func (s *Store) SetSetting(key, value string) error {
-	_, err := s.db.Exec("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", key, value)
+	_, err := s.db.Exec(s.rebind("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"), key, value)
 	return err
 }
 
@@ -33,7 +33,7 @@ type NotificationChannel struct {
 }
 
 func (s *Store) CreateNotificationChannel(c NotificationChannel) error {
-	_, err := s.db.Exec("INSERT INTO notification_channels (id, type, name, config, enabled, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+	_, err := s.db.Exec(s.rebind("INSERT INTO notification_channels (id, type, name, config, enabled, created_at) VALUES (?, ?, ?, ?, ?, ?)"),
 		c.ID, c.Type, c.Name, c.Config, c.Enabled, time.Now())
 	return err
 }
@@ -57,7 +57,7 @@ func (s *Store) GetNotificationChannels() ([]NotificationChannel, error) {
 }
 
 func (s *Store) DeleteNotificationChannel(id string) error {
-	_, err := s.db.Exec("DELETE FROM notification_channels WHERE id = ?", id)
+	_, err := s.db.Exec(s.rebind("DELETE FROM notification_channels WHERE id = ?"), id)
 	return err
 }
 
@@ -113,7 +113,13 @@ func (s *Store) GetSystemStats() (*SystemStats, error) {
 	if err := s.db.QueryRow("SELECT COUNT(*) FROM monitors").Scan(&stats.TotalMonitors); err != nil {
 		log.Printf("Failed to scan total monitors: %v", err)
 	}
-	if err := s.db.QueryRow("SELECT COUNT(*) FROM monitors WHERE active = 1").Scan(&stats.ActiveMonitors); err != nil {
+	var activeQuery string
+	if s.IsPostgres() {
+		activeQuery = "SELECT COUNT(*) FROM monitors WHERE active = TRUE"
+	} else {
+		activeQuery = "SELECT COUNT(*) FROM monitors WHERE active = 1"
+	}
+	if err := s.db.QueryRow(activeQuery).Scan(&stats.ActiveMonitors); err != nil {
 		log.Printf("Failed to scan active monitors: %v", err)
 	}
 
@@ -130,7 +136,13 @@ func (s *Store) GetSystemStats() (*SystemStats, error) {
 	}
 
 	// Daily Pings Estimate
-	if err := s.db.QueryRow("SELECT COALESCE(SUM(86400 / interval_seconds), 0) FROM monitors WHERE active = 1").Scan(&stats.DailyPings); err != nil {
+	var pingsQuery string
+	if s.IsPostgres() {
+		pingsQuery = "SELECT COALESCE(SUM(86400 / interval_seconds), 0) FROM monitors WHERE active = TRUE"
+	} else {
+		pingsQuery = "SELECT COALESCE(SUM(86400 / interval_seconds), 0) FROM monitors WHERE active = 1"
+	}
+	if err := s.db.QueryRow(pingsQuery).Scan(&stats.DailyPings); err != nil {
 		log.Printf("Failed to scan daily pings: %v", err)
 	}
 
@@ -138,7 +150,16 @@ func (s *Store) GetSystemStats() (*SystemStats, error) {
 }
 
 func (s *Store) GetDBSize() (int64, error) {
-	// PRAGMA page_count * PRAGMA page_size
+	if s.IsPostgres() {
+		// PostgreSQL: use pg_database_size()
+		var size int64
+		if err := s.db.QueryRow("SELECT pg_database_size(current_database())").Scan(&size); err != nil {
+			return 0, err
+		}
+		return size, nil
+	}
+
+	// SQLite: PRAGMA page_count * PRAGMA page_size
 	var pageCount int64
 	var pageSize int64
 	if err := s.db.QueryRow("PRAGMA page_count").Scan(&pageCount); err != nil {

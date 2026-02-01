@@ -14,7 +14,7 @@ import (
 )
 
 func TestPerformSetup_Validation(t *testing.T) {
-	s, _ := db.NewStore(":memory:")
+	s, _ := db.NewStore(db.NewTestConfig())
 	m := uptime.NewManager(s)
 	r := &Router{Mux: chi.NewRouter(), manager: m, store: s}
 

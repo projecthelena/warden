@@ -11,7 +11,7 @@ import (
 )
 
 func TestGetSystemEvents(t *testing.T) {
-	s, _ := db.NewStore(":memory:")
+	s, _ := db.NewStore(db.NewTestConfig())
 	m := uptime.NewManager(s)
 	h := NewEventHandler(s, m)
 
@@ -26,7 +26,7 @@ func TestGetSystemEvents(t *testing.T) {
 }
 
 func TestGetSystemEvents_EmptyResponse(t *testing.T) {
-	s, _ := db.NewStore(":memory:")
+	s, _ := db.NewStore(db.NewTestConfig())
 	m := uptime.NewManager(s)
 	h := NewEventHandler(s, m)
 
@@ -71,7 +71,7 @@ func TestGetSystemEvents_EmptyResponse(t *testing.T) {
 }
 
 func TestGetSystemEvents_WithSSLWarnings(t *testing.T) {
-	s, _ := db.NewStore(":memory:")
+	s, _ := db.NewStore(db.NewTestConfig())
 	m := uptime.NewManager(s)
 	h := NewEventHandler(s, m)
 
@@ -124,7 +124,7 @@ func TestGetSystemEvents_WithSSLWarnings(t *testing.T) {
 }
 
 func TestGetSystemEvents_MixedContent(t *testing.T) {
-	s, _ := db.NewStore(":memory:")
+	s, _ := db.NewStore(db.NewTestConfig())
 	m := uptime.NewManager(s)
 	h := NewEventHandler(s, m)
 
@@ -167,7 +167,7 @@ func TestGetSystemEvents_MixedContent(t *testing.T) {
 }
 
 func TestGetSystemEvents_MultipleSSLWarnings(t *testing.T) {
-	s, _ := db.NewStore(":memory:")
+	s, _ := db.NewStore(db.NewTestConfig())
 	m := uptime.NewManager(s)
 	h := NewEventHandler(s, m)
 

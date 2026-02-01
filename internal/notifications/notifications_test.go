@@ -10,7 +10,7 @@ import (
 // Simplified test store setup since we can't easily import db.newTestStore here due to circular deps if we were inside db package.
 // But we are in notifications package, so we can import db.
 func newTestStore(t *testing.T) *db.Store {
-	store, err := db.NewStore(":memory:")
+	store, err := db.NewStore(db.NewTestConfig())
 	if err != nil {
 		t.Fatalf("Failed to create test store: %v", err)
 	}

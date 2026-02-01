@@ -14,22 +14,28 @@ type Group struct {
 // Group CRUD
 
 func (s *Store) CreateGroup(g Group) error {
-	_, err := s.db.Exec("INSERT INTO groups (id, name, created_at) VALUES (?, ?, ?)", g.ID, g.Name, time.Now())
+	_, err := s.db.Exec(s.rebind("INSERT INTO groups (id, name, created_at) VALUES (?, ?, ?)"), g.ID, g.Name, time.Now())
 	return err
 }
 
 func (s *Store) DeleteGroup(id string) error {
-	_, err := s.db.Exec("DELETE FROM groups WHERE id = ?", id)
+	_, err := s.db.Exec(s.rebind("DELETE FROM groups WHERE id = ?"), id)
 	return err
 }
 
 func (s *Store) UpdateGroup(id, name string) error {
-	_, err := s.db.Exec("UPDATE groups SET name = ? WHERE id = ?", name, id)
+	_, err := s.db.Exec(s.rebind("UPDATE groups SET name = ? WHERE id = ?"), name, id)
 	return err
 }
 
 func (s *Store) GetGroups() ([]Group, error) {
-	rows, err := s.db.Query("SELECT id, name, created_at FROM groups ORDER BY name COLLATE NOCASE ASC")
+	var query string
+	if s.IsPostgres() {
+		query = "SELECT id, name, created_at FROM groups ORDER BY LOWER(name) ASC"
+	} else {
+		query = "SELECT id, name, created_at FROM groups ORDER BY name COLLATE NOCASE ASC"
+	}
+	rows, err := s.db.Query(query)
 	if err != nil {
 		return nil, err
 	}

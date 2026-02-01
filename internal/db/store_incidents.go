@@ -19,21 +19,21 @@ type Incident struct {
 }
 
 func (s *Store) CreateIncident(i Incident) error {
-	_, err := s.db.Exec(`
+	_, err := s.db.Exec(s.rebind(`
 		INSERT INTO incidents (id, title, description, type, severity, status, start_time, end_time, affected_groups, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, i.ID, i.Title, i.Description, i.Type, i.Severity, i.Status, i.StartTime, i.EndTime, i.AffectedGroups, time.Now())
+	`), i.ID, i.Title, i.Description, i.Type, i.Severity, i.Status, i.StartTime, i.EndTime, i.AffectedGroups, time.Now())
 	return err
 }
 
 func (s *Store) GetIncidents(since time.Time) ([]Incident, error) {
-	query := `
-		SELECT id, title, description, type, severity, status, start_time, end_time, affected_groups, created_at 
-		FROM incidents 
-		WHERE (status != 'resolved' AND status != 'completed') 
-		OR start_time >= ? 
+	query := s.rebind(`
+		SELECT id, title, description, type, severity, status, start_time, end_time, affected_groups, created_at
+		FROM incidents
+		WHERE (status != 'resolved' AND status != 'completed')
+		OR start_time >= ?
 		ORDER BY created_at DESC
-	`
+	`)
 	rows, err := s.db.Query(query, since)
 	if err != nil {
 		return nil, err
@@ -56,15 +56,15 @@ func (s *Store) GetIncidents(since time.Time) ([]Incident, error) {
 }
 
 func (s *Store) UpdateIncident(i Incident) error {
-	_, err := s.db.Exec(`
-		UPDATE incidents 
+	_, err := s.db.Exec(s.rebind(`
+		UPDATE incidents
 		SET title=?, description=?, type=?, severity=?, status=?, start_time=?, end_time=?, affected_groups=?
 		WHERE id=?
-	`, i.Title, i.Description, i.Type, i.Severity, i.Status, i.StartTime, i.EndTime, i.AffectedGroups, i.ID)
+	`), i.Title, i.Description, i.Type, i.Severity, i.Status, i.StartTime, i.EndTime, i.AffectedGroups, i.ID)
 	return err
 }
 
 func (s *Store) DeleteIncident(id string) error {
-	_, err := s.db.Exec("DELETE FROM incidents WHERE id = ?", id)
+	_, err := s.db.Exec(s.rebind("DELETE FROM incidents WHERE id = ?"), id)
 	return err
 }

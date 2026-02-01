@@ -14,7 +14,7 @@ import (
 )
 
 func setupTest(t *testing.T) (*CRUDHandler, *SettingsHandler, *AuthHandler, http.Handler, *db.Store) {
-	store, _ := db.NewStore(":memory:")
+	store, _ := db.NewStore(db.NewTestConfig())
 	manager := uptime.NewManager(store)
 	crudH := NewCRUDHandler(store, manager)
 	settingsH := NewSettingsHandler(store, manager)

@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SystemTab } from "./SystemTab";
+import { SSOSettings } from "./SSOSettings";
 import { SelectTimezone } from "@/components/ui/select-timezone";
 
 import { useState, useEffect } from "react";
@@ -240,6 +241,8 @@ export function SettingsView() {
                 </Card>
 
                 <GeneralSettings />
+
+                <SSOSettings />
 
                 <SystemTab />
 

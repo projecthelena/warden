@@ -34,6 +34,7 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 
 	// Instantiate Handlers
 	authH := NewAuthHandler(store, cfg)
+	ssoH := NewSSOHandler(store, cfg)
 	uptimeH := NewUptimeHandler(manager, store)
 	crudH := NewCRUDHandler(store, manager)
 	statsH := NewStatsHandler(store)
@@ -52,6 +53,11 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 		api.Post("/auth/logout", authH.Logout)
 		api.Get("/setup/status", apiRouter.CheckSetup)
 		api.Post("/setup", apiRouter.PerformSetup)
+
+		// SSO routes (public)
+		api.Get("/auth/sso/status", ssoH.GetSSOStatus)
+		api.Get("/auth/sso/google", ssoH.GoogleLogin)
+		api.Get("/auth/sso/google/callback", ssoH.GoogleCallback)
 
 		// Public Status Pages
 		api.Get("/s/{slug}", statusPageH.GetPublicStatus)
@@ -90,6 +96,9 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 			// Settings
 			protected.Get("/settings", settingsH.GetSettings)
 			protected.Patch("/settings", settingsH.UpdateSettings)
+
+			// SSO Settings (admin only)
+			protected.Post("/settings/sso/test", ssoH.TestSSOConfig)
 
 			// API Keys
 			protected.Get("/api-keys", apiKeyH.ListKeys)

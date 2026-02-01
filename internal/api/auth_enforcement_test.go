@@ -14,7 +14,7 @@ import (
 func TestAuthEnforcement(t *testing.T) {
 	// Setup
 	dbPath := filepath.Join(t.TempDir(), "auth_test.db")
-	store, _ := db.NewStore(dbPath)
+	store, _ := db.NewStore(db.NewTestConfigWithPath(dbPath))
 	manager := uptime.NewManager(store)
 	cfg := config.Default()
 	router := NewRouter(manager, store, &cfg)

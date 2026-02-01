@@ -36,12 +36,32 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	slackWebhook, _ := h.store.GetSetting("notifications.slack.webhook_url")
 	slackNotifyOn, _ := h.store.GetSetting("notifications.slack.notify_on")
 
+	// SSO Settings (mask the secret)
+	ssoGoogleEnabled, _ := h.store.GetSetting("sso.google.enabled")
+	ssoGoogleClientID, _ := h.store.GetSetting("sso.google.client_id")
+	ssoGoogleClientSecret, _ := h.store.GetSetting("sso.google.client_secret")
+	ssoGoogleRedirectURL, _ := h.store.GetSetting("sso.google.redirect_url")
+	ssoGoogleAllowedDomains, _ := h.store.GetSetting("sso.google.allowed_domains")
+	ssoGoogleAutoProvision, _ := h.store.GetSetting("sso.google.auto_provision")
+
+	// Only indicate if secret is configured, don't return actual value
+	secretConfigured := "false"
+	if ssoGoogleClientSecret != "" {
+		secretConfigured = "true"
+	}
+
 	writeJSON(w, http.StatusOK, map[string]string{
 		"latency_threshold":               val,
 		"data_retention_days":             retention,
 		"notifications.slack.enabled":     slackEnabled,
 		"notifications.slack.webhook_url": slackWebhook,
 		"notifications.slack.notify_on":   slackNotifyOn,
+		"sso.google.enabled":              ssoGoogleEnabled,
+		"sso.google.client_id":            ssoGoogleClientID,
+		"sso.google.secret_configured":    secretConfigured,
+		"sso.google.redirect_url":         ssoGoogleRedirectURL,
+		"sso.google.allowed_domains":      ssoGoogleAllowedDomains,
+		"sso.google.auto_provision":       ssoGoogleAutoProvision,
 	})
 }
 
@@ -89,6 +109,25 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 	}
 
 	for _, key := range notificationKeys {
+		if val, ok := body[key]; ok {
+			if err := h.store.SetSetting(key, val); err != nil {
+				http.Error(w, "Failed to save "+key, http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+
+	// SSO Settings Keys
+	ssoKeys := []string{
+		"sso.google.enabled",
+		"sso.google.client_id",
+		"sso.google.client_secret",
+		"sso.google.redirect_url",
+		"sso.google.allowed_domains",
+		"sso.google.auto_provision",
+	}
+
+	for _, key := range ssoKeys {
 		if val, ok := body[key]; ok {
 			if err := h.store.SetSetting(key, val); err != nil {
 				http.Error(w, "Failed to save "+key, http.StatusInternalServerError)

@@ -27,6 +27,7 @@ export interface User {
     avatar: string;
     isAuthenticated: boolean;
     timezone?: string;
+    ssoProvider?: string;
 }
 
 export interface HistoryPoint {
@@ -75,6 +76,15 @@ export interface OverviewGroup {
 export interface Settings {
     latency_threshold: string;
     data_retention_days: string;
+    // SSO Settings
+    "sso.google.enabled"?: string;
+    "sso.google.client_id"?: string;
+    "sso.google.secret_configured"?: string;
+    "sso.google.redirect_url"?: string;
+    "sso.google.allowed_domains"?: string;
+    "sso.google.auto_provision"?: string;
+    // Allow any string key for flexibility
+    [key: string]: string | undefined;
 }
 
 export interface StatusPage {

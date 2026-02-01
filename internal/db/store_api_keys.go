@@ -32,7 +32,7 @@ func (s *Store) CreateAPIKey(name string) (string, error) {
 		return "", err
 	}
 
-	_, err = s.db.Exec("INSERT INTO api_keys (key_prefix, key_hash, name) VALUES (?, ?, ?)",
+	_, err = s.db.Exec(s.rebind("INSERT INTO api_keys (key_prefix, key_hash, name) VALUES (?, ?, ?)"),
 		prefix, string(hash), name)
 	if err != nil {
 		return "", err
@@ -64,7 +64,7 @@ func (s *Store) ListAPIKeys() ([]APIKey, error) {
 }
 
 func (s *Store) DeleteAPIKey(id int64) error {
-	_, err := s.db.Exec("DELETE FROM api_keys WHERE id = ?", id)
+	_, err := s.db.Exec(s.rebind("DELETE FROM api_keys WHERE id = ?"), id)
 	return err
 }
 
@@ -75,7 +75,7 @@ func (s *Store) ValidateAPIKey(key string) (bool, error) {
 	prefix := key[:12]
 
 	// Find candidates by prefix
-	rows, err := s.db.Query("SELECT id, key_hash FROM api_keys WHERE key_prefix = ?", prefix)
+	rows, err := s.db.Query(s.rebind("SELECT id, key_hash FROM api_keys WHERE key_prefix = ?"), prefix)
 	if err != nil {
 		return false, err
 	}
@@ -93,7 +93,7 @@ func (s *Store) ValidateAPIKey(key string) (bool, error) {
 			go func(keyId int64) {
 				// Create a new generic db execution context or ignore error
 				// Since we are inside store method, s.db is safe to use concurrently? sql.DB is threadsafe.
-				_, _ = s.db.Exec("UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?", keyId)
+				_, _ = s.db.Exec(s.rebind("UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?"), keyId)
 			}(id)
 			return true, nil
 		}

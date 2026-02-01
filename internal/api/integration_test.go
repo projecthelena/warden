@@ -23,7 +23,7 @@ import (
 func TestAPIKeyIntegrationFlow(t *testing.T) {
 	// 1. Setup Server
 	dbPath := filepath.Join(t.TempDir(), "test.db")
-	store, _ := db.NewStore(dbPath)
+	store, _ := db.NewStore(db.NewTestConfigWithPath(dbPath))
 	manager := uptime.NewManager(store)
 	// Use default config for testing
 	cfg := config.Default()

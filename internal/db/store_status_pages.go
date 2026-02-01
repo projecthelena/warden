@@ -43,7 +43,7 @@ func (s *Store) GetStatusPages() ([]StatusPage, error) {
 func (s *Store) GetStatusPageBySlug(slug string) (*StatusPage, error) {
 	var p StatusPage
 	var groupID sql.NullString
-	err := s.db.QueryRow("SELECT id, slug, title, group_id, public, created_at FROM status_pages WHERE slug = ?", slug).
+	err := s.db.QueryRow(s.rebind("SELECT id, slug, title, group_id, public, created_at FROM status_pages WHERE slug = ?"), slug).
 		Scan(&p.ID, &p.Slug, &p.Title, &groupID, &p.Public, &p.CreatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -60,19 +60,19 @@ func (s *Store) GetStatusPageBySlug(slug string) (*StatusPage, error) {
 
 // UpsertStatusPage creates or updates a status page config
 func (s *Store) UpsertStatusPage(slug, title string, groupID *string, public bool) error {
-	_, err := s.db.Exec(`
+	_, err := s.db.Exec(s.rebind(`
 		INSERT INTO status_pages (slug, title, group_id, public)
 		VALUES (?, ?, ?, ?)
 		ON CONFLICT(slug) DO UPDATE SET
 			title=excluded.title,
 			group_id=excluded.group_id,
 			public=excluded.public
-	`, slug, title, groupID, public)
+	`), slug, title, groupID, public)
 	return err
 }
 
 // ToggleStatusPage toggles the public status
 func (s *Store) ToggleStatusPage(slug string, public bool) error {
-	_, err := s.db.Exec("UPDATE status_pages SET public = ? WHERE slug = ?", public, slug)
+	_, err := s.db.Exec(s.rebind("UPDATE status_pages SET public = ? WHERE slug = ?"), public, slug)
 	return err
 }
