@@ -355,8 +355,6 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
     },
 
     checkAuth: async () => {
-        // ...
-
         try {
             const res = await fetch('/api/auth/me', { credentials: 'include' });
             if (res.ok) {
@@ -364,11 +362,12 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
                 set({
                     user: {
                         username: data.user.username,
-                        name: data.user.username, // keep name for compatibility if needed
-                        email: "admin@clusteruptime.com",
-                        avatar: data.user.avatar || "https://github.com/shadcn.png",
+                        name: data.user.displayName || data.user.username,
+                        email: data.user.email || "",
+                        avatar: data.user.avatar,
                         isAuthenticated: true,
-                        timezone: data.user.timezone
+                        timezone: data.user.timezone,
+                        ssoProvider: data.user.ssoProvider || ""
                     },
                     isAuthChecked: true
                 });
@@ -396,10 +395,12 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
                 set({
                     user: {
                         username: data.user.username,
-                        name: data.user.username,
-                        email: "admin@clusteruptime.com",
-                        avatar: data.user.avatar || "https://github.com/shadcn.png",
-                        isAuthenticated: true
+                        name: data.user.displayName || data.user.username,
+                        email: data.user.email || "",
+                        avatar: data.user.avatar,
+                        isAuthenticated: true,
+                        timezone: data.user.timezone,
+                        ssoProvider: data.user.ssoProvider || ""
                     }
                 });
                 get().fetchOverview();

@@ -116,8 +116,25 @@ func (h *SSOHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 		Secure:   h.config.CookieSecure,
 	})
 
+	// Build OAuth URL options
+	authOpts := []oauth2.AuthCodeOption{oauth2.AccessTypeOffline}
+
+	// If allowed domains is configured, add the 'hd' (hosted domain) parameter
+	// This tells Google to only show accounts from that domain in the account chooser
+	allowedDomains, _ := h.store.GetSetting("sso.google.allowed_domains")
+	if allowedDomains != "" {
+		// Use the first domain if multiple are specified
+		domains := strings.Split(allowedDomains, ",")
+		if len(domains) > 0 {
+			domain := strings.TrimSpace(domains[0])
+			if domain != "" {
+				authOpts = append(authOpts, oauth2.SetAuthURLParam("hd", domain))
+			}
+		}
+	}
+
 	// Redirect to Google's OAuth consent page
-	url := oauthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
+	url := oauthConfig.AuthCodeURL(state, authOpts...)
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 
@@ -259,7 +276,7 @@ func (h *SSOHandler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 	autoProvision, _ := h.store.GetSetting("sso.google.auto_provision")
 
 	// Find or create user
-	user, err := h.store.FindOrCreateSSOUser("google", googleUser.ID, googleUser.Email, googleUser.Name, autoProvision != "false")
+	user, err := h.store.FindOrCreateSSOUser("google", googleUser.ID, googleUser.Email, googleUser.Name, googleUser.Picture, autoProvision != "false")
 	if err != nil {
 		if err == db.ErrUserNotFound {
 			http.Redirect(w, r, "/login?error=user_not_found", http.StatusTemporaryRedirect)

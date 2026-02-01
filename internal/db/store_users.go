@@ -25,6 +25,8 @@ type User struct {
 	Email       string
 	SSOProvider string
 	SSOID       string
+	AvatarURL   string
+	DisplayName string
 }
 
 type Session struct {
@@ -73,9 +75,9 @@ func (s *Store) GetSession(token string) (*Session, error) {
 
 func (s *Store) GetUser(id int64) (*User, error) {
 	var u User
-	var email, ssoProvider, ssoID sql.NullString
-	row := s.db.QueryRow(s.rebind("SELECT id, username, created_at, COALESCE(timezone, 'UTC'), email, sso_provider, sso_id FROM users WHERE id = ?"), id)
-	err := row.Scan(&u.ID, &u.Username, &u.CreatedAt, &u.Timezone, &email, &ssoProvider, &ssoID)
+	var email, ssoProvider, ssoID, avatarURL, displayName sql.NullString
+	row := s.db.QueryRow(s.rebind("SELECT id, username, created_at, COALESCE(timezone, 'UTC'), email, sso_provider, sso_id, avatar_url, display_name FROM users WHERE id = ?"), id)
+	err := row.Scan(&u.ID, &u.Username, &u.CreatedAt, &u.Timezone, &email, &ssoProvider, &ssoID, &avatarURL, &displayName)
 	if err != nil {
 		return nil, err
 	}
@@ -84,6 +86,8 @@ func (s *Store) GetUser(id int64) (*User, error) {
 	u.Email = email.String
 	u.SSOProvider = ssoProvider.String
 	u.SSOID = ssoID.String
+	u.AvatarURL = avatarURL.String
+	u.DisplayName = displayName.String
 	return &u, nil
 }
 
@@ -142,9 +146,9 @@ func (s *Store) DeleteSession(token string) error {
 // GetUserByEmail retrieves a user by their email address.
 func (s *Store) GetUserByEmail(email string) (*User, error) {
 	var u User
-	var emailVal, ssoProvider, ssoID sql.NullString
-	row := s.db.QueryRow(s.rebind("SELECT id, username, created_at, COALESCE(timezone, 'UTC'), email, sso_provider, sso_id FROM users WHERE email = ?"), email)
-	err := row.Scan(&u.ID, &u.Username, &u.CreatedAt, &u.Timezone, &emailVal, &ssoProvider, &ssoID)
+	var emailVal, ssoProvider, ssoID, avatarURL, displayName sql.NullString
+	row := s.db.QueryRow(s.rebind("SELECT id, username, created_at, COALESCE(timezone, 'UTC'), email, sso_provider, sso_id, avatar_url, display_name FROM users WHERE email = ?"), email)
+	err := row.Scan(&u.ID, &u.Username, &u.CreatedAt, &u.Timezone, &emailVal, &ssoProvider, &ssoID, &avatarURL, &displayName)
 	if err == sql.ErrNoRows {
 		return nil, ErrUserNotFound
 	}
@@ -154,23 +158,32 @@ func (s *Store) GetUserByEmail(email string) (*User, error) {
 	u.Email = emailVal.String
 	u.SSOProvider = ssoProvider.String
 	u.SSOID = ssoID.String
+	u.AvatarURL = avatarURL.String
+	u.DisplayName = displayName.String
 	return &u, nil
 }
 
 // FindOrCreateSSOUser finds a user by SSO provider and ID, or creates a new one.
 // If a user with the same email exists, it links the SSO credentials to that account.
 // If autoProvision is false and no existing user is found, returns ErrUserNotFound.
-func (s *Store) FindOrCreateSSOUser(provider, ssoID, email, name string, autoProvision bool) (*User, error) {
+func (s *Store) FindOrCreateSSOUser(provider, ssoID, email, name, avatarURL string, autoProvision bool) (*User, error) {
 	// First, try to find by SSO provider and ID
 	var u User
-	var emailVal, ssoProvider, ssoIDVal sql.NullString
-	row := s.db.QueryRow(s.rebind("SELECT id, username, created_at, COALESCE(timezone, 'UTC'), email, sso_provider, sso_id FROM users WHERE sso_provider = ? AND sso_id = ?"), provider, ssoID)
-	err := row.Scan(&u.ID, &u.Username, &u.CreatedAt, &u.Timezone, &emailVal, &ssoProvider, &ssoIDVal)
+	var emailVal, ssoProvider, ssoIDVal, avatarVal, displayNameVal sql.NullString
+	row := s.db.QueryRow(s.rebind("SELECT id, username, created_at, COALESCE(timezone, 'UTC'), email, sso_provider, sso_id, avatar_url, display_name FROM users WHERE sso_provider = ? AND sso_id = ?"), provider, ssoID)
+	err := row.Scan(&u.ID, &u.Username, &u.CreatedAt, &u.Timezone, &emailVal, &ssoProvider, &ssoIDVal, &avatarVal, &displayNameVal)
 	if err == nil {
-		// Found existing SSO user
+		// Found existing SSO user - update avatar and display_name if changed
+		if avatarURL != "" || name != "" {
+			_, _ = s.db.Exec(s.rebind("UPDATE users SET avatar_url = ?, display_name = ? WHERE id = ?"), avatarURL, name, u.ID)
+			avatarVal.String = avatarURL
+			displayNameVal.String = name
+		}
 		u.Email = emailVal.String
 		u.SSOProvider = ssoProvider.String
 		u.SSOID = ssoIDVal.String
+		u.AvatarURL = avatarVal.String
+		u.DisplayName = displayNameVal.String
 		return &u, nil
 	}
 	if err != sql.ErrNoRows {
@@ -181,12 +194,14 @@ func (s *Store) FindOrCreateSSOUser(provider, ssoID, email, name string, autoPro
 	existingUser, err := s.GetUserByEmail(email)
 	if err == nil {
 		// Link SSO to existing account (always allowed - user already exists)
-		_, err = s.db.Exec(s.rebind("UPDATE users SET sso_provider = ?, sso_id = ? WHERE id = ?"), provider, ssoID, existingUser.ID)
+		_, err = s.db.Exec(s.rebind("UPDATE users SET sso_provider = ?, sso_id = ?, avatar_url = ?, display_name = ? WHERE id = ?"), provider, ssoID, avatarURL, name, existingUser.ID)
 		if err != nil {
 			return nil, err
 		}
 		existingUser.SSOProvider = provider
 		existingUser.SSOID = ssoID
+		existingUser.AvatarURL = avatarURL
+		existingUser.DisplayName = name
 		return existingUser, nil
 	}
 	if err != ErrUserNotFound {
@@ -238,11 +253,11 @@ func (s *Store) FindOrCreateSSOUser(provider, ssoID, email, name string, autoPro
 	// Insert new user with empty password (SSO-only user)
 	var newID int64
 	if s.IsPostgres() {
-		err = s.db.QueryRow("INSERT INTO users (username, password_hash, email, sso_provider, sso_id) VALUES ($1, '', $2, $3, $4) RETURNING id",
-			username, email, provider, ssoID).Scan(&newID)
+		err = s.db.QueryRow("INSERT INTO users (username, password_hash, email, sso_provider, sso_id, avatar_url, display_name) VALUES ($1, '', $2, $3, $4, $5, $6) RETURNING id",
+			username, email, provider, ssoID, avatarURL, name).Scan(&newID)
 	} else {
-		result, execErr := s.db.Exec("INSERT INTO users (username, password_hash, email, sso_provider, sso_id) VALUES (?, '', ?, ?, ?)",
-			username, email, provider, ssoID)
+		result, execErr := s.db.Exec("INSERT INTO users (username, password_hash, email, sso_provider, sso_id, avatar_url, display_name) VALUES (?, '', ?, ?, ?, ?, ?)",
+			username, email, provider, ssoID, avatarURL, name)
 		if execErr != nil {
 			return nil, execErr
 		}
@@ -258,6 +273,8 @@ func (s *Store) FindOrCreateSSOUser(provider, ssoID, email, name string, autoPro
 		Email:       email,
 		SSOProvider: provider,
 		SSOID:       ssoID,
+		AvatarURL:   avatarURL,
+		DisplayName: name,
 		Timezone:    "UTC",
 	}, nil
 }

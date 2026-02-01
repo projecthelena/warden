@@ -110,13 +110,26 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Use SSO avatar if available, otherwise use a generated one
+	avatar := user.AvatarURL
+	displayName := user.DisplayName
+	if displayName == "" {
+		displayName = user.Username // Fallback to username for non-SSO users
+	}
+	if avatar == "" {
+		// Generate a UI Avatars URL as fallback
+		avatar = "https://ui-avatars.com/api/?name=" + displayName + "&background=random"
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"user": map[string]any{
-			"username": user.Username,
-			"id":       user.ID,
-			"timezone": user.Timezone,
-			// Add placeholder avatar for UI
-			"avatar": "https://github.com/shadcn.png",
+			"username":    user.Username,
+			"id":          user.ID,
+			"timezone":    user.Timezone,
+			"email":       user.Email,
+			"ssoProvider": user.SSOProvider,
+			"avatar":      avatar,
+			"displayName": displayName,
 		},
 	})
 }
