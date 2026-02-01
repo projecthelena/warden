@@ -8,7 +8,7 @@ on:
 
 env:
   NODE_VERSION: "22"
-  GO_VERSION: "1.24"
+  GO_VERSION: "1.25.6"
 
 jobs:
   build-and-test:
@@ -56,9 +56,23 @@ jobs:
 
       # 4. Security Scanning
       - name: Go Security Scan (gosec)
-        uses: securego/gosec@master
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          gosec -exclude-dir=web ./...
+
+      - name: Go Vulnerability Check (govulncheck)
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      - name: Dependency Vulnerability Scan (Trivy)
+        uses: aquasecurity/trivy-action@master
         with:
-          args: -exclude-dir=web ./...
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          ignore-unfixed: true
 
       # 5. Unit Tests
       - name: Frontend Unit Tests

@@ -1,0 +1,67 @@
+#!/bin/bash
+#
+# Pre-push hook: Runs linting, security checks, and tests before pushing
+# Install with: make hooks
+#
+
+set -e
+
+# Get the repository root directory
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}  Running pre-push checks...${NC}"
+echo -e "${BLUE}========================================${NC}"
+echo ""
+
+# Track failures
+FAILED=0
+
+run_check() {
+    local name="$1"
+    local cmd="$2"
+
+    echo -e "${YELLOW}► $name${NC}"
+    if eval "$cmd"; then
+        echo -e "${GREEN}✓ $name passed${NC}"
+        echo ""
+    else
+        echo -e "${RED}✗ $name failed${NC}"
+        echo ""
+        FAILED=1
+    fi
+}
+
+# 1. Frontend Lint
+run_check "Frontend Lint" "cd \"$REPO_ROOT/web\" && npm run lint"
+
+# 2. Backend Lint
+run_check "Backend Lint" "cd \"$REPO_ROOT\" && golangci-lint run"
+
+# 3. Frontend Unit Tests
+run_check "Frontend Tests" "cd \"$REPO_ROOT/web\" && npm run test"
+
+# 4. Backend Unit Tests
+run_check "Backend Tests" "cd \"$REPO_ROOT\" && go test ./..."
+
+# 5. Security Scan (gosec)
+run_check "Security Scan (gosec)" "cd \"$REPO_ROOT\" && make security"
+
+echo -e "${BLUE}========================================${NC}"
+
+if [ $FAILED -eq 1 ]; then
+    echo -e "${RED}Pre-push checks failed! Push aborted.${NC}"
+    echo -e "${YELLOW}Tip: Run 'make audit' for full security analysis${NC}"
+    exit 1
+else
+    echo -e "${GREEN}All pre-push checks passed!${NC}"
+    exit 0
+fi

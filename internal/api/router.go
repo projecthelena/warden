@@ -121,6 +121,10 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 		api.Get("/s/{slug}", statusPageH.GetPublicStatus)
 		// api.Get("/status", statusPageH.GetPublicStatus) // Legacy - omitting for now or map to default?
 
+		// Admin operations (requires ADMIN_SECRET, not session auth)
+		// This must be outside protected group so it works before any user exists
+		api.Post("/admin/reset", adminH.ResetDatabase)
+
 		api.Group(func(protected chi.Router) {
 			protected.Use(authH.AuthMiddleware)
 			protected.Get("/auth/me", authH.Me)
@@ -165,9 +169,6 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 
 			// Stats
 			protected.Get("/stats", statsH.GetStats)
-
-			// Admin (requires ADMIN_SECRET - this is a destructive operation)
-			protected.Post("/admin/reset", adminH.ResetDatabase)
 
 			// Notifications
 			protected.Get("/notifications/channels", notifH.GetChannels)

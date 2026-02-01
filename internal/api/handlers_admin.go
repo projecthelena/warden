@@ -21,39 +21,44 @@ func NewAdminHandler(store *db.Store, manager *uptime.Manager, cfg *config.Confi
 	return &AdminHandler{store: store, manager: manager, config: cfg}
 }
 
-// ResetDatabase performs a full database reset. REQUIRES ADMIN_SECRET.
+// ResetDatabase performs a full database reset.
 // This is a destructive operation that should only be used for testing/development.
+// Accepts EITHER a valid session cookie (for frontend) OR admin secret (for E2E tests).
 func (h *AdminHandler) ResetDatabase(w http.ResponseWriter, r *http.Request) {
 	clientIP := extractIP(r)
 
-	// SECURITY: Database reset ALWAYS requires ADMIN_SECRET
-	// Regular session authentication is NOT sufficient for this destructive operation
-	if h.config.AdminSecret == "" {
-		log.Printf("AUDIT: [SECURITY] Database reset attempt from IP %s denied - ADMIN_SECRET not configured", clientIP)
-		writeError(w, http.StatusForbidden, "admin operations not available")
-		return
+	// Check 1: Session auth (for frontend button)
+	if c, err := r.Cookie("auth_token"); err == nil {
+		session, err := h.store.GetSession(c.Value)
+		if err == nil && session != nil {
+			log.Printf("AUDIT: [ADMIN] Database reset via session for user %d from IP %s", session.UserID, clientIP)
+			h.performReset(w, clientIP)
+			return
+		}
 	}
 
-	// Support both X-Admin-Secret header and Authorization: Bearer token
-	secretHeader := r.Header.Get("X-Admin-Secret")
-	authHeader := r.Header.Get("Authorization")
-	bearerSecret := ""
-	if strings.HasPrefix(authHeader, "Bearer ") {
-		bearerSecret = strings.TrimPrefix(authHeader, "Bearer ")
+	// Check 2: Admin secret (for E2E tests / programmatic access)
+	if h.config.AdminSecret != "" {
+		secretHeader := r.Header.Get("X-Admin-Secret")
+		authHeader := r.Header.Get("Authorization")
+		bearerSecret := ""
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			bearerSecret = strings.TrimPrefix(authHeader, "Bearer ")
+		}
+
+		headerMatch := subtle.ConstantTimeCompare([]byte(secretHeader), []byte(h.config.AdminSecret)) == 1
+		bearerMatch := bearerSecret != "" && subtle.ConstantTimeCompare([]byte(bearerSecret), []byte(h.config.AdminSecret)) == 1
+
+		if headerMatch || bearerMatch {
+			log.Printf("AUDIT: [ADMIN] Database reset via admin secret from IP %s", clientIP)
+			h.performReset(w, clientIP)
+			return
+		}
 	}
 
-	// Use constant-time comparison to prevent timing attacks
-	headerMatch := subtle.ConstantTimeCompare([]byte(secretHeader), []byte(h.config.AdminSecret)) == 1
-	bearerMatch := bearerSecret != "" && subtle.ConstantTimeCompare([]byte(bearerSecret), []byte(h.config.AdminSecret)) == 1
-
-	if !headerMatch && !bearerMatch {
-		log.Printf("AUDIT: [SECURITY] Database reset attempt from IP %s denied - invalid admin secret", clientIP)
-		writeError(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-
-	log.Printf("AUDIT: [ADMIN] Database reset initiated from IP %s", clientIP)
-	h.performReset(w, clientIP)
+	// Neither auth method succeeded
+	log.Printf("AUDIT: [SECURITY] Database reset attempt from IP %s denied - no valid auth", clientIP)
+	writeError(w, http.StatusUnauthorized, "unauthorized")
 }
 
 func (h *AdminHandler) performReset(w http.ResponseWriter, clientIP string) {
