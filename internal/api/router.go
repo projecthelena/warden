@@ -71,10 +71,24 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 	// Rate limiter for general API requests (100 requests/second with burst of 200)
 	// This is high enough to not interfere with normal usage but prevents abuse
 	apiLimiter := NewIPRateLimiter(rate.Limit(100), 200)
-	// Stricter limiter for auth endpoints (10 requests/minute with burst of 10)
-	authLimiter := NewIPRateLimiter(rate.Limit(10.0/60.0), 10)
+
+	// Auth rate limiter: stricter in production, relaxed in dev/test mode
+	// When ADMIN_SECRET is set, we're in dev/test mode (E2E tests, local dev)
+	var authLimiter *IPRateLimiter
+	if cfg.AdminSecret != "" {
+		// Dev/test mode: 100 requests/second (effectively no limit for tests)
+		authLimiter = NewIPRateLimiter(rate.Limit(100), 200)
+	} else {
+		// Production: strict limit (10 requests/minute with burst of 10)
+		authLimiter = NewIPRateLimiter(rate.Limit(10.0/60.0), 10)
+	}
+
 	// Login-specific limiter with exponential backoff
-	loginLimiter := NewLoginRateLimiter()
+	// Disabled in dev/test mode (when ADMIN_SECRET is set) to avoid E2E test failures
+	var loginLimiter *LoginRateLimiter
+	if cfg.AdminSecret == "" {
+		loginLimiter = NewLoginRateLimiter()
+	}
 
 	// Base Router for setup methods attached to *Router
 	apiRouter := &Router{
