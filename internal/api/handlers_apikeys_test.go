@@ -11,7 +11,7 @@ import (
 )
 
 func TestAPIKeysHandler(t *testing.T) {
-	s, _ := db.NewStore(":memory:")
+	s, _ := db.NewStore(db.NewTestConfig())
 	h := NewAPIKeyHandler(s)
 
 	// List Empty

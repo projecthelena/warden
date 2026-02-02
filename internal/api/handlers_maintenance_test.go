@@ -13,7 +13,7 @@ import (
 )
 
 func TestCreateMaintenance(t *testing.T) {
-	s, _ := db.NewStore(":memory:")
+	s, _ := db.NewStore(db.NewTestConfig())
 	m := uptime.NewManager(s)
 	h := NewMaintenanceHandler(s, m)
 
@@ -41,7 +41,7 @@ func TestCreateMaintenance(t *testing.T) {
 }
 
 func TestGetMaintenance(t *testing.T) {
-	s, _ := db.NewStore(":memory:")
+	s, _ := db.NewStore(db.NewTestConfig())
 	m := uptime.NewManager(s)
 	h := NewMaintenanceHandler(s, m)
 

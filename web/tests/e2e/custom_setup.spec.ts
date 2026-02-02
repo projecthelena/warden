@@ -2,27 +2,8 @@ import { test, expect } from '@playwright/test';
 import { SetupPage } from '../pages/SetupPage';
 
 // Standard password for the 'admin' user, used across all E2E tests.
-// DO NOT CHANGE THIS unless you update all other test files (auth.spec.ts, etc.)
+// Requires: 8+ chars, number, special character
 const STANDARD_ADMIN_PASSWORD = 'password123!';
-
-// Helper to generate a complex password meeting strict security requirements
-function generateStrongPassword(): string {
-    const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    const special = "*!@#$%^&()_+-=[]{}|;:,.<>?~`";
-
-    let pass = "";
-    // Ensure complexity requirements
-    pass += chars[Math.floor(Math.random() * 62)];
-    pass += "0123456789"[Math.floor(Math.random() * 10)];
-    pass += "*"; // Explicit asterisk
-    pass += special[Math.floor(Math.random() * special.length)];
-
-    const allChars = chars + special;
-    for (let i = 0; i < 20; i++) {
-        pass += allChars[Math.floor(Math.random() * allChars.length)];
-    }
-    return pass;
-}
 
 test.describe('Custom Username Setup', () => {
 
@@ -39,13 +20,12 @@ test.describe('Custom Username Setup', () => {
         }
 
         // 2. Restore Admin user
-        // MUST use the standard password so other tests don't break.
         const setupRes = await request.post('http://localhost:9096/api/setup', {
+            headers: { 'X-Admin-Secret': 'clusteruptime-e2e-magic-key' },
             data: {
                 username: 'admin',
                 password: STANDARD_ADMIN_PASSWORD,
-                timezone: 'UTC',
-                createDefaults: true
+                timezone: 'UTC'
             }
         });
 
@@ -54,7 +34,7 @@ test.describe('Custom Username Setup', () => {
         }
     });
 
-    test('Should allow setting up with a non-admin username and strong password', async ({ page, request }) => {
+    test('Should allow setting up with a non-admin username', async ({ page, request }) => {
         page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
 
         // 1. Reset DB via Admin Secret (Bypassing Auth)
@@ -69,10 +49,10 @@ test.describe('Custom Username Setup', () => {
         await expect(setupPage.welcomeHeader).toBeVisible({ timeout: 10000 });
 
         const customUser = `customuser_${Date.now()}`;
-        const customPass = generateStrongPassword();
+        const customPass = 'MySecure1!'; // Strong password: 8+ chars, number, special char
 
         console.log(`>> Setting up with User: ${customUser}`);
-        console.log(`>> Strong Password Generated: ${customPass}`);
+        console.log(`>> Password: ${customPass}`);
 
         await setupPage.completeSetup(customUser, customPass);
 

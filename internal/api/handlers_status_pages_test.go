@@ -15,7 +15,7 @@ import (
 
 func TestPublicStatusPage(t *testing.T) {
 	// Custom setup since we need Manager for status
-	store, _ := db.NewStore(":memory:")
+	store, _ := db.NewStore(db.NewTestConfig())
 	manager := uptime.NewManager(store)
 	spH := NewStatusPageHandler(store, manager)
 
@@ -51,7 +51,7 @@ func TestPublicStatusPage(t *testing.T) {
 }
 
 func TestToggleStatusPage(t *testing.T) {
-	store, _ := db.NewStore(":memory:")
+	store, _ := db.NewStore(db.NewTestConfig())
 	manager := uptime.NewManager(store)
 	spH := NewStatusPageHandler(store, manager)
 

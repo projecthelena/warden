@@ -15,6 +15,8 @@ import (
 	"github.com/clusteruptime/clusteruptime/internal/uptime"
 )
 
+const integrationTestAdminSecret = "test-admin-secret-integration"
+
 // TestAPIKeyIntegrationFlow simulates the full user journey:
 // 1. Login (setup default admin)
 // 2. Create API Key
@@ -23,10 +25,11 @@ import (
 func TestAPIKeyIntegrationFlow(t *testing.T) {
 	// 1. Setup Server
 	dbPath := filepath.Join(t.TempDir(), "test.db")
-	store, _ := db.NewStore(dbPath)
+	store, _ := db.NewStore(db.NewTestConfigWithPath(dbPath))
 	manager := uptime.NewManager(store)
-	// Use default config for testing
+	// Use config with AdminSecret for testing
 	cfg := config.Default()
+	cfg.AdminSecret = integrationTestAdminSecret
 	router := NewRouter(manager, store, &cfg)
 
 	ts := httptest.NewServer(router)
@@ -42,11 +45,14 @@ func TestAPIKeyIntegrationFlow(t *testing.T) {
 	// 1.1 Edge Case: Short Password
 	badSetupPayload := map[string]interface{}{
 		"username": "admin",
-		"password": "123", // Too short
+		"password": "123", // Too short (less than 8 chars)
 		"timezone": "UTC",
 	}
 	badBody, _ := json.Marshal(badSetupPayload)
-	resp, err := client.Post(baseURL+"/setup", "application/json", bytes.NewBuffer(badBody))
+	badReq, _ := http.NewRequest("POST", baseURL+"/setup", bytes.NewBuffer(badBody))
+	badReq.Header.Set("Content-Type", "application/json")
+	badReq.Header.Set("X-Admin-Secret", integrationTestAdminSecret)
+	resp, err := client.Do(badReq)
 	if err != nil {
 		t.Fatalf("Bad setup req failed: %v", err)
 	}
@@ -55,14 +61,17 @@ func TestAPIKeyIntegrationFlow(t *testing.T) {
 	}
 
 	// 1.5. Perform Setup (Create Admin User)
+	// Password requires: 8+ chars, number, special character
 	setupPayload := map[string]interface{}{
-		"username":       "admin",
-		"password":       "Password123!", // Strong Password
-		"timezone":       "UTC",
-		"createDefaults": true,
+		"username": "admin",
+		"password": "Password1!", // Strong password
+		"timezone": "UTC",
 	}
 	setupBody, _ := json.Marshal(setupPayload)
-	resp, err = client.Post(baseURL+"/setup", "application/json", bytes.NewBuffer(setupBody))
+	setupReq, _ := http.NewRequest("POST", baseURL+"/setup", bytes.NewBuffer(setupBody))
+	setupReq.Header.Set("Content-Type", "application/json")
+	setupReq.Header.Set("X-Admin-Secret", integrationTestAdminSecret)
+	resp, err = client.Do(setupReq)
 	if err != nil {
 		t.Fatalf("Setup failed: %v", err)
 	}
@@ -88,7 +97,11 @@ func TestAPIKeyIntegrationFlow(t *testing.T) {
 	}
 
 	// 1.6 Edge Case: Setup Again (Should fail with 403 Forbidden)
-	resp, err = client.Post(baseURL+"/setup", "application/json", bytes.NewBuffer(setupBody))
+	reSetupBody, _ := json.Marshal(setupPayload)
+	reSetupReq, _ := http.NewRequest("POST", baseURL+"/setup", bytes.NewBuffer(reSetupBody))
+	reSetupReq.Header.Set("Content-Type", "application/json")
+	reSetupReq.Header.Set("X-Admin-Secret", integrationTestAdminSecret)
+	resp, err = client.Do(reSetupReq)
 	if err != nil {
 		t.Fatalf("Re-setup req failed: %v", err)
 	}
@@ -98,7 +111,7 @@ func TestAPIKeyIntegrationFlow(t *testing.T) {
 
 	// 2. Login as Admin
 	// Note: NewStore defaults admin/password if empty - NO LONGER TRUE. Setup required.
-	loginPayload := map[string]string{"username": "admin", "password": "Password123!"}
+	loginPayload := map[string]string{"username": "admin", "password": "Password1!"}
 	loginBody, _ := json.Marshal(loginPayload)
 	resp, err = client.Post(baseURL+"/auth/login", "application/json", bytes.NewBuffer(loginBody))
 	if err != nil {

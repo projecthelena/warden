@@ -1,4 +1,4 @@
-.PHONY: backend frontend build docker test clean dev-backend dev-frontend dev-bundle lint lint-frontend lint-backend
+.PHONY: backend frontend build docker test test-frontend test-all clean dev-backend dev-frontend dev-bundle lint lint-frontend lint-backend security govuln vuln secrets audit hooks check
 
 BACKEND_ENV ?= LISTEN_ADDR=:9096
 BIN_DIR ?= $(PWD)/bin
@@ -42,6 +42,11 @@ docker:
 test:
 	go test ./...
 
+test-frontend:
+	cd web && npm run test
+
+test-all: test-frontend test
+
 lint-frontend:
 	cd web && npm run lint
 
@@ -49,6 +54,25 @@ lint-backend:
 	golangci-lint run
 
 lint: lint-frontend lint-backend
+
+security:
+	@command -v gosec >/dev/null 2>&1 || { echo "Installing gosec..."; go install github.com/securego/gosec/v2/cmd/gosec@latest; }
+	gosec -exclude-dir=web ./...
+
+govuln:
+	@command -v govulncheck >/dev/null 2>&1 || go install golang.org/x/vuln/cmd/govulncheck@latest
+	govulncheck ./...
+
+vuln:
+	@command -v trivy >/dev/null 2>&1 || { echo "Install trivy: brew install trivy"; exit 1; }
+	trivy fs --severity CRITICAL,HIGH --exit-code 1 .
+
+secrets:
+	@command -v gitleaks >/dev/null 2>&1 || { echo "Install gitleaks: brew install gitleaks"; exit 1; }
+	gitleaks detect --source . -v
+
+audit: security govuln vuln
+	@echo "All security checks passed!"
 
 clean:
 	rm -rf web/node_modules web/dist $(BIN_DIR)
@@ -60,3 +84,11 @@ e2e:
 
 e2e-ui:
 	cd web && npm run test:e2e:ui
+
+hooks:
+	git config core.hooksPath .githooks
+	@echo "Git hooks installed! Pre-push will run: lint, tests, and security checks."
+
+# Run all pre-push checks manually (same as pre-push hook)
+check: lint test-all security
+	@echo "All checks passed!"

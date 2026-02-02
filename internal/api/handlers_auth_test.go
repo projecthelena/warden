@@ -20,21 +20,25 @@ func TestAuthLogin(t *testing.T) {
 		name       string
 		payload    map[string]string
 		wantStatus int
+		remoteAddr string // Unique IP per test to avoid rate limiting interference
 	}{
 		{
 			name:       "Success",
 			payload:    map[string]string{"username": "admin", "password": "correct-password"},
 			wantStatus: http.StatusOK,
+			remoteAddr: "192.0.2.1:1234",
 		},
 		{
 			name:       "Wrong Password",
 			payload:    map[string]string{"username": "admin", "password": "wrong-password"},
 			wantStatus: http.StatusUnauthorized,
+			remoteAddr: "192.0.2.2:1234",
 		},
 		{
 			name:       "User Not Found",
 			payload:    map[string]string{"username": "missing", "password": "password"},
 			wantStatus: http.StatusUnauthorized,
+			remoteAddr: "192.0.2.3:1234",
 		},
 	}
 
@@ -42,6 +46,7 @@ func TestAuthLogin(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			body, _ := json.Marshal(tt.payload)
 			req := httptest.NewRequest("POST", "/api/auth/login", bytes.NewBuffer(body))
+			req.RemoteAddr = tt.remoteAddr // Use unique IP to avoid rate limit interference
 			w := httptest.NewRecorder()
 
 			authH.Login(w, req)

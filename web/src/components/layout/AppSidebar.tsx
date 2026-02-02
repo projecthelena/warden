@@ -31,8 +31,8 @@ export function AppSidebar({ groups, ...props }: React.ComponentProps<typeof Sid
 
     const data = {
         user: {
-            name: user?.name || "User",
-            email: user?.email || "user@example.com",
+            name: user?.name || user?.username || "User",
+            email: user?.email || "",
             avatar: user?.avatar || "/avatars/shadcn.jpg",
         },
         navMain: [

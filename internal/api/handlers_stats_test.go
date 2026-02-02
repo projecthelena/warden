@@ -9,7 +9,7 @@ import (
 )
 
 func TestGetStats(t *testing.T) {
-	s, _ := db.NewStore(":memory:")
+	s, _ := db.NewStore(db.NewTestConfig())
 	h := NewStatsHandler(s)
 
 	req := httptest.NewRequest("GET", "/api/stats", nil)

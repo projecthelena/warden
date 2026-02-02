@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crypto/subtle"
 	"log"
 	"net/http"
 	"strings"
@@ -20,10 +21,24 @@ func NewAdminHandler(store *db.Store, manager *uptime.Manager, cfg *config.Confi
 	return &AdminHandler{store: store, manager: manager, config: cfg}
 }
 
+// ResetDatabase performs a full database reset.
+// This is a destructive operation that should only be used for testing/development.
+// Accepts EITHER a valid session cookie (for frontend) OR admin secret (for E2E tests).
 func (h *AdminHandler) ResetDatabase(w http.ResponseWriter, r *http.Request) {
-	// 1. Check Admin Secret (Stateless bypass for CI/Tests)
+	clientIP := extractIP(r)
+
+	// Check 1: Session auth (for frontend button)
+	if c, err := r.Cookie("auth_token"); err == nil {
+		session, err := h.store.GetSession(c.Value)
+		if err == nil && session != nil {
+			log.Printf("AUDIT: [ADMIN] Database reset via session for user %d from IP %s", session.UserID, clientIP)
+			h.performReset(w, clientIP)
+			return
+		}
+	}
+
+	// Check 2: Admin secret (for E2E tests / programmatic access)
 	if h.config.AdminSecret != "" {
-		// Support both Header and Bearer token
 		secretHeader := r.Header.Get("X-Admin-Secret")
 		authHeader := r.Header.Get("Authorization")
 		bearerSecret := ""
@@ -31,44 +46,34 @@ func (h *AdminHandler) ResetDatabase(w http.ResponseWriter, r *http.Request) {
 			bearerSecret = strings.TrimPrefix(authHeader, "Bearer ")
 		}
 
-		if secretHeader == h.config.AdminSecret || (bearerSecret != "" && bearerSecret == h.config.AdminSecret) {
-			log.Println("ADMIN: Resetting database via Admin Secret bypass.")
-			h.performReset(w)
+		headerMatch := subtle.ConstantTimeCompare([]byte(secretHeader), []byte(h.config.AdminSecret)) == 1
+		bearerMatch := bearerSecret != "" && subtle.ConstantTimeCompare([]byte(bearerSecret), []byte(h.config.AdminSecret)) == 1
+
+		if headerMatch || bearerMatch {
+			log.Printf("AUDIT: [ADMIN] Database reset via admin secret from IP %s", clientIP)
+			h.performReset(w, clientIP)
 			return
 		}
 	}
 
-	// 2. Check Standard Auth (Cookie)
-	c, err := r.Cookie("auth_token")
-	if err != nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-	sess, err := h.store.GetSession(c.Value)
-	if err != nil || sess == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	// (Optional: Check if user is admin? For now system is single-tenant or all-admin)
-
-	log.Println("ADMIN: Initiating full database reset requested by user", sess.UserID)
-	h.performReset(w)
+	// Neither auth method succeeded
+	log.Printf("AUDIT: [SECURITY] Database reset attempt from IP %s denied - no valid auth", clientIP)
+	writeError(w, http.StatusUnauthorized, "unauthorized")
 }
 
-func (h *AdminHandler) performReset(w http.ResponseWriter) {
+func (h *AdminHandler) performReset(w http.ResponseWriter, clientIP string) {
 	// Stop all monitoring before wiping DB to prevent FK violations
 	h.manager.Reset()
 
 	if err := h.store.Reset(); err != nil {
-		log.Printf("Failed to reset database: %v", err)
-		writeError(w, http.StatusInternalServerError, "Failed to reset database")
+		log.Printf("AUDIT: [ADMIN] Database reset FAILED from IP %s: %v", clientIP, err)
+		writeError(w, http.StatusInternalServerError, "operation failed")
 		return
 	}
 
 	// Sync manager to start monitoring new seed data
 	h.manager.Sync()
 
-	log.Println("ADMIN: Database reset successful.")
+	log.Printf("AUDIT: [ADMIN] Database reset COMPLETED successfully from IP %s", clientIP)
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Database reset successfully"})
 }

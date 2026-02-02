@@ -32,10 +32,15 @@ func main() {
 	// go monitor.Start(ctx) // Removed
 
 	// Init DB
-	store, err := db.NewStore(cfg.DBPath) // Changed "clusteruptime.db" to cfg.DBPath
+	store, err := db.NewStore(db.DBConfig{
+		Type: cfg.DBType,
+		Path: cfg.DBPath,
+		URL:  cfg.DBURL,
+	})
 	if err != nil {
-		log.Fatal("Failed to init database:", err) // Changed logger.Fatalf to log.Fatal
+		log.Fatal("Failed to init database:", err)
 	}
+	log.Printf("Database initialized (dialect: %s)", store.Dialect())
 	defer func() { _ = store.Close() }()
 
 	// Init Uptime Manager
@@ -47,8 +52,9 @@ func main() {
 	r := api.NewRouter(manager, store, cfg) // Changed monitor to manager
 
 	srv := &http.Server{
-		Addr:    cfg.ListenAddr,
-		Handler: r,
+		Addr:              cfg.ListenAddr,
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second, // Prevent Slowloris attacks
 	}
 
 	go func() {

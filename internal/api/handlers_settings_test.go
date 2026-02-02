@@ -12,7 +12,7 @@ import (
 )
 
 func TestGetSettings(t *testing.T) {
-	s, _ := db.NewStore(":memory:")
+	s, _ := db.NewStore(db.NewTestConfig())
 	m := uptime.NewManager(s)
 	h := NewSettingsHandler(s, m)
 
@@ -40,7 +40,7 @@ func TestGetSettings(t *testing.T) {
 }
 
 func TestUpdateSettings_MultipleSettings(t *testing.T) {
-	s, _ := db.NewStore(":memory:")
+	s, _ := db.NewStore(db.NewTestConfig())
 	m := uptime.NewManager(s)
 	h := NewSettingsHandler(s, m)
 
@@ -73,7 +73,7 @@ func TestUpdateSettings_MultipleSettings(t *testing.T) {
 }
 
 func TestUpdateSettings_InvalidBody(t *testing.T) {
-	s, _ := db.NewStore(":memory:")
+	s, _ := db.NewStore(db.NewTestConfig())
 	m := uptime.NewManager(s)
 	h := NewSettingsHandler(s, m)
 
@@ -89,7 +89,7 @@ func TestUpdateSettings_InvalidBody(t *testing.T) {
 }
 
 func TestUpdateSettings_LatencyThresholdUpdatesManager(t *testing.T) {
-	s, _ := db.NewStore(":memory:")
+	s, _ := db.NewStore(db.NewTestConfig())
 	m := uptime.NewManager(s)
 	h := NewSettingsHandler(s, m)
 

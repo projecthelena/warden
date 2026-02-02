@@ -36,12 +36,44 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	slackWebhook, _ := h.store.GetSetting("notifications.slack.webhook_url")
 	slackNotifyOn, _ := h.store.GetSetting("notifications.slack.notify_on")
 
+	// SECURITY: Mask webhook URL to prevent exposure
+	// Only show that it's configured, not the actual URL
+	slackWebhookMasked := ""
+	if slackWebhook != "" {
+		if len(slackWebhook) > 30 {
+			slackWebhookMasked = slackWebhook[:20] + "..." + slackWebhook[len(slackWebhook)-8:]
+		} else {
+			slackWebhookMasked = "***configured***"
+		}
+	}
+
+	// SSO Settings (mask the secret)
+	ssoGoogleEnabled, _ := h.store.GetSetting("sso.google.enabled")
+	ssoGoogleClientID, _ := h.store.GetSetting("sso.google.client_id")
+	ssoGoogleClientSecret, _ := h.store.GetSetting("sso.google.client_secret")
+	ssoGoogleRedirectURL, _ := h.store.GetSetting("sso.google.redirect_url")
+	ssoGoogleAllowedDomains, _ := h.store.GetSetting("sso.google.allowed_domains")
+	ssoGoogleAutoProvision, _ := h.store.GetSetting("sso.google.auto_provision")
+
+	// Only indicate if secret is configured, don't return actual value
+	secretConfigured := "false"
+	if ssoGoogleClientSecret != "" {
+		secretConfigured = "true"
+	}
+
 	writeJSON(w, http.StatusOK, map[string]string{
-		"latency_threshold":               val,
-		"data_retention_days":             retention,
-		"notifications.slack.enabled":     slackEnabled,
-		"notifications.slack.webhook_url": slackWebhook,
-		"notifications.slack.notify_on":   slackNotifyOn,
+		"latency_threshold":                    val,
+		"data_retention_days":                  retention,
+		"notifications.slack.enabled":          slackEnabled,
+		"notifications.slack.webhook_url":      slackWebhookMasked, // SECURITY: Masked for display
+		"notifications.slack.webhook_configured": func() string { if slackWebhook != "" { return "true" }; return "false" }(),
+		"notifications.slack.notify_on":        slackNotifyOn,
+		"sso.google.enabled":                   ssoGoogleEnabled,
+		"sso.google.client_id":                 ssoGoogleClientID,
+		"sso.google.secret_configured":         secretConfigured,
+		"sso.google.redirect_url":              ssoGoogleRedirectURL,
+		"sso.google.allowed_domains":           ssoGoogleAllowedDomains,
+		"sso.google.auto_provision":            ssoGoogleAutoProvision,
 	})
 }
 
@@ -89,6 +121,25 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 	}
 
 	for _, key := range notificationKeys {
+		if val, ok := body[key]; ok {
+			if err := h.store.SetSetting(key, val); err != nil {
+				http.Error(w, "Failed to save "+key, http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+
+	// SSO Settings Keys
+	ssoKeys := []string{
+		"sso.google.enabled",
+		"sso.google.client_id",
+		"sso.google.client_secret",
+		"sso.google.redirect_url",
+		"sso.google.allowed_domains",
+		"sso.google.auto_provision",
+	}
+
+	for _, key := range ssoKeys {
 		if val, ok := body[key]; ok {
 			if err := h.store.SetSetting(key, val); err != nil {
 				http.Error(w, "Failed to save "+key, http.StatusInternalServerError)

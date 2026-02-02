@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/clusteruptime/clusteruptime/internal/db"
@@ -47,6 +48,43 @@ func (h *NotificationChannelsHandler) CreateChannel(w http.ResponseWriter, r *ht
 	if body.Type == "" || body.Name == "" {
 		http.Error(w, "Type and Name are required", http.StatusBadRequest)
 		return
+	}
+
+	// SECURITY: Validate name length
+	if len(body.Name) > 255 {
+		http.Error(w, "Name too long (max 255 characters)", http.StatusBadRequest)
+		return
+	}
+
+	// SECURITY: Validate webhook URL for Slack channels
+	if body.Type == "slack" {
+		// Support both "webhook_url" and "webhookUrl" key names
+		webhookURL, ok := body.Config["webhook_url"].(string)
+		if !ok {
+			webhookURL, ok = body.Config["webhookUrl"].(string)
+		}
+		if !ok || webhookURL == "" {
+			http.Error(w, "Webhook URL is required for Slack channels", http.StatusBadRequest)
+			return
+		}
+
+		parsedURL, err := url.ParseRequestURI(webhookURL)
+		if err != nil {
+			http.Error(w, "Invalid webhook URL format", http.StatusBadRequest)
+			return
+		}
+
+		// Only allow HTTP(S) for webhook URLs (HTTPS preferred but allow HTTP for testing)
+		if parsedURL.Scheme != "https" && parsedURL.Scheme != "http" {
+			http.Error(w, "Webhook URL must use HTTP or HTTPS", http.StatusBadRequest)
+			return
+		}
+
+		// Validate URL length
+		if len(webhookURL) > 2048 {
+			http.Error(w, "Webhook URL too long (max 2048 characters)", http.StatusBadRequest)
+			return
+		}
 	}
 
 	configBytes, err := json.Marshal(body.Config)

@@ -35,7 +35,7 @@ describe('App Routing', () => {
         mockCheckSetupStatus.mockResolvedValue(false);
 
         render(
-            <MemoryRouter initialEntries={['/']}>
+            <MemoryRouter initialEntries={['/']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
                 <App />
             </MemoryRouter>
         );
@@ -58,7 +58,7 @@ describe('App Routing', () => {
         });
 
         render(
-            <MemoryRouter initialEntries={['/setup']}>
+            <MemoryRouter initialEntries={['/setup']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
                 <App />
             </MemoryRouter>
         );

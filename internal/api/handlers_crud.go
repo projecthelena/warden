@@ -49,17 +49,26 @@ func generateSlug(name, prefix string) string {
 	return prefix + slug
 }
 
+// maxNameLength is the maximum allowed length for names (groups, monitors)
+const maxNameLength = 255
+
 func (h *CRUDHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name string `json:"name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	if req.Name == "" {
 		http.Error(w, "Name is required", http.StatusBadRequest)
+		return
+	}
+
+	// SECURITY: Validate name length
+	if len(req.Name) > maxNameLength {
+		http.Error(w, "Name too long (max 255 characters)", http.StatusBadRequest)
 		return
 	}
 
@@ -109,7 +118,7 @@ func (h *CRUDHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 		Name string `json:"name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
@@ -118,8 +127,14 @@ func (h *CRUDHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// SECURITY: Validate name length
+	if len(req.Name) > maxNameLength {
+		http.Error(w, "Name too long (max 255 characters)", http.StatusBadRequest)
+		return
+	}
+
 	if err := h.store.UpdateGroup(id, req.Name); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Failed to update group", http.StatusInternalServerError)
 		return
 	}
 
@@ -145,9 +160,28 @@ func (h *CRUDHandler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// SECURITY: Validate name length
+	if len(req.Name) > maxNameLength {
+		http.Error(w, "Name too long (max 255 characters)", http.StatusBadRequest)
+		return
+	}
+
 	// 2. Validate URL
-	if _, err := url.ParseRequestURI(req.URL); err != nil {
+	parsedURL, err := url.ParseRequestURI(req.URL)
+	if err != nil {
 		http.Error(w, "Invalid URL format", http.StatusBadRequest)
+		return
+	}
+
+	// SECURITY: Only allow http and https protocols to prevent SSRF
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		http.Error(w, "Only HTTP and HTTPS URLs are allowed", http.StatusBadRequest)
+		return
+	}
+
+	// SECURITY: Validate URL length
+	if len(req.URL) > 2048 {
+		http.Error(w, "URL too long (max 2048 characters)", http.StatusBadRequest)
 		return
 	}
 

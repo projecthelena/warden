@@ -8,7 +8,7 @@ on:
 
 env:
   NODE_VERSION: "22"
-  GO_VERSION: "1.24"
+  GO_VERSION: "1.25.6"
 
 jobs:
   build-and-test:
@@ -54,7 +54,27 @@ jobs:
         run: npm run lint
         working-directory: web
 
-      # 4. Unit Tests
+      # 4. Security Scanning
+      - name: Go Security Scan (gosec)
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          gosec -exclude-dir=web ./...
+
+      - name: Go Vulnerability Check (govulncheck)
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      - name: Dependency Vulnerability Scan (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          ignore-unfixed: true
+
+      # 5. Unit Tests
       - name: Frontend Unit Tests
         run: npm run test
         working-directory: web
@@ -64,7 +84,7 @@ jobs:
           go clean -testcache
           go test ./...
 
-      # 5. Build (Required for E2E)
+      # 6. Build (Required for E2E)
       - name: Build Frontend
         working-directory: web
         run: npm run build
@@ -72,7 +92,7 @@ jobs:
       - name: Build Backend (Production Binary)
         run: go build -o clusteruptime ./cmd/dashboard
 
-      # 6. E2E Tests
+      # 7. E2E Tests
       - name: Start Full Stack
         env:
           ADMIN_SECRET: clusteruptime-e2e-magic-key

@@ -9,7 +9,7 @@ import (
 )
 
 func newTestManager(t *testing.T) (*Manager, *db.Store) {
-	store, err := db.NewStore("file:manager?mode=memory&cache=shared")
+	store, err := db.NewStore(db.NewTestConfigWithPath("file:manager?mode=memory&cache=shared"))
 	if err != nil {
 		t.Fatalf("Failed to create test store: %v", err)
 	}
@@ -337,7 +337,7 @@ func TestSSLThresholdState_TrackNotifiedThresholds(t *testing.T) {
 
 func TestManager_UserTimezoneLoaded(t *testing.T) {
 	// Create a fresh store for this test
-	store, err := db.NewStore(":memory:")
+	store, err := db.NewStore(db.NewTestConfig())
 	if err != nil {
 		t.Fatalf("Failed to create test store: %v", err)
 	}
@@ -371,7 +371,7 @@ func TestManager_TimezoneDefaultsToUTC(t *testing.T) {
 
 func TestManager_InvalidTimezoneHandling(t *testing.T) {
 	// Create a fresh store for this test to avoid conflicts
-	store, err := db.NewStore(":memory:")
+	store, err := db.NewStore(db.NewTestConfig())
 	if err != nil {
 		t.Fatalf("Failed to create test store: %v", err)
 	}

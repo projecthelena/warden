@@ -5,6 +5,7 @@ import (
 	"flag"
 	"log"
 	"net/http"
+	"time"
 )
 
 type summaryResponse struct {
@@ -151,8 +152,13 @@ func main() {
 		})
 	})
 
+	srv := &http.Server{
+		Addr:              *listen,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
 	log.Printf("mock agent listening on %s", *listen)
-	log.Fatal(http.ListenAndServe(*listen, mux))
+	log.Fatal(srv.ListenAndServe())
 }
 
 func writeJSON(w http.ResponseWriter, payload any) {

@@ -11,7 +11,7 @@ import (
 
 func TestMonitor_DegradedThreshold(t *testing.T) {
 	// Setup Store & Manager
-	store, err := db.NewStore("file:degraded?mode=memory&cache=shared")
+	store, err := db.NewStore(db.NewTestConfigWithPath("file:test?mode=memory&cache=shared"))
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestMonitor_DegradedThreshold(t *testing.T) {
 func TestMonitor_StatusCodes(t *testing.T) {
 	// Setup Store & Manager
 	// Use named shared memory DB to isolate tests but verify connection sharing
-	store, err := db.NewStore("file:status?mode=memory&cache=shared")
+	store, err := db.NewStore(db.NewTestConfigWithPath("file:test?mode=memory&cache=shared"))
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestMonitor_StatusCodes(t *testing.T) {
 
 func TestMonitor_EventLifecycle(t *testing.T) {
 	// Setup Store & Manager
-	store, err := db.NewStore("file:lifecycle?mode=memory&cache=shared")
+	store, err := db.NewStore(db.NewTestConfigWithPath("file:test?mode=memory&cache=shared"))
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
@@ -248,7 +248,7 @@ func TestMonitor_EventLifecycle(t *testing.T) {
 }
 
 func TestMonitor_ErrorTypes(t *testing.T) {
-	store, err := db.NewStore("file:errors?mode=memory&cache=shared")
+	store, err := db.NewStore(db.NewTestConfigWithPath("file:test?mode=memory&cache=shared"))
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
