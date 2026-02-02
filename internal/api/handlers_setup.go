@@ -52,9 +52,13 @@ func (h *Router) PerformSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ADMIN_SECRET is now OPTIONAL
-	// If configured, validate it. If not configured, allow setup (like Uptime Kuma, Portainer, Grafana).
-	if h.config.AdminSecret != "" {
+	// ADMIN_SECRET validation:
+	// - If no users exist (first setup), allow without secret (browser-based setup)
+	// - If users exist, require secret for programmatic setup (prevents unauthorized reset+setup)
+	// This allows first-time browser setup while still protecting against unauthorized
+	// programmatic setup after the first user exists.
+	hasUsers, _ := h.store.HasUsers()
+	if h.config.AdminSecret != "" && hasUsers {
 		secretHeader := r.Header.Get("X-Admin-Secret")
 		authHeader := r.Header.Get("Authorization")
 		bearerSecret := ""
@@ -67,7 +71,7 @@ func (h *Router) PerformSetup(w http.ResponseWriter, r *http.Request) {
 		bearerMatch := bearerSecret != "" && subtle.ConstantTimeCompare([]byte(bearerSecret), []byte(h.config.AdminSecret)) == 1
 
 		if !headerMatch && !bearerMatch {
-			log.Printf("AUDIT: [SECURITY] Setup attempt from IP %s denied - invalid admin secret", clientIP)
+			log.Printf("AUDIT: [SECURITY] Setup attempt from IP %s denied - invalid admin secret (users exist)", clientIP)
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}

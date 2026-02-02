@@ -105,11 +105,11 @@ func TestPerformSetup_Validation(t *testing.T) {
 func TestPerformSetup_WithAdminSecret(t *testing.T) {
 	s, _ := db.NewStore(db.NewTestConfig())
 	m := uptime.NewManager(s)
-	// AdminSecret IS configured - setup requires it
+	// AdminSecret IS configured
 	cfg := &config.Config{AdminSecret: testAdminSecret}
 	r := &Router{Mux: chi.NewRouter(), manager: m, store: s, config: cfg}
 
-	t.Run("Requires admin secret when configured", func(t *testing.T) {
+	t.Run("First setup works without admin secret (browser-based setup)", func(t *testing.T) {
 		if err := s.Reset(); err != nil {
 			t.Fatalf("failed to reset store: %v", err)
 		}
@@ -118,18 +118,19 @@ func TestPerformSetup_WithAdminSecret(t *testing.T) {
 			"password": "Password1!",
 			"timezone": "UTC",
 		})
-		// No secret header - should fail
+		// No secret header - should succeed for first setup (no users exist)
+		// This enables browser-based setup flows like Uptime Kuma, Portainer, etc.
 		req := httptest.NewRequest("POST", "/api/setup", bytes.NewBuffer(body))
 		w := httptest.NewRecorder()
 
 		r.PerformSetup(w, req)
 
-		if w.Code != http.StatusUnauthorized {
-			t.Errorf("Expected 401 when admin secret missing, got %d", w.Code)
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected 200 for first setup without admin secret, got %d. Body: %s", w.Code, w.Body.String())
 		}
 	})
 
-	t.Run("Works with correct admin secret", func(t *testing.T) {
+	t.Run("First setup also works with admin secret (programmatic setup)", func(t *testing.T) {
 		if err := s.Reset(); err != nil {
 			t.Fatalf("failed to reset store: %v", err)
 		}
@@ -145,7 +146,40 @@ func TestPerformSetup_WithAdminSecret(t *testing.T) {
 		r.PerformSetup(w, req)
 
 		if w.Code != http.StatusOK {
-			t.Errorf("Expected 200 with correct admin secret, got %d. Body: %s", w.Code, w.Body.String())
+			t.Errorf("Expected 200 with admin secret, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("Setup blocked after completion (regardless of admin secret)", func(t *testing.T) {
+		if err := s.Reset(); err != nil {
+			t.Fatalf("failed to reset store: %v", err)
+		}
+		// First, complete setup
+		body, _ := json.Marshal(map[string]interface{}{
+			"username": "admin",
+			"password": "Password1!",
+			"timezone": "UTC",
+		})
+		req := httptest.NewRequest("POST", "/api/setup", bytes.NewBuffer(body))
+		w := httptest.NewRecorder()
+		r.PerformSetup(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("First setup failed: %d", w.Code)
+		}
+
+		// Try to setup again - should be blocked with 403
+		body2, _ := json.Marshal(map[string]interface{}{
+			"username": "admin2",
+			"password": "Password2!",
+			"timezone": "UTC",
+		})
+		req2 := httptest.NewRequest("POST", "/api/setup", bytes.NewBuffer(body2))
+		req2.Header.Set("X-Admin-Secret", testAdminSecret) // Even with secret
+		w2 := httptest.NewRecorder()
+		r.PerformSetup(w2, req2)
+
+		if w2.Code != http.StatusForbidden {
+			t.Errorf("Expected 403 when setup already completed, got %d", w2.Code)
 		}
 	})
 }
