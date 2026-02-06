@@ -547,6 +547,8 @@ func (m *Manager) Sync() {
 			if existing, exists := m.monitors[dbM.ID]; exists {
 				existing.Stop()
 				delete(m.monitors, dbM.ID)
+				// Clean up SSL notification state so notifications will be re-sent when resumed
+				delete(m.sslNotifiedThresholds, dbM.ID)
 			}
 			continue
 		}

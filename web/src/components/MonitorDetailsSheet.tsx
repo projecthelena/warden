@@ -20,7 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/monitor-visuals";
-import { Trash2, Save, Activity, Clock, BarChart } from "lucide-react";
+import { Trash2, Save, Activity, Clock, BarChart, Pause, Play } from "lucide-react";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -41,7 +41,8 @@ interface MonitorDetailsSheetProps {
 }
 
 export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDetailsSheetProps) {
-    const { updateMonitor, deleteMonitor, user } = useMonitorStore();
+    const { updateMonitor, deleteMonitor, pauseMonitor, resumeMonitor, user } = useMonitorStore();
+    const isPaused = monitor.status === 'paused';
     const [name, setName] = useState(monitor.name);
     const [url, setUrl] = useState(monitor.url);
     const [interval, setInterval] = useState(monitor.interval || 60);
@@ -427,6 +428,36 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                             </div>
                             <Button onClick={handleSave} className="w-full" data-testid="monitor-edit-save-btn">
                                 <Save className="w-4 h-4 mr-2" /> Save Changes
+                            </Button>
+                        </div>
+
+                        <div className="pt-6 border-t border-border">
+                            <h3 className="text-sm font-medium mb-2">Monitor Status</h3>
+                            <p className="text-xs text-muted-foreground mb-4">
+                                {isPaused
+                                    ? "This monitor is currently paused. Resume to start checking again."
+                                    : "Pause this monitor to temporarily stop health checks."}
+                            </p>
+                            <Button
+                                variant={isPaused ? "default" : "secondary"}
+                                className="w-full"
+                                onClick={() => {
+                                    if (isPaused) {
+                                        resumeMonitor(monitor.id);
+                                    } else {
+                                        pauseMonitor(monitor.id);
+                                    }
+                                }}
+                            >
+                                {isPaused ? (
+                                    <>
+                                        <Play className="w-4 h-4 mr-2" /> Resume Monitor
+                                    </>
+                                ) : (
+                                    <>
+                                        <Pause className="w-4 h-4 mr-2" /> Pause Monitor
+                                    </>
+                                )}
                             </Button>
                         </div>
 

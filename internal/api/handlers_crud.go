@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -303,4 +304,44 @@ func (h *CRUDHandler) DeleteMonitor(w http.ResponseWriter, r *http.Request) {
 	h.manager.RemoveMonitor(id)
 	h.manager.Sync()
 	w.WriteHeader(http.StatusOK)
+}
+
+func (h *CRUDHandler) PauseMonitor(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "ID required")
+		return
+	}
+
+	if err := h.store.SetMonitorActive(id, false); err != nil {
+		if errors.Is(err, db.ErrMonitorNotFound) {
+			writeError(w, http.StatusNotFound, "monitor not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to pause monitor")
+		return
+	}
+
+	h.manager.Sync() // Immediately stop the monitor
+	writeJSON(w, http.StatusOK, map[string]any{"message": "monitor paused", "active": false})
+}
+
+func (h *CRUDHandler) ResumeMonitor(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "ID required")
+		return
+	}
+
+	if err := h.store.SetMonitorActive(id, true); err != nil {
+		if errors.Is(err, db.ErrMonitorNotFound) {
+			writeError(w, http.StatusNotFound, "monitor not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to resume monitor")
+		return
+	}
+
+	h.manager.Sync() // Immediately start the monitor
+	writeJSON(w, http.StatusOK, map[string]any{"message": "monitor resumed", "active": true})
 }

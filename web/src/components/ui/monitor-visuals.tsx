@@ -1,7 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Monitor } from "@/lib/store";
 import { cn } from "@/lib/utils";
-import { ArrowUp, ArrowDown, AlertTriangle } from "lucide-react";
+import { ArrowUp, ArrowDown, AlertTriangle, Pause } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useMemo } from "react";
 
@@ -27,6 +27,14 @@ export const StatusBadge = ({ status, isMaintenance }: { status: Monitor['status
             <Badge variant="outline" className="border-rose-500/30 text-rose-500 gap-1 px-2 py-1 w-[105px] justify-center animate-pulse">
                 <ArrowDown className="w-3 h-3" />
                 Unavailable
+            </Badge>
+        );
+    }
+    if (status === 'paused') {
+        return (
+            <Badge variant="outline" className="border-slate-500/30 text-slate-400 gap-1 px-2 py-1 w-[105px] justify-center">
+                <Pause className="w-3 h-3" />
+                Paused
             </Badge>
         );
     }

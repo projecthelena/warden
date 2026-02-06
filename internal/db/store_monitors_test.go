@@ -398,3 +398,325 @@ func TestGetActiveSSLWarnings_DeletedMonitorExcluded(t *testing.T) {
 		t.Errorf("Expected MonitorID m2, got %s", warnings[0].MonitorID)
 	}
 }
+
+func TestSetMonitorActive_PauseMonitor(t *testing.T) {
+	s := newTestStore(t)
+	_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+
+	// Create an active monitor
+	m := Monitor{
+		ID:       "m1",
+		GroupID:  "g1",
+		Name:     "Test Monitor",
+		URL:      "http://example.com",
+		Active:   true,
+		Interval: 60,
+	}
+	if err := s.CreateMonitor(m); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Verify it's initially active
+	monitors, _ := s.GetMonitors()
+	var found *Monitor
+	for i := range monitors {
+		if monitors[i].ID == "m1" {
+			found = &monitors[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("Monitor not found")
+	}
+	if !found.Active {
+		t.Error("Monitor should be active initially")
+	}
+
+	// Pause the monitor
+	if err := s.SetMonitorActive("m1", false); err != nil {
+		t.Fatalf("SetMonitorActive(false) failed: %v", err)
+	}
+
+	// Verify it's now inactive
+	monitors, _ = s.GetMonitors()
+	for i := range monitors {
+		if monitors[i].ID == "m1" {
+			found = &monitors[i]
+			break
+		}
+	}
+	if found.Active {
+		t.Error("Monitor should be inactive after pause")
+	}
+}
+
+func TestSetMonitorActive_ResumeMonitor(t *testing.T) {
+	s := newTestStore(t)
+	_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+
+	// Create an inactive monitor
+	m := Monitor{
+		ID:       "m1",
+		GroupID:  "g1",
+		Name:     "Test Monitor",
+		URL:      "http://example.com",
+		Active:   false, // Start as inactive
+		Interval: 60,
+	}
+	if err := s.CreateMonitor(m); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Resume the monitor
+	if err := s.SetMonitorActive("m1", true); err != nil {
+		t.Fatalf("SetMonitorActive(true) failed: %v", err)
+	}
+
+	// Verify it's now active
+	monitors, _ := s.GetMonitors()
+	var found *Monitor
+	for i := range monitors {
+		if monitors[i].ID == "m1" {
+			found = &monitors[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("Monitor not found")
+	}
+	if !found.Active {
+		t.Error("Monitor should be active after resume")
+	}
+}
+
+func TestSetMonitorActive_NotFound(t *testing.T) {
+	s := newTestStore(t)
+
+	// Try to pause a non-existent monitor
+	err := s.SetMonitorActive("non-existent", false)
+	if err == nil {
+		t.Fatal("Expected error for non-existent monitor")
+	}
+	if err != ErrMonitorNotFound {
+		t.Errorf("Expected ErrMonitorNotFound, got: %v", err)
+	}
+}
+
+func TestSetMonitorActive_Idempotent(t *testing.T) {
+	s := newTestStore(t)
+	_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+
+	m := Monitor{
+		ID:       "m1",
+		GroupID:  "g1",
+		Name:     "Test Monitor",
+		URL:      "http://example.com",
+		Active:   true,
+		Interval: 60,
+	}
+	if err := s.CreateMonitor(m); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Pause twice - should be idempotent
+	if err := s.SetMonitorActive("m1", false); err != nil {
+		t.Fatalf("First pause failed: %v", err)
+	}
+	if err := s.SetMonitorActive("m1", false); err != nil {
+		t.Fatalf("Second pause failed: %v", err)
+	}
+
+	// Resume twice - should be idempotent
+	if err := s.SetMonitorActive("m1", true); err != nil {
+		t.Fatalf("First resume failed: %v", err)
+	}
+	if err := s.SetMonitorActive("m1", true); err != nil {
+		t.Fatalf("Second resume failed: %v", err)
+	}
+
+	// Verify final state
+	monitors, _ := s.GetMonitors()
+	var found *Monitor
+	for i := range monitors {
+		if monitors[i].ID == "m1" {
+			found = &monitors[i]
+			break
+		}
+	}
+	if !found.Active {
+		t.Error("Monitor should be active after final resume")
+	}
+}
+
+func TestSetMonitorActive_EmptyID(t *testing.T) {
+	s := newTestStore(t)
+
+	// Empty ID should return ErrMonitorNotFound
+	err := s.SetMonitorActive("", false)
+	if err == nil {
+		t.Fatal("Expected error for empty ID")
+	}
+	if err != ErrMonitorNotFound {
+		t.Errorf("Expected ErrMonitorNotFound, got: %v", err)
+	}
+}
+
+func TestSetMonitorActive_SpecialCharactersInID(t *testing.T) {
+	s := newTestStore(t)
+	_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+
+	// UUID-like IDs are commonly used - verify they work
+	specialID := "mon-abc123-def456-789xyz"
+	m := Monitor{
+		ID:       specialID,
+		GroupID:  "g1",
+		Name:     "Special ID Monitor",
+		URL:      "http://example.com",
+		Active:   true,
+		Interval: 60,
+	}
+	if err := s.CreateMonitor(m); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Pause with special ID
+	if err := s.SetMonitorActive(specialID, false); err != nil {
+		t.Fatalf("Pause failed: %v", err)
+	}
+
+	// Verify
+	monitors, _ := s.GetMonitors()
+	for _, mon := range monitors {
+		if mon.ID == specialID && mon.Active {
+			t.Error("Monitor should be inactive")
+		}
+	}
+}
+
+func TestSetMonitorActive_RapidToggle(t *testing.T) {
+	// Test rapid sequential pause/resume operations
+	s := newTestStore(t)
+	if err := s.CreateGroup(Group{ID: "g1", Name: "G1"}); err != nil {
+		t.Fatalf("CreateGroup failed: %v", err)
+	}
+
+	// Create monitor
+	m := Monitor{
+		ID:       "m-toggle",
+		GroupID:  "g1",
+		Name:     "Toggle Test",
+		URL:      "http://example.com",
+		Active:   true,
+		Interval: 60,
+	}
+	if err := s.CreateMonitor(m); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Run rapid sequential pause/resume operations
+	for i := 0; i < 20; i++ {
+		if err := s.SetMonitorActive("m-toggle", false); err != nil {
+			t.Fatalf("Pause %d failed: %v", i, err)
+		}
+		if err := s.SetMonitorActive("m-toggle", true); err != nil {
+			t.Fatalf("Resume %d failed: %v", i, err)
+		}
+	}
+
+	// Monitor should still exist and be active
+	monitors, err := s.GetMonitors()
+	if err != nil {
+		t.Fatalf("GetMonitors failed: %v", err)
+	}
+	found := false
+	for _, mon := range monitors {
+		if mon.ID == "m-toggle" {
+			found = true
+			if !mon.Active {
+				t.Error("Monitor should be active after final toggle")
+			}
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Monitor should still exist after toggle operations, got %d monitors total", len(monitors))
+	}
+}
+
+func TestSetMonitorActive_DeletedMonitor(t *testing.T) {
+	s := newTestStore(t)
+	_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+
+	m := Monitor{
+		ID:       "m-delete",
+		GroupID:  "g1",
+		Name:     "Delete Test",
+		URL:      "http://example.com",
+		Active:   true,
+		Interval: 60,
+	}
+	if err := s.CreateMonitor(m); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Delete the monitor
+	if err := s.DeleteMonitor("m-delete"); err != nil {
+		t.Fatalf("DeleteMonitor failed: %v", err)
+	}
+
+	// Try to pause deleted monitor - should return not found
+	err := s.SetMonitorActive("m-delete", false)
+	if err == nil {
+		t.Fatal("Expected error for deleted monitor")
+	}
+	if err != ErrMonitorNotFound {
+		t.Errorf("Expected ErrMonitorNotFound, got: %v", err)
+	}
+}
+
+func TestSetMonitorActive_PausePreservesOtherFields(t *testing.T) {
+	s := newTestStore(t)
+	_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+
+	m := Monitor{
+		ID:       "m-preserve",
+		GroupID:  "g1",
+		Name:     "Preserve Test",
+		URL:      "http://example.com",
+		Active:   true,
+		Interval: 120,
+	}
+	if err := s.CreateMonitor(m); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Pause
+	if err := s.SetMonitorActive("m-preserve", false); err != nil {
+		t.Fatalf("Pause failed: %v", err)
+	}
+
+	// Verify other fields are preserved
+	monitors, _ := s.GetMonitors()
+	var found *Monitor
+	for i := range monitors {
+		if monitors[i].ID == "m-preserve" {
+			found = &monitors[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("Monitor not found")
+	}
+	if found.Name != "Preserve Test" {
+		t.Errorf("Name changed unexpectedly: %s", found.Name)
+	}
+	if found.URL != "http://example.com" {
+		t.Errorf("URL changed unexpectedly: %s", found.URL)
+	}
+	if found.Interval != 120 {
+		t.Errorf("Interval changed unexpectedly: %d", found.Interval)
+	}
+	if found.GroupID != "g1" {
+		t.Errorf("GroupID changed unexpectedly: %s", found.GroupID)
+	}
+}

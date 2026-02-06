@@ -2,9 +2,13 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 )
+
+// ErrMonitorNotFound is returned when a monitor is not found
+var ErrMonitorNotFound = errors.New("monitor not found")
 
 type Monitor struct {
 	ID        string    `json:"id"`
@@ -65,7 +69,8 @@ func (s *Store) UpdateMonitor(id, name, url string, interval int) error {
 	if interval < 1 {
 		interval = 60
 	}
-	res, err := s.db.Exec(s.rebind("UPDATE monitors SET name = ?, url = ?, interval_seconds = ?, active = ? WHERE id = ?"), name, url, interval, true, id)
+	// Don't modify active flag - it's managed separately via SetMonitorActive
+	res, err := s.db.Exec(s.rebind("UPDATE monitors SET name = ?, url = ?, interval_seconds = ? WHERE id = ?"), name, url, interval, id)
 	if err != nil {
 		return err
 	}
@@ -82,6 +87,21 @@ func (s *Store) UpdateMonitor(id, name, url string, interval int) error {
 func (s *Store) DeleteMonitor(id string) error {
 	_, err := s.db.Exec(s.rebind("DELETE FROM monitors WHERE id = ?"), id)
 	return err
+}
+
+func (s *Store) SetMonitorActive(id string, active bool) error {
+	res, err := s.db.Exec(s.rebind("UPDATE monitors SET active = ? WHERE id = ?"), active, id)
+	if err != nil {
+		return fmt.Errorf("failed to update monitor active status: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rows == 0 {
+		return ErrMonitorNotFound
+	}
+	return nil
 }
 
 // GetMonitors returns all monitors

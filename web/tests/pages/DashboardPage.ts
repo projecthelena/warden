@@ -137,4 +137,52 @@ export class DashboardPage {
         await expect(trigger).toBeVisible();
         await expect(trigger).toContainText(groupName);
     }
+
+    async verifyMonitorPaused(monitorName: string) {
+        // Verify the monitor shows "Paused" badge
+        const monitorCard = this.page.getByText(monitorName).first().locator('..').locator('..');
+        await expect(monitorCard.getByText('Paused')).toBeVisible();
+    }
+
+    async verifyMonitorOperational(monitorName: string) {
+        // Verify the monitor shows "Operational" badge
+        const monitorCard = this.page.getByText(monitorName).first().locator('..').locator('..');
+        await expect(monitorCard.getByText('Operational')).toBeVisible({ timeout: 10000 });
+    }
+
+    async pauseMonitorViaSettings(monitorName: string) {
+        // Open monitor details
+        await this.page.getByText(monitorName).first().click();
+
+        // Click Settings Tab
+        await this.page.getByTestId('monitor-settings-tab').click();
+
+        // Click Pause Monitor button
+        await this.page.getByRole('button', { name: 'Pause Monitor' }).click();
+
+        // Verify toast
+        const toast = this.page.getByText('Monitor has been paused.');
+        await expect(toast).toBeVisible({ timeout: 5000 });
+
+        // Close sheet (press Escape or click outside)
+        await this.page.keyboard.press('Escape');
+    }
+
+    async resumeMonitorViaSettings(monitorName: string) {
+        // Open monitor details
+        await this.page.getByText(monitorName).first().click();
+
+        // Click Settings Tab
+        await this.page.getByTestId('monitor-settings-tab').click();
+
+        // Click Resume Monitor button
+        await this.page.getByRole('button', { name: 'Resume Monitor' }).click();
+
+        // Verify toast
+        const toast = this.page.getByText('Monitor has been resumed.');
+        await expect(toast).toBeVisible({ timeout: 5000 });
+
+        // Close sheet
+        await this.page.keyboard.press('Escape');
+    }
 }

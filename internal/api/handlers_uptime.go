@@ -50,6 +50,7 @@ type MonitorDTO struct {
 	Name      string         `json:"name"`
 	URL       string         `json:"url"`
 	Status    string         `json:"status"`
+	Active    bool           `json:"active"`
 	Latency   int64          `json:"latency"`
 	Interval  int            `json:"interval"`
 	History   []HistoryPoint `json:"history"`
@@ -170,6 +171,7 @@ func (h *UptimeHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 				Name:      meta.Name,
 				URL:       meta.URL,
 				Status:    statusStr,
+				Active:    meta.Active,
 				Latency:   latency,
 				Interval:  meta.Interval,
 				History:   historyPoints,
