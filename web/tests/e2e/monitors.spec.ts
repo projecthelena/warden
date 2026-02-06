@@ -177,12 +177,11 @@ test.describe('Monitor Pause/Resume', () => {
         await page.reload();
         await dashboard.waitForLoad();
 
-        // 5. Navigate back to the group if needed
-        await page.goto(`/groups/${groupName.toLowerCase().replace(/ /g, '-')}`);
-        await page.waitForTimeout(2000);
+        // 5. Navigate back to the group
+        await page.getByText(groupName).first().click();
 
         // 6. Verify monitor is still paused after refresh
-        await expect(page.getByText('Paused')).toBeVisible({ timeout: 10000 });
+        await dashboard.verifyMonitorPaused(monitorName);
         console.log('Monitor paused state persisted after refresh');
 
         // 7. Resume and cleanup
