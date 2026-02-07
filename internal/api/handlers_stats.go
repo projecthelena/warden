@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/clusteruptime/clusteruptime/internal/db"
+	"github.com/projecthelena/warden/internal/db"
 )
 
 type StatsHandler struct {

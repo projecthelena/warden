@@ -88,7 +88,7 @@ export function NavUser({
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuItem asChild>
-                <a href="https://clusteruptime.com/" target="_blank" rel="noopener noreferrer">
+                <a href="https://projecthelena.com/" target="_blank" rel="noopener noreferrer">
                   <Sparkles />
                   Upgrade to Cloud
                 </a>

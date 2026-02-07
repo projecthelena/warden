@@ -90,14 +90,14 @@ jobs:
         run: npm run build
 
       - name: Build Backend (Production Binary)
-        run: go build -o clusteruptime ./cmd/dashboard
+        run: go build -o warden ./cmd/dashboard
 
       # 7. E2E Tests
       - name: Start Full Stack
         env:
-          ADMIN_SECRET: clusteruptime-e2e-magic-key
+          ADMIN_SECRET: warden-e2e-magic-key
         run: |
-          ./clusteruptime &
+          ./warden &
           echo "Waiting for server to start..."
           sleep 5
 

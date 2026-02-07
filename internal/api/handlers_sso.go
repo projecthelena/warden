@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/clusteruptime/clusteruptime/internal/config"
-	"github.com/clusteruptime/clusteruptime/internal/db"
+	"github.com/projecthelena/warden/internal/config"
+	"github.com/projecthelena/warden/internal/db"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )

@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/clusteruptime/clusteruptime/internal/db"
-	"github.com/clusteruptime/clusteruptime/internal/uptime"
+	"github.com/projecthelena/warden/internal/db"
+	"github.com/projecthelena/warden/internal/uptime"
 )
 
 type SettingsHandler struct {

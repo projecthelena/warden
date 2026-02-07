@@ -10,13 +10,13 @@ test.describe('Password Update Flow', () => {
 
     test.beforeAll(async ({ request }) => {
         const resetRes = await request.post('http://localhost:9096/api/admin/reset', {
-            headers: { 'X-Admin-Secret': 'clusteruptime-e2e-magic-key' }
+            headers: { 'X-Admin-Secret': 'warden-e2e-magic-key' }
         });
         expect(resetRes.ok()).toBeTruthy();
 
         // 2. Perform Setup
         const setupRes = await request.post('http://localhost:9096/api/setup', {
-            headers: { 'X-Admin-Secret': 'clusteruptime-e2e-magic-key' },
+            headers: { 'X-Admin-Secret': 'warden-e2e-magic-key' },
             data: {
                 username: TEST_USER,
                 password: TEST_PASS,
@@ -66,12 +66,12 @@ test.describe('Password Update Flow', () => {
     test.afterAll(async ({ request }) => {
         // Restore Admin user for subsequent tests
         const resetRes = await request.post('http://localhost:9096/api/admin/reset', {
-            headers: { 'X-Admin-Secret': 'clusteruptime-e2e-magic-key' }
+            headers: { 'X-Admin-Secret': 'warden-e2e-magic-key' }
         });
         expect(resetRes.ok()).toBeTruthy();
 
         const setupRes = await request.post('http://localhost:9096/api/setup', {
-            headers: { 'X-Admin-Secret': 'clusteruptime-e2e-magic-key' },
+            headers: { 'X-Admin-Secret': 'warden-e2e-magic-key' },
             data: {
                 username: 'admin',
                 password: 'password123!',

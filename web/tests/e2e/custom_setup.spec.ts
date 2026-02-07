@@ -12,7 +12,7 @@ test.describe('Custom Username Setup', () => {
 
         // 1. Reset DB via Admin Secret (Bypassing Auth)
         const resetRes = await request.post('http://localhost:9096/api/admin/reset', {
-            headers: { 'X-Admin-Secret': 'clusteruptime-e2e-magic-key' }
+            headers: { 'X-Admin-Secret': 'warden-e2e-magic-key' }
         });
 
         if (!resetRes.ok()) {
@@ -21,7 +21,7 @@ test.describe('Custom Username Setup', () => {
 
         // 2. Restore Admin user
         const setupRes = await request.post('http://localhost:9096/api/setup', {
-            headers: { 'X-Admin-Secret': 'clusteruptime-e2e-magic-key' },
+            headers: { 'X-Admin-Secret': 'warden-e2e-magic-key' },
             data: {
                 username: 'admin',
                 password: STANDARD_ADMIN_PASSWORD,
@@ -39,7 +39,7 @@ test.describe('Custom Username Setup', () => {
 
         // 1. Reset DB via Admin Secret (Bypassing Auth)
         const resetRes = await request.post('http://localhost:9096/api/admin/reset', {
-            headers: { 'X-Admin-Secret': 'clusteruptime-e2e-magic-key' }
+            headers: { 'X-Admin-Secret': 'warden-e2e-magic-key' }
         });
         expect(resetRes.ok()).toBeTruthy();
 

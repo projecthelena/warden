@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/clusteruptime/clusteruptime/internal/db"
-	"github.com/clusteruptime/clusteruptime/internal/notifications"
+	"github.com/projecthelena/warden/internal/db"
+	"github.com/projecthelena/warden/internal/notifications"
 )
 
 type Job struct {

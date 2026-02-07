@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/clusteruptime/clusteruptime/internal/db"
+	"github.com/projecthelena/warden/internal/db"
 )
 
 // EventType defines the type of event that occurred

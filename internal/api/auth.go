@@ -11,8 +11,8 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/clusteruptime/clusteruptime/internal/config"
-	"github.com/clusteruptime/clusteruptime/internal/db"
+	"github.com/projecthelena/warden/internal/config"
+	"github.com/projecthelena/warden/internal/db"
 )
 
 type contextKey string

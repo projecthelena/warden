@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/clusteruptime/clusteruptime/internal/db"
+	"github.com/projecthelena/warden/internal/db"
 )
 
 type SetupRequest struct {

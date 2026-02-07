@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/clusteruptime/clusteruptime/internal/db"
+	"github.com/projecthelena/warden/internal/db"
 )
 
 // Simplified test store setup since we can't easily import db.newTestStore here due to circular deps if we were inside db package.

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/clusteruptime/clusteruptime/internal/db"
+	"github.com/projecthelena/warden/internal/db"
 )
 
 func newTestManager(t *testing.T) (*Manager, *db.Store) {

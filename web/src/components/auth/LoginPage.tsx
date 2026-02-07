@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Activity, Lock, AlertCircle } from "lucide-react";
+import { Lock, AlertCircle } from "lucide-react";
 
 function GoogleIcon({ className }: { className?: string }) {
     return (
@@ -91,8 +91,8 @@ export function LoginPage() {
         <div className="min-h-screen bg-background flex items-center justify-center p-4">
             <div className="w-full max-w-sm space-y-8">
                 <div className="flex flex-col items-center justify-center text-center space-y-2">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg">
-                        <Activity className="h-6 w-6" />
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-cyan-500 shadow-lg">
+                        <span className="text-lg font-bold text-[#09090b]">H</span>
                     </div>
                     <div className="space-y-1">
                         <h1 className="text-2xl font-semibold tracking-tight text-foreground">

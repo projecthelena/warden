@@ -26,8 +26,8 @@ func TestLoad(t *testing.T) {
 		if cfg.ListenAddr != ":9096" {
 			t.Errorf("Expected default ListenAddr :9096, got %s", cfg.ListenAddr)
 		}
-		if cfg.DBPath != "clusteruptime.db" {
-			t.Errorf("Expected default DBPath clusteruptime.db, got %s", cfg.DBPath)
+		if cfg.DBPath != "warden.db" {
+			t.Errorf("Expected default DBPath warden.db, got %s", cfg.DBPath)
 		}
 	})
 

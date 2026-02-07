@@ -1,4 +1,4 @@
-module github.com/clusteruptime/clusteruptime
+module github.com/projecthelena/warden
 
 go 1.25.7
 

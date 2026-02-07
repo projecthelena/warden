@@ -2,10 +2,10 @@
 
 BACKEND_ENV ?= LISTEN_ADDR=:9096
 BIN_DIR ?= $(PWD)/bin
-BINARY ?= $(BIN_DIR)/clusteruptime
+BINARY ?= $(BIN_DIR)/warden
 
 dev-backend:
-	ADMIN_SECRET=clusteruptime-e2e-magic-key $(BACKEND_ENV) go run ./cmd/dashboard
+	ADMIN_SECRET=warden-e2e-magic-key $(BACKEND_ENV) go run ./cmd/dashboard
 
 backend: dev-backend
 
@@ -37,7 +37,7 @@ dev-bundle: build
 	$(BACKEND_ENV) $(BINARY)
 
 docker:
-	docker build -t clusteruptime/clusteruptime .
+	docker build -t projecthelena/warden .
 
 test:
 	go test ./...
