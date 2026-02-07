@@ -468,3 +468,796 @@ func TestManager_ResetCleansSSLState(t *testing.T) {
 		t.Errorf("Expected 0 SSL states after reset, got %d", count)
 	}
 }
+
+// ============== PAUSE/RESUME EDGE CASE TESTS ==============
+
+func TestManager_PauseMonitor_RemovesFromScheduler(t *testing.T) {
+	m, s := newTestManager(t)
+
+	// Create an active monitor
+	if err := s.CreateMonitor(db.Monitor{
+		ID:       "m-pause-1",
+		GroupID:  "g-default",
+		Name:     "Pause Test",
+		URL:      "http://example.com",
+		Active:   true,
+		Interval: 60,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Sync - monitor should be running
+	m.Sync()
+
+	// Verify running
+	if m.GetMonitor("m-pause-1") == nil {
+		t.Fatal("Monitor should be running after sync")
+	}
+
+	// Pause the monitor in DB
+	if err := s.SetMonitorActive("m-pause-1", false); err != nil {
+		t.Fatalf("SetMonitorActive failed: %v", err)
+	}
+
+	// Sync again - monitor should be removed from scheduler
+	m.Sync()
+
+	// Verify NOT running
+	if m.GetMonitor("m-pause-1") != nil {
+		t.Fatal("Monitor should NOT be running after pause")
+	}
+
+	// Verify it's not in the monitors map
+	all := m.GetAll()
+	if _, exists := all["m-pause-1"]; exists {
+		t.Error("Paused monitor should not be in GetAll()")
+	}
+}
+
+func TestManager_ResumeMonitor_AddsBackToScheduler(t *testing.T) {
+	m, s := newTestManager(t)
+
+	// Create an inactive monitor
+	if err := s.CreateMonitor(db.Monitor{
+		ID:       "m-resume-1",
+		GroupID:  "g-default",
+		Name:     "Resume Test",
+		URL:      "http://example.com",
+		Active:   false, // Starts paused
+		Interval: 60,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Sync - monitor should NOT be running
+	m.Sync()
+
+	if m.GetMonitor("m-resume-1") != nil {
+		t.Fatal("Inactive monitor should NOT be running")
+	}
+
+	// Resume the monitor in DB
+	if err := s.SetMonitorActive("m-resume-1", true); err != nil {
+		t.Fatalf("SetMonitorActive failed: %v", err)
+	}
+
+	// Sync again - monitor should be running
+	m.Sync()
+
+	if m.GetMonitor("m-resume-1") == nil {
+		t.Fatal("Monitor should be running after resume")
+	}
+}
+
+func TestManager_PauseResume_FullCycle(t *testing.T) {
+	m, s := newTestManager(t)
+
+	// Create an active monitor
+	if err := s.CreateMonitor(db.Monitor{
+		ID:       "m-cycle-1",
+		GroupID:  "g-default",
+		Name:     "Cycle Test",
+		URL:      "http://example.com",
+		Active:   true,
+		Interval: 60,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// 1. Initial sync - running
+	m.Sync()
+	if m.GetMonitor("m-cycle-1") == nil {
+		t.Fatal("Step 1: Monitor should be running")
+	}
+
+	// 2. Pause
+	if err := s.SetMonitorActive("m-cycle-1", false); err != nil {
+		t.Fatalf("Pause failed: %v", err)
+	}
+	m.Sync()
+	if m.GetMonitor("m-cycle-1") != nil {
+		t.Fatal("Step 2: Monitor should NOT be running after pause")
+	}
+
+	// 3. Resume
+	if err := s.SetMonitorActive("m-cycle-1", true); err != nil {
+		t.Fatalf("Resume failed: %v", err)
+	}
+	m.Sync()
+	if m.GetMonitor("m-cycle-1") == nil {
+		t.Fatal("Step 3: Monitor should be running after resume")
+	}
+
+	// 4. Pause again
+	if err := s.SetMonitorActive("m-cycle-1", false); err != nil {
+		t.Fatalf("Second pause failed: %v", err)
+	}
+	m.Sync()
+	if m.GetMonitor("m-cycle-1") != nil {
+		t.Fatal("Step 4: Monitor should NOT be running after second pause")
+	}
+
+	// 5. Resume again
+	if err := s.SetMonitorActive("m-cycle-1", true); err != nil {
+		t.Fatalf("Second resume failed: %v", err)
+	}
+	m.Sync()
+	if m.GetMonitor("m-cycle-1") == nil {
+		t.Fatal("Step 5: Monitor should be running after second resume")
+	}
+}
+
+func TestManager_PauseCleansSSLState(t *testing.T) {
+	m, s := newTestManager(t)
+
+	// Create an active monitor
+	if err := s.CreateMonitor(db.Monitor{
+		ID:       "m-ssl-pause",
+		GroupID:  "g-default",
+		Name:     "SSL Pause Test",
+		URL:      "https://example.com",
+		Active:   true,
+		Interval: 60,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	m.Sync()
+
+	// Manually add SSL state (simulating notification sent)
+	m.mu.Lock()
+	m.sslNotifiedThresholds["m-ssl-pause"] = &sslThresholdState{
+		CertExpiry: time.Now().Add(14 * 24 * time.Hour),
+		Notified:   map[int]bool{30: true, 14: true},
+	}
+	m.mu.Unlock()
+
+	// Verify SSL state exists
+	m.mu.RLock()
+	_, exists := m.sslNotifiedThresholds["m-ssl-pause"]
+	m.mu.RUnlock()
+	if !exists {
+		t.Fatal("SSL state should exist before pause")
+	}
+
+	// Pause the monitor
+	if err := s.SetMonitorActive("m-ssl-pause", false); err != nil {
+		t.Fatalf("Pause failed: %v", err)
+	}
+	m.Sync()
+
+	// Verify SSL state is cleaned
+	m.mu.RLock()
+	_, exists = m.sslNotifiedThresholds["m-ssl-pause"]
+	m.mu.RUnlock()
+	if exists {
+		t.Error("SSL state should be cleaned after pause")
+	}
+}
+
+func TestManager_MultipleMonitors_PauseOne(t *testing.T) {
+	// Use isolated database for this test
+	store, err := db.NewStore(db.NewTestConfig())
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	m := NewManager(store)
+
+	// Create 3 monitors
+	for i := 1; i <= 3; i++ {
+		if err := store.CreateMonitor(db.Monitor{
+			ID:       fmt.Sprintf("m-multi-%d", i),
+			GroupID:  "g-default",
+			Name:     fmt.Sprintf("Multi Test %d", i),
+			URL:      fmt.Sprintf("http://example%d.com", i),
+			Active:   true,
+			Interval: 60,
+		}); err != nil {
+			t.Fatalf("CreateMonitor %d failed: %v", i, err)
+		}
+	}
+
+	m.Sync()
+
+	// All 3 should be running
+	if len(m.GetAll()) != 3 {
+		t.Fatalf("Expected 3 running monitors, got %d", len(m.GetAll()))
+	}
+
+	// Pause monitor 2
+	if err := store.SetMonitorActive("m-multi-2", false); err != nil {
+		t.Fatalf("Pause failed: %v", err)
+	}
+	m.Sync()
+
+	// Should have 2 running
+	all := m.GetAll()
+	if len(all) != 2 {
+		t.Fatalf("Expected 2 running monitors, got %d", len(all))
+	}
+
+	// Verify correct ones are running
+	if all["m-multi-1"] == nil {
+		t.Error("Monitor 1 should still be running")
+	}
+	if all["m-multi-2"] != nil {
+		t.Error("Monitor 2 should NOT be running")
+	}
+	if all["m-multi-3"] == nil {
+		t.Error("Monitor 3 should still be running")
+	}
+}
+
+func TestManager_RapidPauseResume(t *testing.T) {
+	// Use isolated database for this test
+	store, err := db.NewStore(db.NewTestConfig())
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	m := NewManager(store)
+
+	if err := store.CreateMonitor(db.Monitor{
+		ID:       "m-rapid",
+		GroupID:  "g-default",
+		Name:     "Rapid Test",
+		URL:      "http://example.com",
+		Active:   true,
+		Interval: 60,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	m.Sync()
+
+	// Rapid pause/resume cycles without panics
+	for i := 0; i < 10; i++ {
+		// Pause
+		if err := store.SetMonitorActive("m-rapid", false); err != nil {
+			t.Fatalf("Pause %d failed: %v", i, err)
+		}
+		m.Sync()
+
+		// Resume
+		if err := store.SetMonitorActive("m-rapid", true); err != nil {
+			t.Fatalf("Resume %d failed: %v", i, err)
+		}
+		m.Sync()
+	}
+
+	// Should end up running
+	if m.GetMonitor("m-rapid") == nil {
+		t.Fatal("Monitor should be running after rapid cycles")
+	}
+}
+
+func TestManager_PauseIdempotent(t *testing.T) {
+	m, s := newTestManager(t)
+
+	if err := s.CreateMonitor(db.Monitor{
+		ID:       "m-idem",
+		GroupID:  "g-default",
+		Name:     "Idempotent Test",
+		URL:      "http://example.com",
+		Active:   true,
+		Interval: 60,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	m.Sync()
+
+	// Pause once
+	if err := s.SetMonitorActive("m-idem", false); err != nil {
+		t.Fatalf("First pause failed: %v", err)
+	}
+	m.Sync()
+
+	// Pause again (already paused) - should not panic
+	if err := s.SetMonitorActive("m-idem", false); err != nil {
+		t.Fatalf("Second pause failed: %v", err)
+	}
+	m.Sync()
+
+	// Should still not be running
+	if m.GetMonitor("m-idem") != nil {
+		t.Error("Monitor should still not be running")
+	}
+}
+
+func TestManager_ServiceRestart_PausedMonitorStaysPaused(t *testing.T) {
+	// This simulates a service restart scenario
+	store, err := db.NewStore(db.NewTestConfigWithPath("file:restart_test?mode=memory&cache=shared"))
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+
+	// Create a paused monitor
+	if err := store.CreateMonitor(db.Monitor{
+		ID:       "m-restart",
+		GroupID:  "g-default",
+		Name:     "Restart Test",
+		URL:      "http://example.com",
+		Active:   false, // Already paused
+		Interval: 60,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Create a new manager (simulating restart)
+	m := NewManager(store)
+	m.Sync()
+
+	// Monitor should NOT be running (was paused before restart)
+	if m.GetMonitor("m-restart") != nil {
+		t.Error("Paused monitor should NOT be running after restart")
+	}
+
+	// Resume it
+	if err := store.SetMonitorActive("m-restart", true); err != nil {
+		t.Fatalf("Resume failed: %v", err)
+	}
+	m.Sync()
+
+	// Now it should be running
+	if m.GetMonitor("m-restart") == nil {
+		t.Error("Monitor should be running after resume")
+	}
+}
+
+func TestMonitor_DoubleStopNoPanic(t *testing.T) {
+	jobQueue := make(chan Job, 10)
+	mon := NewMonitor("m1", "g1", "Double Stop", "http://example.com", 10*time.Millisecond, jobQueue)
+
+	go mon.Start()
+	time.Sleep(20 * time.Millisecond)
+
+	// Stop twice - should not panic due to sync.Once protection
+	mon.Stop()
+	mon.Stop() // Second stop should be safe
+
+	// If we get here without panic, test passes
+}
+
+func TestManager_HistoryPersistedAcrossPauseResume(t *testing.T) {
+	// Use isolated database for this test
+	store, err := db.NewStore(db.NewTestConfig())
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	m := NewManager(store)
+
+	if err := store.CreateMonitor(db.Monitor{
+		ID:       "m-history",
+		GroupID:  "g-default",
+		Name:     "History Test",
+		URL:      "http://example.com",
+		Active:   true,
+		Interval: 60,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Add some check results to DB (simulating past checks)
+	checks := []db.CheckResult{
+		{MonitorID: "m-history", Status: "up", Latency: 100, Timestamp: time.Now().Add(-5 * time.Minute), StatusCode: 200},
+		{MonitorID: "m-history", Status: "up", Latency: 150, Timestamp: time.Now().Add(-4 * time.Minute), StatusCode: 200},
+		{MonitorID: "m-history", Status: "up", Latency: 120, Timestamp: time.Now().Add(-3 * time.Minute), StatusCode: 200},
+	}
+	if err := store.BatchInsertChecks(checks); err != nil {
+		t.Fatalf("BatchInsertChecks failed: %v", err)
+	}
+
+	m.Sync()
+
+	// Verify monitor has history
+	mon := m.GetMonitor("m-history")
+	if mon == nil {
+		t.Fatal("Monitor should be running")
+	}
+	history := mon.GetHistory()
+	if len(history) != 3 {
+		t.Errorf("Expected 3 history items, got %d", len(history))
+	}
+
+	// Pause
+	if err := store.SetMonitorActive("m-history", false); err != nil {
+		t.Fatalf("Pause failed: %v", err)
+	}
+	m.Sync()
+
+	// Resume
+	if err := store.SetMonitorActive("m-history", true); err != nil {
+		t.Fatalf("Resume failed: %v", err)
+	}
+	m.Sync()
+
+	// History should be re-hydrated from DB
+	mon = m.GetMonitor("m-history")
+	if mon == nil {
+		t.Fatal("Monitor should be running after resume")
+	}
+	history = mon.GetHistory()
+	if len(history) != 3 {
+		t.Errorf("Expected 3 history items after resume (from DB), got %d", len(history))
+	}
+}
+
+func TestManager_DeleteWhilePaused(t *testing.T) {
+	store, err := db.NewStore(db.NewTestConfig())
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	m := NewManager(store)
+
+	// Create and sync a monitor
+	if err := store.CreateMonitor(db.Monitor{
+		ID:       "m-delete-paused",
+		GroupID:  "g-default",
+		Name:     "Delete Paused Test",
+		URL:      "http://example.com",
+		Active:   true,
+		Interval: 60,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+	m.Sync()
+
+	// Pause the monitor
+	if err := store.SetMonitorActive("m-delete-paused", false); err != nil {
+		t.Fatalf("Pause failed: %v", err)
+	}
+	m.Sync()
+
+	// Verify paused (not in scheduler)
+	if m.GetMonitor("m-delete-paused") != nil {
+		t.Fatal("Monitor should not be running after pause")
+	}
+
+	// Delete the paused monitor from DB
+	if err := store.DeleteMonitor("m-delete-paused"); err != nil {
+		t.Fatalf("DeleteMonitor failed: %v", err)
+	}
+	m.Sync()
+
+	// Verify fully removed
+	if m.GetMonitor("m-delete-paused") != nil {
+		t.Error("Deleted monitor should not be in manager")
+	}
+}
+
+func TestManager_UpdateWhilePaused(t *testing.T) {
+	store, err := db.NewStore(db.NewTestConfig())
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	m := NewManager(store)
+
+	// Create and sync a monitor
+	if err := store.CreateMonitor(db.Monitor{
+		ID:       "m-update-paused",
+		GroupID:  "g-default",
+		Name:     "Original Name",
+		URL:      "http://original.com",
+		Active:   true,
+		Interval: 60,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+	m.Sync()
+
+	// Pause the monitor
+	if err := store.SetMonitorActive("m-update-paused", false); err != nil {
+		t.Fatalf("Pause failed: %v", err)
+	}
+	m.Sync()
+
+	// Update the monitor while paused
+	if err := store.UpdateMonitor("m-update-paused", "Updated Name", "http://updated.com", 120); err != nil {
+		t.Fatalf("UpdateMonitor failed: %v", err)
+	}
+	m.Sync()
+
+	// Still should not be running (still paused)
+	if m.GetMonitor("m-update-paused") != nil {
+		t.Fatal("Updated but still paused monitor should not be running")
+	}
+
+	// Resume the monitor
+	if err := store.SetMonitorActive("m-update-paused", true); err != nil {
+		t.Fatalf("Resume failed: %v", err)
+	}
+	m.Sync()
+
+	// Now should be running with updated config
+	mon := m.GetMonitor("m-update-paused")
+	if mon == nil {
+		t.Fatal("Monitor should be running after resume")
+	}
+	if mon.GetTargetURL() != "http://updated.com" {
+		t.Errorf("Expected updated URL, got %s", mon.GetTargetURL())
+	}
+	if mon.GetInterval() != 120*time.Second {
+		t.Errorf("Expected updated interval 120s, got %s", mon.GetInterval())
+	}
+}
+
+func TestManager_PauseDuringActiveOutage(t *testing.T) {
+	store, err := db.NewStore(db.NewTestConfig())
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	m := NewManager(store)
+
+	// Create a group and monitor
+	if err := store.CreateGroup(db.Group{ID: "g-outage", Name: "Outage Group"}); err != nil {
+		t.Fatalf("CreateGroup failed: %v", err)
+	}
+	if err := store.CreateMonitor(db.Monitor{
+		ID:       "m-outage-pause",
+		GroupID:  "g-outage",
+		Name:     "Outage Pause Test",
+		URL:      "http://example.com",
+		Active:   true,
+		Interval: 60,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+	m.Sync()
+
+	// Create an active outage for this monitor
+	if err := store.CreateOutage("m-outage-pause", "down", "Connection refused"); err != nil {
+		t.Fatalf("CreateOutage failed: %v", err)
+	}
+
+	// Verify outage exists
+	outages, _ := store.GetActiveOutages()
+	if len(outages) != 1 {
+		t.Fatalf("Expected 1 active outage, got %d", len(outages))
+	}
+
+	// Pause the monitor
+	if err := store.SetMonitorActive("m-outage-pause", false); err != nil {
+		t.Fatalf("Pause failed: %v", err)
+	}
+	m.Sync()
+
+	// Monitor should be removed from scheduler
+	if m.GetMonitor("m-outage-pause") != nil {
+		t.Error("Paused monitor should not be running")
+	}
+
+	// Outage record should still exist in DB (historical data)
+	outages, _ = store.GetActiveOutages()
+	if len(outages) != 1 {
+		t.Errorf("Outage should still exist after pause, got %d", len(outages))
+	}
+}
+
+func TestManager_ConcurrentSync(t *testing.T) {
+	store, err := db.NewStore(db.NewTestConfig())
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	m := NewManager(store)
+
+	// Create some monitors
+	for i := 1; i <= 5; i++ {
+		if err := store.CreateMonitor(db.Monitor{
+			ID:       fmt.Sprintf("m-conc-%d", i),
+			GroupID:  "g-default",
+			Name:     fmt.Sprintf("Concurrent %d", i),
+			URL:      fmt.Sprintf("http://example%d.com", i),
+			Active:   true,
+			Interval: 60,
+		}); err != nil {
+			t.Fatalf("CreateMonitor %d failed: %v", i, err)
+		}
+	}
+
+	// Run concurrent Sync operations
+	done := make(chan bool, 10)
+	for i := 0; i < 10; i++ {
+		go func() {
+			m.Sync()
+			done <- true
+		}()
+	}
+
+	// Wait for all
+	for i := 0; i < 10; i++ {
+		<-done
+	}
+
+	// All monitors should be running
+	all := m.GetAll()
+	if len(all) != 5 {
+		t.Errorf("Expected 5 running monitors, got %d", len(all))
+	}
+}
+
+func TestManager_PauseAllMonitors(t *testing.T) {
+	store, err := db.NewStore(db.NewTestConfig())
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	m := NewManager(store)
+
+	// Create multiple monitors
+	for i := 1; i <= 3; i++ {
+		if err := store.CreateMonitor(db.Monitor{
+			ID:       fmt.Sprintf("m-all-%d", i),
+			GroupID:  "g-default",
+			Name:     fmt.Sprintf("All Test %d", i),
+			URL:      fmt.Sprintf("http://example%d.com", i),
+			Active:   true,
+			Interval: 60,
+		}); err != nil {
+			t.Fatalf("CreateMonitor %d failed: %v", i, err)
+		}
+	}
+	m.Sync()
+
+	// Verify all running
+	if len(m.GetAll()) != 3 {
+		t.Fatalf("Expected 3 monitors running, got %d", len(m.GetAll()))
+	}
+
+	// Pause all monitors
+	for i := 1; i <= 3; i++ {
+		if err := store.SetMonitorActive(fmt.Sprintf("m-all-%d", i), false); err != nil {
+			t.Fatalf("Pause %d failed: %v", i, err)
+		}
+	}
+	m.Sync()
+
+	// None should be running
+	if len(m.GetAll()) != 0 {
+		t.Errorf("Expected 0 monitors running after pause all, got %d", len(m.GetAll()))
+	}
+
+	// Resume all
+	for i := 1; i <= 3; i++ {
+		if err := store.SetMonitorActive(fmt.Sprintf("m-all-%d", i), true); err != nil {
+			t.Fatalf("Resume %d failed: %v", i, err)
+		}
+	}
+	m.Sync()
+
+	// All should be running again
+	if len(m.GetAll()) != 3 {
+		t.Errorf("Expected 3 monitors running after resume all, got %d", len(m.GetAll()))
+	}
+}
+
+func TestManager_PauseMonitorPreservesInMemoryState(t *testing.T) {
+	store, err := db.NewStore(db.NewTestConfig())
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	m := NewManager(store)
+
+	// Create a monitor
+	if err := store.CreateMonitor(db.Monitor{
+		ID:       "m-state",
+		GroupID:  "g-default",
+		Name:     "State Test",
+		URL:      "http://example.com",
+		Active:   true,
+		Interval: 60,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+	m.Sync()
+
+	// Record some in-memory status
+	mon := m.GetMonitor("m-state")
+	if mon == nil {
+		t.Fatal("Monitor should be running")
+	}
+	mon.RecordResult(true, 100, time.Now(), 200, "", false)
+	mon.RecordResult(true, 150, time.Now(), 200, "", false)
+
+	// Verify history
+	history := mon.GetHistory()
+	if len(history) != 2 {
+		t.Fatalf("Expected 2 history items, got %d", len(history))
+	}
+
+	// Pause - this should remove the monitor from manager
+	if err := store.SetMonitorActive("m-state", false); err != nil {
+		t.Fatalf("Pause failed: %v", err)
+	}
+	m.Sync()
+
+	// Monitor should no longer be in manager
+	if m.GetMonitor("m-state") != nil {
+		t.Error("Paused monitor should not be in manager")
+	}
+}
+
+func TestManager_GetLastStatus_PausedMonitor(t *testing.T) {
+	store, err := db.NewStore(db.NewTestConfig())
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	m := NewManager(store)
+
+	// Create a paused monitor from the start
+	if err := store.CreateMonitor(db.Monitor{
+		ID:       "m-paused-status",
+		GroupID:  "g-default",
+		Name:     "Paused Status Test",
+		URL:      "http://example.com",
+		Active:   false, // Start paused
+		Interval: 60,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+	m.Sync()
+
+	// Trying to get monitor that was never started should return nil
+	mon := m.GetMonitor("m-paused-status")
+	if mon != nil {
+		t.Error("Paused monitor should not be accessible via GetMonitor")
+	}
+}
+
+func TestManager_CreatePausedMonitor(t *testing.T) {
+	store, err := db.NewStore(db.NewTestConfig())
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	m := NewManager(store)
+
+	// Create monitor that starts paused
+	if err := store.CreateMonitor(db.Monitor{
+		ID:       "m-created-paused",
+		GroupID:  "g-default",
+		Name:     "Created Paused",
+		URL:      "http://example.com",
+		Active:   false,
+		Interval: 60,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+	m.Sync()
+
+	// Should not be in the scheduler
+	if m.GetMonitor("m-created-paused") != nil {
+		t.Error("Monitor created as paused should not be running")
+	}
+	if len(m.GetAll()) != 0 {
+		t.Errorf("Expected 0 running monitors, got %d", len(m.GetAll()))
+	}
+
+	// Resume it
+	if err := store.SetMonitorActive("m-created-paused", true); err != nil {
+		t.Fatalf("Resume failed: %v", err)
+	}
+	m.Sync()
+
+	// Now should be running
+	if m.GetMonitor("m-created-paused") == nil {
+		t.Error("Monitor should be running after resume")
+	}
+}

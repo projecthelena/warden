@@ -23,6 +23,7 @@ type Monitor struct {
 	history  []Status
 	mu       sync.RWMutex
 	stopCh   chan struct{}
+	stopOnce sync.Once
 	jobQueue chan<- Job
 }
 
@@ -57,7 +58,9 @@ func (m *Monitor) Start() {
 }
 
 func (m *Monitor) Stop() {
-	close(m.stopCh)
+	m.stopOnce.Do(func() {
+		close(m.stopCh)
+	})
 }
 
 func (m *Monitor) schedule() {

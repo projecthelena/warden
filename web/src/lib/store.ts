@@ -41,7 +41,8 @@ export interface Monitor {
     id: string;
     name: string;
     url: string;
-    status: 'up' | 'down' | 'degraded';
+    status: 'up' | 'down' | 'degraded' | 'paused';
+    active: boolean;
     latency: number;
     history: HistoryPoint[];
     lastCheck: string;
@@ -171,6 +172,8 @@ interface MonitorStore {
     addMonitor: (name: string, url: string, groupName: string, interval?: number) => Promise<void>;
     updateMonitor: (id: string, updates: Partial<Monitor>) => void;
     deleteMonitor: (id: string) => Promise<void>;
+    pauseMonitor: (id: string) => Promise<void>;
+    resumeMonitor: (id: string) => Promise<void>;
 
     addIncident: (incident: Omit<Incident, 'id' | 'createdAt' | 'type'>) => void;
     addMaintenance: (maintenance: Omit<Incident, 'id' | 'createdAt' | 'type' | 'severity'>) => void;
@@ -679,6 +682,82 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
         } catch (e) {
             console.error(e);
             toast({ title: "Error", description: "Failed to delete monitor.", variant: "destructive" });
+        }
+    },
+
+    pauseMonitor: async (id) => {
+        const groups = get().groups;
+        let groupId: string | undefined;
+        for (const g of groups) {
+            if (g.monitors.some(m => m.id === id)) {
+                groupId = g.id;
+                break;
+            }
+        }
+
+        try {
+            const res = await fetch(`/api/monitors/${id}/pause`, {
+                method: 'POST',
+                credentials: 'include'
+            });
+            if (res.ok) {
+                if (groupId) {
+                    get().fetchMonitors(groupId);
+                }
+                get().fetchOverview();
+                toast({ title: "Monitor Paused", description: "Monitor has been paused." });
+            } else if (res.status === 404) {
+                toast({ title: "Error", description: "Monitor not found.", variant: "destructive" });
+            } else {
+                const text = await res.text();
+                let errorMsg = "Failed to pause monitor.";
+                try {
+                    const json = JSON.parse(text);
+                    errorMsg = json.error || errorMsg;
+                } catch { /* ignore parse error */ }
+                toast({ title: "Error", description: errorMsg, variant: "destructive" });
+            }
+        } catch (e) {
+            console.error(e);
+            toast({ title: "Error", description: "Network error while pausing monitor.", variant: "destructive" });
+        }
+    },
+
+    resumeMonitor: async (id) => {
+        const groups = get().groups;
+        let groupId: string | undefined;
+        for (const g of groups) {
+            if (g.monitors.some(m => m.id === id)) {
+                groupId = g.id;
+                break;
+            }
+        }
+
+        try {
+            const res = await fetch(`/api/monitors/${id}/resume`, {
+                method: 'POST',
+                credentials: 'include'
+            });
+            if (res.ok) {
+                if (groupId) {
+                    get().fetchMonitors(groupId);
+                }
+                get().fetchOverview();
+                toast({ title: "Monitor Resumed", description: "Monitor has been resumed." });
+            } else if (res.status === 404) {
+                toast({ title: "Error", description: "Monitor not found.", variant: "destructive" });
+            } else {
+                const text = await res.text();
+                let errorMsg = "Failed to resume monitor.";
+                try {
+                    const json = JSON.parse(text);
+                    errorMsg = json.error || errorMsg;
+                } catch { /* ignore parse error */ }
+                toast({ title: "Error", description: errorMsg, variant: "destructive" });
+            }
+        } catch (e) {
+            console.error(e);
+            toast({ title: "Error", description: "Network error while resuming monitor.", variant: "destructive" });
         }
     },
 

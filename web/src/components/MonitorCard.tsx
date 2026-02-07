@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 export function MonitorCard({ monitor, groupId }: { monitor: Monitor, groupId: string }) {
     const [detailsOpen, setDetailsOpen] = useState(false);
     const { user, incidents } = useMonitorStore();
+    const isPaused = monitor.status === 'paused';
 
     const formattedFullDate = formatDate(monitor.lastCheck, user?.timezone);
 
@@ -57,20 +58,22 @@ export function MonitorCard({ monitor, groupId }: { monitor: Monitor, groupId: s
                     <UptimeHistory history={monitor.history} interval={monitor.interval} />
                 </div>
 
-                <div className="flex items-center gap-3 w-[160px] justify-end shrink-0">
-                    <div className="text-right whitespace-nowrap">
-                        <div className="text-xs font-mono text-muted-foreground">{monitor.latency}ms</div>
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <div className="text-[10px] text-muted-foreground opacity-50 hover:opacity-100 cursor-help transition-opacity">
-                                    {timeOnly}
-                                </div>
-                            </TooltipTrigger>
-                            <TooltipContent className="text-xs">
-                                <p>{formattedFullDate}</p>
-                            </TooltipContent>
-                        </Tooltip>
-                    </div>
+                <div className="flex items-center gap-3 w-[200px] justify-end shrink-0">
+                    {!isPaused && (
+                        <div className="text-right whitespace-nowrap">
+                            <div className="text-xs font-mono text-muted-foreground">{monitor.latency}ms</div>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <div className="text-[10px] text-muted-foreground opacity-50 hover:opacity-100 cursor-help transition-opacity">
+                                        {timeOnly}
+                                    </div>
+                                </TooltipTrigger>
+                                <TooltipContent className="text-xs">
+                                    <p>{formattedFullDate}</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        </div>
+                    )}
                     <StatusBadge status={monitor.status} isMaintenance={isMaintenance} />
                 </div>
             </div>

@@ -137,4 +137,54 @@ export class DashboardPage {
         await expect(trigger).toBeVisible();
         await expect(trigger).toContainText(groupName);
     }
+
+    async verifyMonitorPaused(monitorName: string) {
+        // Verify the monitor card shows "Paused" badge
+        const monitorCard = this.page.locator('div.rounded-lg', { hasText: monitorName });
+        await expect(monitorCard.getByText('Paused')).toBeVisible({ timeout: 10000 });
+    }
+
+    async verifyMonitorOperational(monitorName: string) {
+        // Verify the monitor card shows "Operational" badge
+        const monitorCard = this.page.locator('div.rounded-lg', { hasText: monitorName });
+        await expect(monitorCard.getByText('Operational')).toBeVisible({ timeout: 10000 });
+    }
+
+    async pauseMonitorViaSettings(monitorName: string) {
+        // Open monitor details
+        await this.page.getByText(monitorName).first().click();
+
+        // Click Settings Tab
+        await this.page.getByTestId('monitor-settings-tab').click();
+
+        // Click Pause Monitor button
+        await this.page.getByRole('button', { name: 'Pause Monitor' }).click();
+
+        // Verify toast
+        const toast = this.page.getByText('Monitor has been paused.', { exact: true });
+        await expect(toast).toBeVisible({ timeout: 5000 });
+
+        // Close sheet via X button and wait for it to fully close
+        await this.page.getByRole('button', { name: 'Close' }).click();
+        await expect(this.page.locator('[data-state="open"].fixed.inset-0')).toHaveCount(0, { timeout: 5000 });
+    }
+
+    async resumeMonitorViaSettings(monitorName: string) {
+        // Open monitor details
+        await this.page.getByText(monitorName).first().click();
+
+        // Click Settings Tab
+        await this.page.getByTestId('monitor-settings-tab').click();
+
+        // Click Resume Monitor button
+        await this.page.getByRole('button', { name: 'Resume Monitor' }).click();
+
+        // Verify toast
+        const toast = this.page.getByText('Monitor has been resumed.', { exact: true });
+        await expect(toast).toBeVisible({ timeout: 5000 });
+
+        // Close sheet via X button and wait for it to fully close
+        await this.page.getByRole('button', { name: 'Close' }).click();
+        await expect(this.page.locator('[data-state="open"].fixed.inset-0')).toHaveCount(0, { timeout: 5000 });
+    }
 }

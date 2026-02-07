@@ -158,6 +158,8 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 			protected.Post("/monitors", crudH.CreateMonitor)
 			protected.Put("/monitors/{id}", crudH.UpdateMonitor)
 			protected.Delete("/monitors/{id}", crudH.DeleteMonitor)
+			protected.Post("/monitors/{id}/pause", crudH.PauseMonitor)
+			protected.Post("/monitors/{id}/resume", crudH.ResumeMonitor)
 			protected.Get("/monitors/{id}/uptime", uptimeH.GetMonitorUptime)
 			protected.Get("/monitors/{id}/latency", uptimeH.GetMonitorLatency)
 
