@@ -437,8 +437,8 @@ export function StatusPage() {
             <footer className="relative border-t border-border mt-auto py-8 text-center bg-card/30">
                 <div className="text-muted-foreground text-sm flex items-center justify-center gap-2 hover:text-foreground transition-colors">
                     <span>Powered by</span>
-                    <a href="https://clusteruptime.com/" target="_blank" rel="noopener noreferrer" className="font-semibold text-foreground/80 hover:text-foreground hover:underline underline-offset-4 transition-all">
-                        ClusterUptime
+                    <a href="https://projecthelena.com/" target="_blank" rel="noopener noreferrer" className="font-semibold text-foreground/80 hover:text-foreground hover:underline underline-offset-4 transition-all">
+                        Warden
                     </a>
                 </div>
             </footer>

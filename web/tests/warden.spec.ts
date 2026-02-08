@@ -3,7 +3,7 @@ import { LoginPage } from './pages/LoginPage';
 import { SetupPage } from './pages/SetupPage';
 import { DashboardPage } from './pages/DashboardPage';
 
-test.describe('ClusterUptime Smoke Tests', () => {
+test.describe('Warden Smoke Tests', () => {
 
     test('Full System Flow & Edge Cases', async ({ page }) => {
         test.setTimeout(60000); // Increase timeout for full flow

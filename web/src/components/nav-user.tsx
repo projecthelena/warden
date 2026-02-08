@@ -51,10 +51,11 @@ export function NavUser({
     <SidebarMenu>
       <SidebarMenuItem>
         <DropdownMenu>
-          <DropdownMenuTrigger asChild data-testid="user-menu-trigger">
+          <DropdownMenuTrigger asChild>
             <SidebarMenuButton
               size="lg"
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+              data-testid="user-menu-trigger"
             >
               <Avatar className="h-8 w-8 rounded-lg">
                 <AvatarImage src={user.avatar} alt={user.name} />
@@ -88,7 +89,7 @@ export function NavUser({
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuItem asChild>
-                <a href="https://clusteruptime.com/" target="_blank" rel="noopener noreferrer">
+                <a href="https://projecthelena.com/" target="_blank" rel="noopener noreferrer">
                   <Sparkles />
                   Upgrade to Cloud
                 </a>

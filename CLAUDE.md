@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ClusterUptime is a self-hosted uptime monitoring application. Go 1.24 backend with embedded React/TypeScript frontend, SQLite database. Ships as a single binary with no external dependencies.
+Warden is a self-hosted uptime monitoring application by Project Helena. Go 1.24 backend with embedded React/TypeScript frontend, SQLite database. Ships as a single binary with no external dependencies.
 
 ## Commands
 
@@ -16,7 +16,7 @@ make dev-frontend         # Vite dev server on :5173, proxies /api to :9096
 
 ### Build
 ```bash
-make build                # Full production build (frontend + backend → bin/clusteruptime)
+make build                # Full production build (frontend + backend → bin/warden)
 make build-frontend       # Vite build, copies output to internal/static/dist/
 make build-backend        # Go binary only
 make docker               # Docker image build
@@ -68,9 +68,9 @@ React 18 + TypeScript + Vite SPA.
 
 ### Key Environment Variables
 - `LISTEN_ADDR` — server bind address (default `:9090`, dev uses `:9096`)
-- `DB_PATH` — SQLite file path (default `/data/clusteruptime.db`)
+- `DB_PATH` — SQLite file path (default `/data/warden.db`)
 - `ADMIN_SECRET` — required for initial setup flow
 - `COOKIE_SECURE` — set `true` for HTTPS deployments
 
 ### E2E Test Setup
-Playwright tests in `web/tests/e2e/` use page object models from `web/tests/pages/`. Tests run sequentially (1 worker, Chromium only). The backend must be running with `ADMIN_SECRET=clusteruptime-e2e-magic-key`. Playwright auto-starts the Vite dev server locally.
+Playwright tests in `web/tests/e2e/` use page object models from `web/tests/pages/`. Tests run sequentially (1 worker, Chromium only). The backend must be running with `ADMIN_SECRET=warden-e2e-magic-key`. Playwright auto-starts the Vite dev server locally.

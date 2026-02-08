@@ -19,8 +19,8 @@ def create_request(url, data, api_key):
     return req
 
 def main():
-    parser = argparse.ArgumentParser(description="Create a monitoring group and add monitors via ClusterUptime API")
-    parser.add_argument("--host", default="http://localhost:9090", help="Base URL of ClusterUptime (default: http://localhost:9090)")
+    parser = argparse.ArgumentParser(description="Create a monitoring group and add monitors via Warden API")
+    parser.add_argument("--host", default="http://localhost:9090", help="Base URL of Warden (default: http://localhost:9090)")
     parser.add_argument("--key", required=True, help="Your API Key")
     parser.add_argument("--group", required=True, help="Name of the Group to create")
     parser.add_argument("--urls", required=True, nargs='+', help="List of URLs to monitor")

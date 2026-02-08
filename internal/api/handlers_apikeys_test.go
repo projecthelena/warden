@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/clusteruptime/clusteruptime/internal/db"
+	"github.com/projecthelena/warden/internal/db"
 )
 
 func TestAPIKeysHandler(t *testing.T) {

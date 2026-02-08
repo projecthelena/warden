@@ -1,6 +1,6 @@
 # Binaries
 /bin/
-clusteruptime
+warden
 *.exe
 *.exe~
 *.dll
@@ -36,7 +36,7 @@ yarn-error.log*
 *.db
 *.db-journal
 *.sqlite
-clusteruptime.db
+warden.db
 
 # OS specific
 .DS_Store

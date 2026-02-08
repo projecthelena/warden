@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/clusteruptime/clusteruptime/internal/db"
-	"github.com/clusteruptime/clusteruptime/internal/uptime"
+	"github.com/projecthelena/warden/internal/db"
+	"github.com/projecthelena/warden/internal/uptime"
 )
 
 func TestGetSystemEvents(t *testing.T) {

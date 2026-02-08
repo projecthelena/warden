@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/clusteruptime/clusteruptime/internal/db"
-	"github.com/clusteruptime/clusteruptime/internal/notifications"
+	"github.com/projecthelena/warden/internal/db"
+	"github.com/projecthelena/warden/internal/notifications"
 )
 
 type Job struct {
@@ -582,13 +582,42 @@ func (m *Manager) Sync() {
 				for i := len(checks) - 1; i >= 0; i-- {
 					c := checks[i]
 					isUp := c.Status == "up" // "up" or "down"
-					mon.RecordResult(isUp, c.Latency, c.Timestamp, c.StatusCode, "", false)
+					isDegraded := isUp && c.Latency > m.latencyThreshold
+					mon.RecordResult(isUp, c.Latency, c.Timestamp, c.StatusCode, "", isDegraded)
 				}
 			}
 
 			go mon.Start()
 			m.monitors[dbM.ID] = mon
 			log.Printf("Scheduled monitor: %s (Interval: %ds)", dbM.Name, intervalSec)
+		}
+	}
+
+	// Reconcile orphaned outages against current hydrated state
+	if activeOutages, err := m.store.GetActiveOutages(); err == nil {
+		for _, outage := range activeOutages {
+			mon, exists := m.monitors[outage.MonitorID]
+			if !exists {
+				// Monitor is paused or deleted — preserve outage
+				continue
+			}
+			isUp, _, hasHistory, lastDegraded := mon.GetLastStatus()
+			if !hasHistory {
+				continue
+			}
+			shouldClose := false
+			if outage.Type == "down" && isUp {
+				shouldClose = true
+			} else if outage.Type == "degraded" && isUp && !lastDegraded {
+				shouldClose = true
+			}
+			if shouldClose {
+				if err := m.store.CloseOutage(outage.MonitorID); err != nil {
+					log.Printf("Failed to close stale %s outage for %s: %v", outage.Type, outage.MonitorID, err)
+				} else {
+					log.Printf("Closed stale %s outage for monitor %s on startup reconciliation", outage.Type, outage.MonitorID)
+				}
+			}
 		}
 	}
 

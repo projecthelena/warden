@@ -25,7 +25,7 @@ func Default() Config {
 	return Config{
 		ListenAddr:   ":9096",
 		DBType:       DBTypeSQLite,
-		DBPath:       "clusteruptime.db",
+		DBPath:       "warden.db",
 		CookieSecure: false,
 	}
 }
@@ -49,7 +49,7 @@ func Load() (*Config, error) {
 	}
 
 	// DB_URL: PostgreSQL connection string (only used for postgres)
-	// Example: postgres://user:password@localhost:5432/clusteruptime?sslmode=disable
+	// Example: postgres://user:password@localhost:5432/warden?sslmode=disable
 	if dbURL := os.Getenv("DB_URL"); dbURL != "" {
 		cfg.DBURL = dbURL
 		// Auto-detect postgres from URL if DB_TYPE not explicitly set

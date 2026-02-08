@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertCircle, Activity, Check, X } from 'lucide-react';
+import { AlertCircle, Check, X } from 'lucide-react';
 
 // Password requirement checker
 function usePasswordValidation(password: string) {
@@ -98,13 +98,13 @@ export function SetupPage() {
         <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4 sm:p-8">
             <Card className="w-full max-w-[550px] border-0 sm:border bg-card/50 sm:bg-card shadow-none sm:shadow-xl sm:ring-1 ring-border/5">
                 <CardHeader className="space-y-6 pt-10 px-8 text-center">
-                    <div className="mx-auto bg-primary/10 rounded-2xl w-14 h-14 flex items-center justify-center mb-2">
-                        <Activity className="w-7 h-7 text-primary" />
+                    <div className="mx-auto bg-cyan-500 rounded-2xl w-14 h-14 flex items-center justify-center mb-2">
+                        <span className="text-2xl font-bold text-[#09090b]">H</span>
                     </div>
 
                     <div className="space-y-2">
                         <h1 className="text-3xl font-bold tracking-tight" data-testid={step === 0 ? "setup-welcome" : undefined}>
-                            {step === 0 && "Welcome to ClusterUptime"}
+                            {step === 0 && "Welcome to Warden"}
                             {step === 1 && "Create Admin Account"}
                         </h1>
                         <p className="text-muted-foreground text-lg max-w-sm mx-auto leading-relaxed">
@@ -188,7 +188,7 @@ export function SetupPage() {
             </Card>
 
             <div className="fixed bottom-6 text-center text-xs text-muted-foreground animate-in fade-in duration-1000">
-                <p>ClusterUptime. Self-hosted & Open Source.</p>
+                <p>Warden by Project Helena. Open Source.</p>
             </div>
         </div>
     );

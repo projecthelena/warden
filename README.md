@@ -1,10 +1,10 @@
-# ClusterUptime ⚡️
+# Warden
 
-[![CI](https://github.com/clusteruptime/clusteruptime/actions/workflows/ci.yml/badge.svg)](https://github.com/clusteruptime/clusteruptime/actions/workflows/ci.yml)
-[![Docker](https://github.com/clusteruptime/clusteruptime/actions/workflows/docker.yml/badge.svg)](https://github.com/clusteruptime/clusteruptime/actions/workflows/docker.yml)
+[![CI](https://github.com/projecthelena/warden/actions/workflows/ci.yml/badge.svg)](https://github.com/projecthelena/warden/actions/workflows/ci.yml)
+[![Docker](https://github.com/projecthelena/warden/actions/workflows/docker.yml/badge.svg)](https://github.com/projecthelena/warden/actions/workflows/docker.yml)
 
-**The ultra-lightweight, open-source uptime monitor.**  
-Blazing fast performance with a stunning modern design.
+**Know when it's down. Know what it costs.**
+Ultra-lightweight, self-hosted uptime monitoring by [Project Helena](https://projecthelena.com).
 
 <div align="center">
   <img src="assets/dashboard-overview.png" alt="Dashboard Preview" width="100%" />
@@ -16,25 +16,25 @@ Blazing fast performance with a stunning modern design.
 
 ## Features
 
-- 🚀 **Real-time Monitoring** – HTTP/HTTPS checks with sub-second precision.
-- 📊 **Beautiful Metrics** – Visualize latency and downtime instantly.
-- 🛡️ **Self-Hosted** – Built with Go + SQLite. Single binary, no bloat.
-- 🔑 **API First** – Automate everything. Full control via REST API & Keys.
+- **Real-time Monitoring** – HTTP/HTTPS checks with sub-second precision.
+- **Beautiful Metrics** – Visualize latency and downtime instantly.
+- **Self-Hosted** – Built with Go + SQLite. Single binary, no bloat.
+- **API First** – Automate everything. Full control via REST API & Keys.
 
 ---
 
 ## Quick Start
 
-### 🐳 Docker
+### Docker
 Run the container in seconds:
 
 ```bash
 docker run -d -p 9090:9090 \
   -v uptime_data:/data \
-  jesuspaz/clusteruptime:latest
+  projecthelena/warden:latest
 ```
 
-### 🛠️ From Source
+### From Source
 ```bash
 # Backend
 make dev-backend
@@ -50,7 +50,9 @@ Zero config required to start. Optional tweaks via Environment Variables:
 | Variable | Default | Description |
 | :--- | :--- | :--- |
 | `LISTEN_ADDR` | `:9090` | Port to listen on. |
-| `DB_PATH` | `/data/clusteruptime.db` | Path to the SQLite database. |
+| `DB_PATH` | `/data/warden.db` | Path to the SQLite database. |
+
+> **Migrating from ClusterUptime?** If you were using the default DB path, rename your database file or set `DB_PATH=clusteruptime.db`.
 
 ## Automation
 

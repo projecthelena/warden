@@ -91,7 +91,7 @@ export function AppSidebar({ groups, ...props }: React.ComponentProps<typeof Sid
         navSecondary: [
             {
                 title: "Support",
-                url: "https://github.com/ClusterUptime/clusteruptime/issues/new",
+                url: "https://github.com/projecthelena/warden/issues/new",
                 icon: LifeBuoy,
             },
         ],
@@ -104,12 +104,11 @@ export function AppSidebar({ groups, ...props }: React.ComponentProps<typeof Sid
                     <SidebarMenuItem>
                         <SidebarMenuButton size="lg" asChild>
                             <Link to="/dashboard">
-                                <div className="flex aspect-square size-8 items-center justify-center rounded-lg">
-                                    <Activity className="size-6 text-cyan-400" />
-                                </div>
                                 <div className="grid flex-1 text-left text-sm leading-tight">
-                                    <span className="truncate font-semibold">ClusterUptime</span>
-                                    <span className="truncate text-xs">OSS Monitor</span>
+                                    <span className="truncate font-display font-bold tracking-tight">
+                                        Project <span className="font-normal text-muted-foreground">Helena</span>
+                                    </span>
+                                    <span className="truncate text-xs font-mono font-medium text-cyan-500">WARDEN</span>
                                 </div>
                             </Link>
                         </SidebarMenuButton>

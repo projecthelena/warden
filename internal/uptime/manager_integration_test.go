@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/clusteruptime/clusteruptime/internal/db"
+	"github.com/projecthelena/warden/internal/db"
 )
 
 func TestMonitor_DegradedThreshold(t *testing.T) {
