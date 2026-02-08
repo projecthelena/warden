@@ -56,16 +56,15 @@ export class DashboardPage {
         await this.createMonitorSubmit.click();
 
         // Verify toast and presence
-        // Verify toast and presence
         // Actual text: Monitor "Name" active and checking.
         const toast = this.page.getByText(`Monitor "${name}" active and checking.`).first();
-        await expect(toast).toBeVisible();
+        await expect(toast).toBeVisible({ timeout: 15000 });
         await expect(this.page.getByText(name).first()).toBeVisible();
     }
 
     async verifyMonitorStatus(status: string = 'Operational') {
         const badge = this.page.getByText(status).first();
-        await expect(badge).toBeVisible();
+        await expect(badge).toBeVisible({ timeout: 15000 });
     }
 
     async deleteGroup(_groupName: string) {

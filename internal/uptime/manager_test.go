@@ -1261,3 +1261,269 @@ func TestManager_CreatePausedMonitor(t *testing.T) {
 		t.Error("Monitor should be running after resume")
 	}
 }
+
+// ============== HYDRATION & RECONCILIATION TESTS ==============
+
+func TestManager_Sync_HydrateIsDegradedTrue(t *testing.T) {
+	store, err := db.NewStore(db.NewTestConfig())
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	m := NewManager(store)
+	m.SetLatencyThreshold(200) // Low threshold
+
+	if err := store.CreateMonitor(db.Monitor{
+		ID: "m-deg-hydrate", GroupID: "g-default", Name: "Degraded Hydrate",
+		URL: "http://example.com", Active: true, Interval: 60,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Insert a check with latency above threshold (up + high latency = degraded)
+	if err := store.BatchInsertChecks([]db.CheckResult{
+		{MonitorID: "m-deg-hydrate", Status: "up", Latency: 500, Timestamp: time.Now().Add(-1 * time.Minute), StatusCode: 200},
+	}); err != nil {
+		t.Fatalf("BatchInsertChecks failed: %v", err)
+	}
+
+	m.Sync()
+
+	mon := m.GetMonitor("m-deg-hydrate")
+	if mon == nil {
+		t.Fatal("Monitor should be running")
+	}
+	_, _, hasHistory, lastDegraded := mon.GetLastStatus()
+	if !hasHistory {
+		t.Fatal("Expected history after hydration")
+	}
+	if !lastDegraded {
+		t.Error("Expected isDegraded=true for latency 500 > threshold 200")
+	}
+}
+
+func TestManager_Sync_HydrateIsDegradedFalse(t *testing.T) {
+	store, err := db.NewStore(db.NewTestConfig())
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	m := NewManager(store)
+	m.SetLatencyThreshold(1000) // High threshold
+
+	if err := store.CreateMonitor(db.Monitor{
+		ID: "m-nodeg-hydrate", GroupID: "g-default", Name: "Not Degraded Hydrate",
+		URL: "http://example.com", Active: true, Interval: 60,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Insert a check with latency below threshold
+	if err := store.BatchInsertChecks([]db.CheckResult{
+		{MonitorID: "m-nodeg-hydrate", Status: "up", Latency: 100, Timestamp: time.Now().Add(-1 * time.Minute), StatusCode: 200},
+	}); err != nil {
+		t.Fatalf("BatchInsertChecks failed: %v", err)
+	}
+
+	m.Sync()
+
+	mon := m.GetMonitor("m-nodeg-hydrate")
+	if mon == nil {
+		t.Fatal("Monitor should be running")
+	}
+	_, _, hasHistory, lastDegraded := mon.GetLastStatus()
+	if !hasHistory {
+		t.Fatal("Expected history after hydration")
+	}
+	if lastDegraded {
+		t.Error("Expected isDegraded=false for latency 100 < threshold 1000")
+	}
+}
+
+func TestManager_Sync_ReconcileClosesStaleDegradedOutage(t *testing.T) {
+	store, err := db.NewStore(db.NewTestConfig())
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	m := NewManager(store)
+	m.SetLatencyThreshold(1000)
+
+	if err := store.CreateGroup(db.Group{ID: "g-recon", Name: "Recon Group"}); err != nil {
+		t.Fatalf("CreateGroup failed: %v", err)
+	}
+	if err := store.CreateMonitor(db.Monitor{
+		ID: "m-recon-deg", GroupID: "g-recon", Name: "Recon Degraded",
+		URL: "http://example.com", Active: true, Interval: 60,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Insert healthy check (latency well below threshold)
+	if err := store.BatchInsertChecks([]db.CheckResult{
+		{MonitorID: "m-recon-deg", Status: "up", Latency: 50, Timestamp: time.Now().Add(-1 * time.Minute), StatusCode: 200},
+	}); err != nil {
+		t.Fatalf("BatchInsertChecks failed: %v", err)
+	}
+
+	// Create a stale degraded outage (from before restart)
+	if err := store.CreateOutage("m-recon-deg", "degraded", "High latency detected"); err != nil {
+		t.Fatalf("CreateOutage failed: %v", err)
+	}
+
+	// Verify outage exists before sync
+	outages, _ := store.GetActiveOutages()
+	if len(outages) != 1 {
+		t.Fatalf("Expected 1 active outage before sync, got %d", len(outages))
+	}
+
+	// Sync should close the stale degraded outage
+	m.Sync()
+
+	outages, _ = store.GetActiveOutages()
+	if len(outages) != 0 {
+		t.Errorf("Expected 0 active outages after reconciliation, got %d", len(outages))
+	}
+}
+
+func TestManager_Sync_ReconcileClosesStaleDownOutage(t *testing.T) {
+	store, err := db.NewStore(db.NewTestConfig())
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	m := NewManager(store)
+
+	if err := store.CreateGroup(db.Group{ID: "g-recon2", Name: "Recon Group 2"}); err != nil {
+		t.Fatalf("CreateGroup failed: %v", err)
+	}
+	if err := store.CreateMonitor(db.Monitor{
+		ID: "m-recon-down", GroupID: "g-recon2", Name: "Recon Down",
+		URL: "http://example.com", Active: true, Interval: 60,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Insert healthy check (monitor recovered)
+	if err := store.BatchInsertChecks([]db.CheckResult{
+		{MonitorID: "m-recon-down", Status: "up", Latency: 100, Timestamp: time.Now().Add(-1 * time.Minute), StatusCode: 200},
+	}); err != nil {
+		t.Fatalf("BatchInsertChecks failed: %v", err)
+	}
+
+	// Create a stale down outage (from before restart)
+	if err := store.CreateOutage("m-recon-down", "down", "Connection refused"); err != nil {
+		t.Fatalf("CreateOutage failed: %v", err)
+	}
+
+	m.Sync()
+
+	outages, _ := store.GetActiveOutages()
+	if len(outages) != 0 {
+		t.Errorf("Expected 0 active outages after reconciliation, got %d", len(outages))
+	}
+}
+
+func TestManager_Sync_PreservesOutageWhenStillDown(t *testing.T) {
+	store, err := db.NewStore(db.NewTestConfig())
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	m := NewManager(store)
+
+	if err := store.CreateGroup(db.Group{ID: "g-still-down", Name: "Still Down Group"}); err != nil {
+		t.Fatalf("CreateGroup failed: %v", err)
+	}
+	if err := store.CreateMonitor(db.Monitor{
+		ID: "m-still-down", GroupID: "g-still-down", Name: "Still Down",
+		URL: "http://example.com", Active: true, Interval: 60,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Insert a down check — monitor is still down
+	if err := store.BatchInsertChecks([]db.CheckResult{
+		{MonitorID: "m-still-down", Status: "down", Latency: 0, Timestamp: time.Now().Add(-1 * time.Minute), StatusCode: 0},
+	}); err != nil {
+		t.Fatalf("BatchInsertChecks failed: %v", err)
+	}
+
+	// Create an active down outage
+	if err := store.CreateOutage("m-still-down", "down", "Connection refused"); err != nil {
+		t.Fatalf("CreateOutage failed: %v", err)
+	}
+
+	m.Sync()
+
+	// Outage should still be open
+	outages, _ := store.GetActiveOutages()
+	if len(outages) != 1 {
+		t.Errorf("Expected 1 active outage (still down), got %d", len(outages))
+	}
+}
+
+func TestManager_Sync_PreservesOutageWhenStillDegraded(t *testing.T) {
+	store, err := db.NewStore(db.NewTestConfig())
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	m := NewManager(store)
+	m.SetLatencyThreshold(200)
+
+	if err := store.CreateGroup(db.Group{ID: "g-still-deg", Name: "Still Degraded Group"}); err != nil {
+		t.Fatalf("CreateGroup failed: %v", err)
+	}
+	if err := store.CreateMonitor(db.Monitor{
+		ID: "m-still-deg", GroupID: "g-still-deg", Name: "Still Degraded",
+		URL: "http://example.com", Active: true, Interval: 60,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Insert an up check with high latency (above threshold)
+	if err := store.BatchInsertChecks([]db.CheckResult{
+		{MonitorID: "m-still-deg", Status: "up", Latency: 500, Timestamp: time.Now().Add(-1 * time.Minute), StatusCode: 200},
+	}); err != nil {
+		t.Fatalf("BatchInsertChecks failed: %v", err)
+	}
+
+	// Create an active degraded outage
+	if err := store.CreateOutage("m-still-deg", "degraded", "High latency detected"); err != nil {
+		t.Fatalf("CreateOutage failed: %v", err)
+	}
+
+	m.Sync()
+
+	// Outage should still be open (monitor is still degraded)
+	outages, _ := store.GetActiveOutages()
+	if len(outages) != 1 {
+		t.Errorf("Expected 1 active outage (still degraded), got %d", len(outages))
+	}
+}
+
+func TestManager_Sync_SkipsPausedMonitorOutages(t *testing.T) {
+	store, err := db.NewStore(db.NewTestConfig())
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	m := NewManager(store)
+
+	if err := store.CreateGroup(db.Group{ID: "g-paused-recon", Name: "Paused Recon Group"}); err != nil {
+		t.Fatalf("CreateGroup failed: %v", err)
+	}
+	if err := store.CreateMonitor(db.Monitor{
+		ID: "m-paused-recon", GroupID: "g-paused-recon", Name: "Paused Recon",
+		URL: "http://example.com", Active: false, Interval: 60, // Paused
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Create an active outage for the paused monitor
+	if err := store.CreateOutage("m-paused-recon", "down", "Connection refused"); err != nil {
+		t.Fatalf("CreateOutage failed: %v", err)
+	}
+
+	m.Sync()
+
+	// Outage should still be open (paused monitors are skipped)
+	outages, _ := store.GetActiveOutages()
+	if len(outages) != 1 {
+		t.Errorf("Expected 1 active outage (paused monitor skipped), got %d", len(outages))
+	}
+}

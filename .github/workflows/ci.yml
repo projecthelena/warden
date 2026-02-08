@@ -97,6 +97,7 @@ jobs:
         env:
           ADMIN_SECRET: warden-e2e-magic-key
         run: |
+          rm -f warden.db
           ./warden &
           echo "Waiting for server to start..."
           sleep 5
