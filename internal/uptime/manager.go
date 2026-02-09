@@ -571,7 +571,7 @@ func (m *Manager) Sync() {
 
 		if _, exists := m.monitors[dbM.ID]; !exists {
 			// Start new monitor
-			mon := NewMonitor(dbM.ID, dbM.GroupID, dbM.Name, dbM.URL, interval, m.jobQueue)
+			mon := NewMonitor(dbM.ID, dbM.GroupID, dbM.Name, dbM.URL, interval, m.jobQueue, dbM.CreatedAt)
 
 			// Hydrate history from DB
 			checks, err := m.store.GetMonitorChecks(dbM.ID, 50)

@@ -826,7 +826,7 @@ func TestManager_ServiceRestart_PausedMonitorStaysPaused(t *testing.T) {
 
 func TestMonitor_DoubleStopNoPanic(t *testing.T) {
 	jobQueue := make(chan Job, 10)
-	mon := NewMonitor("m1", "g1", "Double Stop", "http://example.com", 10*time.Millisecond, jobQueue)
+	mon := NewMonitor("m1", "g1", "Double Stop", "http://example.com", 10*time.Millisecond, jobQueue, time.Now())
 
 	go mon.Start()
 	time.Sleep(20 * time.Millisecond)
