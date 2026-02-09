@@ -44,7 +44,8 @@ export function MonitorCard({ monitor, groupId }: { monitor: Monitor, groupId: s
                 onClick={() => setDetailsOpen(true)}
                 className={cn(
                     "flex flex-col sm:flex-row items-center justify-between p-4 border border-border rounded-lg bg-card hover:bg-accent/50 transition-all gap-4 cursor-pointer group w-full",
-                    isMaintenance && "border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10"
+                    isMaintenance && "border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10",
+                    isPaused && "opacity-60"
                 )}
             >
                 <div className="space-y-1 flex-1 min-w-0 mr-4">
@@ -55,7 +56,7 @@ export function MonitorCard({ monitor, groupId }: { monitor: Monitor, groupId: s
                 </div>
 
                 <div className="flex-none hidden sm:block">
-                    <UptimeHistory history={monitor.history} interval={monitor.interval} />
+                    <UptimeHistory history={monitor.history} interval={monitor.interval} isPaused={isPaused} />
                 </div>
 
                 <div className="flex items-center gap-3 w-[200px] justify-end shrink-0">

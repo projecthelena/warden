@@ -15,37 +15,74 @@ type Status struct {
 }
 
 type Monitor struct {
-	id       string
-	groupID  string
-	name     string
-	url      string
-	interval time.Duration
-	history  []Status
-	mu       sync.RWMutex
-	stopCh   chan struct{}
-	stopOnce sync.Once
-	jobQueue chan<- Job
+	id        string
+	groupID   string
+	name      string
+	url       string
+	interval  time.Duration
+	createdAt time.Time
+	history   []Status
+	mu        sync.RWMutex
+	stopCh    chan struct{}
+	stopOnce  sync.Once
+	jobQueue  chan<- Job
 }
 
-func NewMonitor(id, groupID, name, url string, interval time.Duration, jobQueue chan<- Job) *Monitor {
+func NewMonitor(id, groupID, name, url string, interval time.Duration, jobQueue chan<- Job, createdAt time.Time) *Monitor {
+	if createdAt.IsZero() {
+		createdAt = time.Now()
+	}
 	return &Monitor{
-		id:       id,
-		groupID:  groupID,
-		name:     name,
-		url:      url,
-		interval: interval,
-		history:  make([]Status, 0, 50), // Keep last 50 in memory
-		stopCh:   make(chan struct{}),
-		jobQueue: jobQueue,
+		id:        id,
+		groupID:   groupID,
+		name:      name,
+		url:       url,
+		interval:  interval,
+		createdAt: createdAt,
+		history:   make([]Status, 0, 50), // Keep last 50 in memory
+		stopCh:    make(chan struct{}),
+		jobQueue:  jobQueue,
 	}
 }
 
+// alignDelay computes the duration until the next tick aligned to createdAt.
+// Checks should fire at createdAt, createdAt+interval, createdAt+2*interval, ...
+// At time now, the next aligned tick is interval - ((now - createdAt) mod interval).
+func alignDelay(createdAt time.Time, interval time.Duration, now time.Time) time.Duration {
+	elapsed := now.Sub(createdAt) % interval
+	if elapsed < 0 {
+		elapsed += interval // Handle clock skew
+	}
+	delay := interval - elapsed
+	if delay == interval {
+		delay = 0 // We're exactly on an aligned tick
+	}
+	return delay
+}
+
 func (m *Monitor) Start() {
+	// Immediate check for instant feedback
+	m.schedule()
+
+	// Calculate delay to next aligned tick based on createdAt
+	delay := alignDelay(m.createdAt, m.interval, time.Now())
+
+	if delay > 0 {
+		// Wait for alignment, then fire the aligned tick
+		alignTimer := time.NewTimer(delay)
+		defer alignTimer.Stop()
+
+		select {
+		case <-m.stopCh:
+			return
+		case <-alignTimer.C:
+			m.schedule()
+		}
+	}
+
+	// Start regular ticker from the now-aligned point
 	ticker := time.NewTicker(m.interval)
 	defer ticker.Stop()
-
-	// Initial check
-	m.schedule()
 
 	for {
 		select {

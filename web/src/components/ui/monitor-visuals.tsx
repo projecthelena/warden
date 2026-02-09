@@ -46,25 +46,75 @@ export const StatusBadge = ({ status, isMaintenance }: { status: Monitor['status
     );
 };
 
-export const UptimeHistory = ({ history }: { history: Monitor['history'], interval?: number }) => {
-    const displaySlots = useMemo(() => {
-        const LIMIT = 30; // Limit defined inside or outside, keeping it consistent with render
+export interface DisplaySlot {
+    time: Date;
+    point: Monitor['history'][number] | null;
+}
 
-        if (!history || history.length === 0) {
-            return new Array(LIMIT).fill(null);
+export function buildTimeSlots(
+    history: Monitor['history'] | undefined,
+    interval: number | undefined,
+    now: number = Date.now()
+): DisplaySlot[] {
+    const LIMIT = 30;
+    const step = (interval && interval > 0 ? interval : 60) * 1000; // ms
+    const tolerance = step / 2;
+
+    // Anchor to the latest history point so the rightmost bar always shows data.
+    // Falls back to `now` only when there is no history at all.
+    let anchor = now;
+    if (history && history.length > 0) {
+        const latestTs = Math.max(...history.map(h => new Date(h.timestamp).getTime()));
+        // Anchor to latest point only if within 2 intervals of now (normal polling drift).
+        // Beyond that, the gap is real (e.g. monitor was paused) — anchor to now to show it.
+        if (now - latestTs <= 2 * step) {
+            anchor = latestTs;
         }
+    }
 
-        // Sort by timestamp to ensure order (oldest to newest)
-        const sorted = [...history].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    // Build 30 time slots anchored to the latest check, going backward
+    const slots: DisplaySlot[] = [];
+    for (let i = 0; i < LIMIT; i++) {
+        slots.push({
+            time: new Date(anchor - (LIMIT - 1 - i) * step),
+            point: null,
+        });
+    }
 
-        // Take the last 30 checks
-        const recent = sorted.slice(-LIMIT);
+    if (!history || history.length === 0) {
+        return slots;
+    }
 
-        // Pad with nulls at the start so the graph always fills from right to left
-        const padding = new Array(LIMIT - recent.length).fill(null);
+    // Sort history newest-first so that when multiple checks fall in the same slot,
+    // the latest one wins (we assign on first match and skip duplicates)
+    const sorted = [...history].sort(
+        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
 
-        return [...padding, ...recent];
-    }, [history]);
+    for (const point of sorted) {
+        const ts = new Date(point.timestamp).getTime();
+        let bestIdx = -1;
+        let bestDist = Infinity;
+        for (let i = 0; i < LIMIT; i++) {
+            if (slots[i].point !== null) continue; // already filled
+            const dist = Math.abs(slots[i].time.getTime() - ts);
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestIdx = i;
+            }
+        }
+        if (bestIdx !== -1 && bestDist <= tolerance) {
+            slots[bestIdx].point = point;
+        }
+    }
+
+    return slots;
+}
+
+export const UptimeHistory = ({ history, interval, isPaused }: { history: Monitor['history'], interval?: number, isPaused?: boolean }) => {
+    const displaySlots = useMemo(() => {
+        return buildTimeSlots(history, interval);
+    }, [history, interval]);
 
     return (
         <div className="flex gap-1 h-6 items-end w-full max-w-[500px]">
@@ -74,39 +124,41 @@ export const UptimeHistory = ({ history }: { history: Monitor['history'], interv
                         <div
                             className={cn(
                                 "flex-1 rounded-sm transition-all duration-300 min-w-[6px] cursor-pointer",
-                                slot === null && "bg-slate-800/30 h-full hover:bg-slate-800/50", // Empty slot
-                                slot?.status === 'up' && "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.3)] h-full hover:bg-emerald-400 hover:shadow-[0_0_12px_rgba(16,185,129,0.6)] hover:scale-y-105",
-                                slot?.status === 'degraded' && "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.3)] h-full hover:bg-amber-400 hover:scale-y-105",
-                                slot?.status === 'down' && "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.3)] h-full hover:bg-rose-400 hover:scale-y-105",
+                                slot.point === null && !isPaused && "bg-slate-800/30 h-full hover:bg-slate-800/50",
+                                slot.point === null && isPaused && "bg-slate-600/40 h-full hover:bg-slate-500/50",
+                                slot.point?.status === 'up' && "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.3)] h-full hover:bg-emerald-400 hover:shadow-[0_0_12px_rgba(16,185,129,0.6)] hover:scale-y-105",
+                                slot.point?.status === 'degraded' && "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.3)] h-full hover:bg-amber-400 hover:scale-y-105",
+                                slot.point?.status === 'down' && "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.3)] h-full hover:bg-rose-400 hover:scale-y-105",
                             )}
                         />
                     </TooltipTrigger>
-                    {slot ? (
+                    {slot.point ? (
                         <TooltipContent className="text-xs">
                             <div className="font-semibold mb-1">
-                                {new Date(slot.timestamp).toLocaleTimeString()}
+                                {new Date(slot.point.timestamp).toLocaleTimeString()}
                             </div>
                             <div className="flex items-center gap-2">
                                 <span className={cn(
                                     "w-2 h-2 rounded-full",
-                                    slot.status === 'up' ? "bg-green-500" :
-                                        slot.status === 'down' ? "bg-red-500" : "bg-yellow-500"
+                                    slot.point.status === 'up' ? "bg-green-500" :
+                                        slot.point.status === 'down' ? "bg-red-500" : "bg-yellow-500"
                                 )} />
                                 <span>
-                                    {slot.status === 'up' ? 'Operational' :
-                                        slot.status === 'down' ? 'Unavailable' : 'Degraded'}
+                                    {slot.point.status === 'up' ? 'Operational' :
+                                        slot.point.status === 'down' ? 'Unavailable' : 'Degraded'}
                                 </span>
                             </div>
                             <div className="mt-1 opacity-70">
-                                {slot.statusCode ? `Status: ${slot.statusCode}` : 'Status: Unknown'}
+                                {slot.point.statusCode ? `Status: ${slot.point.statusCode}` : 'Status: Unknown'}
                             </div>
                             <div className="opacity-70">
-                                Latency: {slot.latency}ms
+                                Latency: {slot.point.latency}ms
                             </div>
                         </TooltipContent>
                     ) : (
                         <TooltipContent className="text-xs">
-                            <div className="font-semibold text-muted-foreground">No Data</div>
+                            <div className="font-semibold text-muted-foreground">{isPaused ? "Paused" : "No Data"}</div>
+                            <div className="opacity-70">{slot.time.toLocaleTimeString()}</div>
                         </TooltipContent>
                     )}
                 </Tooltip>

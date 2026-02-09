@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { toast } from "@/components/ui/use-toast";
+import { queryClient } from "./queryClient";
 
 export interface MonitorEvent {
     id: string;
@@ -686,25 +687,14 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
     },
 
     pauseMonitor: async (id) => {
-        const groups = get().groups;
-        let groupId: string | undefined;
-        for (const g of groups) {
-            if (g.monitors.some(m => m.id === id)) {
-                groupId = g.id;
-                break;
-            }
-        }
-
         try {
             const res = await fetch(`/api/monitors/${id}/pause`, {
                 method: 'POST',
                 credentials: 'include'
             });
             if (res.ok) {
-                if (groupId) {
-                    get().fetchMonitors(groupId);
-                }
-                get().fetchOverview();
+                queryClient.invalidateQueries({ queryKey: ["monitors"] });
+                queryClient.invalidateQueries({ queryKey: ["overview"] });
                 toast({ title: "Monitor Paused", description: "Monitor has been paused." });
             } else if (res.status === 404) {
                 toast({ title: "Error", description: "Monitor not found.", variant: "destructive" });
@@ -724,25 +714,20 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
     },
 
     resumeMonitor: async (id) => {
-        const groups = get().groups;
-        let groupId: string | undefined;
-        for (const g of groups) {
-            if (g.monitors.some(m => m.id === id)) {
-                groupId = g.id;
-                break;
-            }
-        }
-
         try {
             const res = await fetch(`/api/monitors/${id}/resume`, {
                 method: 'POST',
                 credentials: 'include'
             });
             if (res.ok) {
-                if (groupId) {
-                    get().fetchMonitors(groupId);
-                }
-                get().fetchOverview();
+                queryClient.invalidateQueries({ queryKey: ["monitors"] });
+                queryClient.invalidateQueries({ queryKey: ["overview"] });
+
+                // Delayed invalidation — captures the first check result (~3-5s for HTTP round trip)
+                setTimeout(() => {
+                    queryClient.invalidateQueries({ queryKey: ["monitors"] });
+                }, 5000);
+
                 toast({ title: "Monitor Resumed", description: "Monitor has been resumed." });
             } else if (res.status === 404) {
                 toast({ title: "Error", description: "Monitor not found.", variant: "destructive" });

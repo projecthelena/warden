@@ -54,7 +54,7 @@ describe('SetupPage', () => {
         });
 
         // Mock static getState for fallback check
-        mockUseMonitorStore.getState = vi.fn().mockReturnValue({
+        (mockUseMonitorStore as unknown as { getState: ReturnType<typeof vi.fn> }).getState = vi.fn().mockReturnValue({
             checkSetupStatus: vi.fn().mockResolvedValue(true)
         });
 
