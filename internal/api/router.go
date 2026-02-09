@@ -6,10 +6,12 @@ import (
 
 	"github.com/projecthelena/warden/internal/config"
 	"github.com/projecthelena/warden/internal/db"
+	_ "github.com/projecthelena/warden/internal/docs"
 	"github.com/projecthelena/warden/internal/static"
 	"github.com/projecthelena/warden/internal/uptime"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	httpSwagger "github.com/swaggo/http-swagger/v2"
 	"golang.org/x/time/rate"
 )
 
@@ -110,7 +112,7 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 	incidentH := NewIncidentHandler(store)
 	maintH := NewMaintenanceHandler(store, manager)
 	eventH := NewEventHandler(store, manager)
-	statusPageH := NewStatusPageHandler(store, manager)
+	statusPageH := NewStatusPageHandler(store, manager, authH)
 	notifH := NewNotificationChannelsHandler(store)
 
 	r.Route("/api", func(api chi.Router) {
@@ -133,6 +135,11 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 
 		// Public Status Pages
 		api.Get("/s/{slug}", statusPageH.GetPublicStatus)
+
+		// API Documentation (Swagger UI)
+		api.Get("/docs/*", httpSwagger.Handler(
+			httpSwagger.URL("/api/docs/doc.json"),
+		))
 		// api.Get("/status", statusPageH.GetPublicStatus) // Legacy - omitting for now or map to default?
 
 		// Admin operations (requires ADMIN_SECRET, not session auth)

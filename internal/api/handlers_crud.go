@@ -53,6 +53,17 @@ func generateSlug(name, prefix string) string {
 // maxNameLength is the maximum allowed length for names (groups, monitors)
 const maxNameLength = 255
 
+// CreateGroup creates a new monitor group.
+// @Summary      Create group
+// @Tags         groups
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body body object{name=string} true "Group payload"
+// @Success      201  {object} db.Group
+// @Failure      400  {string} string "Name is required"
+// @Failure      409  {object} object{error=string} "Group already exists"
+// @Router       /groups [post]
 func (h *CRUDHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name string `json:"name"`
@@ -94,6 +105,15 @@ func (h *CRUDHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(g)
 }
 
+// DeleteGroup deletes a monitor group by ID.
+// @Summary      Delete group
+// @Tags         groups
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path string true "Group ID"
+// @Success      200  "OK"
+// @Failure      400  {string} string "ID required"
+// @Router       /groups/{id} [delete]
 func (h *CRUDHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
@@ -108,6 +128,17 @@ func (h *CRUDHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// UpdateGroup renames a monitor group.
+// @Summary      Update group
+// @Tags         groups
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path string true "Group ID"
+// @Param        body body object{name=string} true "New name"
+// @Success      200  {object} object{name=string}
+// @Failure      400  {string} string "Name is required"
+// @Router       /groups/{id} [put]
 func (h *CRUDHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
@@ -143,6 +174,18 @@ func (h *CRUDHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(req)
 }
 
+// CreateMonitor creates a new HTTP monitor.
+// @Summary      Create monitor
+// @Tags         monitors
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body body object{name=string,url=string,groupId=string,interval=int} true "Monitor payload"
+// @Success      201  {object} db.Monitor
+// @Failure      400  {string} string "Validation error"
+// @Failure      404  {string} string "Group not found"
+// @Failure      409  {string} string "Monitor name already exists"
+// @Router       /monitors [post]
 func (h *CRUDHandler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name     string `json:"name"`
@@ -265,6 +308,17 @@ func (h *CRUDHandler) GetGroups(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(groups)
 }
 
+// UpdateMonitor updates a monitor's name, URL, or interval.
+// @Summary      Update monitor
+// @Tags         monitors
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path string true "Monitor ID"
+// @Param        body body object{name=string,url=string,interval=int} true "Fields to update"
+// @Success      200  "OK"
+// @Failure      400  {string} string "ID required"
+// @Router       /monitors/{id} [put]
 func (h *CRUDHandler) UpdateMonitor(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
@@ -291,6 +345,15 @@ func (h *CRUDHandler) UpdateMonitor(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// DeleteMonitor removes a monitor and its history.
+// @Summary      Delete monitor
+// @Tags         monitors
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path string true "Monitor ID"
+// @Success      200  "OK"
+// @Failure      400  {string} string "ID required"
+// @Router       /monitors/{id} [delete]
 func (h *CRUDHandler) DeleteMonitor(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
@@ -306,6 +369,16 @@ func (h *CRUDHandler) DeleteMonitor(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// PauseMonitor stops checking a monitor without deleting it.
+// @Summary      Pause monitor
+// @Tags         monitors
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path string true "Monitor ID"
+// @Success      200  {object} object{message=string,active=bool}
+// @Failure      400  {object} object{error=string} "ID required"
+// @Failure      404  {object} object{error=string} "Monitor not found"
+// @Router       /monitors/{id}/pause [post]
 func (h *CRUDHandler) PauseMonitor(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
@@ -326,6 +399,16 @@ func (h *CRUDHandler) PauseMonitor(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"message": "monitor paused", "active": false})
 }
 
+// ResumeMonitor restarts checking a paused monitor.
+// @Summary      Resume monitor
+// @Tags         monitors
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path string true "Monitor ID"
+// @Success      200  {object} object{message=string,active=bool}
+// @Failure      400  {object} object{error=string} "ID required"
+// @Failure      404  {object} object{error=string} "Monitor not found"
+// @Router       /monitors/{id}/resume [post]
 func (h *CRUDHandler) ResumeMonitor(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {

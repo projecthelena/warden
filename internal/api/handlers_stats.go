@@ -14,6 +14,14 @@ func NewStatsHandler(store *db.Store) *StatsHandler {
 	return &StatsHandler{store: store}
 }
 
+// GetStats returns system statistics including monitor counts and DB size.
+// @Summary      Get system stats
+// @Tags         stats
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object} object{version=string,dbSize=int,stats=db.SystemStats}
+// @Failure      500  {string} string "Failed to get stats"
+// @Router       /stats [get]
 func (h *StatsHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	stats, err := h.store.GetSystemStats()
 	if err != nil {

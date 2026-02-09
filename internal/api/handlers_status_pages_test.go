@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/projecthelena/warden/internal/config"
 	"github.com/projecthelena/warden/internal/db"
 	"github.com/projecthelena/warden/internal/uptime"
 	"github.com/go-chi/chi/v5"
@@ -17,7 +18,8 @@ func TestPublicStatusPage(t *testing.T) {
 	// Custom setup since we need Manager for status
 	store, _ := db.NewStore(db.NewTestConfig())
 	manager := uptime.NewManager(store)
-	spH := NewStatusPageHandler(store, manager)
+	authH := NewAuthHandler(store, &config.Config{}, nil)
+	spH := NewStatusPageHandler(store, manager, authH)
 
 	// Seed Data
 	if err := store.CreateGroup(db.Group{ID: "g1", Name: "G1"}); err != nil {
@@ -53,7 +55,8 @@ func TestPublicStatusPage(t *testing.T) {
 func TestToggleStatusPage(t *testing.T) {
 	store, _ := db.NewStore(db.NewTestConfig())
 	manager := uptime.NewManager(store)
-	spH := NewStatusPageHandler(store, manager)
+	authH := NewAuthHandler(store, &config.Config{}, nil)
+	spH := NewStatusPageHandler(store, manager, authH)
 
 	// Create a page
 	if err := store.UpsertStatusPage("mypage", "My Page", nil, true); err != nil {

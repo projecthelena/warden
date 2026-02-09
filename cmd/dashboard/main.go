@@ -15,6 +15,14 @@ import (
 	"github.com/projecthelena/warden/internal/uptime"
 )
 
+// @title           Warden API
+// @version         1.0
+// @description     Self-hosted uptime monitoring API by Project Helena.
+// @BasePath        /api
+// @securityDefinitions.apikey BearerAuth
+// @in              header
+// @name            Authorization
+// @description     Enter "Bearer sk_live_..." — create keys in Settings > API Keys
 func main() {
 	logger := logging.New("warden")
 

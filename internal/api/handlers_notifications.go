@@ -20,6 +20,14 @@ func NewNotificationChannelsHandler(store *db.Store) *NotificationChannelsHandle
 	return &NotificationChannelsHandler{store: store}
 }
 
+// GetChannels returns all configured notification channels.
+// @Summary      List notification channels
+// @Tags         notifications
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object} object{channels=[]db.NotificationChannel}
+// @Failure      500  {string} string "Failed to fetch channels"
+// @Router       /notifications/channels [get]
 func (h *NotificationChannelsHandler) GetChannels(w http.ResponseWriter, r *http.Request) {
 	channels, err := h.store.GetNotificationChannels()
 	if err != nil {
@@ -32,6 +40,16 @@ func (h *NotificationChannelsHandler) GetChannels(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusOK, map[string]interface{}{"channels": channels})
 }
 
+// CreateChannel adds a new notification channel (e.g. Slack webhook).
+// @Summary      Create notification channel
+// @Tags         notifications
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body body object{type=string,name=string,config=object,enabled=bool} true "Channel config"
+// @Success      201  {object} db.NotificationChannel
+// @Failure      400  {string} string "Type and Name are required"
+// @Router       /notifications/channels [post]
 func (h *NotificationChannelsHandler) CreateChannel(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Type    string                 `json:"type"`
@@ -114,6 +132,15 @@ func (h *NotificationChannelsHandler) CreateChannel(w http.ResponseWriter, r *ht
 	writeJSON(w, http.StatusCreated, channel)
 }
 
+// DeleteChannel removes a notification channel.
+// @Summary      Delete notification channel
+// @Tags         notifications
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path string true "Channel ID"
+// @Success      200  "OK"
+// @Failure      400  {string} string "Missing ID"
+// @Router       /notifications/channels/{id} [delete]
 func (h *NotificationChannelsHandler) DeleteChannel(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
