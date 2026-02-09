@@ -50,6 +50,7 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		Title   string  `json:"title"`
 		GroupID *string `json:"groupId"`
 		Public  bool    `json:"public"`
+		Enabled bool    `json:"enabled"`
 	}
 
 	var result []StatusPageDTO
@@ -69,14 +70,17 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 
 	// A. Global Page
 	globalPublic := false
+	globalEnabled := false
 	if globalPage != nil {
 		globalPublic = globalPage.Public
+		globalEnabled = globalPage.Enabled
 	}
 	result = append(result, StatusPageDTO{
 		Slug:    "all",
 		Title:   "Global Status",
 		GroupID: nil,
 		Public:  globalPublic,
+		Enabled: globalEnabled,
 	})
 
 	// B. Group Pages
@@ -84,11 +88,13 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		slug := strings.TrimPrefix(g.ID, "g-") // default slug (clean)
 		title := g.Name
 		public := false
+		enabled := false
 
 		if cfg, ok := configMap[g.ID]; ok {
 			slug = cfg.Slug
 			title = cfg.Title
 			public = cfg.Public
+			enabled = cfg.Enabled
 		}
 
 		result = append(result, StatusPageDTO{
@@ -96,6 +102,7 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 			Title:   title,
 			GroupID: &g.ID,
 			Public:  public,
+			Enabled: enabled,
 		})
 	}
 
@@ -117,16 +124,16 @@ func (h *StatusPageHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 	var req struct {
 		Public  bool    `json:"public"`
-		Title   string  `json:"title"`   // Added for Upsert
-		GroupID *string `json:"groupId"` // Added for Upsert
+		Enabled bool    `json:"enabled"`
+		Title   string  `json:"title"`
+		GroupID *string `json:"groupId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 
-	// Use Upsert instead of just Update
-	if err := h.store.UpsertStatusPage(slug, req.Title, req.GroupID, req.Public); err != nil {
+	if err := h.store.UpsertStatusPage(slug, req.Title, req.GroupID, req.Public, req.Enabled); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update status page")
 		return
 	}
@@ -152,13 +159,13 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusInternalServerError, "error fetching status page")
 		return
 	}
-	if page == nil {
+	if page == nil || !page.Enabled {
 		writeError(w, http.StatusNotFound, "status page not found")
 		return
 	}
 	if !page.Public {
 		if !h.auth.IsAuthenticated(r) {
-			writeError(w, http.StatusUnauthorized, "status page is private")
+			writeError(w, http.StatusUnauthorized, "authentication required")
 			return
 		}
 	}
@@ -379,7 +386,7 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"title":     page.Title,
-		"public":    true,
+		"public":    page.Public,
 		"groups":    groupDTOs,
 		"incidents": activeIncidents,
 	})

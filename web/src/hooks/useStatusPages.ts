@@ -10,11 +10,11 @@ async function fetchStatusPagesData(): Promise<StatusPage[]> {
     return data.pages || [];
 }
 
-async function toggleStatusPageReq({ slug, public: isPublic, title, groupId }: { slug: string, public: boolean, title: string, groupId?: string }) {
+async function toggleStatusPageReq({ slug, public: isPublic, enabled, title, groupId }: { slug: string, public: boolean, enabled: boolean, title: string, groupId?: string }) {
     const res = await fetch(`${API_URL}/api/status-pages/${slug}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ public: isPublic, title, groupId }),
+        body: JSON.stringify({ public: isPublic, enabled, title, groupId }),
         credentials: 'include'
     });
     if (!res.ok) throw new Error("Failed to toggle status page");
