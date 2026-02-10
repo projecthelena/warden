@@ -18,6 +18,13 @@ func NewSettingsHandler(store *db.Store, manager *uptime.Manager) *SettingsHandl
 	return &SettingsHandler{store: store, manager: manager}
 }
 
+// GetSettings returns all application settings (secrets are masked).
+// @Summary      Get settings
+// @Tags         settings
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object} map[string]string
+// @Router       /settings [get]
 func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	// Latency Threshold
 	val, err := h.store.GetSetting("latency_threshold")
@@ -77,6 +84,16 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// UpdateSettings patches application settings.
+// @Summary      Update settings
+// @Tags         settings
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body body map[string]string true "Key-value pairs to update"
+// @Success      200  {object} object{status=string}
+// @Failure      400  {string} string "Invalid body"
+// @Router       /settings [patch]
 func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	var body map[string]string
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {

@@ -377,7 +377,7 @@ func TestMultiDB_NotificationChannels(t *testing.T) {
 func TestMultiDB_StatusPages(t *testing.T) {
 	RunTestWithBothDBs(t, "StatusPages", func(t *testing.T, s *Store) {
 		// Upsert status page
-		if err := s.UpsertStatusPage("test-page", "Test Status Page", nil, true); err != nil {
+		if err := s.UpsertStatusPage("test-page", "Test Status Page", nil, true, true); err != nil {
 			t.Fatalf("UpsertStatusPage failed: %v", err)
 		}
 

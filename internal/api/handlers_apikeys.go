@@ -17,6 +17,13 @@ func NewAPIKeyHandler(store *db.Store) *APIKeyHandler {
 	return &APIKeyHandler{store: store}
 }
 
+// ListKeys returns all API keys (secrets are not included).
+// @Summary      List API keys
+// @Tags         api-keys
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object} object{keys=[]db.APIKey}
+// @Router       /api-keys [get]
 func (h *APIKeyHandler) ListKeys(w http.ResponseWriter, r *http.Request) {
 	keys, err := h.store.ListAPIKeys()
 	if err != nil {
@@ -26,6 +33,16 @@ func (h *APIKeyHandler) ListKeys(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"keys": keys})
 }
 
+// CreateKey generates a new API key. The raw key is returned only once.
+// @Summary      Create API key
+// @Tags         api-keys
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body body object{name=string} true "Key name"
+// @Success      200  {object} object{key=string,message=string}
+// @Failure      400  {object} object{error=string} "Name is required"
+// @Router       /api-keys [post]
 func (h *APIKeyHandler) CreateKey(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name string `json:"name"`
@@ -52,6 +69,15 @@ func (h *APIKeyHandler) CreateKey(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// DeleteKey revokes an API key.
+// @Summary      Delete API key
+// @Tags         api-keys
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path int true "Key ID"
+// @Success      200  {object} object{message=string}
+// @Failure      400  {object} object{error=string} "Invalid ID"
+// @Router       /api-keys/{id} [delete]
 func (h *APIKeyHandler) DeleteKey(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseInt(idStr, 10, 64)

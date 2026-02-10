@@ -27,6 +27,16 @@ func generateIncidentID() string {
 	return hex.EncodeToString(b)
 }
 
+// CreateIncident reports a new manual incident.
+// @Summary      Create incident
+// @Tags         incidents
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body body object{title=string,description=string,severity=string,status=string,startTime=string,affectedGroups=[]string} true "Incident payload"
+// @Success      201  {object} db.Incident
+// @Failure      400  {string} string "Invalid request body"
+// @Router       /incidents [post]
 func (h *IncidentHandler) CreateIncident(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Title          string   `json:"title"`
@@ -74,6 +84,14 @@ func (h *IncidentHandler) CreateIncident(w http.ResponseWriter, r *http.Request)
 	_ = json.NewEncoder(w).Encode(incident)
 }
 
+// GetIncidents returns incidents from the last 7 days.
+// @Summary      List incidents
+// @Tags         incidents
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {array} object{id=string,title=string,description=string,type=string,severity=string,status=string,startTime=string,endTime=string,affectedGroups=[]string,createdAt=string}
+// @Failure      500  {string} string "Failed to fetch incidents"
+// @Router       /incidents [get]
 func (h *IncidentHandler) GetIncidents(w http.ResponseWriter, r *http.Request) {
 	since := time.Now().Add(-7 * 24 * time.Hour)
 	allEvents, err := h.store.GetIncidents(since)

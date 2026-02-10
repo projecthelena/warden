@@ -245,6 +245,27 @@ func (h *AuthHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "settings updated"})
 }
 
+// IsAuthenticated checks whether a request has a valid session cookie or API key
+// without writing a response. Used by handlers that need optional auth checks.
+func (h *AuthHandler) IsAuthenticated(r *http.Request) bool {
+	// Check Bearer token
+	authHeader := r.Header.Get("Authorization")
+	if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+		token := authHeader[7:]
+		valid, err := h.store.ValidateAPIKey(token)
+		if err == nil && valid {
+			return true
+		}
+	}
+	// Check session cookie
+	c, err := r.Cookie("auth_token")
+	if err != nil {
+		return false
+	}
+	sess, err := h.store.GetSession(c.Value)
+	return err == nil && sess != nil
+}
+
 // Middleware
 
 func (h *AuthHandler) AuthMiddleware(next http.Handler) http.Handler {

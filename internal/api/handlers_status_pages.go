@@ -14,13 +14,21 @@ import (
 type StatusPageHandler struct {
 	store   *db.Store
 	manager *uptime.Manager
+	auth    *AuthHandler
 }
 
-func NewStatusPageHandler(store *db.Store, manager *uptime.Manager) *StatusPageHandler {
-	return &StatusPageHandler{store: store, manager: manager}
+func NewStatusPageHandler(store *db.Store, manager *uptime.Manager, auth *AuthHandler) *StatusPageHandler {
+	return &StatusPageHandler{store: store, manager: manager, auth: auth}
 }
 
-// Admin: Get all status page configs merged with groups
+// GetAll returns all status page configurations merged with groups.
+// @Summary      List status pages
+// @Tags         status-pages
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object} object{pages=[]object{slug=string,title=string,groupId=string,public=bool}}
+// @Failure      500  {object} object{error=string}
+// @Router       /status-pages [get]
 func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 	// 1. Fetch Configured Pages
 	pages, err := h.store.GetStatusPages()
@@ -42,6 +50,7 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		Title   string  `json:"title"`
 		GroupID *string `json:"groupId"`
 		Public  bool    `json:"public"`
+		Enabled bool    `json:"enabled"`
 	}
 
 	var result []StatusPageDTO
@@ -61,14 +70,17 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 
 	// A. Global Page
 	globalPublic := false
+	globalEnabled := false
 	if globalPage != nil {
 		globalPublic = globalPage.Public
+		globalEnabled = globalPage.Enabled
 	}
 	result = append(result, StatusPageDTO{
 		Slug:    "all",
 		Title:   "Global Status",
 		GroupID: nil,
 		Public:  globalPublic,
+		Enabled: globalEnabled,
 	})
 
 	// B. Group Pages
@@ -76,11 +88,13 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		slug := strings.TrimPrefix(g.ID, "g-") // default slug (clean)
 		title := g.Name
 		public := false
+		enabled := false
 
 		if cfg, ok := configMap[g.ID]; ok {
 			slug = cfg.Slug
 			title = cfg.Title
 			public = cfg.Public
+			enabled = cfg.Enabled
 		}
 
 		result = append(result, StatusPageDTO{
@@ -88,27 +102,38 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 			Title:   title,
 			GroupID: &g.ID,
 			Public:  public,
+			Enabled: enabled,
 		})
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"pages": result})
 }
 
-// Admin: Toggle status page
+// Toggle enables or disables a public status page.
+// @Summary      Toggle status page
+// @Tags         status-pages
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        slug path string true "Status page slug"
+// @Param        body body object{public=bool,title=string,groupId=string} true "Toggle payload"
+// @Success      200  {object} object{message=string}
+// @Failure      400  {object} object{error=string} "Invalid request"
+// @Router       /status-pages/{slug} [patch]
 func (h *StatusPageHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 	var req struct {
 		Public  bool    `json:"public"`
-		Title   string  `json:"title"`   // Added for Upsert
-		GroupID *string `json:"groupId"` // Added for Upsert
+		Enabled bool    `json:"enabled"`
+		Title   string  `json:"title"`
+		GroupID *string `json:"groupId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 
-	// Use Upsert instead of just Update
-	if err := h.store.UpsertStatusPage(slug, req.Title, req.GroupID, req.Public); err != nil {
+	if err := h.store.UpsertStatusPage(slug, req.Title, req.GroupID, req.Public, req.Enabled); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update status page")
 		return
 	}
@@ -116,12 +141,15 @@ func (h *StatusPageHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "updated"})
 }
 
-// Public: Get status data if enabled
-// This needs access to Uptime manager to get real-time data.
-// We will need to inject Manager into StatusPageHandler or refactor.
-// For now, let's inject Manager.
-// Public: Get status data if enabled
-// Public: Get status data if enabled
+// GetPublicStatus returns real-time status data for a public status page.
+// @Summary      Public status page
+// @Tags         status-pages
+// @Produce      json
+// @Param        slug path string true "Status page slug"
+// @Success      200  {object} object{title=string,public=bool,groups=[]object{id=string,name=string},incidents=[]object{id=string,title=string}}
+// @Failure      403  {object} object{error=string} "Status page is private"
+// @Failure      404  {object} object{error=string} "Status page not found"
+// @Router       /s/{slug} [get]
 func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 
@@ -131,13 +159,15 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusInternalServerError, "error fetching status page")
 		return
 	}
-	if page == nil {
+	if page == nil || !page.Enabled {
 		writeError(w, http.StatusNotFound, "status page not found")
 		return
 	}
 	if !page.Public {
-		writeError(w, http.StatusForbidden, "status page is private")
-		return
+		if !h.auth.IsAuthenticated(r) {
+			writeError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
 	}
 
 	// 2. Fetch Layout from DB (Groups + Monitors Metadata)
@@ -356,7 +386,7 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"title":     page.Title,
-		"public":    true,
+		"public":    page.Public,
 		"groups":    groupDTOs,
 		"incidents": activeIncidents,
 	})

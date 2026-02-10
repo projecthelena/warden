@@ -1,4 +1,4 @@
-.PHONY: backend frontend build docker test test-frontend test-all clean dev-backend dev-frontend dev-bundle lint lint-frontend lint-backend security govuln vuln secrets audit hooks check
+.PHONY: backend frontend build docker test test-frontend test-all clean dev-backend dev-frontend dev-bundle lint lint-frontend lint-backend security govuln vuln secrets audit hooks check docs
 
 BACKEND_ENV ?= LISTEN_ADDR=:9096
 BIN_DIR ?= $(PWD)/bin
@@ -23,6 +23,10 @@ build-frontend:
 	rm -rf internal/static/dist/*
 	cp -r web/dist/* internal/static/dist/
 	touch internal/static/dist/.gitkeep
+
+docs:
+	@command -v swag >/dev/null 2>&1 || { echo "Installing swag..."; go install github.com/swaggo/swag/cmd/swag@latest; }
+	swag init -g cmd/dashboard/main.go -o internal/docs --parseDependency
 
 build-backend:
 	mkdir -p $(BIN_DIR)

@@ -85,6 +85,15 @@ type UptimeResponse struct {
 	Groups []GroupDTO `json:"groups"`
 }
 
+// GetHistory returns all monitors grouped by group with ping history.
+// @Summary      List monitors with history
+// @Tags         uptime
+// @Produce      json
+// @Security     BearerAuth
+// @Param        group_id query string false "Filter by group ID"
+// @Success      200  {object} UptimeResponse
+// @Failure      500  {string} string "Internal error"
+// @Router       /uptime [get]
 func (h *UptimeHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 	// 1. Fetch Layout from DB (Groups + Monitors Metadata)
 	groups, err := h.store.GetGroups()
@@ -195,6 +204,16 @@ func (h *UptimeHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+// GetMonitorUptime returns uptime percentages for 24h, 7d, and 30d.
+// @Summary      Get monitor uptime stats
+// @Tags         uptime
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path string true "Monitor ID"
+// @Success      200  {object} object{uptime24h=number,uptime7d=number,uptime30d=number}
+// @Failure      400  {string} string "ID required"
+// @Failure      500  {string} string "Failed to calculate stats"
+// @Router       /monitors/{id}/uptime [get]
 func (h *UptimeHandler) GetMonitorUptime(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
@@ -217,6 +236,17 @@ func (h *UptimeHandler) GetMonitorUptime(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
+// GetMonitorLatency returns latency datapoints over a time range.
+// @Summary      Get monitor latency history
+// @Tags         uptime
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path  string true  "Monitor ID"
+// @Param        range query string false "Time range: 1h, 24h, 7d, 30d (default 24h)"
+// @Success      200   {array} db.CheckResult
+// @Failure      400   {string} string "ID required"
+// @Failure      500   {string} string "Failed to fetch latency stats"
+// @Router       /monitors/{id}/latency [get]
 func (h *UptimeHandler) GetMonitorLatency(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
@@ -249,6 +279,14 @@ func (h *UptimeHandler) GetMonitorLatency(w http.ResponseWriter, r *http.Request
 	_ = json.NewEncoder(w).Encode(points)
 }
 
+// GetOverview returns a high-level status for each group.
+// @Summary      Dashboard overview
+// @Tags         uptime
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object} OverviewResponse
+// @Failure      500  {string} string "Internal error"
+// @Router       /overview [get]
 func (h *UptimeHandler) GetOverview(w http.ResponseWriter, r *http.Request) {
 	groups, err := h.store.GetGroups()
 	if err != nil {

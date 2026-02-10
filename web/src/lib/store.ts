@@ -95,6 +95,7 @@ export interface StatusPage {
     title: string;
     groupId?: string;
     public: boolean;
+    enabled: boolean;
     createdAt: string;
 }
 
@@ -189,7 +190,7 @@ interface MonitorStore {
 
     // Status Pages
     fetchStatusPages: () => Promise<StatusPage[]>;
-    toggleStatusPage: (slug: string, publicStatus: boolean, title?: string, groupId?: string) => Promise<void>;
+    toggleStatusPage: (slug: string, publicStatus: boolean, enabled: boolean, title?: string, groupId?: string) => Promise<void>;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     fetchPublicStatusBySlug: (slug: string) => Promise<any>;
 
@@ -343,12 +344,12 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
         return [];
     },
 
-    toggleStatusPage: async (slug, publicStatus, title, groupId) => {
+    toggleStatusPage: async (slug, publicStatus, enabled, title, groupId) => {
         try {
             await fetch(`/api/status-pages/${slug}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ public: publicStatus, title: title || slug, groupId: groupId }),
+                body: JSON.stringify({ public: publicStatus, enabled, title: title || slug, groupId: groupId }),
                 credentials: 'include'
             });
             // Ideally refetch pages here if stored in state, but we return Promise for component to handle

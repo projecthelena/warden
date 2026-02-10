@@ -42,6 +42,14 @@ type SSLWarningDTO struct {
 	Timestamp   time.Time `json:"timestamp"`
 }
 
+// GetSystemEvents returns active outages, recent history, and SSL warnings.
+// @Summary      Get system events
+// @Tags         events
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object} object{active=[]IncidentDTO,history=[]IncidentDTO,sslWarnings=[]SSLWarningDTO}
+// @Failure      500  {object} object{error=string}
+// @Router       /events [get]
 func (h *EventHandler) GetSystemEvents(w http.ResponseWriter, r *http.Request) {
 	activeOutages, err := h.store.GetActiveOutages()
 	if err != nil {

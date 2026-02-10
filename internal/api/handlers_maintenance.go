@@ -33,6 +33,17 @@ type MaintenanceResponse struct {
 	CreatedAt      time.Time  `json:"createdAt"`
 }
 
+// CreateMaintenance schedules a new maintenance window.
+// @Summary      Create maintenance
+// @Tags         maintenance
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body body object{title=string,description=string,status=string,startTime=string,endTime=string,affectedGroups=[]string} true "Maintenance payload"
+// @Success      201  {object} MaintenanceResponse
+// @Failure      400  {string} string "Invalid request body"
+// @Failure      500  {string} string "Failed to schedule maintenance"
+// @Router       /maintenance [post]
 func (h *MaintenanceHandler) CreateMaintenance(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Title          string   `json:"title"`
@@ -104,6 +115,14 @@ func (h *MaintenanceHandler) CreateMaintenance(w http.ResponseWriter, r *http.Re
 	_ = json.NewEncoder(w).Encode(response)
 }
 
+// GetMaintenance returns all maintenance windows.
+// @Summary      List maintenance windows
+// @Tags         maintenance
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {array}  MaintenanceResponse
+// @Failure      500  {string} string "Failed to fetch maintenance events"
+// @Router       /maintenance [get]
 func (h *MaintenanceHandler) GetMaintenance(w http.ResponseWriter, r *http.Request) {
 	// Return all maintenance for now, or maybe only active/future?
 	// Using zero time returns all history + active
@@ -142,6 +161,18 @@ func (h *MaintenanceHandler) GetMaintenance(w http.ResponseWriter, r *http.Reque
 	_ = json.NewEncoder(w).Encode(dtos)
 }
 
+// UpdateMaintenance modifies an existing maintenance window.
+// @Summary      Update maintenance
+// @Tags         maintenance
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path string true "Maintenance ID"
+// @Param        body body object{title=string,description=string,status=string,startTime=string,endTime=string,affectedGroups=[]string} true "Updated maintenance"
+// @Success      200  {object} MaintenanceResponse
+// @Failure      400  {string} string "Invalid request body"
+// @Failure      500  {string} string "Failed to update maintenance"
+// @Router       /maintenance/{id} [put]
 func (h *MaintenanceHandler) UpdateMaintenance(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
@@ -223,6 +254,16 @@ func (h *MaintenanceHandler) UpdateMaintenance(w http.ResponseWriter, r *http.Re
 	_ = json.NewEncoder(w).Encode(response)
 }
 
+// DeleteMaintenance removes a maintenance window.
+// @Summary      Delete maintenance
+// @Tags         maintenance
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path string true "Maintenance ID"
+// @Success      200  {object} object{success=bool}
+// @Failure      400  {string} string "Maintenance ID required"
+// @Failure      500  {string} string "Failed to delete maintenance"
+// @Router       /maintenance/{id} [delete]
 func (h *MaintenanceHandler) DeleteMaintenance(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {

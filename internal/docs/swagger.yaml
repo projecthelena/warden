@@ -1,0 +1,1308 @@
+basePath: /api
+definitions:
+  github_com_projecthelena_warden_internal_db.APIKey:
+    properties:
+      createdAt:
+        type: string
+      id:
+        type: integer
+      keyPrefix:
+        type: string
+      lastUsed:
+        type: string
+      name:
+        type: string
+    type: object
+  github_com_projecthelena_warden_internal_db.CheckResult:
+    properties:
+      latency:
+        type: integer
+      monitorId:
+        type: string
+      status:
+        type: string
+      statusCode:
+        type: integer
+      timestamp:
+        type: string
+    type: object
+  github_com_projecthelena_warden_internal_db.Group:
+    properties:
+      createdAt:
+        type: string
+      id:
+        type: string
+      monitors:
+        items:
+          $ref: '#/definitions/github_com_projecthelena_warden_internal_db.Monitor'
+        type: array
+      name:
+        type: string
+    type: object
+  github_com_projecthelena_warden_internal_db.Incident:
+    properties:
+      affectedGroups:
+        description: JSON array
+        type: string
+      createdAt:
+        type: string
+      description:
+        type: string
+      endTime:
+        type: string
+      id:
+        type: string
+      severity:
+        description: minor | major | critical
+        type: string
+      startTime:
+        type: string
+      status:
+        description: investigation | identified | ... | scheduled | in_progress |
+          completed
+        type: string
+      title:
+        type: string
+      type:
+        description: incident | maintenance
+        type: string
+    type: object
+  github_com_projecthelena_warden_internal_db.Monitor:
+    properties:
+      active:
+        type: boolean
+      createdAt:
+        type: string
+      groupId:
+        type: string
+      id:
+        type: string
+      interval:
+        description: Seconds
+        type: integer
+      name:
+        type: string
+      url:
+        type: string
+    type: object
+  github_com_projecthelena_warden_internal_db.NotificationChannel:
+    properties:
+      config:
+        description: JSON string
+        type: string
+      createdAt:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: string
+      name:
+        type: string
+      type:
+        type: string
+    type: object
+  github_com_projecthelena_warden_internal_db.SystemStats:
+    properties:
+      activeMonitors:
+        type: integer
+      dailyPingsEstimate:
+        type: integer
+      degradedMonitors:
+        type: integer
+      downMonitors:
+        type: integer
+      totalGroups:
+        type: integer
+      totalMonitors:
+        type: integer
+    type: object
+  internal_api.GroupDTO:
+    properties:
+      id:
+        type: string
+      monitors:
+        items:
+          $ref: '#/definitions/internal_api.MonitorDTO'
+        type: array
+      name:
+        type: string
+    type: object
+  internal_api.GroupOverviewDTO:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      status:
+        description: up, down, degraded
+        type: string
+    type: object
+  internal_api.HistoryPoint:
+    properties:
+      latency:
+        type: integer
+      status:
+        type: string
+      statusCode:
+        type: integer
+      timestamp:
+        type: string
+    type: object
+  internal_api.IncidentDTO:
+    properties:
+      duration:
+        type: string
+      groupId:
+        type: string
+      groupName:
+        type: string
+      id:
+        type: string
+      message:
+        type: string
+      monitorId:
+        type: string
+      monitorName:
+        type: string
+      resolvedAt:
+        description: Null if active
+        type: string
+      startedAt:
+        type: string
+      type:
+        description: down, degraded, ssl_expiring
+        type: string
+    type: object
+  internal_api.MaintenanceResponse:
+    properties:
+      affectedGroups:
+        items:
+          type: string
+        type: array
+      createdAt:
+        type: string
+      description:
+        type: string
+      endTime:
+        type: string
+      id:
+        type: string
+      severity:
+        type: string
+      startTime:
+        type: string
+      status:
+        type: string
+      title:
+        type: string
+      type:
+        type: string
+    type: object
+  internal_api.MonitorDTO:
+    properties:
+      active:
+        type: boolean
+      events:
+        items:
+          $ref: '#/definitions/internal_api.MonitorEvent'
+        type: array
+      history:
+        items:
+          $ref: '#/definitions/internal_api.HistoryPoint'
+        type: array
+      id:
+        type: string
+      interval:
+        type: integer
+      lastCheck:
+        type: string
+      latency:
+        type: integer
+      name:
+        type: string
+      status:
+        type: string
+      url:
+        type: string
+    type: object
+  internal_api.MonitorEvent:
+    properties:
+      id:
+        type: string
+      message:
+        type: string
+      timestamp:
+        type: string
+      type:
+        type: string
+    type: object
+  internal_api.OverviewResponse:
+    properties:
+      groups:
+        items:
+          $ref: '#/definitions/internal_api.GroupOverviewDTO'
+        type: array
+    type: object
+  internal_api.SSLWarningDTO:
+    properties:
+      groupId:
+        type: string
+      groupName:
+        type: string
+      id:
+        type: string
+      message:
+        type: string
+      monitorId:
+        type: string
+      monitorName:
+        type: string
+      timestamp:
+        type: string
+      type:
+        description: always "ssl_expiring"
+        type: string
+    type: object
+  internal_api.UptimeResponse:
+    properties:
+      groups:
+        items:
+          $ref: '#/definitions/internal_api.GroupDTO'
+        type: array
+    type: object
+info:
+  contact: {}
+  description: Self-hosted uptime monitoring API by Project Helena.
+  title: Warden API
+  version: "1.0"
+paths:
+  /api-keys:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              keys:
+                items:
+                  $ref: '#/definitions/github_com_projecthelena_warden_internal_db.APIKey'
+                type: array
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List API keys
+      tags:
+      - api-keys
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Key name
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            name:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              key:
+                type: string
+              message:
+                type: string
+            type: object
+        "400":
+          description: Name is required
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create API key
+      tags:
+      - api-keys
+  /api-keys/{id}:
+    delete:
+      parameters:
+      - description: Key ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              message:
+                type: string
+            type: object
+        "400":
+          description: Invalid ID
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete API key
+      tags:
+      - api-keys
+  /events:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              active:
+                items:
+                  $ref: '#/definitions/internal_api.IncidentDTO'
+                type: array
+              history:
+                items:
+                  $ref: '#/definitions/internal_api.IncidentDTO'
+                type: array
+              sslWarnings:
+                items:
+                  $ref: '#/definitions/internal_api.SSLWarningDTO'
+                type: array
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get system events
+      tags:
+      - events
+  /groups:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Group payload
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            name:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_projecthelena_warden_internal_db.Group'
+        "400":
+          description: Name is required
+          schema:
+            type: string
+        "409":
+          description: Group already exists
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create group
+      tags:
+      - groups
+  /groups/{id}:
+    delete:
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: ID required
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Delete group
+      tags:
+      - groups
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: New name
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            name:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              name:
+                type: string
+            type: object
+        "400":
+          description: Name is required
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Update group
+      tags:
+      - groups
+  /incidents:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              properties:
+                affectedGroups:
+                  items:
+                    type: string
+                  type: array
+                createdAt:
+                  type: string
+                description:
+                  type: string
+                endTime:
+                  type: string
+                id:
+                  type: string
+                severity:
+                  type: string
+                startTime:
+                  type: string
+                status:
+                  type: string
+                title:
+                  type: string
+                type:
+                  type: string
+              type: object
+            type: array
+        "500":
+          description: Failed to fetch incidents
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: List incidents
+      tags:
+      - incidents
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Incident payload
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            affectedGroups:
+              items:
+                type: string
+              type: array
+            description:
+              type: string
+            severity:
+              type: string
+            startTime:
+              type: string
+            status:
+              type: string
+            title:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_projecthelena_warden_internal_db.Incident'
+        "400":
+          description: Invalid request body
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Create incident
+      tags:
+      - incidents
+  /maintenance:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api.MaintenanceResponse'
+            type: array
+        "500":
+          description: Failed to fetch maintenance events
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: List maintenance windows
+      tags:
+      - maintenance
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Maintenance payload
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            affectedGroups:
+              items:
+                type: string
+              type: array
+            description:
+              type: string
+            endTime:
+              type: string
+            startTime:
+              type: string
+            status:
+              type: string
+            title:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.MaintenanceResponse'
+        "400":
+          description: Invalid request body
+          schema:
+            type: string
+        "500":
+          description: Failed to schedule maintenance
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Create maintenance
+      tags:
+      - maintenance
+  /maintenance/{id}:
+    delete:
+      parameters:
+      - description: Maintenance ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              success:
+                type: boolean
+            type: object
+        "400":
+          description: Maintenance ID required
+          schema:
+            type: string
+        "500":
+          description: Failed to delete maintenance
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Delete maintenance
+      tags:
+      - maintenance
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Maintenance ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Updated maintenance
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            affectedGroups:
+              items:
+                type: string
+              type: array
+            description:
+              type: string
+            endTime:
+              type: string
+            startTime:
+              type: string
+            status:
+              type: string
+            title:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.MaintenanceResponse'
+        "400":
+          description: Invalid request body
+          schema:
+            type: string
+        "500":
+          description: Failed to update maintenance
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Update maintenance
+      tags:
+      - maintenance
+  /monitors:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Monitor payload
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            groupId:
+              type: string
+            interval:
+              type: integer
+            name:
+              type: string
+            url:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_projecthelena_warden_internal_db.Monitor'
+        "400":
+          description: Validation error
+          schema:
+            type: string
+        "404":
+          description: Group not found
+          schema:
+            type: string
+        "409":
+          description: Monitor name already exists
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Create monitor
+      tags:
+      - monitors
+  /monitors/{id}:
+    delete:
+      parameters:
+      - description: Monitor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: ID required
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Delete monitor
+      tags:
+      - monitors
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Monitor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            interval:
+              type: integer
+            name:
+              type: string
+            url:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: ID required
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Update monitor
+      tags:
+      - monitors
+  /monitors/{id}/latency:
+    get:
+      parameters:
+      - description: Monitor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 'Time range: 1h, 24h, 7d, 30d (default 24h)'
+        in: query
+        name: range
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_projecthelena_warden_internal_db.CheckResult'
+            type: array
+        "400":
+          description: ID required
+          schema:
+            type: string
+        "500":
+          description: Failed to fetch latency stats
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Get monitor latency history
+      tags:
+      - uptime
+  /monitors/{id}/pause:
+    post:
+      parameters:
+      - description: Monitor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              active:
+                type: boolean
+              message:
+                type: string
+            type: object
+        "400":
+          description: ID required
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Monitor not found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Pause monitor
+      tags:
+      - monitors
+  /monitors/{id}/resume:
+    post:
+      parameters:
+      - description: Monitor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              active:
+                type: boolean
+              message:
+                type: string
+            type: object
+        "400":
+          description: ID required
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Monitor not found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Resume monitor
+      tags:
+      - monitors
+  /monitors/{id}/uptime:
+    get:
+      parameters:
+      - description: Monitor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              uptime7d:
+                type: number
+              uptime24h:
+                type: number
+              uptime30d:
+                type: number
+            type: object
+        "400":
+          description: ID required
+          schema:
+            type: string
+        "500":
+          description: Failed to calculate stats
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Get monitor uptime stats
+      tags:
+      - uptime
+  /notifications/channels:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              channels:
+                items:
+                  $ref: '#/definitions/github_com_projecthelena_warden_internal_db.NotificationChannel'
+                type: array
+            type: object
+        "500":
+          description: Failed to fetch channels
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: List notification channels
+      tags:
+      - notifications
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Channel config
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            config:
+              type: object
+            enabled:
+              type: boolean
+            name:
+              type: string
+            type:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_projecthelena_warden_internal_db.NotificationChannel'
+        "400":
+          description: Type and Name are required
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Create notification channel
+      tags:
+      - notifications
+  /notifications/channels/{id}:
+    delete:
+      parameters:
+      - description: Channel ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Missing ID
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Delete notification channel
+      tags:
+      - notifications
+  /overview:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.OverviewResponse'
+        "500":
+          description: Internal error
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Dashboard overview
+      tags:
+      - uptime
+  /s/{slug}:
+    get:
+      parameters:
+      - description: Status page slug
+        in: path
+        name: slug
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              groups:
+                items:
+                  properties:
+                    id:
+                      type: string
+                    name:
+                      type: string
+                  type: object
+                type: array
+              incidents:
+                items:
+                  properties:
+                    id:
+                      type: string
+                    title:
+                      type: string
+                  type: object
+                type: array
+              public:
+                type: boolean
+              title:
+                type: string
+            type: object
+        "403":
+          description: Status page is private
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Status page not found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      summary: Public status page
+      tags:
+      - status-pages
+  /settings:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get settings
+      tags:
+      - settings
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Key-value pairs to update
+        in: body
+        name: body
+        required: true
+        schema:
+          additionalProperties:
+            type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "400":
+          description: Invalid body
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Update settings
+      tags:
+      - settings
+  /stats:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              dbSize:
+                type: integer
+              stats:
+                $ref: '#/definitions/github_com_projecthelena_warden_internal_db.SystemStats'
+              version:
+                type: string
+            type: object
+        "500":
+          description: Failed to get stats
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Get system stats
+      tags:
+      - stats
+  /status-pages:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              pages:
+                items:
+                  properties:
+                    groupId:
+                      type: string
+                    public:
+                      type: boolean
+                    slug:
+                      type: string
+                    title:
+                      type: string
+                  type: object
+                type: array
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List status pages
+      tags:
+      - status-pages
+  /status-pages/{slug}:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Status page slug
+        in: path
+        name: slug
+        required: true
+        type: string
+      - description: Toggle payload
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            groupId:
+              type: string
+            public:
+              type: boolean
+            title:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              message:
+                type: string
+            type: object
+        "400":
+          description: Invalid request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Toggle status page
+      tags:
+      - status-pages
+  /uptime:
+    get:
+      parameters:
+      - description: Filter by group ID
+        in: query
+        name: group_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.UptimeResponse'
+        "500":
+          description: Internal error
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: List monitors with history
+      tags:
+      - uptime
+securityDefinitions:
+  BearerAuth:
+    description: Enter "Bearer sk_live_..." — create keys in Settings > API Keys
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

@@ -67,6 +67,11 @@ func NewStore(cfg DBConfig) (*Store, error) {
 
 	// SQLite-specific settings
 	if dialect == DialectSQLite {
+		// SQLite only supports one writer at a time. Limiting to a single
+		// connection also ensures that in-memory databases (:memory:) work
+		// correctly with Go's connection pool — each connection would
+		// otherwise get its own isolated database.
+		db.SetMaxOpenConns(1)
 		if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
 			return nil, err
 		}

@@ -9,29 +9,48 @@ export function StatusPagesView() {
     const toggleMutation = useToggleStatusPageMutation();
     const { toast } = useToast();
 
-    // Map existing groups to potential status pages + Global 'all'
-    // Actually, backend returns the *configured* pages. 
-    // If a group doesn't have a configured page yet, we might want to show it as "Disabled" default?
-    // Or we rely on backend having seeded them? 
-    // Current backend implementation only seeded "all". 
+    const resolveSlug = (slug: string, title: string) => {
+        if (slug.startsWith('g-')) {
+            return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || slug;
+        }
+        return slug;
+    };
 
-
-    const handleToggle = async (slug: string, currentStatus: boolean, title: string, groupId?: string | null) => {
+    const handleToggleEnabled = async (page: typeof pages[0]) => {
         try {
-            // If slug starts with 'g-' and looks like an ID default, we might want to generate a prettier slug
-            // But for now, backend handles upsert.
+            const newEnabled = !page.enabled;
+            const targetSlug = resolveSlug(page.slug, page.title);
+            await toggleMutation.mutateAsync({
+                slug: targetSlug,
+                public: page.public,
+                enabled: newEnabled,
+                title: page.title,
+                groupId: page.groupId || undefined,
+            });
+            toast({
+                title: "Status Page Updated",
+                description: `${page.title} is now ${newEnabled ? 'enabled' : 'disabled'}`,
+            });
+        } catch (_e) {
+            toast({ title: "Error", description: "Failed to update status page", variant: "destructive" });
+        }
+    };
 
-            // Generate a prettier slug if it's currently a raw ID-based default and we are enabling it
-            let targetSlug = slug;
-            if (!currentStatus && (slug.startsWith('g-') || slug === 'all')) {
-                if (slug !== 'all') {
-                    // Simple clean slug from title
-                    targetSlug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || slug;
-                }
-            }
-
-            await toggleMutation.mutateAsync({ slug: targetSlug, public: !currentStatus, title, groupId: groupId || undefined });
-            toast({ title: "Status Page Updated", description: `${title} is now ${!currentStatus ? 'Public' : 'Private'}` });
+    const handleTogglePublic = async (page: typeof pages[0]) => {
+        try {
+            const newPublic = !page.public;
+            const targetSlug = resolveSlug(page.slug, page.title);
+            await toggleMutation.mutateAsync({
+                slug: targetSlug,
+                public: newPublic,
+                enabled: page.enabled,
+                title: page.title,
+                groupId: page.groupId || undefined,
+            });
+            toast({
+                title: "Status Page Updated",
+                description: `${page.title} is now ${newPublic ? 'public' : 'private'}`,
+            });
         } catch (_e) {
             toast({ title: "Error", description: "Failed to update status page", variant: "destructive" });
         }
@@ -54,28 +73,34 @@ export function StatusPagesView() {
                 {allPages.map(page => (
                     <div
                         key={page.slug}
+                        data-testid={`status-page-row-${page.slug}`}
                         className="flex items-center justify-between p-4 rounded-xl border border-border bg-card hover:bg-accent/50 transition-all duration-200"
                     >
                         <div className="space-y-1">
                             <div className="flex items-center gap-3">
                                 <span className="text-base font-medium text-foreground">{page.title}</span>
-                                {page.public ? (
-                                    <Badge variant="default" className="shadow-none font-normal text-xs px-2 py-0.5 h-auto">
-                                        Active
+                                {!page.enabled ? (
+                                    <Badge data-testid={`status-page-badge-${page.slug}`} variant="secondary" className="shadow-none font-normal text-xs px-2 py-0.5 h-auto">
+                                        Disabled
+                                    </Badge>
+                                ) : page.public ? (
+                                    <Badge data-testid={`status-page-badge-${page.slug}`} variant="default" className="shadow-none font-normal text-xs px-2 py-0.5 h-auto">
+                                        Public
                                     </Badge>
                                 ) : (
-                                    <Badge variant="secondary" className="shadow-none font-normal text-xs px-2 py-0.5 h-auto">
-                                        Disabled
+                                    <Badge data-testid={`status-page-badge-${page.slug}`} variant="outline" className="shadow-none font-normal text-xs px-2 py-0.5 h-auto">
+                                        Private
                                     </Badge>
                                 )}
                             </div>
                             <div className="text-sm text-muted-foreground flex items-center gap-2">
                                 <span className="font-mono text-xs opacity-50">/{page.slug}</span>
-                                {page.public && (
+                                {page.enabled && (
                                     <a
                                         href={`/status/${page.slug}`}
                                         target="_blank"
                                         rel="noreferrer"
+                                        data-testid={`status-page-visit-${page.slug}`}
                                         className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
                                     >
                                         Visit Page <ExternalLink className="w-3 h-3" />
@@ -86,12 +111,24 @@ export function StatusPagesView() {
 
                         <div className="flex items-center gap-6">
                             <div className="flex items-center gap-2">
-                                <span className={`text-sm font-medium transition-colors ${page.public ? 'text-foreground' : 'text-muted-foreground'}`}>
-                                    {page.public ? 'On' : 'Off'}
+                                <span className={`text-xs transition-colors ${page.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>
+                                    {page.enabled ? 'Enabled' : 'Disabled'}
                                 </span>
                                 <Switch
+                                    data-testid={`status-page-enabled-toggle-${page.slug}`}
+                                    checked={page.enabled}
+                                    onCheckedChange={() => handleToggleEnabled(page)}
+                                />
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className={`text-xs transition-colors ${page.enabled && page.public ? 'text-foreground' : 'text-muted-foreground'}`}>
+                                    {page.public ? 'Public' : 'Private'}
+                                </span>
+                                <Switch
+                                    data-testid={`status-page-public-toggle-${page.slug}`}
                                     checked={page.public}
-                                    onCheckedChange={() => handleToggle(page.slug, page.public, page.title, page.groupId)}
+                                    disabled={!page.enabled}
+                                    onCheckedChange={() => handleTogglePublic(page)}
                                 />
                             </div>
                         </div>
