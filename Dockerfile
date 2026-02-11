@@ -34,4 +34,7 @@ ENV LISTEN_ADDR=:9090
 ENV DB_PATH=/data/warden.db
 EXPOSE 9090
 VOLUME ["/data"]
+LABEL org.opencontainers.image.source=https://github.com/projecthelena/warden
+LABEL org.opencontainers.image.description="Self-hosted uptime monitoring by Project Helena"
+LABEL org.opencontainers.image.licenses=AGPL-3.0-or-later
 ENTRYPOINT ["/app/warden"]
