@@ -8,7 +8,6 @@ Zero configuration. Data is stored in a single file.
 
 ```bash
 docker run -d -p 9090:9090 \
-  -e ADMIN_SECRET=change-me \
   -v warden_data:/data \
   ghcr.io/projecthelena/warden:latest
 ```
@@ -25,7 +24,6 @@ For larger deployments or when you need an external database.
 
 ```bash
 docker run -d -p 9090:9090 \
-  -e ADMIN_SECRET=change-me \
   -e DB_URL=postgres://user:password@db-host:5432/warden?sslmode=disable \
   ghcr.io/projecthelena/warden:latest
 ```

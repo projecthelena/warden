@@ -1,0 +1,26 @@
+services:
+  warden:
+    image: ghcr.io/projecthelena/warden:latest
+    ports:
+      - "9090:9090"
+    environment:
+      - DB_URL=postgres://warden:warden@db:5432/warden?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:17
+    environment:
+      - POSTGRES_USER=warden
+      - POSTGRES_PASSWORD=warden
+      - POSTGRES_DB=warden
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "warden"]
+      interval: 5s
+      retries: 5
+
+volumes:
+  pg_data:

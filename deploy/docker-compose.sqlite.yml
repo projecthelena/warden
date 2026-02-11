@@ -1,0 +1,10 @@
+services:
+  warden:
+    image: ghcr.io/projecthelena/warden:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - warden_data:/data
+
+volumes:
+  warden_data:

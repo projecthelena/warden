@@ -33,7 +33,7 @@ These do not require authentication:
 | Method | Path | Description |
 | :--- | :--- | :--- |
 | `POST` | `/api/auth/login` | Login |
-| `POST` | `/api/setup` | Initial admin setup (requires `ADMIN_SECRET`) |
+| `POST` | `/api/setup` | Initial admin setup |
 | `GET` | `/api/s/{slug}` | Public status page data |
 
 ## Automation
