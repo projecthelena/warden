@@ -20,7 +20,7 @@ var (
 type User struct {
 	ID          int64
 	Username    string
-	Password    string // Hash
+	Password    string // #nosec G117 -- stores bcrypt hash, redacted in GetUser()
 	Timezone    string
 	CreatedAt   time.Time
 	Email       string

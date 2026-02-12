@@ -151,7 +151,7 @@ func createMonitor(client *http.Client, name, url, groupID string) (string, erro
 
 func deleteMonitor(client *http.Client, id string) error {
 	req, _ := http.NewRequest("DELETE", baseURL+"/api/monitors/"+id, nil)
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) // #nosec G704 -- baseURL is hardcoded localhost
 	if err != nil {
 		return err
 	}
@@ -164,7 +164,7 @@ func deleteMonitor(client *http.Client, id string) error {
 
 func deleteGroup(client *http.Client, id string) error {
 	req, _ := http.NewRequest("DELETE", baseURL+"/api/groups/"+id, nil)
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) // #nosec G704 -- baseURL is hardcoded localhost
 	if err != nil {
 		return err
 	}

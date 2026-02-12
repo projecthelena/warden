@@ -104,7 +104,7 @@ func (h *SSOHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 
 		// SECURITY: Validate Host header to prevent header injection attacks
 		if !validHostPattern.MatchString(host) {
-			log.Printf("AUDIT: [SSO] Invalid Host header detected: %s", host)
+			log.Printf("AUDIT: [SSO] Invalid Host header detected: %s", sanitizeLog(host)) // #nosec G706 -- sanitized
 			http.Redirect(w, r, "/login?error=invalid_request", http.StatusTemporaryRedirect)
 			return
 		}
@@ -216,7 +216,7 @@ func (h *SSOHandler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 
 		// SECURITY: Validate Host header to prevent header injection attacks
 		if !validHostPattern.MatchString(host) {
-			log.Printf("AUDIT: [SSO] Invalid Host header detected in callback: %s", host)
+			log.Printf("AUDIT: [SSO] Invalid Host header detected in callback: %s", sanitizeLog(host)) // #nosec G706 -- sanitized
 			http.Redirect(w, r, "/login?error=invalid_request", http.StatusTemporaryRedirect)
 			return
 		}
@@ -241,14 +241,14 @@ func (h *SSOHandler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 
 	// Verify token type is Bearer (standard OAuth2 access token type)
 	if token.TokenType != "" && token.TokenType != "Bearer" {
-		log.Printf("AUDIT: [SSO] Unexpected token type from Google: %s", token.TokenType)
+		log.Printf("AUDIT: [SSO] Unexpected token type from Google: %s", sanitizeLog(token.TokenType)) // #nosec G706 -- sanitized
 		http.Redirect(w, r, "/login?error=invalid_token_type", http.StatusTemporaryRedirect)
 		return
 	}
 
 	// Get user info from Google
 	client := oauthConfig.Client(r.Context(), token)
-	resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
+	resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo") // #nosec G704 -- hardcoded Google API URL
 	if err != nil {
 		http.Redirect(w, r, "/login?error=userinfo_failed", http.StatusTemporaryRedirect)
 		return
@@ -320,21 +320,21 @@ func (h *SSOHandler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 	user, err := h.store.FindOrCreateSSOUser("google", googleUser.ID, googleUser.Email, googleUser.Name, googleUser.Picture, autoProvision != "false")
 	if err != nil {
 		if err == db.ErrUserNotFound {
-			log.Printf("AUDIT: [SSO] Google login denied - user not found for email %s from IP %s", googleUser.Email, clientIP)
+			log.Printf("AUDIT: [SSO] Google login denied - user not found for email %s from IP %s", sanitizeLog(googleUser.Email), sanitizeLog(clientIP)) // #nosec G706 -- sanitized
 			http.Redirect(w, r, "/login?error=user_not_found", http.StatusTemporaryRedirect)
 			return
 		}
 		if err == db.ErrAccountLinkingNeed {
 			// Account exists with password - user must link SSO through settings
-			log.Printf("AUDIT: [SSO] Google login denied - account linking required for email %s from IP %s", googleUser.Email, clientIP)
+			log.Printf("AUDIT: [SSO] Google login denied - account linking required for email %s from IP %s", sanitizeLog(googleUser.Email), sanitizeLog(clientIP)) // #nosec G706 -- sanitized
 			http.Redirect(w, r, "/login?error=account_exists_link_required", http.StatusTemporaryRedirect)
 			return
 		}
-		log.Printf("AUDIT: [SSO] Google login failed - user creation error for email %s from IP %s: %v", googleUser.Email, clientIP, err)
+		log.Printf("AUDIT: [SSO] Google login failed - user creation error for email %s from IP %s: %v", sanitizeLog(googleUser.Email), sanitizeLog(clientIP), err) // #nosec G706 -- sanitized
 		http.Redirect(w, r, "/login?error=user_creation_failed", http.StatusTemporaryRedirect)
 		return
 	}
-	log.Printf("AUDIT: [SSO] Successful Google login for user '%s' (ID: %d, email: %s) from IP %s", user.Username, user.ID, googleUser.Email, clientIP)
+	log.Printf("AUDIT: [SSO] Successful Google login for user '%s' (ID: %d, email: %s) from IP %s", sanitizeLog(user.Username), user.ID, sanitizeLog(googleUser.Email), sanitizeLog(clientIP)) // #nosec G706 -- sanitized
 
 	// Create session (same as regular login)
 	tokenBytes := make([]byte, 32)

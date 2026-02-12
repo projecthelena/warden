@@ -31,7 +31,7 @@ func (h *AdminHandler) ResetDatabase(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie("auth_token"); err == nil {
 		session, err := h.store.GetSession(c.Value)
 		if err == nil && session != nil {
-			log.Printf("AUDIT: [ADMIN] Database reset via session for user %d from IP %s", session.UserID, clientIP)
+			log.Printf("AUDIT: [ADMIN] Database reset via session for user %d from IP %s", session.UserID, sanitizeLog(clientIP)) // #nosec G706 -- sanitized
 			h.performReset(w, clientIP)
 			return
 		}
@@ -50,14 +50,14 @@ func (h *AdminHandler) ResetDatabase(w http.ResponseWriter, r *http.Request) {
 		bearerMatch := bearerSecret != "" && subtle.ConstantTimeCompare([]byte(bearerSecret), []byte(h.config.AdminSecret)) == 1
 
 		if headerMatch || bearerMatch {
-			log.Printf("AUDIT: [ADMIN] Database reset via admin secret from IP %s", clientIP)
+			log.Printf("AUDIT: [ADMIN] Database reset via admin secret from IP %s", sanitizeLog(clientIP)) // #nosec G706 -- sanitized
 			h.performReset(w, clientIP)
 			return
 		}
 	}
 
 	// Neither auth method succeeded
-	log.Printf("AUDIT: [SECURITY] Database reset attempt from IP %s denied - no valid auth", clientIP)
+	log.Printf("AUDIT: [SECURITY] Database reset attempt from IP %s denied - no valid auth", sanitizeLog(clientIP)) // #nosec G706 -- sanitized
 	writeError(w, http.StatusUnauthorized, "unauthorized")
 }
 

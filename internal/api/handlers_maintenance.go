@@ -229,7 +229,7 @@ func (h *MaintenanceHandler) UpdateMaintenance(w http.ResponseWriter, r *http.Re
 	}
 
 	if err := h.store.UpdateIncident(incident); err != nil {
-		log.Printf("ERROR: Failed to update maintenance %s: %v", id, err)
+		log.Printf("ERROR: Failed to update maintenance %s: %v", sanitizeLog(id), err) // #nosec G706 -- sanitized
 		http.Error(w, "Failed to update maintenance", http.StatusInternalServerError)
 		return
 	}
@@ -272,7 +272,7 @@ func (h *MaintenanceHandler) DeleteMaintenance(w http.ResponseWriter, r *http.Re
 	}
 
 	if err := h.store.DeleteIncident(id); err != nil {
-		log.Printf("ERROR: Failed to delete maintenance %s: %v", id, err)
+		log.Printf("ERROR: Failed to delete maintenance %s: %v", sanitizeLog(id), err) // #nosec G706 -- sanitized
 		http.Error(w, "Failed to delete maintenance", http.StatusInternalServerError)
 		return
 	}
