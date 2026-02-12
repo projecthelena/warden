@@ -169,6 +169,25 @@ func (h *Router) PerformSetup(w http.ResponseWriter, r *http.Request) {
 	// Trigger immediate check for new monitors
 	h.manager.Sync()
 
+	// Wait for all default monitors to get their first ping (max 5s)
+	// This ensures the dashboard shows live data immediately after setup
+	monitorIDs := []string{"m-default-0", "m-default-1", "m-default-2"}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		allReady := true
+		for _, id := range monitorIDs {
+			mon := h.manager.GetMonitor(id)
+			if mon == nil || len(mon.GetHistory()) == 0 {
+				allReady = false
+				break
+			}
+		}
+		if allReady {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
 	// Auto-login: Create session and set cookie
 	// First, authenticate to get user ID
 	user, err := h.store.Authenticate(req.Username, req.Password)

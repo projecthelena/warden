@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMonitorStore, SystemIncident, SSLWarning } from "@/lib/store";
+import { computePollingInterval } from "@/lib/pollingInterval";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 
@@ -16,7 +17,8 @@ async function fetchSystemEventsData(): Promise<SystemEventsResponse> {
 }
 
 export function useSystemEventsQuery() {
-    const { setSystemEvents, isAuthChecked, user } = useMonitorStore();
+    const { setSystemEvents, isAuthChecked, user, groups } = useMonitorStore();
+    const pollingInterval = computePollingInterval(groups);
 
     return useQuery({
         queryKey: ["system-events"],
@@ -33,7 +35,7 @@ export function useSystemEventsQuery() {
             setSystemEvents(safeData);
             return safeData;
         },
-        refetchInterval: 30000, // Poll every 30 seconds
+        refetchInterval: pollingInterval,
         refetchIntervalInBackground: true, // Keep polling even when tab is backgrounded
         enabled: isAuthChecked && !!user, // Only fetch if authenticated
         staleTime: 0,
