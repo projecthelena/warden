@@ -36,7 +36,7 @@ func NewAuthHandler(store *db.Store, cfg *config.Config, loginLimiter *LoginRate
 
 type LoginRequest struct {
 	Username string `json:"username"`
-	Password string `json:"password"`
+	Password string `json:"password"` // #nosec G117 -- input-only DTO, never serialized in responses
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
@@ -68,7 +68,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	user, err := h.store.Authenticate(req.Username, req.Password)
 	if err != nil {
 		// AUDIT: Log failed authentication attempt (username only, never password)
-		log.Printf("AUDIT: [AUTH] Failed login attempt for user '%s' from IP %s", req.Username, ip)
+		log.Printf("AUDIT: [AUTH] Failed login attempt for user '%s' from IP %s", sanitizeLog(req.Username), sanitizeLog(ip)) // #nosec G706 -- sanitized
 
 		// Record failed attempt for rate limiting (both IP and username)
 		if h.loginLimiter != nil {
@@ -80,7 +80,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// AUDIT: Log successful authentication
-	log.Printf("AUDIT: [AUTH] Successful login for user '%s' (ID: %d) from IP %s", user.Username, user.ID, ip)
+	log.Printf("AUDIT: [AUTH] Successful login for user '%s' (ID: %d) from IP %s", sanitizeLog(user.Username), user.ID, sanitizeLog(ip)) // #nosec G706 -- sanitized
 
 	// Clear rate limit on successful login (both IP and username)
 	if h.loginLimiter != nil {
@@ -186,7 +186,7 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 }
 
 type UpdateUserRequest struct {
-	Password        string `json:"password,omitempty"`
+	Password        string `json:"password,omitempty"`        // #nosec G117 -- input-only DTO, never serialized in responses
 	CurrentPassword string `json:"currentPassword,omitempty"`
 	Timezone        string `json:"timezone,omitempty"`
 }
@@ -231,7 +231,7 @@ func (h *AuthHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	if req.Password != "" {
 		// AUDIT: Log password change
 		clientIP := extractIP(r)
-		log.Printf("AUDIT: [AUTH] Password changed for user ID %d from IP %s - invalidating other sessions", userID, clientIP)
+		log.Printf("AUDIT: [AUTH] Password changed for user ID %d from IP %s - invalidating other sessions", userID, sanitizeLog(clientIP)) // #nosec G706 -- sanitized
 
 		// Get current session token to preserve it
 		currentToken := ""

@@ -17,7 +17,7 @@ import (
 
 type SetupRequest struct {
 	Username string `json:"username"`
-	Password string `json:"password"`
+	Password string `json:"password"` // #nosec G117 -- input-only DTO, never serialized in responses
 	Timezone string `json:"timezone"`
 }
 
@@ -42,12 +42,12 @@ func (h *Router) PerformSetup(w http.ResponseWriter, r *http.Request) {
 	// This prevents multiple concurrent requests from creating multiple admin users
 	isComplete, err := h.store.IsSetupComplete()
 	if err != nil {
-		log.Printf("AUDIT: [SETUP] Database error checking setup status from IP %s: %v", clientIP, err)
+		log.Printf("AUDIT: [SETUP] Database error checking setup status from IP %s: %v", sanitizeLog(clientIP), err) // #nosec G706 -- sanitized
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
 	if isComplete {
-		log.Printf("AUDIT: [SECURITY] Setup attempt from IP %s denied - setup already completed", clientIP)
+		log.Printf("AUDIT: [SECURITY] Setup attempt from IP %s denied - setup already completed", sanitizeLog(clientIP)) // #nosec G706 -- sanitized
 		http.Error(w, "Setup already completed", http.StatusForbidden)
 		return
 	}
@@ -71,7 +71,7 @@ func (h *Router) PerformSetup(w http.ResponseWriter, r *http.Request) {
 		bearerMatch := bearerSecret != "" && subtle.ConstantTimeCompare([]byte(bearerSecret), []byte(h.config.AdminSecret)) == 1
 
 		if !headerMatch && !bearerMatch {
-			log.Printf("AUDIT: [SECURITY] Setup attempt from IP %s denied - invalid admin secret (users exist)", clientIP)
+			log.Printf("AUDIT: [SECURITY] Setup attempt from IP %s denied - invalid admin secret (users exist)", sanitizeLog(clientIP)) // #nosec G706 -- sanitized
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -135,11 +135,11 @@ func (h *Router) PerformSetup(w http.ResponseWriter, r *http.Request) {
 
 	// Create User
 	if err := h.store.CreateUser(req.Username, req.Password, req.Timezone); err != nil {
-		log.Printf("AUDIT: [SETUP] Failed to create user from IP %s: %v", clientIP, err)
+		log.Printf("AUDIT: [SETUP] Failed to create user from IP %s: %v", sanitizeLog(clientIP), err) // #nosec G706 -- sanitized
 		http.Error(w, "Failed to create user", http.StatusInternalServerError)
 		return
 	}
-	log.Printf("AUDIT: [SETUP] Admin user '%s' created from IP %s", req.Username, clientIP)
+	log.Printf("AUDIT: [SETUP] Admin user '%s' created from IP %s", sanitizeLog(req.Username), sanitizeLog(clientIP)) // #nosec G706 -- sanitized
 
 	// Always create default monitors (no toggle needed - gives immediate value)
 	defaults := []struct{ Name, URL string }{
@@ -168,6 +168,25 @@ func (h *Router) PerformSetup(w http.ResponseWriter, r *http.Request) {
 
 	// Trigger immediate check for new monitors
 	h.manager.Sync()
+
+	// Wait for all default monitors to get their first ping (max 5s)
+	// This ensures the dashboard shows live data immediately after setup
+	monitorIDs := []string{"m-default-0", "m-default-1", "m-default-2"}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		allReady := true
+		for _, id := range monitorIDs {
+			mon := h.manager.GetMonitor(id)
+			if mon == nil || len(mon.GetHistory()) == 0 {
+				allReady = false
+				break
+			}
+		}
+		if allReady {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	// Auto-login: Create session and set cookie
 	// First, authenticate to get user ID
@@ -212,7 +231,7 @@ func (h *Router) PerformSetup(w http.ResponseWriter, r *http.Request) {
 		Secure:   h.config.CookieSecure,
 	})
 
-	log.Printf("AUDIT: [SETUP] Auto-login successful for '%s' from IP %s", req.Username, clientIP)
+	log.Printf("AUDIT: [SETUP] Auto-login successful for '%s' from IP %s", sanitizeLog(req.Username), sanitizeLog(clientIP)) // #nosec G706 -- sanitized
 
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"success": true,

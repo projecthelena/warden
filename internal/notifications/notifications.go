@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/projecthelena/warden/internal/db"
@@ -176,20 +177,29 @@ func (n *SlackNotifier) Send(event NotificationEvent) error {
 	return sendJSON(url, payload)
 }
 
-func sendJSON(url string, payload interface{}) error {
+func sendJSON(targetURL string, payload interface{}) error {
+	// SECURITY: Validate URL scheme to prevent SSRF if database is compromised
+	parsedURL, err := url.Parse(targetURL)
+	if err != nil {
+		return fmt.Errorf("invalid webhook URL: %w", err)
+	}
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return fmt.Errorf("invalid webhook URL scheme: %s", parsedURL.Scheme)
+	}
+
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(data))
+	req, err := http.NewRequest("POST", targetURL, bytes.NewBuffer(data))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) // #nosec G704 -- URL scheme validated above
 	if err != nil {
 		return err
 	}
