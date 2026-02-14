@@ -63,7 +63,9 @@ func TestReadyz_DBDown(t *testing.T) {
 		t.Fatalf("failed to create store: %v", err)
 	}
 	// Close the DB to simulate it being unavailable
-	store.Close()
+	if err := store.Close(); err != nil {
+		t.Fatalf("failed to close store: %v", err)
+	}
 
 	handler := Readyz(store)
 
@@ -118,7 +120,7 @@ func TestHealthProbes_Integration(t *testing.T) {
 			if err != nil {
 				t.Fatalf("request failed: %v", err)
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != tt.wantStatus {
 				t.Fatalf("expected %d, got %d", tt.wantStatus, resp.StatusCode)
