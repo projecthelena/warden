@@ -115,6 +115,10 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 	statusPageH := NewStatusPageHandler(store, manager, authH)
 	notifH := NewNotificationChannelsHandler(store)
 
+	// Kubernetes health probes (unauthenticated, no rate limiting)
+	r.Get("/healthz", Healthz)
+	r.Get("/readyz", Readyz(store))
+
 	r.Route("/api", func(api chi.Router) {
 		// Apply general rate limiting to all API routes
 		api.Use(RateLimitMiddleware(apiLimiter))

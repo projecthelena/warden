@@ -124,6 +124,11 @@ func (s *Store) IsPostgres() bool {
 	return s.dialect == DialectPostgres
 }
 
+// PingContext verifies the database connection is alive with a context deadline.
+func (s *Store) PingContext(ctx context.Context) error {
+	return s.db.PingContext(ctx)
+}
+
 func (s *Store) Close() error {
 	return s.db.Close()
 }
