@@ -46,6 +46,8 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
     const [name, setName] = useState(monitor.name);
     const [url, setUrl] = useState(monitor.url);
     const [interval, setInterval] = useState(monitor.interval || 60);
+    const [confirmThreshold, setConfirmThreshold] = useState<string>(monitor.confirmationThreshold?.toString() ?? "");
+    const [cooldownMins, setCooldownMins] = useState<string>(monitor.notificationCooldownMinutes?.toString() ?? "");
     const [stats, setStats] = useState({ uptime24h: 100, uptime7d: 100, uptime30d: 100 });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [latencyData, setLatencyData] = useState<any[]>([]);
@@ -56,6 +58,8 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
             setName(monitor.name);
             setUrl(monitor.url);
             setInterval(monitor.interval || 60);
+            setConfirmThreshold(monitor.confirmationThreshold?.toString() ?? "");
+            setCooldownMins(monitor.notificationCooldownMinutes?.toString() ?? "");
         }
     }, [open, monitor]);
 
@@ -200,7 +204,11 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
 
 
     const handleSave = () => {
-        updateMonitor(monitor.id, { name, url, interval });
+        updateMonitor(monitor.id, {
+            name, url, interval,
+            confirmationThreshold: confirmThreshold ? parseInt(confirmThreshold) : undefined,
+            notificationCooldownMinutes: cooldownMins ? parseInt(cooldownMins) : undefined,
+        });
         onOpenChange(false);
     };
 
@@ -381,7 +389,9 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                                     <div key={event.id} className="ml-6 relative">
                                         <div className={`absolute -left-[31px] top-1 w-2.5 h-2.5 rounded-full ring-4 ring-background ${event.type === 'up' ? 'bg-emerald-500' :
                                             event.type === 'down' ? 'bg-destructive' :
-                                            event.type === 'ssl_expiring' ? 'bg-orange-500' : 'bg-yellow-500'
+                                            event.type === 'ssl_expiring' ? 'bg-orange-500' :
+                                            event.type === 'flapping' ? 'bg-purple-500' :
+                                            event.type === 'stabilized' ? 'bg-blue-500' : 'bg-yellow-500'
                                             }`} />
                                         <div className="flex flex-col gap-1">
 
@@ -425,6 +435,38 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                                         <SelectItem value="600" className="cursor-pointer">10 Minutes</SelectItem>
                                     </SelectContent>
                                 </Select>
+                            </div>
+                            <div className="pt-4 border-t border-border">
+                                <h3 className="text-sm font-medium mb-3">Notification Overrides</h3>
+                                <p className="text-xs text-muted-foreground mb-3">
+                                    Override global notification settings for this monitor. Leave empty to use global defaults.
+                                </p>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="mon-confirm">Confirmation Checks</Label>
+                                        <Input
+                                            id="mon-confirm"
+                                            type="number"
+                                            min={1}
+                                            max={100}
+                                            placeholder="Global default"
+                                            value={confirmThreshold}
+                                            onChange={(e) => setConfirmThreshold(e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="mon-cooldown">Cooldown (min)</Label>
+                                        <Input
+                                            id="mon-cooldown"
+                                            type="number"
+                                            min={0}
+                                            max={1440}
+                                            placeholder="Global default"
+                                            value={cooldownMins}
+                                            onChange={(e) => setCooldownMins(e.target.value)}
+                                        />
+                                    </div>
+                                </div>
                             </div>
                             <Button onClick={handleSave} className="w-full" data-testid="monitor-edit-save-btn">
                                 <Save className="w-4 h-4 mr-2" /> Save Changes

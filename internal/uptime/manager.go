@@ -246,27 +246,7 @@ func (m *Manager) resultProcessor() {
 				m.mu.RUnlock()
 
 				// Check if monitor is in maintenance
-				m.mu.RLock()
-				isMaint := false
-				now := time.Now().UTC()
-				for _, w := range m.maintenanceWindows {
-					if now.After(w.StartTime) && (w.EndTime == nil || now.Before(*w.EndTime)) {
-						if w.AffectedGroups != "" {
-							var groups []string
-							_ = json.Unmarshal([]byte(w.AffectedGroups), &groups)
-							for _, g := range groups {
-								if g == mon.GetGroupID() {
-									isMaint = true
-									break
-								}
-							}
-						}
-					}
-					if isMaint {
-						break
-					}
-				}
-				m.mu.RUnlock()
+				isMaint := m.isMonitorInMaintenance(mon.GetGroupID())
 
 				isDegraded := res.Status && res.Latency > threshold
 				res.IsDegraded = isDegraded // Update result for storage
@@ -278,198 +258,198 @@ func (m *Manager) resultProcessor() {
 					message += " (Status: " + strconv.Itoa(res.StatusCode) + ")"
 				}
 
+				degradedMsg := "High latency detected (>" + strconv.FormatInt(threshold, 10) + "ms)"
+
 				if !hasHistory {
-					// Handle Initial State
+					// Handle Initial State — use confirmation logic
 					if !res.Status {
-						go func() {
-							_ = m.store.CloseOutage(res.MonitorID)
-							_ = m.store.CreateOutage(res.MonitorID, "down", message)
-						}()
+						// Record the event in DB immediately
 						go func() { _ = m.store.CreateEvent(res.MonitorID, "down", message) }()
 
-						if !isMaint {
-							m.notifier.Enqueue(notifications.NotificationEvent{
-								MonitorID:   res.MonitorID,
-								MonitorName: mon.GetName(),
-								MonitorURL:  mon.GetTargetURL(),
-								Type:        notifications.EventDown,
-								Message:     message,
-								Time:        res.Timestamp,
-							})
-						}
-						log.Printf("Monitor %s is DOWN (Initial)", res.MonitorID)
-					} else if isDegraded {
-						go func() {
-							_ = m.store.CloseOutage(res.MonitorID)
-							_ = m.store.CreateOutage(res.MonitorID, "degraded", "High latency detected (>"+strconv.FormatInt(threshold, 10)+"ms)")
-						}()
-						go func() {
-							_ = m.store.CreateEvent(res.MonitorID, "degraded", "High latency detected (>"+strconv.FormatInt(threshold, 10)+"ms)")
-						}()
-						if !isMaint {
-							m.notifier.Enqueue(notifications.NotificationEvent{
-								MonitorID:   res.MonitorID,
-								MonitorName: mon.GetName(),
-								MonitorURL:  mon.GetTargetURL(),
-								Type:        notifications.EventDegraded,
-								Message:     "High latency detected (> " + strconv.FormatInt(threshold, 10) + "ms)",
-								Time:        res.Timestamp,
-							})
-						}
-					}
-				} else {
-					// Handle Transitions
-					if active && !res.Status {
-						// UP -> DOWN
-						go func() {
-							_ = m.store.CloseOutage(res.MonitorID)
-							_ = m.store.CreateOutage(res.MonitorID, "down", message)
-						}()
-						go func() { _ = m.store.CreateEvent(res.MonitorID, "down", message) }()
-
-						if !isMaint {
-							m.notifier.Enqueue(notifications.NotificationEvent{
-								MonitorID:   res.MonitorID,
-								MonitorName: mon.GetName(),
-								MonitorURL:  mon.GetTargetURL(),
-								Type:        notifications.EventDown,
-								Message:     message,
-								Time:        res.Timestamp,
-							})
-						}
-						log.Printf("Monitor %s is DOWN: %s", res.MonitorID, message)
-					} else if !active && res.Status {
-						// DOWN -> UP
-						go func() { _ = m.store.CloseOutage(res.MonitorID) }()
-						go func() { _ = m.store.CreateEvent(res.MonitorID, "recovered", "Monitor recovered") }()
-						if !isMaint {
-							m.notifier.Enqueue(notifications.NotificationEvent{
-								MonitorID:   res.MonitorID,
-								MonitorName: mon.GetName(),
-								MonitorURL:  mon.GetTargetURL(),
-								Type:        notifications.EventUp,
-								Message:     "Monitor Recovered",
-								Time:        res.Timestamp,
-							})
-						}
-						log.Printf("Monitor %s RECOVERED", res.MonitorID)
-					}
-
-					// Handle Degradation (Only if UP)
-					if res.Status {
-						if !wasDegraded && isDegraded {
-							// Normal -> Degraded
+						confirmed := mon.IncrementDown()
+						if confirmed {
 							go func() {
 								_ = m.store.CloseOutage(res.MonitorID)
-								_ = m.store.CreateOutage(res.MonitorID, "degraded", "High latency detected (>"+strconv.FormatInt(threshold, 10)+"ms)")
+								_ = m.store.CreateOutage(res.MonitorID, "down", message)
 							}()
-							go func() {
-								_ = m.store.CreateEvent(res.MonitorID, "degraded", "High latency detected (>"+strconv.FormatInt(threshold, 10)+"ms)")
-							}()
+							if !isMaint && !mon.IsFlapping() && mon.ShouldNotify("down") {
+								m.notifier.Enqueue(notifications.NotificationEvent{
+									MonitorID:   res.MonitorID,
+									MonitorName: mon.GetName(),
+									MonitorURL:  mon.GetTargetURL(),
+									Type:        notifications.EventDown,
+									Message:     message,
+									Time:        res.Timestamp,
+								})
+								mon.MarkNotified("down")
+							}
+							log.Printf("Monitor %s is DOWN (confirmed)", res.MonitorID)
+						}
+					} else if isDegraded {
+						go func() { _ = m.store.CreateEvent(res.MonitorID, "degraded", degradedMsg) }()
 
-							if !isMaint {
+						confirmed := mon.IncrementDegraded()
+						if confirmed {
+							go func() {
+								_ = m.store.CloseOutage(res.MonitorID)
+								_ = m.store.CreateOutage(res.MonitorID, "degraded", degradedMsg)
+							}()
+							if !isMaint && !mon.IsFlapping() && mon.ShouldNotify("degraded") {
 								m.notifier.Enqueue(notifications.NotificationEvent{
 									MonitorID:   res.MonitorID,
 									MonitorName: mon.GetName(),
 									MonitorURL:  mon.GetTargetURL(),
 									Type:        notifications.EventDegraded,
-									Message:     "High latency detected (> " + strconv.FormatInt(threshold, 10) + "ms)",
+									Message:     degradedMsg,
 									Time:        res.Timestamp,
 								})
+								mon.MarkNotified("degraded")
 							}
-						} else if wasDegraded && !isDegraded {
-							// Degraded -> Normal (Optional: Log it? Or just let it be silent?)
-							// For now, let's just log "recovered" from degradation?
-							// Or maybe "Latency normalized"?
-							go func() { _ = m.store.CloseOutage(res.MonitorID) }()
-							go func() { _ = m.store.CreateEvent(res.MonitorID, "recovered", "Latency normalized") }()
 						}
 					}
-				}
+				} else {
+					// Handle Transitions with confirmation logic
+					if !res.Status {
+						// Check is DOWN — increment counter
+						mon.ResetDegraded() // can't be degraded if down
+						go func() { _ = m.store.CreateEvent(res.MonitorID, "down", message) }()
 
-				// SSL Certificate Expiry Check - Threshold-based notifications at mid-day
-				// Fixed thresholds: 30, 14, 7, 1 days
-				if res.CertExpiry != nil && strings.HasPrefix(res.URL, "https") {
-					daysUntilExpiry := int(time.Until(*res.CertExpiry).Hours() / 24)
-					// Only process if within the maximum threshold (30 days)
-					if daysUntilExpiry <= sslNotificationThresholds[0] {
-						// Find the matching notification threshold (smallest applicable)
-						// Thresholds: [30, 14, 7, 1] - iterate to find smallest t where daysUntilExpiry <= t
-						matchedThreshold := -1
-						for _, t := range sslNotificationThresholds {
-							if daysUntilExpiry <= t {
-								matchedThreshold = t // Keep updating to get smallest match
-							}
-						}
-
-						// Check if we should notify (mid-day window + threshold not yet notified)
-						shouldNotify := false
-						if matchedThreshold > 0 {
-							// Use cached notification timezone
-							m.mu.RLock()
-							loc := m.notificationTimezone
-							m.mu.RUnlock()
-
-							// Check if current time is in mid-day window (11:00 AM - 1:00 PM)
-							nowLocal := time.Now().In(loc)
-							hour := nowLocal.Hour()
-							isMidDay := hour >= 11 && hour < 13
-
-							if isMidDay {
-								m.mu.Lock()
-								state, exists := m.sslNotifiedThresholds[res.MonitorID]
-
-								// Check if certificate was renewed (expiry date changed)
-								if exists && !state.CertExpiry.Equal(*res.CertExpiry) {
-									// Certificate renewed, reset all thresholds
-									state = nil
-									exists = false
-								}
-
-								if !exists {
-									state = &sslThresholdState{
-										CertExpiry: *res.CertExpiry,
-										Notified:   make(map[int]bool),
-									}
-									m.sslNotifiedThresholds[res.MonitorID] = state
-								}
-
-								// Check if this threshold was already notified
-								if !state.Notified[matchedThreshold] {
-									state.Notified[matchedThreshold] = true
-									shouldNotify = true
-								}
-								m.mu.Unlock()
-							}
-						}
-
-						if shouldNotify {
-							var msg string
-							if daysUntilExpiry < 0 {
-								msg = "SSL certificate expired " + strconv.Itoa(-daysUntilExpiry) + " days ago (" + res.CertExpiry.Format("2006-01-02") + ")"
-							} else {
-								msg = "SSL certificate expires in " + strconv.Itoa(daysUntilExpiry) + " days (" + res.CertExpiry.Format("2006-01-02") + ")"
-							}
-							go func() { _ = m.store.CreateEvent(res.MonitorID, "ssl_expiring", msg) }()
-
-							if !isMaint {
+						confirmed := mon.IncrementDown()
+						if confirmed {
+							// Threshold met — create outage and notify
+							go func() {
+								_ = m.store.CloseOutage(res.MonitorID)
+								_ = m.store.CreateOutage(res.MonitorID, "down", message)
+							}()
+							if !isMaint && !mon.IsFlapping() && mon.ShouldNotify("down") {
 								m.notifier.Enqueue(notifications.NotificationEvent{
 									MonitorID:   res.MonitorID,
 									MonitorName: mon.GetName(),
 									MonitorURL:  mon.GetTargetURL(),
-									Type:        notifications.EventSSLExpiring,
-									Message:     msg,
+									Type:        notifications.EventDown,
+									Message:     message,
+									Time:        res.Timestamp,
+								})
+								mon.MarkNotified("down")
+							}
+							log.Printf("Monitor %s is DOWN (confirmed): %s", res.MonitorID, message)
+						}
+					} else {
+						// Check is UP
+						// Recovery from confirmed down?
+						wasDown := mon.ResetDown()
+						if wasDown {
+							go func() { _ = m.store.CloseOutage(res.MonitorID) }()
+							go func() { _ = m.store.CreateEvent(res.MonitorID, "recovered", "Monitor recovered") }()
+							// Recovery notifications always send immediately (no cooldown)
+							if !isMaint && !mon.IsFlapping() {
+								m.notifier.Enqueue(notifications.NotificationEvent{
+									MonitorID:   res.MonitorID,
+									MonitorName: mon.GetName(),
+									MonitorURL:  mon.GetTargetURL(),
+									Type:        notifications.EventUp,
+									Message:     "Monitor Recovered",
 									Time:        res.Timestamp,
 								})
 							}
-							log.Printf("Monitor %s: SSL certificate expiring in %d days (threshold: %d)", res.MonitorID, daysUntilExpiry, matchedThreshold)
+							log.Printf("Monitor %s RECOVERED", res.MonitorID)
+						}
+						// Note: if !active && !mon.IsConfirmedDown(), the counter was already
+						// reset by ResetDown() above — no additional action needed.
+
+						// Handle Degradation
+						if isDegraded {
+							go func() { _ = m.store.CreateEvent(res.MonitorID, "degraded", degradedMsg) }()
+
+							confirmed := mon.IncrementDegraded()
+							if confirmed {
+								go func() {
+									_ = m.store.CloseOutage(res.MonitorID)
+									_ = m.store.CreateOutage(res.MonitorID, "degraded", degradedMsg)
+								}()
+								if !isMaint && !mon.IsFlapping() && mon.ShouldNotify("degraded") {
+									m.notifier.Enqueue(notifications.NotificationEvent{
+										MonitorID:   res.MonitorID,
+										MonitorName: mon.GetName(),
+										MonitorURL:  mon.GetTargetURL(),
+										Type:        notifications.EventDegraded,
+										Message:     degradedMsg,
+										Time:        res.Timestamp,
+									})
+									mon.MarkNotified("degraded")
+								}
+							}
+						} else if wasDegraded {
+							// Degraded -> Normal
+							wasConfirmedDeg := mon.ResetDegraded()
+							if wasConfirmedDeg {
+								go func() { _ = m.store.CloseOutage(res.MonitorID) }()
+								go func() { _ = m.store.CreateEvent(res.MonitorID, "recovered", "Latency normalized") }()
+								// Recovery notifications always send immediately (no cooldown)
+								if !isMaint && !mon.IsFlapping() {
+									m.notifier.Enqueue(notifications.NotificationEvent{
+										MonitorID:   res.MonitorID,
+										MonitorName: mon.GetName(),
+										MonitorURL:  mon.GetTargetURL(),
+										Type:        notifications.EventUp,
+										Message:     "Latency normalized",
+										Time:        res.Timestamp,
+									})
+								}
+								log.Printf("Monitor %s RECOVERED from degraded", res.MonitorID)
+							}
+						} else {
+							// Normal -> Normal: reset degraded counter
+							mon.ResetDegraded()
 						}
 					}
 				}
+
+				// SSL Certificate Expiry Check
+				m.processSSLCheck(res, mon, isMaint)
+
+				// Flap Detection (after recording result, so history is up to date)
+				// We process this after updateMonitorState below
 			}
 
 			// Update in-memory state
 			m.updateMonitorState(res)
+
+			// Flap detection (after history is updated)
+			if exists {
+				m.mu.RLock()
+				mon := m.monitors[res.MonitorID]
+				m.mu.RUnlock()
+				if mon != nil {
+					isMaint := m.isMonitorInMaintenance(mon.GetGroupID())
+					isFlapping, changed := mon.ComputeFlapping()
+					if changed && !isMaint {
+						if isFlapping {
+							go func() { _ = m.store.CreateEvent(res.MonitorID, "flapping", "Monitor is flapping between states") }()
+							m.notifier.Enqueue(notifications.NotificationEvent{
+								MonitorID:   res.MonitorID,
+								MonitorName: mon.GetName(),
+								MonitorURL:  mon.GetTargetURL(),
+								Type:        notifications.EventFlapping,
+								Message:     "Monitor is flapping between states",
+								Time:        res.Timestamp,
+							})
+							log.Printf("Monitor %s is FLAPPING", res.MonitorID)
+						} else {
+							go func() { _ = m.store.CreateEvent(res.MonitorID, "stabilized", "Monitor has stabilized") }()
+							m.notifier.Enqueue(notifications.NotificationEvent{
+								MonitorID:   res.MonitorID,
+								MonitorName: mon.GetName(),
+								MonitorURL:  mon.GetTargetURL(),
+								Type:        notifications.EventStabilized,
+								Message:     "Monitor has stabilized",
+								Time:        res.Timestamp,
+							})
+							log.Printf("Monitor %s STABILIZED", res.MonitorID)
+						}
+					}
+				}
+			}
 
 			// Add to batch for DB persistence
 			statusStr := "down"
@@ -488,6 +468,102 @@ func (m *Manager) resultProcessor() {
 				flush()
 			}
 		}
+	}
+}
+
+// isMonitorInMaintenance checks if a monitor's group is in an active maintenance window.
+func (m *Manager) isMonitorInMaintenance(groupID string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	now := time.Now().UTC()
+	for _, w := range m.maintenanceWindows {
+		if now.After(w.StartTime) && (w.EndTime == nil || now.Before(*w.EndTime)) {
+			if w.AffectedGroups != "" {
+				var groups []string
+				_ = json.Unmarshal([]byte(w.AffectedGroups), &groups)
+				for _, g := range groups {
+					if g == groupID {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
+// processSSLCheck handles SSL certificate expiry checking and notifications.
+func (m *Manager) processSSLCheck(res CheckResult, mon *Monitor, isMaint bool) {
+	if res.CertExpiry == nil || !strings.HasPrefix(res.URL, "https") {
+		return
+	}
+	daysUntilExpiry := int(time.Until(*res.CertExpiry).Hours() / 24)
+	if daysUntilExpiry > sslNotificationThresholds[0] {
+		return
+	}
+
+	matchedThreshold := -1
+	for _, t := range sslNotificationThresholds {
+		if daysUntilExpiry <= t {
+			matchedThreshold = t
+		}
+	}
+
+	shouldNotify := false
+	if matchedThreshold > 0 {
+		m.mu.RLock()
+		loc := m.notificationTimezone
+		m.mu.RUnlock()
+
+		nowLocal := time.Now().In(loc)
+		hour := nowLocal.Hour()
+		isMidDay := hour >= 11 && hour < 13
+
+		if isMidDay {
+			m.mu.Lock()
+			state, exists := m.sslNotifiedThresholds[res.MonitorID]
+
+			if exists && !state.CertExpiry.Equal(*res.CertExpiry) {
+				state = nil
+				exists = false
+			}
+
+			if !exists {
+				state = &sslThresholdState{
+					CertExpiry: *res.CertExpiry,
+					Notified:   make(map[int]bool),
+				}
+				m.sslNotifiedThresholds[res.MonitorID] = state
+			}
+
+			if !state.Notified[matchedThreshold] {
+				state.Notified[matchedThreshold] = true
+				shouldNotify = true
+			}
+			m.mu.Unlock()
+		}
+	}
+
+	if shouldNotify {
+		var msg string
+		if daysUntilExpiry < 0 {
+			msg = "SSL certificate expired " + strconv.Itoa(-daysUntilExpiry) + " days ago (" + res.CertExpiry.Format("2006-01-02") + ")"
+		} else {
+			msg = "SSL certificate expires in " + strconv.Itoa(daysUntilExpiry) + " days (" + res.CertExpiry.Format("2006-01-02") + ")"
+		}
+		go func() { _ = m.store.CreateEvent(res.MonitorID, "ssl_expiring", msg) }()
+
+		if !isMaint {
+			m.notifier.Enqueue(notifications.NotificationEvent{
+				MonitorID:   res.MonitorID,
+				MonitorName: mon.GetName(),
+				MonitorURL:  mon.GetTargetURL(),
+				Type:        notifications.EventSSLExpiring,
+				Message:     msg,
+				Time:        res.Timestamp,
+			})
+		}
+		log.Printf("Monitor %s: SSL certificate expiring in %d days (threshold: %d)", res.MonitorID, daysUntilExpiry, matchedThreshold)
 	}
 }
 
@@ -528,6 +604,9 @@ func (m *Manager) Sync() {
 		}
 	}
 
+	// Load global notification fatigue settings
+	globalCfg := m.loadNotificationConfig()
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -553,6 +632,15 @@ func (m *Manager) Sync() {
 			continue
 		}
 
+		// Resolve per-monitor config (override global defaults)
+		cfg := globalCfg
+		if dbM.ConfirmationThreshold != nil {
+			cfg.ConfirmationThreshold = *dbM.ConfirmationThreshold
+		}
+		if dbM.NotificationCooldownMin != nil {
+			cfg.CooldownMinutes = *dbM.NotificationCooldownMin
+		}
+
 		// Determine interval
 		intervalSec := dbM.Interval
 		if intervalSec < 1 {
@@ -561,6 +649,9 @@ func (m *Manager) Sync() {
 		interval := time.Duration(intervalSec) * time.Second
 
 		if existing, exists := m.monitors[dbM.ID]; exists {
+			// Always apply latest config to existing monitors
+			existing.ApplyConfig(cfg)
+
 			// Check for changes (URL or Interval)
 			if existing.GetTargetURL() != dbM.URL || existing.GetInterval() != interval {
 				log.Printf("Monitor %s config changed (Interval/URL). Restarting...", dbM.Name)
@@ -572,6 +663,7 @@ func (m *Manager) Sync() {
 		if _, exists := m.monitors[dbM.ID]; !exists {
 			// Start new monitor
 			mon := NewMonitor(dbM.ID, dbM.GroupID, dbM.Name, dbM.URL, interval, m.jobQueue, dbM.CreatedAt)
+			mon.ApplyConfig(cfg)
 
 			// Hydrate history from DB
 			checks, err := m.store.GetMonitorChecks(dbM.ID, 50)
@@ -586,6 +678,9 @@ func (m *Manager) Sync() {
 					mon.RecordResult(isUp, c.Latency, c.Timestamp, c.StatusCode, "", isDegraded)
 				}
 			}
+
+			// Hydrate confirmation state from history
+			mon.HydrateConfirmationState()
 
 			go mon.Start()
 			m.monitors[dbM.ID] = mon
@@ -630,6 +725,43 @@ func (m *Manager) Sync() {
 			log.Printf("Stopped monitor: %s", id)
 		}
 	}
+}
+
+// loadNotificationConfig reads global notification fatigue settings from the database.
+func (m *Manager) loadNotificationConfig() MonitorConfig {
+	cfg := MonitorConfig{
+		ConfirmationThreshold: 3,
+		CooldownMinutes:       30,
+		FlapDetectionEnabled:  true,
+		FlapWindowChecks:      21,
+		FlapThresholdPercent:  25,
+	}
+
+	if val, err := m.store.GetSetting("notification.confirmation_threshold"); err == nil {
+		if i, err := strconv.Atoi(val); err == nil && i >= 1 {
+			cfg.ConfirmationThreshold = i
+		}
+	}
+	if val, err := m.store.GetSetting("notification.cooldown_minutes"); err == nil {
+		if i, err := strconv.Atoi(val); err == nil && i >= 0 {
+			cfg.CooldownMinutes = i
+		}
+	}
+	if val, err := m.store.GetSetting("notification.flap_detection_enabled"); err == nil {
+		cfg.FlapDetectionEnabled = val == "true"
+	}
+	if val, err := m.store.GetSetting("notification.flap_window_checks"); err == nil {
+		if i, err := strconv.Atoi(val); err == nil && i >= 3 {
+			cfg.FlapWindowChecks = i
+		}
+	}
+	if val, err := m.store.GetSetting("notification.flap_threshold_percent"); err == nil {
+		if i, err := strconv.Atoi(val); err == nil && i >= 1 && i <= 100 {
+			cfg.FlapThresholdPercent = i
+		}
+	}
+
+	return cfg
 }
 
 // GetMonitor returns a specific monitor instance

@@ -52,6 +52,9 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
     }, [defaultGroup, groups]);
 
     const [interval, setInterval] = useState(60);
+    const [confirmThreshold, setConfirmThreshold] = useState<string>("");
+    const [cooldownMins, setCooldownMins] = useState<string>("");
+    const [showAdvanced, setShowAdvanced] = useState(false);
     const [isNewGroup, setIsNewGroup] = useState(false);
     const [newGroupName, setNewGroupName] = useState(""); // For new group input
 
@@ -129,7 +132,9 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                 name,
                 url,
                 groupId: finalGroupId,
-                interval
+                interval,
+                confirmationThreshold: confirmThreshold ? parseInt(confirmThreshold) : undefined,
+                notificationCooldownMinutes: cooldownMins ? parseInt(cooldownMins) : undefined,
             });
 
             toast({ title: "Monitor Created", description: `Monitor "${name}" active and checking.` });
@@ -140,6 +145,9 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
             setNewGroupName("");
             setSelectedGroupId("");
             setInterval(60);
+            setConfirmThreshold("");
+            setCooldownMins("");
+            setShowAdvanced(false);
             setIsNewGroup(false);
             setOpen(false);
 
@@ -266,6 +274,46 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                             <p className="text-[0.8rem] text-muted-foreground">
                                 Select an existing group or create a new one.
                             </p>
+                        )}
+                    </div>
+                    <div className="grid gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setShowAdvanced(!showAdvanced)}
+                            className="text-sm text-muted-foreground hover:text-foreground transition-colors text-left"
+                        >
+                            {showAdvanced ? "- Hide Advanced" : "+ Advanced Settings"}
+                        </button>
+                        {showAdvanced && (
+                            <div className="grid grid-cols-2 gap-4 p-3 rounded-lg border border-border bg-muted/30">
+                                <div className="grid gap-1.5">
+                                    <Label htmlFor="create-confirm" className="text-xs">Confirmation Checks</Label>
+                                    <Input
+                                        id="create-confirm"
+                                        type="number"
+                                        min={1}
+                                        max={100}
+                                        placeholder="Global default"
+                                        value={confirmThreshold}
+                                        onChange={(e) => setConfirmThreshold(e.target.value)}
+                                    />
+                                </div>
+                                <div className="grid gap-1.5">
+                                    <Label htmlFor="create-cooldown" className="text-xs">Cooldown (min)</Label>
+                                    <Input
+                                        id="create-cooldown"
+                                        type="number"
+                                        min={0}
+                                        max={1440}
+                                        placeholder="Global default"
+                                        value={cooldownMins}
+                                        onChange={(e) => setCooldownMins(e.target.value)}
+                                    />
+                                </div>
+                                <p className="col-span-2 text-xs text-muted-foreground">
+                                    Override global notification settings for this monitor. Leave empty to use global defaults.
+                                </p>
+                            </div>
                         )}
                     </div>
                     <SheetFooter className="mt-4">

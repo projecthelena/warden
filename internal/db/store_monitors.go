@@ -11,13 +11,15 @@ import (
 var ErrMonitorNotFound = errors.New("monitor not found")
 
 type Monitor struct {
-	ID        string    `json:"id"`
-	GroupID   string    `json:"groupId"`
-	Name      string    `json:"name"`
-	URL       string    `json:"url"`
-	Active    bool      `json:"active"`
-	Interval  int       `json:"interval"` // Seconds
-	CreatedAt time.Time `json:"createdAt"`
+	ID                      string    `json:"id"`
+	GroupID                 string    `json:"groupId"`
+	Name                    string    `json:"name"`
+	URL                     string    `json:"url"`
+	Active                  bool      `json:"active"`
+	Interval                int       `json:"interval"` // Seconds
+	CreatedAt               time.Time `json:"createdAt"`
+	ConfirmationThreshold   *int      `json:"confirmationThreshold,omitempty"`
+	NotificationCooldownMin *int      `json:"notificationCooldownMinutes,omitempty"`
 }
 
 type CheckResult struct {
@@ -60,17 +62,18 @@ func (s *Store) CreateMonitor(m Monitor) error {
 	if m.Interval < 1 {
 		m.Interval = 60 // Default safety
 	}
-	_, err := s.db.Exec(s.rebind("INSERT INTO monitors (id, group_id, name, url, active, interval_seconds, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"),
-		m.ID, m.GroupID, m.Name, m.URL, m.Active, m.Interval, time.Now())
+	_, err := s.db.Exec(s.rebind("INSERT INTO monitors (id, group_id, name, url, active, interval_seconds, created_at, confirmation_threshold, notification_cooldown_minutes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"),
+		m.ID, m.GroupID, m.Name, m.URL, m.Active, m.Interval, time.Now(), toNullInt64(m.ConfirmationThreshold), toNullInt64(m.NotificationCooldownMin))
 	return err
 }
 
-func (s *Store) UpdateMonitor(id, name, url string, interval int) error {
+func (s *Store) UpdateMonitor(id, name, url string, interval int, confirmThreshold *int, cooldownMins *int) error {
 	if interval < 1 {
 		interval = 60
 	}
 	// Don't modify active flag - it's managed separately via SetMonitorActive
-	res, err := s.db.Exec(s.rebind("UPDATE monitors SET name = ?, url = ?, interval_seconds = ? WHERE id = ?"), name, url, interval, id)
+	res, err := s.db.Exec(s.rebind("UPDATE monitors SET name = ?, url = ?, interval_seconds = ?, confirmation_threshold = ?, notification_cooldown_minutes = ? WHERE id = ?"),
+		name, url, interval, toNullInt64(confirmThreshold), toNullInt64(cooldownMins), id)
 	if err != nil {
 		return err
 	}
@@ -106,7 +109,7 @@ func (s *Store) SetMonitorActive(id string, active bool) error {
 
 // GetMonitors returns all monitors
 func (s *Store) GetMonitors() ([]Monitor, error) {
-	rows, err := s.db.Query("SELECT id, group_id, name, url, active, interval_seconds, created_at FROM monitors ORDER BY created_at ASC")
+	rows, err := s.db.Query("SELECT id, group_id, name, url, active, interval_seconds, created_at, confirmation_threshold, notification_cooldown_minutes FROM monitors ORDER BY created_at ASC")
 	if err != nil {
 		return nil, err
 	}
@@ -115,8 +118,17 @@ func (s *Store) GetMonitors() ([]Monitor, error) {
 	var monitors []Monitor
 	for rows.Next() {
 		var m Monitor
-		if err := rows.Scan(&m.ID, &m.GroupID, &m.Name, &m.URL, &m.Active, &m.Interval, &m.CreatedAt); err != nil {
+		var confirmThreshold, cooldownMins sql.NullInt64
+		if err := rows.Scan(&m.ID, &m.GroupID, &m.Name, &m.URL, &m.Active, &m.Interval, &m.CreatedAt, &confirmThreshold, &cooldownMins); err != nil {
 			return nil, err
+		}
+		if confirmThreshold.Valid {
+			v := int(confirmThreshold.Int64)
+			m.ConfirmationThreshold = &v
+		}
+		if cooldownMins.Valid {
+			v := int(cooldownMins.Int64)
+			m.NotificationCooldownMin = &v
 		}
 		monitors = append(monitors, m)
 	}
@@ -391,6 +403,14 @@ func (s *Store) GetActiveSSLWarnings() ([]SSLWarningEvent, error) {
 		warnings = append(warnings, w)
 	}
 	return warnings, nil
+}
+
+// toNullInt64 converts an *int to sql.NullInt64 for nullable column storage.
+func toNullInt64(v *int) sql.NullInt64 {
+	if v == nil {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: int64(*v), Valid: true}
 }
 
 func (s *Store) GetLatencyStats(monitorID string, hours int) ([]LatencyPoint, error) {

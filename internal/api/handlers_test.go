@@ -479,3 +479,222 @@ func TestPauseResumeMonitor_SequentialToggle(t *testing.T) {
 		}
 	}
 }
+
+// ============== NOTIFICATION FATIGUE API VALIDATION TESTS ==============
+
+func TestCreateMonitor_NotifFatigueValidation(t *testing.T) {
+	tests := []struct {
+		name     string
+		payload  map[string]interface{}
+		expected int
+	}{
+		{
+			name:     "threshold_0",
+			payload:  map[string]interface{}{"name": "T0", "url": "http://test.com", "groupId": "g-default", "interval": 60, "confirmationThreshold": 0},
+			expected: http.StatusBadRequest,
+		},
+		{
+			name:     "threshold_101",
+			payload:  map[string]interface{}{"name": "T101", "url": "http://test.com", "groupId": "g-default", "interval": 60, "confirmationThreshold": 101},
+			expected: http.StatusBadRequest,
+		},
+		{
+			name:     "cooldown_negative",
+			payload:  map[string]interface{}{"name": "CN", "url": "http://test.com", "groupId": "g-default", "interval": 60, "notificationCooldownMinutes": -1},
+			expected: http.StatusBadRequest,
+		},
+		{
+			name:     "cooldown_1441",
+			payload:  map[string]interface{}{"name": "C1441", "url": "http://test.com", "groupId": "g-default", "interval": 60, "notificationCooldownMinutes": 1441},
+			expected: http.StatusBadRequest,
+		},
+		{
+			name:     "valid_boundaries_min",
+			payload:  map[string]interface{}{"name": "VMin", "url": "http://test.com", "groupId": "g-default", "interval": 60, "confirmationThreshold": 1, "notificationCooldownMinutes": 0},
+			expected: http.StatusCreated,
+		},
+		{
+			name:     "valid_boundaries_max",
+			payload:  map[string]interface{}{"name": "VMax", "url": "http://test.com", "groupId": "g-default", "interval": 60, "confirmationThreshold": 100, "notificationCooldownMinutes": 1440},
+			expected: http.StatusCreated,
+		},
+		{
+			name:     "nil_overrides",
+			payload:  map[string]interface{}{"name": "NoOv", "url": "http://test.com", "groupId": "g-default", "interval": 60},
+			expected: http.StatusCreated,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			crudH, _, _, _, _ := setupTest(t)
+
+			body, _ := json.Marshal(tc.payload)
+			req := httptest.NewRequest("POST", "/api/monitors", bytes.NewBuffer(body))
+			w := httptest.NewRecorder()
+
+			r := chi.NewRouter()
+			r.Post("/api/monitors", crudH.CreateMonitor)
+			r.ServeHTTP(w, req)
+
+			if w.Code != tc.expected {
+				t.Errorf("Expected %d, got %d. Body: %s", tc.expected, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestUpdateMonitor_NotifFatigueValidation(t *testing.T) {
+	tests := []struct {
+		name     string
+		payload  map[string]interface{}
+		expected int
+	}{
+		{
+			name:     "threshold_0",
+			payload:  map[string]interface{}{"name": "Test", "url": "http://test.com", "interval": 60, "confirmationThreshold": 0},
+			expected: http.StatusBadRequest,
+		},
+		{
+			name:     "threshold_101",
+			payload:  map[string]interface{}{"name": "Test", "url": "http://test.com", "interval": 60, "confirmationThreshold": 101},
+			expected: http.StatusBadRequest,
+		},
+		{
+			name:     "cooldown_negative",
+			payload:  map[string]interface{}{"name": "Test", "url": "http://test.com", "interval": 60, "notificationCooldownMinutes": -1},
+			expected: http.StatusBadRequest,
+		},
+		{
+			name:     "cooldown_1441",
+			payload:  map[string]interface{}{"name": "Test", "url": "http://test.com", "interval": 60, "notificationCooldownMinutes": 1441},
+			expected: http.StatusBadRequest,
+		},
+		{
+			name:     "valid_update",
+			payload:  map[string]interface{}{"name": "Test", "url": "http://test.com", "interval": 60, "confirmationThreshold": 5, "notificationCooldownMinutes": 15},
+			expected: http.StatusOK,
+		},
+		{
+			name:     "nil_overrides",
+			payload:  map[string]interface{}{"name": "Test", "url": "http://test.com", "interval": 60},
+			expected: http.StatusOK,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			crudH, _, _, _, s := setupTest(t)
+
+			// Seed monitor
+			if err := s.CreateMonitor(db.Monitor{ID: "m-val", GroupID: "g-default", Name: "Test", URL: "http://test.com", Interval: 60, Active: true}); err != nil {
+				t.Fatalf("Failed to create monitor: %v", err)
+			}
+
+			body, _ := json.Marshal(tc.payload)
+			req := httptest.NewRequest("PUT", "/api/monitors/m-val", bytes.NewBuffer(body))
+			w := httptest.NewRecorder()
+
+			r := chi.NewRouter()
+			r.Put("/api/monitors/{id}", crudH.UpdateMonitor)
+			r.ServeHTTP(w, req)
+
+			if w.Code != tc.expected {
+				t.Errorf("Expected %d, got %d. Body: %s", tc.expected, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestGetUptime_IncludesOverrideFields(t *testing.T) {
+	crudH, _, _, _, s := setupTest(t)
+	manager := uptime.NewManager(s)
+	uptimeH := NewUptimeHandler(manager, s)
+
+	// Create monitor WITH overrides
+	threshold := 5
+	cooldown := 15
+	if err := s.CreateMonitor(db.Monitor{
+		ID: "m-with-ov", GroupID: "g-default", Name: "With Override",
+		URL: "http://test.com", Interval: 60, Active: true,
+		ConfirmationThreshold:   &threshold,
+		NotificationCooldownMin: &cooldown,
+	}); err != nil {
+		t.Fatalf("Failed to create monitor: %v", err)
+	}
+
+	// Create monitor WITHOUT overrides
+	if err := s.CreateMonitor(db.Monitor{
+		ID: "m-without-ov", GroupID: "g-default", Name: "Without Override",
+		URL: "http://test2.com", Interval: 60, Active: true,
+	}); err != nil {
+		t.Fatalf("Failed to create monitor: %v", err)
+	}
+
+	manager.Sync()
+
+	req := httptest.NewRequest("GET", "/api/uptime", nil)
+	w := httptest.NewRecorder()
+
+	r := chi.NewRouter()
+	r.Get("/api/uptime", uptimeH.GetHistory)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d. Body: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	groups, ok := resp["groups"].([]interface{})
+	if !ok || len(groups) == 0 {
+		t.Fatal("Expected groups in response")
+	}
+
+	// Find monitors in response
+	var withOv, withoutOv map[string]interface{}
+	for _, g := range groups {
+		group := g.(map[string]interface{})
+		monitors, ok := group["monitors"].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, mon := range monitors {
+			m := mon.(map[string]interface{})
+			if m["id"] == "m-with-ov" {
+				withOv = m
+			}
+			if m["id"] == "m-without-ov" {
+				withoutOv = m
+			}
+		}
+	}
+
+	if withOv == nil {
+		t.Fatal("Monitor m-with-ov not found in response")
+	}
+	if withoutOv == nil {
+		t.Fatal("Monitor m-without-ov not found in response")
+	}
+
+	// Monitor WITH overrides should have the fields
+	if v, ok := withOv["confirmationThreshold"]; !ok || v != float64(5) {
+		t.Errorf("Expected confirmationThreshold=5, got %v", v)
+	}
+	if v, ok := withOv["notificationCooldownMinutes"]; !ok || v != float64(15) {
+		t.Errorf("Expected notificationCooldownMinutes=15, got %v", v)
+	}
+
+	// Monitor WITHOUT overrides should NOT have the fields (omitempty)
+	if _, ok := withoutOv["confirmationThreshold"]; ok {
+		t.Error("Expected confirmationThreshold absent for monitor without overrides")
+	}
+	if _, ok := withoutOv["notificationCooldownMinutes"]; ok {
+		t.Error("Expected notificationCooldownMinutes absent for monitor without overrides")
+	}
+
+	_ = crudH // used in setup
+}

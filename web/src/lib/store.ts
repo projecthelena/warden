@@ -4,7 +4,7 @@ import { queryClient } from "./queryClient";
 
 export interface MonitorEvent {
     id: string;
-    type: 'up' | 'down' | 'degraded' | 'ssl_expiring';
+    type: 'up' | 'down' | 'degraded' | 'ssl_expiring' | 'flapping' | 'stabilized';
     timestamp: string;
     message: string;
 }
@@ -49,6 +49,8 @@ export interface Monitor {
     lastCheck: string;
     events: MonitorEvent[];
     interval: number;
+    confirmationThreshold?: number;
+    notificationCooldownMinutes?: number;
 }
 
 export interface Group {

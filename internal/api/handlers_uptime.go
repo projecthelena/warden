@@ -46,16 +46,18 @@ type HistoryPoint struct {
 }
 
 type MonitorDTO struct {
-	ID        string         `json:"id"`
-	Name      string         `json:"name"`
-	URL       string         `json:"url"`
-	Status    string         `json:"status"`
-	Active    bool           `json:"active"`
-	Latency   int64          `json:"latency"`
-	Interval  int            `json:"interval"`
-	History   []HistoryPoint `json:"history"`
-	Events    []MonitorEvent `json:"events"`
-	LastCheck string         `json:"lastCheck"`
+	ID                      string         `json:"id"`
+	Name                    string         `json:"name"`
+	URL                     string         `json:"url"`
+	Status                  string         `json:"status"`
+	Active                  bool           `json:"active"`
+	Latency                 int64          `json:"latency"`
+	Interval                int            `json:"interval"`
+	History                 []HistoryPoint `json:"history"`
+	Events                  []MonitorEvent `json:"events"`
+	LastCheck               string         `json:"lastCheck"`
+	ConfirmationThreshold   *int           `json:"confirmationThreshold,omitempty"`
+	NotificationCooldownMin *int           `json:"notificationCooldownMinutes,omitempty"`
 }
 
 type MonitorEvent struct {
@@ -176,16 +178,18 @@ func (h *UptimeHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 			}
 
 			monitorDTOs = append(monitorDTOs, MonitorDTO{
-				ID:        meta.ID,
-				Name:      meta.Name,
-				URL:       meta.URL,
-				Status:    statusStr,
-				Active:    meta.Active,
-				Latency:   latency,
-				Interval:  meta.Interval,
-				History:   historyPoints,
-				LastCheck: lastCheck,
-				Events:    getEventsForDTO(h.store, meta.ID),
+				ID:                      meta.ID,
+				Name:                    meta.Name,
+				URL:                     meta.URL,
+				Status:                  statusStr,
+				Active:                  meta.Active,
+				Latency:                 latency,
+				Interval:                meta.Interval,
+				History:                 historyPoints,
+				LastCheck:               lastCheck,
+				Events:                  getEventsForDTO(h.store, meta.ID),
+				ConfirmationThreshold:   meta.ConfirmationThreshold,
+				NotificationCooldownMin: meta.NotificationCooldownMin,
 			})
 		}
 

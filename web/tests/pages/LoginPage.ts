@@ -25,9 +25,8 @@ export class LoginPage {
     }
 
     async login(username = 'admin', password = 'password123!') {
-        // Wait for login page to be ready
-        await this.page.waitForLoadState('networkidle');
-        await expect(this.header).toBeVisible();
+        // Wait for login page to be ready (longer timeout for CI where SPA redirect is slow)
+        await expect(this.header).toBeVisible({ timeout: 15000 });
 
         // Fill credentials
         await this.usernameInput.fill(username);

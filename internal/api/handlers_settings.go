@@ -68,19 +68,46 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		secretConfigured = "true"
 	}
 
+	// Notification Fatigue Settings
+	confirmThreshold, _ := h.store.GetSetting("notification.confirmation_threshold")
+	if confirmThreshold == "" {
+		confirmThreshold = "3"
+	}
+	cooldownMins, _ := h.store.GetSetting("notification.cooldown_minutes")
+	if cooldownMins == "" {
+		cooldownMins = "30"
+	}
+	flapEnabled, _ := h.store.GetSetting("notification.flap_detection_enabled")
+	if flapEnabled == "" {
+		flapEnabled = "true"
+	}
+	flapWindow, _ := h.store.GetSetting("notification.flap_window_checks")
+	if flapWindow == "" {
+		flapWindow = "21"
+	}
+	flapThreshold, _ := h.store.GetSetting("notification.flap_threshold_percent")
+	if flapThreshold == "" {
+		flapThreshold = "25"
+	}
+
 	writeJSON(w, http.StatusOK, map[string]string{
-		"latency_threshold":                    val,
-		"data_retention_days":                  retention,
-		"notifications.slack.enabled":          slackEnabled,
-		"notifications.slack.webhook_url":      slackWebhookMasked, // SECURITY: Masked for display
+		"latency_threshold":                      val,
+		"data_retention_days":                    retention,
+		"notifications.slack.enabled":            slackEnabled,
+		"notifications.slack.webhook_url":        slackWebhookMasked, // SECURITY: Masked for display
 		"notifications.slack.webhook_configured": func() string { if slackWebhook != "" { return "true" }; return "false" }(),
-		"notifications.slack.notify_on":        slackNotifyOn,
-		"sso.google.enabled":                   ssoGoogleEnabled,
-		"sso.google.client_id":                 ssoGoogleClientID,
-		"sso.google.secret_configured":         secretConfigured,
-		"sso.google.redirect_url":              ssoGoogleRedirectURL,
-		"sso.google.allowed_domains":           ssoGoogleAllowedDomains,
-		"sso.google.auto_provision":            ssoGoogleAutoProvision,
+		"notifications.slack.notify_on":          slackNotifyOn,
+		"sso.google.enabled":                     ssoGoogleEnabled,
+		"sso.google.client_id":                   ssoGoogleClientID,
+		"sso.google.secret_configured":           secretConfigured,
+		"sso.google.redirect_url":                ssoGoogleRedirectURL,
+		"sso.google.allowed_domains":             ssoGoogleAllowedDomains,
+		"sso.google.auto_provision":              ssoGoogleAutoProvision,
+		"notification.confirmation_threshold":    confirmThreshold,
+		"notification.cooldown_minutes":          cooldownMins,
+		"notification.flap_detection_enabled":    flapEnabled,
+		"notification.flap_window_checks":        flapWindow,
+		"notification.flap_threshold_percent":    flapThreshold,
 	})
 }
 
@@ -163,6 +190,47 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 				return
 			}
 		}
+	}
+
+	// Notification Fatigue Settings
+	notifFatigueChanged := false
+	notifFatigueIntKeys := map[string]struct{ min, max int }{
+		"notification.confirmation_threshold": {1, 100},
+		"notification.cooldown_minutes":       {0, 1440},
+		"notification.flap_window_checks":     {3, 100},
+		"notification.flap_threshold_percent":  {1, 100},
+	}
+
+	for key, bounds := range notifFatigueIntKeys {
+		if val, ok := body[key]; ok {
+			i, err := strconv.Atoi(val)
+			if err != nil || i < bounds.min || i > bounds.max {
+				http.Error(w, "Invalid "+key, http.StatusBadRequest)
+				return
+			}
+			if err := h.store.SetSetting(key, val); err != nil {
+				http.Error(w, "Failed to save "+key, http.StatusInternalServerError)
+				return
+			}
+			notifFatigueChanged = true
+		}
+	}
+
+	if val, ok := body["notification.flap_detection_enabled"]; ok {
+		if val != "true" && val != "false" {
+			http.Error(w, "Invalid notification.flap_detection_enabled", http.StatusBadRequest)
+			return
+		}
+		if err := h.store.SetSetting("notification.flap_detection_enabled", val); err != nil {
+			http.Error(w, "Failed to save notification.flap_detection_enabled", http.StatusInternalServerError)
+			return
+		}
+		notifFatigueChanged = true
+	}
+
+	// Trigger Sync so monitors pick up new settings immediately
+	if notifFatigueChanged {
+		h.manager.Sync()
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
