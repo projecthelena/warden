@@ -20,6 +20,8 @@ const (
 	EventUp          EventType = "up"
 	EventDegraded    EventType = "degraded"
 	EventSSLExpiring EventType = "ssl_expiring"
+	EventFlapping    EventType = "flapping"
+	EventStabilized  EventType = "stabilized"
 )
 
 // NotificationEvent represents the data needed to send a notification
@@ -121,6 +123,10 @@ func (n *SlackNotifier) Send(event NotificationEvent) error {
 		color = "#ffc107" // Yellow
 	case EventSSLExpiring:
 		color = "#ff8c00" // Orange
+	case EventFlapping:
+		color = "#9b59b6" // Purple
+	case EventStabilized:
+		color = "#3498db" // Blue
 	}
 
 	emoji := ":white_check_mark:"
@@ -131,6 +137,10 @@ func (n *SlackNotifier) Send(event NotificationEvent) error {
 		emoji = ":warning:"
 	case EventSSLExpiring:
 		emoji = ":lock:"
+	case EventFlapping:
+		emoji = ":cyclone:"
+	case EventStabilized:
+		emoji = ":large_blue_circle:"
 	}
 
 	title := "Monitor Recovered"
@@ -141,6 +151,10 @@ func (n *SlackNotifier) Send(event NotificationEvent) error {
 		title = "Monitor Degraded"
 	case EventSSLExpiring:
 		title = "SSL Certificate Expiring"
+	case EventFlapping:
+		title = "Monitor Flapping"
+	case EventStabilized:
+		title = "Monitor Stabilized"
 	}
 
 	payload := map[string]interface{}{

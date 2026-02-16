@@ -81,7 +81,7 @@ func TestMultiDB_MonitorCRUD(t *testing.T) {
 		}
 
 		// Update
-		if err := s.UpdateMonitor("m1", "Updated Monitor", "https://updated.com", 120); err != nil {
+		if err := s.UpdateMonitor("m1", "Updated Monitor", "https://updated.com", 120, nil, nil); err != nil {
 			t.Fatalf("UpdateMonitor failed: %v", err)
 		}
 		monitors, _ = s.GetMonitors()

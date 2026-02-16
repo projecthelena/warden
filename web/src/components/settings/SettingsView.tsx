@@ -3,6 +3,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import { SystemTab } from "./SystemTab";
 import { SSOSettings } from "./SSOSettings";
 import { SelectTimezone } from "@/components/ui/select-timezone";
@@ -143,6 +144,133 @@ function GeneralSettings() {
     );
 }
 
+function NotificationIntelligence() {
+    const { settings, fetchSettings, updateSettings } = useMonitorStore();
+    const { toast } = useToast();
+
+    const [confirmThreshold, setConfirmThreshold] = useState(settings?.["notification.confirmation_threshold"] || "3");
+    const [cooldownMins, setCooldownMins] = useState(settings?.["notification.cooldown_minutes"] || "30");
+    const [flapEnabled, setFlapEnabled] = useState(settings?.["notification.flap_detection_enabled"] !== "false");
+    const [flapWindow, setFlapWindow] = useState(settings?.["notification.flap_window_checks"] || "21");
+    const [flapThreshold, setFlapThreshold] = useState(settings?.["notification.flap_threshold_percent"] || "25");
+
+    useEffect(() => {
+        fetchSettings();
+    }, [fetchSettings]);
+
+    useEffect(() => {
+        if (settings) {
+            setConfirmThreshold(settings["notification.confirmation_threshold"] || "3");
+            setCooldownMins(settings["notification.cooldown_minutes"] || "30");
+            setFlapEnabled(settings["notification.flap_detection_enabled"] !== "false");
+            setFlapWindow(settings["notification.flap_window_checks"] || "21");
+            setFlapThreshold(settings["notification.flap_threshold_percent"] || "25");
+        }
+    }, [settings]);
+
+    const handleSave = async () => {
+        await updateSettings({
+            "notification.confirmation_threshold": confirmThreshold,
+            "notification.cooldown_minutes": cooldownMins,
+            "notification.flap_detection_enabled": flapEnabled ? "true" : "false",
+            "notification.flap_window_checks": flapWindow,
+            "notification.flap_threshold_percent": flapThreshold,
+        });
+        toast({ title: "Settings Saved", description: "Notification intelligence settings updated." });
+    };
+
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle>Notification Intelligence</CardTitle>
+                <CardDescription>
+                    Reduce notification noise by requiring confirmation, applying cooldowns, and detecting flapping monitors.
+                </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+                <div className="grid gap-2">
+                    <Label htmlFor="confirm-threshold">Confirmation Checks</Label>
+                    <div className="text-sm text-muted-foreground mb-2">
+                        Require this many consecutive failures before declaring a monitor down and sending a notification. A value of 1 means immediate alerting (no confirmation).
+                    </div>
+                    <Input
+                        id="confirm-threshold"
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={confirmThreshold}
+                        onChange={(e) => setConfirmThreshold(e.target.value)}
+                        className="max-w-[200px]"
+                    />
+                </div>
+                <div className="grid gap-2">
+                    <Label htmlFor="cooldown-mins">Notification Cooldown (Minutes)</Label>
+                    <div className="text-sm text-muted-foreground mb-2">
+                        After sending an alert, suppress duplicate notifications for the same condition for this many minutes. Recovery notifications always send immediately. Set to 0 to disable.
+                    </div>
+                    <Input
+                        id="cooldown-mins"
+                        type="number"
+                        min={0}
+                        max={1440}
+                        value={cooldownMins}
+                        onChange={(e) => setCooldownMins(e.target.value)}
+                        className="max-w-[200px]"
+                    />
+                </div>
+                <Separator />
+                <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                        <Label>Flap Detection</Label>
+                        <p className="text-sm text-muted-foreground">
+                            Detect monitors oscillating rapidly between states and suppress individual notifications during flapping. A single "flapping" alert is sent instead.
+                        </p>
+                    </div>
+                    <Switch
+                        checked={flapEnabled}
+                        onCheckedChange={setFlapEnabled}
+                    />
+                </div>
+                {flapEnabled && (
+                    <div className="grid grid-cols-2 gap-4 pl-1">
+                        <div className="grid gap-2">
+                            <Label htmlFor="flap-window">Window (checks)</Label>
+                            <div className="text-sm text-muted-foreground mb-1">
+                                Number of recent checks to analyze.
+                            </div>
+                            <Input
+                                id="flap-window"
+                                type="number"
+                                min={3}
+                                max={100}
+                                value={flapWindow}
+                                onChange={(e) => setFlapWindow(e.target.value)}
+                                className="max-w-[160px]"
+                            />
+                        </div>
+                        <div className="grid gap-2">
+                            <Label htmlFor="flap-threshold">Threshold (%)</Label>
+                            <div className="text-sm text-muted-foreground mb-1">
+                                State transitions percentage that triggers flapping.
+                            </div>
+                            <Input
+                                id="flap-threshold"
+                                type="number"
+                                min={1}
+                                max={100}
+                                value={flapThreshold}
+                                onChange={(e) => setFlapThreshold(e.target.value)}
+                                className="max-w-[160px]"
+                            />
+                        </div>
+                    </div>
+                )}
+                <Button onClick={handleSave} className="w-fit">Save Settings</Button>
+            </CardContent>
+        </Card>
+    );
+}
+
 export function SettingsView() {
     const { user, updateUser } = useMonitorStore();
     const { toast } = useToast();
@@ -241,6 +369,8 @@ export function SettingsView() {
                 </Card>
 
                 <GeneralSettings />
+
+                <NotificationIntelligence />
 
                 <SSOSettings />
 

@@ -35,7 +35,7 @@ build-backend:
 build: deps build-frontend build-backend
 
 run: build
-	$(BACKEND_ENV) $(BINARY)
+	ADMIN_SECRET=warden-e2e-magic-key $(BACKEND_ENV) $(BINARY)
 
 dev-bundle: build
 	$(BACKEND_ENV) $(BINARY)
@@ -85,6 +85,9 @@ clean:
 
 e2e:
 	cd web && npm run test:e2e
+
+e2e-headed:
+	cd web && npx playwright test --headed
 
 e2e-ui:
 	cd web && npm run test:e2e:ui

@@ -9,6 +9,14 @@ import (
 	"github.com/projecthelena/warden/internal/db"
 )
 
+func setIntegrationTestDefaults(store *db.Store) {
+	// Integration tests use 1-second intervals with short sleeps, so disable
+	// confirmation thresholds and flap detection to match pre-feature behavior.
+	_ = store.SetSetting("notification.confirmation_threshold", "1")
+	_ = store.SetSetting("notification.flap_detection_enabled", "false")
+	_ = store.SetSetting("notification.cooldown_minutes", "0")
+}
+
 func TestMonitor_DegradedThreshold(t *testing.T) {
 	// Setup Store & Manager
 	store, err := db.NewStore(db.NewTestConfigWithPath("file:test?mode=memory&cache=shared"))
@@ -16,6 +24,7 @@ func TestMonitor_DegradedThreshold(t *testing.T) {
 		t.Fatalf("Failed to create store: %v", err)
 	}
 	// Skip Reset(), working with fresh memory DB.
+	setIntegrationTestDefaults(store)
 
 	m := NewManager(store)
 	m.Start()
@@ -98,8 +107,7 @@ func TestMonitor_StatusCodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	// Note: We don't call store.Reset() to avoid potential table drop races or overhead.
-	// We rely on creating a unique monitor ID.
+	setIntegrationTestDefaults(store)
 
 	m := NewManager(store)
 	m.Start()
@@ -166,6 +174,7 @@ func TestMonitor_EventLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
+	setIntegrationTestDefaults(store)
 
 	m := NewManager(store)
 	m.Start()
@@ -252,6 +261,7 @@ func TestMonitor_ErrorTypes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
+	setIntegrationTestDefaults(store)
 
 	m := NewManager(store)
 	m.Start()

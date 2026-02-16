@@ -34,7 +34,7 @@ func TestMonitorCRUD(t *testing.T) {
 	}
 
 	// Update
-	if err := s.UpdateMonitor("m1", "Updated M1", "http://new.com", 120); err != nil {
+	if err := s.UpdateMonitor("m1", "Updated M1", "http://new.com", 120, nil, nil); err != nil {
 		t.Fatalf("UpdateMonitor failed: %v", err)
 	}
 
@@ -719,4 +719,200 @@ func TestSetMonitorActive_PausePreservesOtherFields(t *testing.T) {
 	if found.GroupID != "g1" {
 		t.Errorf("GroupID changed unexpectedly: %s", found.GroupID)
 	}
+}
+
+// ============== PER-MONITOR OVERRIDE CRUD TESTS ==============
+
+func intPtr(v int) *int { return &v }
+
+func TestMonitor_PerMonitorOverrides(t *testing.T) {
+	t.Run("create_with_overrides", func(t *testing.T) {
+		s := newTestStore(t)
+		_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+
+		m := Monitor{
+			ID:                      "m-ov1",
+			GroupID:                 "g1",
+			Name:                    "Override Create",
+			URL:                     "http://example.com",
+			Active:                  true,
+			Interval:                60,
+			ConfirmationThreshold:   intPtr(5),
+			NotificationCooldownMin: intPtr(10),
+		}
+		if err := s.CreateMonitor(m); err != nil {
+			t.Fatalf("CreateMonitor failed: %v", err)
+		}
+
+		mons, err := s.GetMonitors()
+		if err != nil {
+			t.Fatalf("GetMonitors failed: %v", err)
+		}
+		var found *Monitor
+		for i := range mons {
+			if mons[i].ID == "m-ov1" {
+				found = &mons[i]
+				break
+			}
+		}
+		if found == nil {
+			t.Fatal("Monitor not found")
+		}
+		if found.ConfirmationThreshold == nil || *found.ConfirmationThreshold != 5 {
+			t.Errorf("Expected ConfirmationThreshold=5, got %v", found.ConfirmationThreshold)
+		}
+		if found.NotificationCooldownMin == nil || *found.NotificationCooldownMin != 10 {
+			t.Errorf("Expected NotificationCooldownMin=10, got %v", found.NotificationCooldownMin)
+		}
+	})
+
+	t.Run("create_without_overrides", func(t *testing.T) {
+		s := newTestStore(t)
+		_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+
+		m := Monitor{
+			ID:       "m-ov2",
+			GroupID:  "g1",
+			Name:     "No Override",
+			URL:      "http://example.com",
+			Active:   true,
+			Interval: 60,
+		}
+		if err := s.CreateMonitor(m); err != nil {
+			t.Fatalf("CreateMonitor failed: %v", err)
+		}
+
+		mons, _ := s.GetMonitors()
+		var found *Monitor
+		for i := range mons {
+			if mons[i].ID == "m-ov2" {
+				found = &mons[i]
+				break
+			}
+		}
+		if found == nil {
+			t.Fatal("Monitor not found")
+		}
+		if found.ConfirmationThreshold != nil {
+			t.Errorf("Expected ConfirmationThreshold=nil, got %v", *found.ConfirmationThreshold)
+		}
+		if found.NotificationCooldownMin != nil {
+			t.Errorf("Expected NotificationCooldownMin=nil, got %v", *found.NotificationCooldownMin)
+		}
+	})
+
+	t.Run("update_adds_overrides", func(t *testing.T) {
+		s := newTestStore(t)
+		_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+
+		// Create with no overrides
+		m := Monitor{
+			ID: "m-ov3", GroupID: "g1", Name: "Add Override",
+			URL: "http://example.com", Active: true, Interval: 60,
+		}
+		if err := s.CreateMonitor(m); err != nil {
+			t.Fatalf("CreateMonitor failed: %v", err)
+		}
+
+		// Update to add overrides
+		if err := s.UpdateMonitor("m-ov3", "Add Override", "http://example.com", 60, intPtr(7), intPtr(15)); err != nil {
+			t.Fatalf("UpdateMonitor failed: %v", err)
+		}
+
+		mons, _ := s.GetMonitors()
+		var found *Monitor
+		for i := range mons {
+			if mons[i].ID == "m-ov3" {
+				found = &mons[i]
+				break
+			}
+		}
+		if found == nil {
+			t.Fatal("Monitor not found")
+		}
+		if found.ConfirmationThreshold == nil || *found.ConfirmationThreshold != 7 {
+			t.Errorf("Expected ConfirmationThreshold=7, got %v", found.ConfirmationThreshold)
+		}
+		if found.NotificationCooldownMin == nil || *found.NotificationCooldownMin != 15 {
+			t.Errorf("Expected NotificationCooldownMin=15, got %v", found.NotificationCooldownMin)
+		}
+	})
+
+	t.Run("update_clears_overrides", func(t *testing.T) {
+		s := newTestStore(t)
+		_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+
+		// Create with overrides
+		m := Monitor{
+			ID: "m-ov4", GroupID: "g1", Name: "Clear Override",
+			URL: "http://example.com", Active: true, Interval: 60,
+			ConfirmationThreshold:   intPtr(5),
+			NotificationCooldownMin: intPtr(10),
+		}
+		if err := s.CreateMonitor(m); err != nil {
+			t.Fatalf("CreateMonitor failed: %v", err)
+		}
+
+		// Update to clear overrides
+		if err := s.UpdateMonitor("m-ov4", "Clear Override", "http://example.com", 60, nil, nil); err != nil {
+			t.Fatalf("UpdateMonitor failed: %v", err)
+		}
+
+		mons, _ := s.GetMonitors()
+		var found *Monitor
+		for i := range mons {
+			if mons[i].ID == "m-ov4" {
+				found = &mons[i]
+				break
+			}
+		}
+		if found == nil {
+			t.Fatal("Monitor not found")
+		}
+		if found.ConfirmationThreshold != nil {
+			t.Errorf("Expected ConfirmationThreshold=nil after clear, got %v", *found.ConfirmationThreshold)
+		}
+		if found.NotificationCooldownMin != nil {
+			t.Errorf("Expected NotificationCooldownMin=nil after clear, got %v", *found.NotificationCooldownMin)
+		}
+	})
+
+	t.Run("partial_override", func(t *testing.T) {
+		s := newTestStore(t)
+		_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+
+		// Create with both overrides
+		m := Monitor{
+			ID: "m-ov5", GroupID: "g1", Name: "Partial Override",
+			URL: "http://example.com", Active: true, Interval: 60,
+			ConfirmationThreshold:   intPtr(5),
+			NotificationCooldownMin: intPtr(10),
+		}
+		if err := s.CreateMonitor(m); err != nil {
+			t.Fatalf("CreateMonitor failed: %v", err)
+		}
+
+		// Update only threshold, clear cooldown
+		if err := s.UpdateMonitor("m-ov5", "Partial Override", "http://example.com", 60, intPtr(8), nil); err != nil {
+			t.Fatalf("UpdateMonitor failed: %v", err)
+		}
+
+		mons, _ := s.GetMonitors()
+		var found *Monitor
+		for i := range mons {
+			if mons[i].ID == "m-ov5" {
+				found = &mons[i]
+				break
+			}
+		}
+		if found == nil {
+			t.Fatal("Monitor not found")
+		}
+		if found.ConfirmationThreshold == nil || *found.ConfirmationThreshold != 8 {
+			t.Errorf("Expected ConfirmationThreshold=8, got %v", found.ConfirmationThreshold)
+		}
+		if found.NotificationCooldownMin != nil {
+			t.Errorf("Expected NotificationCooldownMin=nil, got %v", *found.NotificationCooldownMin)
+		}
+	})
 }

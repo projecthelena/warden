@@ -89,6 +89,8 @@ interface CreateMonitorPayload {
     url: string;
     groupId: string;
     interval: number;
+    confirmationThreshold?: number;
+    notificationCooldownMinutes?: number;
 }
 
 async function createMonitorReq(payload: CreateMonitorPayload) {

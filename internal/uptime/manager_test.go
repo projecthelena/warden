@@ -50,7 +50,7 @@ func TestManager_Sync(t *testing.T) {
 	}
 
 	// Update in DB (change interval)
-	if err := s.UpdateMonitor("m-test-1", "Test Monitor", "http://example.com", 120); err != nil {
+	if err := s.UpdateMonitor("m-test-1", "Test Monitor", "http://example.com", 120, nil, nil); err != nil {
 		t.Fatalf("Failed to update monitor: %v", err)
 	}
 
@@ -972,7 +972,7 @@ func TestManager_UpdateWhilePaused(t *testing.T) {
 	m.Sync()
 
 	// Update the monitor while paused
-	if err := store.UpdateMonitor("m-update-paused", "Updated Name", "http://updated.com", 120); err != nil {
+	if err := store.UpdateMonitor("m-update-paused", "Updated Name", "http://updated.com", 120, nil, nil); err != nil {
 		t.Fatalf("UpdateMonitor failed: %v", err)
 	}
 	m.Sync()
@@ -1525,5 +1525,187 @@ func TestManager_Sync_SkipsPausedMonitorOutages(t *testing.T) {
 	outages, _ := store.GetActiveOutages()
 	if len(outages) != 1 {
 		t.Errorf("Expected 1 active outage (paused monitor skipped), got %d", len(outages))
+	}
+}
+
+// ============== NOTIFICATION FATIGUE MANAGER TESTS ==============
+
+func TestManager_NotifFatigue_GlobalSettingsPropagate(t *testing.T) {
+	store, err := db.NewStore(db.NewTestConfig())
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	m := NewManager(store)
+
+	// Set global threshold to 1
+	if err := store.SetSetting("notification.confirmation_threshold", "1"); err != nil {
+		t.Fatalf("SetSetting failed: %v", err)
+	}
+
+	// Create a monitor
+	if err := store.CreateMonitor(db.Monitor{
+		ID: "m-global", GroupID: "g-default", Name: "Global Test",
+		URL: "http://example.com", Active: true, Interval: 60,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	m.Sync()
+
+	// The monitor should have threshold=1 from global settings
+	mon := m.GetMonitor("m-global")
+	if mon == nil {
+		t.Fatal("Monitor should be running")
+	}
+
+	// Verify by behavior: 1 failure should confirm
+	confirmed := mon.IncrementDown()
+	if !confirmed {
+		t.Error("Expected confirmation after 1 failure (global threshold=1)")
+	}
+	if !mon.IsConfirmedDown() {
+		t.Error("Expected IsConfirmedDown=true")
+	}
+}
+
+func TestManager_NotifFatigue_PerMonitorOverridePrecedence(t *testing.T) {
+	store, err := db.NewStore(db.NewTestConfig())
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	m := NewManager(store)
+
+	// Set global threshold to 1
+	if err := store.SetSetting("notification.confirmation_threshold", "1"); err != nil {
+		t.Fatalf("SetSetting failed: %v", err)
+	}
+
+	// Create monitor with per-monitor override of 5
+	threshold := 5
+	if err := store.CreateMonitor(db.Monitor{
+		ID: "m-override", GroupID: "g-default", Name: "Override Test",
+		URL: "http://example.com", Active: true, Interval: 60,
+		ConfirmationThreshold: &threshold,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	m.Sync()
+
+	mon := m.GetMonitor("m-override")
+	if mon == nil {
+		t.Fatal("Monitor should be running")
+	}
+
+	// 3 failures should NOT confirm (need 5)
+	for i := 0; i < 3; i++ {
+		mon.IncrementDown()
+	}
+	if mon.IsConfirmedDown() {
+		t.Error("Expected IsConfirmedDown=false with 3 failures (per-monitor threshold=5)")
+	}
+
+	// 2 more failures should confirm (total=5)
+	mon.IncrementDown()
+	confirmed := mon.IncrementDown()
+	if !confirmed {
+		t.Error("Expected confirmation after 5 failures (per-monitor threshold=5)")
+	}
+	if !mon.IsConfirmedDown() {
+		t.Error("Expected IsConfirmedDown=true")
+	}
+}
+
+func TestManager_NotifFatigue_HydrateOnStartup(t *testing.T) {
+	store, err := db.NewStore(db.NewTestConfig())
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+
+	// Set global threshold to 3
+	if err := store.SetSetting("notification.confirmation_threshold", "3"); err != nil {
+		t.Fatalf("SetSetting failed: %v", err)
+	}
+
+	// Create monitor
+	if err := store.CreateMonitor(db.Monitor{
+		ID: "m-hydrate", GroupID: "g-default", Name: "Hydrate Test",
+		URL: "http://example.com", Active: true, Interval: 60,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Insert 3 consecutive "down" checks in DB
+	now := time.Now()
+	checks := []db.CheckResult{
+		{MonitorID: "m-hydrate", Status: "down", Latency: 0, Timestamp: now.Add(-3 * time.Minute), StatusCode: 0},
+		{MonitorID: "m-hydrate", Status: "down", Latency: 0, Timestamp: now.Add(-2 * time.Minute), StatusCode: 0},
+		{MonitorID: "m-hydrate", Status: "down", Latency: 0, Timestamp: now.Add(-1 * time.Minute), StatusCode: 0},
+	}
+	if err := store.BatchInsertChecks(checks); err != nil {
+		t.Fatalf("BatchInsertChecks failed: %v", err)
+	}
+
+	// Create new manager (simulating startup)
+	m := NewManager(store)
+	m.Sync()
+
+	mon := m.GetMonitor("m-hydrate")
+	if mon == nil {
+		t.Fatal("Monitor should be running")
+	}
+	if !mon.IsConfirmedDown() {
+		t.Error("Expected IsConfirmedDown=true after hydration from DB (3 consecutive down)")
+	}
+}
+
+func TestManager_NotifFatigue_ConfigUpdatePropagates(t *testing.T) {
+	store, err := db.NewStore(db.NewTestConfig())
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	m := NewManager(store)
+
+	// Start with global threshold=3
+	if err := store.SetSetting("notification.confirmation_threshold", "3"); err != nil {
+		t.Fatalf("SetSetting failed: %v", err)
+	}
+
+	if err := store.CreateMonitor(db.Monitor{
+		ID: "m-cfgupdate", GroupID: "g-default", Name: "Config Update Test",
+		URL: "http://example.com", Active: true, Interval: 60,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	m.Sync()
+
+	// Verify initial threshold=3: 1 failure shouldn't confirm
+	mon := m.GetMonitor("m-cfgupdate")
+	if mon == nil {
+		t.Fatal("Monitor should be running")
+	}
+	confirmed := mon.IncrementDown()
+	if confirmed {
+		t.Error("Expected no confirmation with 1 failure (threshold=3)")
+	}
+	mon.ResetDown()
+
+	// Change global threshold to 1
+	if err := store.SetSetting("notification.confirmation_threshold", "1"); err != nil {
+		t.Fatalf("SetSetting failed: %v", err)
+	}
+
+	// Sync again to pick up new config
+	m.Sync()
+
+	// The existing monitor should now have threshold=1
+	mon = m.GetMonitor("m-cfgupdate")
+	if mon == nil {
+		t.Fatal("Monitor should still be running after re-sync")
+	}
+	confirmed = mon.IncrementDown()
+	if !confirmed {
+		t.Error("Expected confirmation after 1 failure (threshold updated to 1)")
 	}
 }
