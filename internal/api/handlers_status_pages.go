@@ -214,13 +214,15 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 
 	// 5. Construct Response (Reusing Logic from UptimeHandler)
 	type MonitorDTO struct {
-		ID        string         `json:"id"`
-		Name      string         `json:"name"`
-		URL       string         `json:"url"`
-		Status    string         `json:"status"`
-		Latency   int64          `json:"latency"`
-		History   []HistoryPoint `json:"history"`
-		LastCheck string         `json:"lastCheck"`
+		ID             string              `json:"id"`
+		Name           string              `json:"name"`
+		URL            string              `json:"url"`
+		Status         string              `json:"status"`
+		Latency        int64               `json:"latency"`
+		History        []HistoryPoint      `json:"history"`
+		LastCheck      string              `json:"lastCheck"`
+		UptimeDays     []db.DailyUptimeStat `json:"uptimeDays"`
+		OverallUptime  float64             `json:"overallUptime"`
 	}
 
 	type GroupDTO struct {
@@ -281,14 +283,33 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 				}
 			}
 
+			// Fetch 90-day daily uptime stats from DB
+			uptimeDays, _ := h.store.GetDailyUptimeStats(meta.ID, 90)
+			if uptimeDays == nil {
+				uptimeDays = []db.DailyUptimeStat{}
+			}
+
+			// Compute overall uptime from the daily stats
+			var totalChecks, totalUp int
+			for _, d := range uptimeDays {
+				totalChecks += d.Total
+				totalUp += d.Up
+			}
+			overallUptime := 100.0
+			if totalChecks > 0 {
+				overallUptime = (float64(totalUp) / float64(totalChecks)) * 100.0
+			}
+
 			monitorDTOs = append(monitorDTOs, MonitorDTO{
-				ID:        meta.ID,
-				Name:      meta.Name,
-				URL:       meta.URL,
-				Status:    statusStr,
-				Latency:   latency,
-				History:   historyPoints,
-				LastCheck: lastCheck,
+				ID:            meta.ID,
+				Name:          meta.Name,
+				URL:           meta.URL,
+				Status:        statusStr,
+				Latency:       latency,
+				History:       historyPoints,
+				LastCheck:     lastCheck,
+				UptimeDays:    uptimeDays,
+				OverallUptime: overallUptime,
 			})
 		}
 

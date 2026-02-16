@@ -405,6 +405,82 @@ func (s *Store) GetActiveSSLWarnings() ([]SSLWarningEvent, error) {
 	return warnings, nil
 }
 
+// DailyUptimeStat holds uptime stats for a single day.
+type DailyUptimeStat struct {
+	Date          string  `json:"date"`
+	Total         int     `json:"totalChecks"`
+	Up            int     `json:"-"`
+	UptimePercent float64 `json:"uptimePercent"`
+}
+
+// GetDailyUptimeStats returns per-day uptime percentages for the last N days.
+func (s *Store) GetDailyUptimeStats(monitorID string, days int) ([]DailyUptimeStat, error) {
+	if days < 1 || days > 365 {
+		return nil, fmt.Errorf("invalid days: must be between 1 and 365")
+	}
+
+	var query string
+	if s.IsPostgres() {
+		query = `
+			SELECT
+				TO_CHAR(timestamp, 'YYYY-MM-DD') as day,
+				COUNT(*) as total,
+				SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END) as up_count
+			FROM monitor_checks
+			WHERE monitor_id = $1
+			AND timestamp >= NOW() - MAKE_INTERVAL(days => $2)
+			GROUP BY day
+			ORDER BY day ASC
+		`
+	} else {
+		query = `
+			SELECT
+				DATE(timestamp) as day,
+				COUNT(*) as total,
+				SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END) as up_count
+			FROM monitor_checks
+			WHERE monitor_id = ?
+			AND timestamp >= datetime('now', '-' || ? || ' days')
+			GROUP BY day
+			ORDER BY day ASC
+		`
+	}
+
+	rows, err := s.db.Query(s.rebind(query), monitorID, days)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	// Collect results from DB into a map for quick lookup
+	dayMap := make(map[string]DailyUptimeStat)
+	for rows.Next() {
+		var stat DailyUptimeStat
+		if err := rows.Scan(&stat.Date, &stat.Total, &stat.Up); err != nil {
+			return nil, err
+		}
+		if stat.Total > 0 {
+			stat.UptimePercent = (float64(stat.Up) / float64(stat.Total)) * 100.0
+		}
+		dayMap[stat.Date] = stat
+	}
+
+	// Build a complete slice with all days (fill gaps with no-data entries)
+	now := time.Now().UTC()
+	result := make([]DailyUptimeStat, days)
+	for i := 0; i < days; i++ {
+		d := now.AddDate(0, 0, -(days-1-i))
+		dateStr := d.Format("2006-01-02")
+		if stat, ok := dayMap[dateStr]; ok {
+			result[i] = stat
+		} else {
+			result[i] = DailyUptimeStat{Date: dateStr, Total: 0, UptimePercent: -1} // -1 = no data
+		}
+	}
+
+	return result, nil
+}
+
 // toNullInt64 converts an *int to sql.NullInt64 for nullable column storage.
 func toNullInt64(v *int) sql.NullInt64 {
 	if v == nil {
