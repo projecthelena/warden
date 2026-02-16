@@ -177,6 +177,17 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 			// Incidents
 			protected.Get("/incidents", incidentH.GetIncidents)
 			protected.Post("/incidents", incidentH.CreateIncident)
+			protected.Get("/incidents/{id}", incidentH.GetIncident)
+			protected.Put("/incidents/{id}", incidentH.UpdateIncident)
+			protected.Delete("/incidents/{id}", incidentH.DeleteIncident)
+			protected.Patch("/incidents/{id}/visibility", incidentH.SetVisibility)
+			protected.Get("/incidents/{id}/updates", incidentH.GetUpdates)
+			protected.Post("/incidents/{id}/updates", incidentH.AddUpdate)
+
+			// Outages (promote to incident)
+			protected.Post("/outages/{id}/promote", incidentH.PromoteOutage)
+
+			// Maintenance
 			protected.Post("/maintenance", maintH.CreateMaintenance)
 			protected.Get("/maintenance", maintH.GetMaintenance)
 			protected.Put("/maintenance/{id}", maintH.UpdateMaintenance)

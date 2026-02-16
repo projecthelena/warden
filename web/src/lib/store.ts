@@ -59,6 +59,13 @@ export interface Group {
     monitors: Monitor[];
 }
 
+export interface IncidentUpdate {
+    id?: number;
+    status: string;
+    message: string;
+    createdAt: string;
+}
+
 export interface Incident {
     id: string;
     title: string;
@@ -69,6 +76,11 @@ export interface Incident {
     startTime: string;
     endTime?: string;
     affectedGroups: string[];
+    source?: 'auto' | 'manual';
+    outageId?: number;
+    public?: boolean;
+    updates?: IncidentUpdate[];
+    duration?: string;
 }
 
 export interface OverviewGroup {
@@ -99,6 +111,23 @@ export interface StatusPage {
     public: boolean;
     enabled: boolean;
     createdAt: string;
+    description?: string;
+    logoUrl?: string;
+    accentColor?: string;
+    theme?: 'light' | 'dark' | 'system';
+    showUptimeBars?: boolean;
+    showUptimePercentage?: boolean;
+    showIncidentHistory?: boolean;
+}
+
+export interface StatusPageConfig {
+    description: string;
+    logoUrl: string;
+    accentColor: string;
+    theme: 'light' | 'dark' | 'system';
+    showUptimeBars: boolean;
+    showUptimePercentage: boolean;
+    showIncidentHistory: boolean;
 }
 
 export interface SystemIncident {
@@ -183,6 +212,10 @@ interface MonitorStore {
     addMaintenance: (maintenance: Omit<Incident, 'id' | 'createdAt' | 'type' | 'severity'>) => void;
     resolveIncident: (id: string) => void;
     fetchIncidents: () => Promise<void>;
+    promoteOutage: (outageId: string, data: { title: string; description: string; severity: string; affectedGroups: string[] }) => Promise<Incident | null>;
+    addIncidentUpdate: (incidentId: string, status: string, message: string) => Promise<IncidentUpdate | null>;
+    setIncidentVisibility: (incidentId: string, isPublic: boolean) => Promise<boolean>;
+    getIncidentWithUpdates: (incidentId: string) => Promise<Incident | null>;
     addChannel: (channel: Omit<NotificationChannel, 'id' | 'enabled'>) => Promise<void>;
     updateChannel: (id: string, updates: Partial<NotificationChannel>) => void;
     deleteChannel: (id: string) => Promise<void>;
@@ -819,6 +852,91 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
     resolveIncident: (id) => set((state) => ({
         incidents: state.incidents.map(inc => inc.id === id ? { ...inc, status: 'resolved' as const } : inc)
     })),
+
+    promoteOutage: async (outageId, data) => {
+        try {
+            const res = await fetch(`/api/outages/${outageId}/promote`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+                credentials: 'include'
+            });
+            if (res.ok) {
+                const incident = await res.json();
+                toast({ title: "Incident Created", description: "Outage promoted to trackable incident." });
+                get().fetchIncidents();
+                get().fetchSystemEvents();
+                return incident;
+            } else {
+                const text = await res.text();
+                toast({ title: "Error", description: text || "Failed to promote outage.", variant: "destructive" });
+            }
+        } catch (e) {
+            console.error(e);
+            toast({ title: "Error", description: "Failed to promote outage.", variant: "destructive" });
+        }
+        return null;
+    },
+
+    addIncidentUpdate: async (incidentId, status, message) => {
+        try {
+            const res = await fetch(`/api/incidents/${incidentId}/updates`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status, message }),
+                credentials: 'include'
+            });
+            if (res.ok) {
+                const update = await res.json();
+                toast({ title: "Update Posted", description: "Incident status updated." });
+                get().fetchIncidents();
+                return update;
+            } else {
+                toast({ title: "Error", description: "Failed to add update.", variant: "destructive" });
+            }
+        } catch (e) {
+            console.error(e);
+            toast({ title: "Error", description: "Failed to add update.", variant: "destructive" });
+        }
+        return null;
+    },
+
+    setIncidentVisibility: async (incidentId, isPublic) => {
+        try {
+            const res = await fetch(`/api/incidents/${incidentId}/visibility`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ public: isPublic }),
+                credentials: 'include'
+            });
+            if (res.ok) {
+                toast({
+                    title: isPublic ? "Made Public" : "Made Private",
+                    description: isPublic ? "Incident is now visible on status page." : "Incident hidden from status page."
+                });
+                get().fetchIncidents();
+                return true;
+            } else {
+                toast({ title: "Error", description: "Failed to update visibility.", variant: "destructive" });
+            }
+        } catch (e) {
+            console.error(e);
+            toast({ title: "Error", description: "Failed to update visibility.", variant: "destructive" });
+        }
+        return false;
+    },
+
+    getIncidentWithUpdates: async (incidentId) => {
+        try {
+            const res = await fetch(`/api/incidents/${incidentId}`, { credentials: 'include' });
+            if (res.ok) {
+                return await res.json();
+            }
+        } catch (e) {
+            console.error(e);
+        }
+        return null;
+    },
 
     fetchChannels: async () => {
         try {

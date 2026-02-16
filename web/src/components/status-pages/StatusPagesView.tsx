@@ -1,13 +1,24 @@
+import { useState } from "react";
 import { useStatusPagesQuery, useToggleStatusPageMutation } from "@/hooks/useStatusPages";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Settings } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
+import { StatusPage } from "@/lib/store";
+import { StatusPageConfigDialog } from "./StatusPageConfigDialog";
 
 export function StatusPagesView() {
     const { data: pages = [], isLoading } = useStatusPagesQuery();
     const toggleMutation = useToggleStatusPageMutation();
     const { toast } = useToast();
+    const [configDialogOpen, setConfigDialogOpen] = useState(false);
+    const [selectedPage, setSelectedPage] = useState<StatusPage | null>(null);
+
+    const openConfig = (page: StatusPage) => {
+        setSelectedPage(page);
+        setConfigDialogOpen(true);
+    };
 
     const resolveSlug = (slug: string, title: string) => {
         if (slug.startsWith('g-')) {
@@ -109,7 +120,16 @@ export function StatusPagesView() {
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-6">
+                        <div className="flex items-center gap-4">
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => openConfig(page)}
+                                data-testid={`status-page-config-${page.slug}`}
+                            >
+                                <Settings className="h-4 w-4" />
+                            </Button>
                             <div className="flex items-center gap-2">
                                 <span className={`text-xs transition-colors ${page.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>
                                     {page.enabled ? 'Enabled' : 'Disabled'}
@@ -135,6 +155,12 @@ export function StatusPagesView() {
                     </div>
                 ))}
             </div>
+
+            <StatusPageConfigDialog
+                page={selectedPage}
+                open={configDialogOpen}
+                onOpenChange={setConfigDialogOpen}
+            />
         </div>
     )
 }
