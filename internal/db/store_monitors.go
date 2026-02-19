@@ -211,6 +211,30 @@ func (s *Store) GetResolvedOutages(since time.Time) ([]MonitorOutage, error) {
 	return outages, nil
 }
 
+// GetOutageByID returns a single outage by its ID
+func (s *Store) GetOutageByID(id int64) (*MonitorOutage, error) {
+	query := `
+		SELECT o.id, o.monitor_id, o.type, o.summary, o.start_time, o.end_time, m.name, g.name, g.id
+		FROM monitor_outages o
+		JOIN monitors m ON o.monitor_id = m.id
+		JOIN groups g ON m.group_id = g.id
+		WHERE o.id = ?
+	`
+	var o MonitorOutage
+	var endTime sql.NullTime
+	err := s.db.QueryRow(s.rebind(query), id).Scan(&o.ID, &o.MonitorID, &o.Type, &o.Summary, &o.StartTime, &endTime, &o.MonitorName, &o.GroupName, &o.GroupID)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if endTime.Valid {
+		o.EndTime = &endTime.Time
+	}
+	return &o, nil
+}
+
 func (s *Store) BatchInsertChecks(checks []CheckResult) error {
 	if len(checks) == 0 {
 		return nil

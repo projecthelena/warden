@@ -10,6 +10,7 @@ interface DayData {
 interface UptimeBarProps {
     days: DayData[];
     overallUptime: number;
+    showPercentage?: boolean;
 }
 
 function getBarColor(uptimePercent: number): string {
@@ -33,7 +34,7 @@ function formatUptime(pct: number): string {
     return pct.toFixed(2) + "%";
 }
 
-export function UptimeBar({ days, overallUptime }: UptimeBarProps) {
+export function UptimeBar({ days, overallUptime, showPercentage = true }: UptimeBarProps) {
     const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
     const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number; align: 'left' | 'center' | 'right' } | null>(null);
 
@@ -103,9 +104,11 @@ export function UptimeBar({ days, overallUptime }: UptimeBarProps) {
             </div>
 
             {/* Overall uptime */}
-            <div className={`text-sm font-semibold tabular-nums whitespace-nowrap ${uptimeColor}`}>
-                {uptimeDisplay}
-            </div>
+            {showPercentage && (
+                <div className={`text-sm font-semibold tabular-nums whitespace-nowrap ${uptimeColor}`}>
+                    {uptimeDisplay}
+                </div>
+            )}
 
             {/* Tooltip - rendered via portal to escape overflow-hidden containers */}
             {hoveredIndex !== null && tooltipPos && createPortal(

@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -10,6 +11,8 @@ import (
 	"github.com/projecthelena/warden/internal/uptime"
 	"github.com/go-chi/chi/v5"
 )
+
+var hexColorRegex = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 
 type StatusPageHandler struct {
 	store   *db.Store
@@ -123,17 +126,105 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 func (h *StatusPageHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 	var req struct {
-		Public  bool    `json:"public"`
-		Enabled bool    `json:"enabled"`
-		Title   string  `json:"title"`
-		GroupID *string `json:"groupId"`
+		Public               bool    `json:"public"`
+		Enabled              bool    `json:"enabled"`
+		Title                string  `json:"title"`
+		GroupID              *string `json:"groupId"`
+		Description          *string `json:"description"`
+		LogoURL              *string `json:"logoUrl"`
+		AccentColor          *string `json:"accentColor"`
+		Theme                *string `json:"theme"`
+		ShowUptimeBars       *bool   `json:"showUptimeBars"`
+		ShowUptimePercentage *bool   `json:"showUptimePercentage"`
+		ShowIncidentHistory  *bool   `json:"showIncidentHistory"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 
-	if err := h.store.UpsertStatusPage(slug, req.Title, req.GroupID, req.Public, req.Enabled); err != nil {
+	// Validate accent_color if provided
+	accentColor := ""
+	if req.AccentColor != nil && *req.AccentColor != "" {
+		if !hexColorRegex.MatchString(*req.AccentColor) {
+			writeError(w, http.StatusBadRequest, "invalid accent color format (must be #RRGGBB)")
+			return
+		}
+		accentColor = *req.AccentColor
+	}
+
+	// Validate theme if provided
+	theme := "system"
+	if req.Theme != nil && *req.Theme != "" {
+		if *req.Theme != "light" && *req.Theme != "dark" && *req.Theme != "system" {
+			writeError(w, http.StatusBadRequest, "invalid theme (must be light, dark, or system)")
+			return
+		}
+		theme = *req.Theme
+	}
+
+	// Validate logo_url if provided (URL or data:image/* URI)
+	logoURL := ""
+	if req.LogoURL != nil && *req.LogoURL != "" {
+		logo := *req.LogoURL
+		if !strings.HasPrefix(logo, "http://") && !strings.HasPrefix(logo, "https://") && !strings.HasPrefix(logo, "data:image/") {
+			writeError(w, http.StatusBadRequest, "invalid logo URL (must be http/https URL or data:image/* URI)")
+			return
+		}
+		logoURL = logo
+	}
+
+	// Get existing page to preserve defaults
+	existing, _ := h.store.GetStatusPageBySlug(slug)
+
+	// Build input with defaults
+	input := db.StatusPageInput{
+		Slug:                 slug,
+		Title:                req.Title,
+		GroupID:              req.GroupID,
+		Public:               req.Public,
+		Enabled:              req.Enabled,
+		Description:          "",
+		LogoURL:              logoURL,
+		AccentColor:          accentColor,
+		Theme:                theme,
+		ShowUptimeBars:       true,
+		ShowUptimePercentage: true,
+		ShowIncidentHistory:  true,
+	}
+
+	// Apply existing values as defaults
+	if existing != nil {
+		input.Description = existing.Description
+		if logoURL == "" && req.LogoURL == nil {
+			input.LogoURL = existing.LogoURL
+		}
+		if accentColor == "" && req.AccentColor == nil {
+			input.AccentColor = existing.AccentColor
+		}
+		if req.Theme == nil {
+			input.Theme = existing.Theme
+		}
+		input.ShowUptimeBars = existing.ShowUptimeBars
+		input.ShowUptimePercentage = existing.ShowUptimePercentage
+		input.ShowIncidentHistory = existing.ShowIncidentHistory
+	}
+
+	// Override with request values if provided
+	if req.Description != nil {
+		input.Description = *req.Description
+	}
+	if req.ShowUptimeBars != nil {
+		input.ShowUptimeBars = *req.ShowUptimeBars
+	}
+	if req.ShowUptimePercentage != nil {
+		input.ShowUptimePercentage = *req.ShowUptimePercentage
+	}
+	if req.ShowIncidentHistory != nil {
+		input.ShowIncidentHistory = *req.ShowIncidentHistory
+	}
+
+	if err := h.store.UpsertStatusPageFull(input); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update status page")
 		return
 	}
@@ -323,24 +414,46 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 	}
 
 	// 6. Fetch Incidents and Outages
+	type IncidentUpdateDTO struct {
+		Status    string    `json:"status"`
+		Message   string    `json:"message"`
+		CreatedAt time.Time `json:"createdAt"`
+	}
+
 	type IncidentResponseDTO struct {
-		ID             string     `json:"id"`
-		Title          string     `json:"title"`
-		Description    string     `json:"description"`
-		Type           string     `json:"type"`
-		Severity       string     `json:"severity"`
-		Status         string     `json:"status"`
-		StartTime      time.Time  `json:"startTime"`
-		EndTime        *time.Time `json:"endTime,omitempty"`
-		AffectedGroups []string   `json:"affectedGroups"`
+		ID             string              `json:"id"`
+		Title          string              `json:"title"`
+		Description    string              `json:"description"`
+		Type           string              `json:"type"`
+		Severity       string              `json:"severity"`
+		Status         string              `json:"status"`
+		StartTime      time.Time           `json:"startTime"`
+		EndTime        *time.Time          `json:"endTime,omitempty"`
+		AffectedGroups []string            `json:"affectedGroups"`
+		Source         string              `json:"source,omitempty"`
+		Duration       string              `json:"duration,omitempty"`
+		Updates        []IncidentUpdateDTO `json:"updates,omitempty"`
 	}
 
 	activeIncidents := []IncidentResponseDTO{}
 
-	// A. Auto-detected Outages
+	// Fetch all incidents first to build a set of promoted outage IDs
+	allIncidents, _ := h.store.GetIncidents(time.Time{})
+	promotedOutageIDs := make(map[int64]bool)
+	for _, inc := range allIncidents {
+		if inc.OutageID != nil {
+			promotedOutageIDs[*inc.OutageID] = true
+		}
+	}
+
+	// A. Auto-detected Outages (only show if not already promoted to an incident)
 	activeOutages, err := h.store.GetActiveOutages()
 	if err == nil {
 		for _, o := range activeOutages {
+			// Skip outages that have been promoted to an incident
+			if promotedOutageIDs[o.ID] {
+				continue
+			}
 			// Filter by Group if needed
 			if page.GroupID != nil && o.GroupID != *page.GroupID {
 				continue
@@ -355,29 +468,94 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 				Status:         "investigating",
 				StartTime:      o.StartTime,
 				AffectedGroups: []string{o.GroupID},
+				Source:         "auto",
 			})
 		}
 	}
 
-	// B. Manual Incidents
-	allIncidents, err := h.store.GetIncidents(time.Time{})
-	if err == nil {
-		for _, inc := range allIncidents {
-			if inc.Status == "completed" || inc.Status == "resolved" {
+	// B. Active Manual/Promoted Incidents (not resolved/completed, must be public)
+	for _, inc := range allIncidents {
+		if inc.Status == "completed" || inc.Status == "resolved" {
+			continue
+		}
+		// Skip private incidents on public status page
+		if !inc.Public {
+			continue
+		}
+
+		// Parse Groups
+		var mappedGroups []string
+		if inc.AffectedGroups != "" {
+			_ = json.Unmarshal([]byte(inc.AffectedGroups), &mappedGroups)
+		}
+
+		// Filter by Group
+		if page.GroupID != nil {
+			affected := false
+			if len(mappedGroups) == 0 {
+				// Assume global?
+			} else {
+				for _, gID := range mappedGroups {
+					if gID == *page.GroupID {
+						affected = true
+						break
+					}
+				}
+			}
+			if !affected {
 				continue
 			}
+		}
 
+		// Get updates for timeline
+		var updateDTOs []IncidentUpdateDTO
+		updates, _ := h.store.GetIncidentUpdates(inc.ID)
+		for _, u := range updates {
+			updateDTOs = append(updateDTOs, IncidentUpdateDTO{
+				Status:    u.Status,
+				Message:   u.Message,
+				CreatedAt: u.CreatedAt,
+			})
+		}
+
+		source := inc.Source
+		if source == "" {
+			source = "manual"
+		}
+
+		activeIncidents = append(activeIncidents, IncidentResponseDTO{
+			ID:             inc.ID,
+			Title:          inc.Title,
+			Description:    inc.Description,
+			Type:           inc.Type,
+			Severity:       inc.Severity,
+			Status:         inc.Status,
+			StartTime:      inc.StartTime,
+			EndTime:        inc.EndTime,
+			AffectedGroups: mappedGroups,
+			Source:         source,
+			Updates:        updateDTOs,
+		})
+	}
+
+	// 7. Fetch Past Incidents (public, resolved, last 14 days)
+	pastIncidents := []IncidentResponseDTO{}
+	since := time.Now().Add(-14 * 24 * time.Hour)
+	publicResolved, err := h.store.GetPublicResolvedIncidents(since)
+	if err == nil {
+		for _, inc := range publicResolved {
 			// Parse Groups
 			var mappedGroups []string
 			if inc.AffectedGroups != "" {
 				_ = json.Unmarshal([]byte(inc.AffectedGroups), &mappedGroups)
 			}
 
-			// Filter by Group
+			// Filter by Group if this is a group-specific status page
 			if page.GroupID != nil {
 				affected := false
 				if len(mappedGroups) == 0 {
-					// Assume global?
+					// Global incident - show on all pages
+					affected = true
 				} else {
 					for _, gID := range mappedGroups {
 						if gID == *page.GroupID {
@@ -391,7 +569,34 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 				}
 			}
 
-			activeIncidents = append(activeIncidents, IncidentResponseDTO{
+			// Get updates for timeline
+			var updateDTOs []IncidentUpdateDTO
+			updates, _ := h.store.GetIncidentUpdates(inc.ID)
+			for _, u := range updates {
+				updateDTOs = append(updateDTOs, IncidentUpdateDTO{
+					Status:    u.Status,
+					Message:   u.Message,
+					CreatedAt: u.CreatedAt,
+				})
+			}
+
+			// Calculate duration
+			var duration string
+			if inc.EndTime != nil {
+				d := inc.EndTime.Sub(inc.StartTime)
+				if d < time.Hour {
+					duration = formatDurationMinutes(d)
+				} else {
+					duration = formatDurationHours(d)
+				}
+			}
+
+			source := inc.Source
+			if source == "" {
+				source = "manual"
+			}
+
+			pastIncidents = append(pastIncidents, IncidentResponseDTO{
 				ID:             inc.ID,
 				Title:          inc.Title,
 				Description:    inc.Description,
@@ -401,14 +606,46 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 				StartTime:      inc.StartTime,
 				EndTime:        inc.EndTime,
 				AffectedGroups: mappedGroups,
+				Source:         source,
+				Duration:       duration,
+				Updates:        updateDTOs,
 			})
 		}
 	}
 
+	// Build config object for public page
+	config := map[string]any{
+		"description":          page.Description,
+		"logoUrl":              page.LogoURL,
+		"accentColor":          page.AccentColor,
+		"theme":                page.Theme,
+		"showUptimeBars":       page.ShowUptimeBars,
+		"showUptimePercentage": page.ShowUptimePercentage,
+		"showIncidentHistory":  page.ShowIncidentHistory,
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"title":     page.Title,
-		"public":    page.Public,
-		"groups":    groupDTOs,
-		"incidents": activeIncidents,
+		"title":         page.Title,
+		"public":        page.Public,
+		"groups":        groupDTOs,
+		"incidents":     activeIncidents,
+		"pastIncidents": pastIncidents,
+		"config":        config,
 	})
+}
+
+func formatDurationMinutes(d time.Duration) string {
+	mins := int(d.Minutes())
+	if mins < 1 {
+		return "<1m"
+	}
+	return strings.TrimSpace(strings.Replace(d.Truncate(time.Minute).String(), "0s", "", 1))
+}
+
+func formatDurationHours(d time.Duration) string {
+	mins := int(d.Minutes()) % 60
+	if mins == 0 {
+		return strings.TrimSpace(d.Truncate(time.Hour).String())
+	}
+	return strings.TrimSpace(d.Truncate(time.Minute).String())
 }

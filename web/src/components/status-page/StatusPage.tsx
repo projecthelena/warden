@@ -1,10 +1,12 @@
 import { Badge } from "@/components/ui/badge";
-import { Activity, AlertTriangle, ArrowDownCircle, CheckCircle2, ExternalLink, RefreshCw, XCircle } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Activity, AlertTriangle, ArrowDownCircle, CheckCircle2, ChevronDown, ChevronUp, ExternalLink, RefreshCw, XCircle } from "lucide-react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
-import { useMonitorStore, Group, Incident, Monitor } from "@/lib/store";
-import { cn, formatDate } from "@/lib/utils";
+import { useMonitorStore, Group, Incident, Monitor, StatusPageConfig } from "@/lib/store";
+import { cn, formatDate, hexToHSL } from "@/lib/utils";
 import { UptimeBar } from "./UptimeBar";
+import { PastIncidentsSection } from "./PastIncidentsSection";
+import { IncidentTimeline } from "@/components/incidents/IncidentTimeline";
 
 // ---------- Types ----------
 
@@ -188,6 +190,7 @@ function MaintenanceCard({ incident }: { incident: Incident }) {
 }
 
 function IncidentCard({ incident }: { incident: Incident }) {
+    const [expanded, setExpanded] = useState(false);
     const title = incident.title.replace("Service Disruption: ", "");
     const isDown = incident.severity === "critical";
     const colorClass = isDown ? "text-red-500" : "text-yellow-500";
@@ -208,37 +211,61 @@ function IncidentCard({ incident }: { incident: Incident }) {
         durationStr = `${h}h ${m}m`;
     }
 
+    const hasUpdates = incident.updates && incident.updates.length > 0;
+
     return (
-        <div className={cn("flex items-center justify-between py-3 px-4 rounded-lg border gap-4", borderClass)}>
-            <div className="flex items-center gap-3 min-w-0">
-                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-background border border-border/50 shrink-0">
-                    {isDown ? (
-                        <ArrowDownCircle className={cn("w-4 h-4", colorClass)} />
-                    ) : (
-                        <AlertTriangle className={cn("w-4 h-4", colorClass)} />
-                    )}
-                </div>
-                <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm text-foreground truncate">{title}</span>
-                        <Badge
-                            variant="secondary"
-                            className={cn(
-                                "rounded-sm px-1.5 py-0 text-[10px] font-bold uppercase tracking-wider border-0 h-5 shrink-0",
-                                bgBadge
-                            )}
-                        >
-                            {isDown ? "Unavailable" : "Issue"}
-                        </Badge>
+        <div className={cn("rounded-lg border overflow-hidden", borderClass)}>
+            <div
+                className={cn(
+                    "flex items-center justify-between py-3 px-4 gap-4",
+                    hasUpdates && "cursor-pointer hover:bg-accent/20 transition-colors"
+                )}
+                onClick={() => hasUpdates && setExpanded(!expanded)}
+            >
+                <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-background border border-border/50 shrink-0">
+                        {isDown ? (
+                            <ArrowDownCircle className={cn("w-4 h-4", colorClass)} />
+                        ) : (
+                            <AlertTriangle className={cn("w-4 h-4", colorClass)} />
+                        )}
                     </div>
-                    {incident.description && (
-                        <p className="text-xs text-muted-foreground truncate mt-0.5">{incident.description}</p>
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                            <span className="font-medium text-sm text-foreground truncate">{title}</span>
+                            <Badge
+                                variant="secondary"
+                                className={cn(
+                                    "rounded-sm px-1.5 py-0 text-[10px] font-bold uppercase tracking-wider border-0 h-5 shrink-0",
+                                    bgBadge
+                                )}
+                            >
+                                {isDown ? "Unavailable" : "Issue"}
+                            </Badge>
+                        </div>
+                        {incident.description && (
+                            <p className="text-xs text-muted-foreground truncate mt-0.5">{incident.description}</p>
+                        )}
+                    </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                    <span className={cn("text-xs font-medium whitespace-nowrap hidden sm:block", colorClass)}>
+                        {durationStr}
+                    </span>
+                    {hasUpdates && (
+                        expanded ? (
+                            <ChevronUp className="w-4 h-4 text-muted-foreground" />
+                        ) : (
+                            <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                        )
                     )}
                 </div>
             </div>
-            <span className={cn("text-xs font-medium whitespace-nowrap hidden sm:block", colorClass)}>
-                {durationStr}
-            </span>
+            {expanded && hasUpdates && (
+                <div className="px-4 pb-4 pt-2 border-t border-border/30 bg-background/50">
+                    <IncidentTimeline updates={incident.updates!} readonly />
+                </div>
+            )}
         </div>
     );
 }
@@ -246,9 +273,13 @@ function IncidentCard({ incident }: { incident: Incident }) {
 function MonitorRow({
     monitor,
     isMaintenance,
+    showUptimeBars = true,
+    showUptimePercentage = true,
 }: {
     monitor: StatusMonitor;
     isMaintenance?: boolean;
+    showUptimeBars?: boolean;
+    showUptimePercentage?: boolean;
 }) {
     let statusColor = "bg-emerald-500";
     let statusLabel = "Operational";
@@ -303,8 +334,8 @@ function MonitorRow({
             </div>
 
             {/* Uptime bar */}
-            {uptimeDays.length > 0 && (
-                <UptimeBar days={uptimeDays} overallUptime={overallUptime} />
+            {showUptimeBars && uptimeDays.length > 0 && (
+                <UptimeBar days={uptimeDays} overallUptime={overallUptime} showPercentage={showUptimePercentage} />
             )}
         </div>
     );
@@ -314,10 +345,14 @@ function GroupSection({
     group,
     incidents,
     index,
+    showUptimeBars = true,
+    showUptimePercentage = true,
 }: {
     group: StatusGroup;
     incidents: Incident[];
     index: number;
+    showUptimeBars?: boolean;
+    showUptimePercentage?: boolean;
 }) {
     const now = new Date();
     const isGroupMaintenance =
@@ -343,7 +378,13 @@ function GroupSection({
             </div>
             <div className="rounded-xl border border-border bg-card overflow-hidden">
                 {group.monitors.map((m) => (
-                    <MonitorRow key={m.id} monitor={m} isMaintenance={isGroupMaintenance} />
+                    <MonitorRow
+                        key={m.id}
+                        monitor={m}
+                        isMaintenance={isGroupMaintenance}
+                        showUptimeBars={showUptimeBars}
+                        showUptimePercentage={showUptimePercentage}
+                    />
                 ))}
                 {group.monitors.length === 0 && (
                     <div className="px-4 py-6 text-center text-sm text-muted-foreground">
@@ -380,8 +421,43 @@ export function StatusPage() {
         title: string;
         groups: StatusGroup[];
         incidents: Incident[];
+        pastIncidents?: Incident[];
+        config?: StatusPageConfig;
     } | null>(null);
     const [secondsToUpdate, setSecondsToUpdate] = useState(60);
+
+    // Apply theme based on config
+    const applyTheme = useCallback((config?: StatusPageConfig) => {
+        const theme = config?.theme || 'system';
+        const root = document.documentElement;
+
+        // Remove existing theme classes
+        root.classList.remove('light', 'dark');
+
+        if (theme === 'system') {
+            // Use system preference
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            root.classList.add(prefersDark ? 'dark' : 'light');
+        } else {
+            root.classList.add(theme);
+        }
+    }, []);
+
+    // Apply accent color via CSS variable
+    const applyAccentColor = useCallback((config?: StatusPageConfig) => {
+        const root = document.documentElement;
+        const accentColor = config?.accentColor;
+
+        if (accentColor) {
+            const hsl = hexToHSL(accentColor);
+            if (hsl) {
+                root.style.setProperty('--primary', `${hsl.h} ${hsl.s}% ${hsl.l}%`);
+            }
+        } else {
+            // Reset to default
+            root.style.removeProperty('--primary');
+        }
+    }, []);
 
     useEffect(() => {
         let isMounted = true;
@@ -394,6 +470,8 @@ export function StatusPage() {
                 if (result) {
                     setData(result);
                     setError(null);
+                    applyTheme(result.config);
+                    applyAccentColor(result.config);
                 } else {
                     setError("Status page not found or private.");
                 }
@@ -413,13 +491,29 @@ export function StatusPage() {
             isMounted = false;
             clearInterval(pollInterval);
             clearInterval(timerInterval);
+            // Cleanup: reset to dark theme for admin
+            document.documentElement.classList.remove('light');
+            document.documentElement.classList.add('dark');
+            document.documentElement.style.removeProperty('--primary');
         };
-    }, [slug, fetchPublicStatusBySlug]);
+    }, [slug, fetchPublicStatusBySlug, applyTheme, applyAccentColor]);
+
+    // Listen for system theme changes when using 'system' theme
+    useEffect(() => {
+        const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+        const handleChange = () => {
+            if (data?.config?.theme === 'system') {
+                applyTheme(data.config);
+            }
+        };
+        mediaQuery.addEventListener('change', handleChange);
+        return () => mediaQuery.removeEventListener('change', handleChange);
+    }, [data?.config, applyTheme]);
 
     // Computed state
     const computed = useMemo(() => {
         if (!data) return null;
-        const { groups, incidents = [] } = data;
+        const { groups, incidents = [], pastIncidents = [], config } = data;
         const { maintenanceIncidents, maintenanceGroupIds } = getMaintenanceState(incidents);
         const status = getOverallStatus(groups, incidents, maintenanceGroupIds);
 
@@ -431,7 +525,7 @@ export function StatusPage() {
             return true;
         });
 
-        return { groups, incidents, maintenanceIncidents, incidentItems, status };
+        return { groups, incidents, pastIncidents, maintenanceIncidents, incidentItems, status, config };
     }, [data]);
 
     if (loading && !data) return <StatusSkeleton />;
@@ -451,15 +545,37 @@ export function StatusPage() {
         );
     }
 
-    const { groups, incidents, maintenanceIncidents, incidentItems, status } = computed;
+    const { groups, incidents, pastIncidents, maintenanceIncidents, incidentItems, status, config } = computed;
+    const showUptimeBars = config?.showUptimeBars ?? true;
+    const showUptimePercentage = config?.showUptimePercentage ?? true;
+    const showIncidentHistory = config?.showIncidentHistory ?? true;
 
     return (
         <div className="min-h-screen bg-background text-foreground font-sans flex flex-col">
             <main className="max-w-3xl mx-auto px-4 sm:px-6 pb-16 w-full flex-1">
                 {/* Header */}
-                <div className="flex items-center gap-3 justify-center pt-10 pb-8">
-                    <Activity className="w-6 h-6 text-primary" />
-                    <h1 className="text-xl font-bold text-foreground">{data.title}</h1>
+                <div className="flex flex-col items-center pt-10 pb-8">
+                    <div className="flex items-center gap-3 justify-center">
+                        {config?.logoUrl ? (
+                            <img
+                                src={config.logoUrl}
+                                alt="Logo"
+                                className="w-8 h-8 object-contain"
+                                onError={(e) => {
+                                    // Fallback to Activity icon on error
+                                    e.currentTarget.style.display = 'none';
+                                    e.currentTarget.parentElement?.querySelector('.fallback-icon')?.classList.remove('hidden');
+                                }}
+                            />
+                        ) : null}
+                        <Activity className={cn("w-6 h-6 text-primary fallback-icon", config?.logoUrl && "hidden")} />
+                        <h1 className="text-xl font-bold text-foreground">{data.title}</h1>
+                    </div>
+                    {config?.description && (
+                        <p className="text-sm text-muted-foreground mt-2 text-center max-w-lg">
+                            {config.description}
+                        </p>
+                    )}
                 </div>
 
                 {/* Status Banner */}
@@ -501,9 +617,23 @@ export function StatusPage() {
                 {/* Monitor Groups */}
                 <div className="space-y-8">
                     {groups.map((group, idx) => (
-                        <GroupSection key={group.id} group={group} incidents={incidents} index={idx} />
+                        <GroupSection
+                            key={group.id}
+                            group={group}
+                            incidents={incidents}
+                            index={idx}
+                            showUptimeBars={showUptimeBars}
+                            showUptimePercentage={showUptimePercentage}
+                        />
                     ))}
                 </div>
+
+                {/* Past Incidents */}
+                {showIncidentHistory && pastIncidents && pastIncidents.length > 0 && (
+                    <div className="mt-10">
+                        <PastIncidentsSection incidents={pastIncidents} />
+                    </div>
+                )}
             </main>
 
             {/* Footer */}
