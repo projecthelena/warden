@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { Activity, AlertTriangle, ArrowDownCircle, CheckCircle2, ChevronDown, ChevronUp, ExternalLink, RefreshCw, XCircle } from "lucide-react";
+import { Activity, AlertTriangle, ArrowDownCircle, CheckCircle2, ChevronDown, ChevronUp, ExternalLink, RefreshCw, Rss, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { useMonitorStore, Group, Incident, Monitor, StatusPageConfig } from "@/lib/store";
@@ -638,15 +638,28 @@ export function StatusPage() {
 
             {/* Footer */}
             <footer className="border-t border-border mt-auto py-6 text-center bg-card/30">
-                <div className="text-muted-foreground text-xs flex items-center justify-center gap-1.5">
-                    <span>Powered by</span>
+                <div className="text-muted-foreground text-xs flex items-center justify-center gap-3">
+                    <div className="flex items-center gap-1.5">
+                        <span>Powered by</span>
+                        <a
+                            href="https://projecthelena.com/"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-semibold text-foreground/80 hover:text-foreground hover:underline underline-offset-4 transition-all"
+                        >
+                            Warden
+                        </a>
+                    </div>
+                    <span className="text-border">•</span>
                     <a
-                        href="https://projecthelena.com/"
+                        href={`/api/s/${slug}/rss`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="font-semibold text-foreground/80 hover:text-foreground hover:underline underline-offset-4 transition-all"
+                        className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
+                        title="Subscribe via RSS"
                     >
-                        Warden
+                        <Rss className="w-3 h-3" />
+                        <span>RSS</span>
                     </a>
                 </div>
             </footer>

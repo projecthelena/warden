@@ -649,3 +649,150 @@ func formatDurationHours(d time.Duration) string {
 	}
 	return strings.TrimSpace(d.Truncate(time.Minute).String())
 }
+
+// GetRSSFeed returns an RSS 2.0 feed of recent incidents for a public status page.
+// @Summary      RSS feed for status page
+// @Tags         status-pages
+// @Produce      application/rss+xml
+// @Param        slug path string true "Status page slug"
+// @Success      200  {string} string "RSS 2.0 XML feed"
+// @Failure      404  {object} object{error=string} "Status page not found"
+// @Router       /s/{slug}/rss [get]
+func (h *StatusPageHandler) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+
+	// 1. Check Config
+	page, err := h.store.GetStatusPageBySlug(slug)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "error fetching status page")
+		return
+	}
+	if page == nil || !page.Enabled {
+		writeError(w, http.StatusNotFound, "status page not found")
+		return
+	}
+	if !page.Public {
+		writeError(w, http.StatusNotFound, "status page not found")
+		return
+	}
+
+	// 2. Build base URL from request
+	scheme := "https"
+	if r.TLS == nil {
+		// Check for X-Forwarded-Proto header (common with reverse proxies)
+		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+			scheme = proto
+		} else {
+			scheme = "http"
+		}
+	}
+	baseURL := scheme + "://" + r.Host
+
+	// 3. Fetch recent public incidents (last 30 days)
+	since := time.Now().Add(-30 * 24 * time.Hour)
+	allIncidents, _ := h.store.GetIncidents(since)
+
+	// Filter to public incidents only
+	var feedIncidents []db.Incident
+	for _, inc := range allIncidents {
+		if !inc.Public {
+			continue
+		}
+
+		// Filter by group if this is a group-specific status page
+		if page.GroupID != nil {
+			var mappedGroups []string
+			if inc.AffectedGroups != "" {
+				_ = json.Unmarshal([]byte(inc.AffectedGroups), &mappedGroups)
+			}
+
+			affected := false
+			if len(mappedGroups) == 0 {
+				// Global incident - show on all pages
+				affected = true
+			} else {
+				for _, gID := range mappedGroups {
+					if gID == *page.GroupID {
+						affected = true
+						break
+					}
+				}
+			}
+			if !affected {
+				continue
+			}
+		}
+
+		feedIncidents = append(feedIncidents, inc)
+	}
+
+	// 4. Build RSS 2.0 XML
+	statusPageURL := baseURL + "/status/" + slug
+	feedURL := baseURL + "/api/s/" + slug + "/rss"
+
+	var lastBuildDate time.Time
+	if len(feedIncidents) > 0 {
+		lastBuildDate = feedIncidents[0].StartTime
+		for _, inc := range feedIncidents {
+			if inc.StartTime.After(lastBuildDate) {
+				lastBuildDate = inc.StartTime
+			}
+		}
+	} else {
+		lastBuildDate = time.Now()
+	}
+
+	// Build items XML
+	var itemsXML strings.Builder
+	for _, inc := range feedIncidents {
+		// Build description with updates
+		description := inc.Description
+		updates, _ := h.store.GetIncidentUpdates(inc.ID)
+		if len(updates) > 0 {
+			description += "\n\nUpdates:\n"
+			for _, u := range updates {
+				description += "- [" + u.Status + "] " + u.Message + " (" + u.CreatedAt.Format(time.RFC1123) + ")\n"
+			}
+		}
+
+		// Format severity for title
+		severityLabel := strings.ToUpper(inc.Severity)
+		if inc.Type == "maintenance" {
+			severityLabel = "MAINTENANCE"
+		}
+
+		itemsXML.WriteString("    <item>\n")
+		itemsXML.WriteString("      <title>" + xmlEscape("["+severityLabel+"] "+inc.Title) + "</title>\n")
+		itemsXML.WriteString("      <description>" + xmlEscape(description) + "</description>\n")
+		itemsXML.WriteString("      <link>" + xmlEscape(statusPageURL+"#incident-"+inc.ID) + "</link>\n")
+		itemsXML.WriteString("      <guid isPermaLink=\"false\">incident-" + inc.ID + "</guid>\n")
+		itemsXML.WriteString("      <pubDate>" + inc.StartTime.Format(time.RFC1123Z) + "</pubDate>\n")
+		itemsXML.WriteString("    </item>\n")
+	}
+
+	// Build full RSS feed
+	rss := `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>` + xmlEscape(page.Title+" - Status Updates") + `</title>
+    <link>` + xmlEscape(statusPageURL) + `</link>
+    <description>` + xmlEscape("Status updates for "+page.Title) + `</description>
+    <atom:link href="` + xmlEscape(feedURL) + `" rel="self" type="application/rss+xml"/>
+    <lastBuildDate>` + lastBuildDate.Format(time.RFC1123Z) + `</lastBuildDate>
+` + itemsXML.String() + `  </channel>
+</rss>`
+
+	w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(rss))
+}
+
+// xmlEscape escapes special XML characters
+func xmlEscape(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	s = strings.ReplaceAll(s, "\"", "&quot;")
+	s = strings.ReplaceAll(s, "'", "&apos;")
+	return s
+}

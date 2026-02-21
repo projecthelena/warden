@@ -1,5 +1,18 @@
 import { Page, Locator, expect } from '@playwright/test';
 
+export interface StatusPageConfig {
+    enabled?: boolean;
+    public?: boolean;
+    title?: string;
+    description?: string;
+    logoUrl?: string;
+    accentColor?: string;
+    theme?: 'light' | 'dark' | 'system';
+    showUptimeBars?: boolean;
+    showUptimePercentage?: boolean;
+    showIncidentHistory?: boolean;
+}
+
 export class StatusPagesPage {
     readonly page: Page;
 
@@ -98,7 +111,114 @@ export class StatusPagesPage {
     /** Reset the "all" status page to disabled+private via API */
     async resetToDefaults() {
         await this.page.request.patch('/api/status-pages/all', {
-            data: { enabled: false, public: false, title: 'Global Status' }
+            data: {
+                enabled: false,
+                public: false,
+                title: 'Global Status',
+                description: '',
+                logoUrl: '',
+                accentColor: '',
+                theme: 'system',
+                showUptimeBars: true,
+                showUptimePercentage: true,
+                showIncidentHistory: true,
+            }
         });
+    }
+
+    /** Configure a status page via API */
+    async configureViaAPI(slug: string, config: StatusPageConfig) {
+        await this.page.request.patch(`/api/status-pages/${slug}`, {
+            data: config
+        });
+    }
+
+    /** Enable and make public via API (shortcut) */
+    async enablePublicViaAPI(slug: string) {
+        await this.configureViaAPI(slug, { enabled: true, public: true, title: 'Global Status' });
+    }
+
+    /** Create an incident via API */
+    async createIncidentViaAPI(options: {
+        title: string;
+        description?: string;
+        type?: 'incident' | 'maintenance';
+        severity?: 'minor' | 'major' | 'critical';
+        status?: string;
+        public?: boolean;
+        affectedGroups?: string[];
+    }) {
+        const isMaintenance = options.type === 'maintenance';
+
+        if (isMaintenance) {
+            // Use the maintenance endpoint for maintenance windows
+            const response = await this.page.request.post('/api/maintenance', {
+                data: {
+                    title: options.title,
+                    description: options.description || 'Test incident',
+                    status: options.status || 'scheduled',
+                    affectedGroups: options.affectedGroups || [],
+                    startTime: new Date().toISOString(),
+                    endTime: new Date(Date.now() + 3600000).toISOString(), // 1 hour from now
+                }
+            });
+            const data = await response.json();
+            return data.id;
+        }
+
+        // Use the incidents endpoint for regular incidents
+        const response = await this.page.request.post('/api/incidents', {
+            data: {
+                title: options.title,
+                description: options.description || 'Test incident',
+                severity: options.severity || 'major',
+                status: options.status || 'investigating',
+                public: options.public ?? true,
+                affectedGroups: options.affectedGroups || [],
+                startTime: new Date().toISOString(),
+            }
+        });
+        const data = await response.json();
+        return data.id;
+    }
+
+    /** Update an incident via API */
+    async updateIncidentViaAPI(id: string, updates: Record<string, unknown>) {
+        await this.page.request.put(`/api/incidents/${id}`, {
+            data: updates
+        });
+    }
+
+    /** Delete an incident via API */
+    async deleteIncidentViaAPI(id: string) {
+        await this.page.request.delete(`/api/incidents/${id}`);
+    }
+
+    /** Delete a maintenance window via API */
+    async deleteMaintenanceViaAPI(id: string) {
+        await this.page.request.delete(`/api/maintenance/${id}`);
+    }
+
+    /** Add an incident update via API */
+    async addIncidentUpdateViaAPI(incidentId: string, status: string, message: string) {
+        await this.page.request.post(`/api/incidents/${incidentId}/updates`, {
+            data: { status, message }
+        });
+    }
+
+    /** Get RSS feed content */
+    async getRSSFeed(slug: string): Promise<string> {
+        const response = await this.page.request.get(`/api/s/${slug}/rss`);
+        return response.text();
+    }
+
+    /** Get public status page data via API */
+    async getPublicStatusViaAPI(slug: string): Promise<{ status: number; data?: Record<string, unknown> }> {
+        const response = await this.page.request.get(`/api/s/${slug}`);
+        const status = response.status();
+        if (status === 200) {
+            return { status, data: await response.json() };
+        }
+        return { status };
     }
 }

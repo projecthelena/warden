@@ -139,6 +139,7 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 
 		// Public Status Pages
 		api.Get("/s/{slug}", statusPageH.GetPublicStatus)
+		api.Get("/s/{slug}/rss", statusPageH.GetRSSFeed)
 
 		// API Documentation (Swagger UI)
 		api.Get("/docs/*", httpSwagger.Handler(
