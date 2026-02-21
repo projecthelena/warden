@@ -721,6 +721,173 @@ func TestSetMonitorActive_PausePreservesOtherFields(t *testing.T) {
 	}
 }
 
+// ============== DAILY UPTIME STATS TESTS ==============
+
+func TestGetDailyUptimeStats_Empty(t *testing.T) {
+	s := newTestStore(t)
+	_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+	_ = s.CreateMonitor(Monitor{ID: "m1", GroupID: "g1", Name: "M1", Interval: 60})
+
+	stats, err := s.GetDailyUptimeStats("m1", 7)
+	if err != nil {
+		t.Fatalf("GetDailyUptimeStats failed: %v", err)
+	}
+	if len(stats) != 7 {
+		t.Fatalf("Expected 7 days, got %d", len(stats))
+	}
+	// All days should have no data
+	for _, d := range stats {
+		if d.Total != 0 {
+			t.Errorf("Expected 0 total checks for empty monitor, got %d on %s", d.Total, d.Date)
+		}
+		if d.UptimePercent != -1 {
+			t.Errorf("Expected -1 uptime for no-data day, got %f on %s", d.UptimePercent, d.Date)
+		}
+	}
+}
+
+func TestGetDailyUptimeStats_WithChecks(t *testing.T) {
+	s := newTestStore(t)
+	_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+	_ = s.CreateMonitor(Monitor{ID: "m1", GroupID: "g1", Name: "M1", Interval: 60})
+
+	now := time.Now().UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 12, 0, 0, 0, time.UTC)
+
+	// Insert checks: 8 up + 2 down = 80% uptime today
+	var checks []CheckResult
+	for i := 0; i < 8; i++ {
+		checks = append(checks, CheckResult{
+			MonitorID: "m1", Status: "up", Latency: 50,
+			Timestamp: today.Add(time.Duration(i) * time.Minute), StatusCode: 200,
+		})
+	}
+	for i := 0; i < 2; i++ {
+		checks = append(checks, CheckResult{
+			MonitorID: "m1", Status: "down", Latency: 0,
+			Timestamp: today.Add(time.Duration(8+i) * time.Minute), StatusCode: 0,
+		})
+	}
+	if err := s.BatchInsertChecks(checks); err != nil {
+		t.Fatalf("BatchInsertChecks failed: %v", err)
+	}
+
+	stats, err := s.GetDailyUptimeStats("m1", 7)
+	if err != nil {
+		t.Fatalf("GetDailyUptimeStats failed: %v", err)
+	}
+	if len(stats) != 7 {
+		t.Fatalf("Expected 7 days, got %d", len(stats))
+	}
+
+	// The last day (today) should have data
+	todayStr := today.Format("2006-01-02")
+	var todayStat *DailyUptimeStat
+	for i := range stats {
+		if stats[i].Date == todayStr {
+			todayStat = &stats[i]
+			break
+		}
+	}
+	if todayStat == nil {
+		t.Fatalf("Today's stats not found in results. Looking for %s", todayStr)
+	}
+	if todayStat.Total != 10 {
+		t.Errorf("Expected 10 total checks today, got %d", todayStat.Total)
+	}
+	if todayStat.UptimePercent != 80.0 {
+		t.Errorf("Expected 80%% uptime today, got %.2f%%", todayStat.UptimePercent)
+	}
+}
+
+func TestGetDailyUptimeStats_MultipleMonitors(t *testing.T) {
+	s := newTestStore(t)
+	_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+	_ = s.CreateMonitor(Monitor{ID: "m1", GroupID: "g1", Name: "M1", Interval: 60})
+	_ = s.CreateMonitor(Monitor{ID: "m2", GroupID: "g1", Name: "M2", Interval: 60})
+
+	now := time.Now().UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 12, 0, 0, 0, time.UTC)
+
+	checks := []CheckResult{
+		{MonitorID: "m1", Status: "up", Latency: 50, Timestamp: today, StatusCode: 200},
+		{MonitorID: "m2", Status: "down", Latency: 0, Timestamp: today, StatusCode: 0},
+	}
+	if err := s.BatchInsertChecks(checks); err != nil {
+		t.Fatalf("BatchInsertChecks failed: %v", err)
+	}
+
+	// m1 should be 100%
+	stats1, _ := s.GetDailyUptimeStats("m1", 1)
+	if len(stats1) != 1 || stats1[0].UptimePercent != 100.0 {
+		t.Errorf("m1 expected 100%%, got %.2f%%", stats1[0].UptimePercent)
+	}
+
+	// m2 should be 0%
+	stats2, _ := s.GetDailyUptimeStats("m2", 1)
+	if len(stats2) != 1 || stats2[0].UptimePercent != 0.0 {
+		t.Errorf("m2 expected 0%%, got %.2f%%", stats2[0].UptimePercent)
+	}
+}
+
+func TestGetDailyUptimeStats_InvalidDays(t *testing.T) {
+	s := newTestStore(t)
+
+	_, err := s.GetDailyUptimeStats("m1", 0)
+	if err == nil {
+		t.Error("Expected error for 0 days")
+	}
+
+	_, err = s.GetDailyUptimeStats("m1", 366)
+	if err == nil {
+		t.Error("Expected error for 366 days")
+	}
+}
+
+func TestGetDailyUptimeStats_GapFilling(t *testing.T) {
+	s := newTestStore(t)
+	_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+	_ = s.CreateMonitor(Monitor{ID: "m1", GroupID: "g1", Name: "M1", Interval: 60})
+
+	// Insert checks only for today (leaving gaps in the 7-day window)
+	now := time.Now().UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 12, 0, 0, 0, time.UTC)
+	checks := []CheckResult{
+		{MonitorID: "m1", Status: "up", Latency: 50, Timestamp: today, StatusCode: 200},
+	}
+	if err := s.BatchInsertChecks(checks); err != nil {
+		t.Fatalf("BatchInsertChecks failed: %v", err)
+	}
+
+	stats, err := s.GetDailyUptimeStats("m1", 7)
+	if err != nil {
+		t.Fatalf("GetDailyUptimeStats failed: %v", err)
+	}
+
+	todayStr := today.Format("2006-01-02")
+	daysWithData := 0
+	daysWithNoData := 0
+	for _, d := range stats {
+		if d.Date == todayStr {
+			daysWithData++
+			if d.Total != 1 {
+				t.Errorf("Expected 1 check on %s, got %d", d.Date, d.Total)
+			}
+		} else {
+			daysWithNoData++
+			if d.UptimePercent != -1 {
+				t.Errorf("Expected -1 (no data) on %s, got %.2f", d.Date, d.UptimePercent)
+			}
+		}
+	}
+	if daysWithData != 1 {
+		t.Errorf("Expected exactly 1 day with data, got %d", daysWithData)
+	}
+	if daysWithNoData != 6 {
+		t.Errorf("Expected 6 days with no data, got %d", daysWithNoData)
+	}
+}
+
 // ============== PER-MONITOR OVERRIDE CRUD TESTS ==============
 
 func intPtr(v int) *int { return &v }

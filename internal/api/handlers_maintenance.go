@@ -87,6 +87,7 @@ func (h *MaintenanceHandler) CreateMaintenance(w http.ResponseWriter, r *http.Re
 		StartTime:      startTime,
 		EndTime:        &endTime,
 		AffectedGroups: string(affectedGroupsJSON),
+		Public:         true, // Maintenance windows are public by default
 	}
 
 	if err := h.store.CreateIncident(maintenance); err != nil {
@@ -226,6 +227,7 @@ func (h *MaintenanceHandler) UpdateMaintenance(w http.ResponseWriter, r *http.Re
 		StartTime:      startTime,
 		EndTime:        &endTime,
 		AffectedGroups: string(affectedGroupsJSON),
+		Public:         true, // Maintenance windows are public by default
 	}
 
 	if err := h.store.UpdateIncident(incident); err != nil {
