@@ -124,14 +124,14 @@ export function StatusPagesView() {
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-8 w-8"
+                                className="h-8 w-8 mr-[-0.5rem]"
                                 onClick={() => openConfig(page)}
                                 data-testid={`status-page-config-${page.slug}`}
                             >
                                 <Settings className="h-4 w-4" />
                             </Button>
                             <div className="flex items-center gap-2">
-                                <span className={`text-xs transition-colors ${page.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>
+                                <span className={`text-xs transition-colors min-w-[4rem] text-right ${page.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>
                                     {page.enabled ? 'Enabled' : 'Disabled'}
                                 </span>
                                 <Switch
@@ -141,7 +141,7 @@ export function StatusPagesView() {
                                 />
                             </div>
                             <div className="flex items-center gap-2">
-                                <span className={`text-xs transition-colors ${page.enabled && page.public ? 'text-foreground' : 'text-muted-foreground'}`}>
+                                <span className={`text-xs transition-colors min-w-[3rem] text-right ${page.enabled && page.public ? 'text-foreground' : 'text-muted-foreground'}`}>
                                     {page.public ? 'Public' : 'Private'}
                                 </span>
                                 <Switch

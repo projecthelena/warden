@@ -121,6 +121,25 @@ export function hexToHSL(hex: string): { h: number; s: number; l: number } | nul
   };
 }
 
+// Sanitize image URL to prevent XSS via javascript: or other dangerous protocols.
+// Only allows http(s) and data:image URIs. Returns empty string for invalid URLs.
+// Uses URL API to reconstruct the URL, breaking the taint chain for static analysis.
+export function sanitizeImageUrl(url: string | undefined): string {
+  if (!url) return "";
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+      return parsed.href;
+    }
+    if (parsed.protocol === "data:" && parsed.pathname.startsWith("image/")) {
+      return parsed.href;
+    }
+  } catch {
+    // Not a valid URL
+  }
+  return "";
+}
+
 // Timezone-aware date formatting
 export const formatDate = (date: string | Date | number, timezone: string = 'UTC') => {
   if (!date) return '';

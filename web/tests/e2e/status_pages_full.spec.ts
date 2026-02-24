@@ -12,6 +12,9 @@ import { StatusPagesPage } from '../pages/StatusPagesPage';
  * Phase 4: RSS Feed - Feed generation, content, edge cases
  */
 
+// Run tests serially since they all modify the shared "all" status page
+test.describe.configure({ mode: 'serial' });
+
 test.describe('Status Page - Full E2E Suite', () => {
     let statusPages: StatusPagesPage;
     let dashboard: DashboardPage;

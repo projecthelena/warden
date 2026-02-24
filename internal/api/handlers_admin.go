@@ -66,7 +66,7 @@ func (h *AdminHandler) performReset(w http.ResponseWriter, clientIP string) {
 	h.manager.Reset()
 
 	if err := h.store.Reset(); err != nil {
-		log.Printf("AUDIT: [ADMIN] Database reset FAILED from IP %s: %v", clientIP, err)
+		log.Printf("AUDIT: [ADMIN] Database reset FAILED from IP %s: %v", sanitizeLog(clientIP), err) // #nosec G706 -- sanitized
 		writeError(w, http.StatusInternalServerError, "operation failed")
 		return
 	}
@@ -74,6 +74,6 @@ func (h *AdminHandler) performReset(w http.ResponseWriter, clientIP string) {
 	// Sync manager to start monitoring new seed data
 	h.manager.Sync()
 
-	log.Printf("AUDIT: [ADMIN] Database reset COMPLETED successfully from IP %s", clientIP)
+	log.Printf("AUDIT: [ADMIN] Database reset COMPLETED successfully from IP %s", sanitizeLog(clientIP)) // #nosec G706 -- sanitized
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Database reset successfully"})
 }

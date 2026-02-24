@@ -2,6 +2,9 @@ import { test, expect } from '@playwright/test';
 import { LoginPage } from '../pages/LoginPage';
 import { SettingsPage } from '../pages/SettingsPage';
 
+// Run tests serially to avoid conflicts
+test.describe.configure({ mode: 'serial' });
+
 test.describe('Settings & API Keys', () => {
 
     test('Generate API Key', async ({ page }) => {

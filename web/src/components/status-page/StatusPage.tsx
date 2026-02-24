@@ -3,7 +3,7 @@ import { Activity, AlertTriangle, ArrowDownCircle, CheckCircle2, ChevronDown, Ch
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { useMonitorStore, Group, Incident, Monitor, StatusPageConfig } from "@/lib/store";
-import { cn, formatDate, hexToHSL } from "@/lib/utils";
+import { cn, formatDate, hexToHSL, sanitizeImageUrl } from "@/lib/utils";
 import { UptimeBar } from "./UptimeBar";
 import { PastIncidentsSection } from "./PastIncidentsSection";
 import { IncidentTimeline } from "@/components/incidents/IncidentTimeline";
@@ -459,6 +459,31 @@ export function StatusPage() {
         }
     }, []);
 
+    // Apply custom favicon
+    const applyFavicon = useCallback((config?: StatusPageConfig, pageTitle?: string) => {
+        const faviconUrl = config?.faviconUrl;
+
+        // Update page title
+        if (pageTitle) {
+            document.title = `${pageTitle} - Status`;
+        }
+
+        // Find or create favicon link element
+        let faviconLink = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+
+        if (faviconUrl) {
+            if (!faviconLink) {
+                faviconLink = document.createElement('link');
+                faviconLink.rel = 'icon';
+                document.head.appendChild(faviconLink);
+            }
+            faviconLink.href = sanitizeImageUrl(faviconUrl);
+        } else if (faviconLink) {
+            // Reset to default favicon
+            faviconLink.href = '/favicon.ico';
+        }
+    }, []);
+
     useEffect(() => {
         let isMounted = true;
 
@@ -472,6 +497,7 @@ export function StatusPage() {
                     setError(null);
                     applyTheme(result.config);
                     applyAccentColor(result.config);
+                    applyFavicon(result.config, result.title);
                 } else {
                     setError("Status page not found or private.");
                 }
@@ -495,8 +521,12 @@ export function StatusPage() {
             document.documentElement.classList.remove('light');
             document.documentElement.classList.add('dark');
             document.documentElement.style.removeProperty('--primary');
+            // Reset favicon and title
+            const faviconLink = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+            if (faviconLink) faviconLink.href = '/favicon.ico';
+            document.title = 'Warden';
         };
-    }, [slug, fetchPublicStatusBySlug, applyTheme, applyAccentColor]);
+    }, [slug, fetchPublicStatusBySlug, applyTheme, applyAccentColor, applyFavicon]);
 
     // Listen for system theme changes when using 'system' theme
     useEffect(() => {
@@ -558,7 +588,7 @@ export function StatusPage() {
                     <div className="flex items-center gap-3 justify-center">
                         {config?.logoUrl ? (
                             <img
-                                src={config.logoUrl}
+                                src={sanitizeImageUrl(config.logoUrl)}
                                 alt="Logo"
                                 className="w-8 h-8 object-contain"
                                 onError={(e) => {

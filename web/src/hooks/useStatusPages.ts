@@ -18,6 +18,7 @@ export interface StatusPageUpdatePayload {
     groupId?: string;
     description?: string;
     logoUrl?: string;
+    faviconUrl?: string;
     accentColor?: string;
     theme?: 'light' | 'dark' | 'system';
     showUptimeBars?: boolean;

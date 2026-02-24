@@ -113,6 +113,7 @@ export interface StatusPage {
     createdAt: string;
     description?: string;
     logoUrl?: string;
+    faviconUrl?: string;
     accentColor?: string;
     theme?: 'light' | 'dark' | 'system';
     showUptimeBars?: boolean;
@@ -123,6 +124,7 @@ export interface StatusPage {
 export interface StatusPageConfig {
     description: string;
     logoUrl: string;
+    faviconUrl: string;
     accentColor: string;
     theme: 'light' | 'dark' | 'system';
     showUptimeBars: boolean;

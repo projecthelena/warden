@@ -2,6 +2,9 @@ import { test } from '@playwright/test';
 import { LoginPage } from '../pages/LoginPage';
 import { NotificationsPage } from '../pages/NotificationsPage';
 
+// Run tests serially to avoid auth conflicts
+test.describe.configure({ mode: 'serial' });
+
 test.describe('Notification Management', () => {
 
     test('Create and Delete Slack Channel', async ({ page }) => {

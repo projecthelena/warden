@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToggleStatusPageMutation } from "@/hooks/useStatusPages";
 import { useToast } from "@/components/ui/use-toast";
 import { StatusPage } from "@/lib/store";
+import { sanitizeImageUrl } from "@/lib/utils";
 import { Loader2, Image } from "lucide-react";
 
 interface StatusPageConfigDialogProps {
@@ -22,28 +23,34 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
     const toggleMutation = useToggleStatusPageMutation();
 
     // Form state
+    const [title, setTitle] = useState("");
     const [description, setDescription] = useState("");
     const [logoUrl, setLogoUrl] = useState("");
+    const [faviconUrl, setFaviconUrl] = useState("");
     const [accentColor, setAccentColor] = useState("");
     const [theme, setTheme] = useState<'light' | 'dark' | 'system'>("system");
     const [showUptimeBars, setShowUptimeBars] = useState(true);
     const [showUptimePercentage, setShowUptimePercentage] = useState(true);
     const [showIncidentHistory, setShowIncidentHistory] = useState(true);
 
-    // Logo preview state
+    // Preview state
     const [logoError, setLogoError] = useState(false);
+    const [faviconError, setFaviconError] = useState(false);
 
     // Reset form when page changes
     useEffect(() => {
         if (page) {
+            setTitle(page.title || "");
             setDescription(page.description || "");
             setLogoUrl(page.logoUrl || "");
+            setFaviconUrl(page.faviconUrl || "");
             setAccentColor(page.accentColor || "");
             setTheme(page.theme || "system");
             setShowUptimeBars(page.showUptimeBars ?? true);
             setShowUptimePercentage(page.showUptimePercentage ?? true);
             setShowIncidentHistory(page.showIncidentHistory ?? true);
             setLogoError(false);
+            setFaviconError(false);
         }
     }, [page]);
 
@@ -58,15 +65,16 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
         if (!page) return;
 
         try {
-            const targetSlug = resolveSlug(page.slug, page.title);
+            const targetSlug = resolveSlug(page.slug, title);
             await toggleMutation.mutateAsync({
                 slug: targetSlug,
                 public: page.public,
                 enabled: page.enabled,
-                title: page.title,
+                title,
                 groupId: page.groupId || undefined,
                 description,
                 logoUrl: logoUrl || undefined,
+                faviconUrl: faviconUrl || undefined,
                 accentColor: accentColor || undefined,
                 theme,
                 showUptimeBars,
@@ -75,7 +83,7 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
             });
             toast({
                 title: "Configuration Saved",
-                description: `${page.title} settings updated successfully.`,
+                description: `${title} settings updated successfully.`,
             });
             onOpenChange(false);
         } catch (_e) {
@@ -92,7 +100,7 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
         return /^#[0-9A-Fa-f]{6}$/.test(color);
     };
 
-    const isValidLogoUrl = (url: string) => {
+    const isValidImageUrl = (url: string) => {
         if (!url) return true;
         return url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:image/");
     };
@@ -110,6 +118,17 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
                         <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
                             Branding
                         </h3>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="title">Title</Label>
+                            <Input
+                                id="title"
+                                placeholder="My Status Page"
+                                value={title}
+                                onChange={(e) => setTitle(e.target.value)}
+                            />
+                            <p className="text-xs text-muted-foreground">The name displayed at the top of your status page</p>
+                        </div>
 
                         <div className="space-y-2">
                             <Label htmlFor="description">Description</Label>
@@ -133,12 +152,12 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
                                     setLogoUrl(e.target.value);
                                     setLogoError(false);
                                 }}
-                                className={!isValidLogoUrl(logoUrl) ? "border-destructive" : ""}
+                                className={!isValidImageUrl(logoUrl) ? "border-destructive" : ""}
                             />
-                            {!isValidLogoUrl(logoUrl) && (
+                            {!isValidImageUrl(logoUrl) && (
                                 <p className="text-xs text-destructive">Must be http/https URL or data:image URI</p>
                             )}
-                            {logoUrl && isValidLogoUrl(logoUrl) && (
+                            {logoUrl && isValidImageUrl(logoUrl) && (
                                 <div className="flex items-center gap-2 mt-2 p-2 bg-muted/50 rounded-md">
                                     {logoError ? (
                                         <div className="flex items-center justify-center w-8 h-8 bg-muted rounded border border-border">
@@ -146,17 +165,52 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
                                         </div>
                                     ) : (
                                         <img
-                                            src={logoUrl}
+                                            src={sanitizeImageUrl(logoUrl)}
                                             alt="Logo preview"
                                             className="w-8 h-8 object-contain rounded"
                                             onError={() => setLogoError(true)}
                                         />
                                     )}
-                                    <span className="text-xs text-muted-foreground">Preview</span>
+                                    <span className="text-xs text-muted-foreground">Logo preview</span>
                                 </div>
                             )}
                         </div>
 
+                        <div className="space-y-2">
+                            <Label htmlFor="faviconUrl">Favicon URL</Label>
+                            <Input
+                                id="faviconUrl"
+                                placeholder="https://example.com/favicon.ico or data:image/..."
+                                value={faviconUrl}
+                                onChange={(e) => {
+                                    setFaviconUrl(e.target.value);
+                                    setFaviconError(false);
+                                }}
+                                className={!isValidImageUrl(faviconUrl) ? "border-destructive" : ""}
+                            />
+                            {!isValidImageUrl(faviconUrl) && (
+                                <p className="text-xs text-destructive">Must be http/https URL or data:image URI</p>
+                            )}
+                            {faviconUrl && isValidImageUrl(faviconUrl) && (
+                                <div className="flex items-center gap-2 mt-2 p-2 bg-muted/50 rounded-md">
+                                    {faviconError ? (
+                                        <div className="flex items-center justify-center w-4 h-4 bg-muted rounded border border-border">
+                                            <Image className="w-3 h-3 text-muted-foreground" />
+                                        </div>
+                                    ) : (
+                                        <img
+                                            src={sanitizeImageUrl(faviconUrl)}
+                                            alt="Favicon preview"
+                                            className="w-4 h-4 object-contain"
+                                            onError={() => setFaviconError(true)}
+                                        />
+                                    )}
+                                    <span className="text-xs text-muted-foreground">Favicon preview (browser tab icon)</span>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* TODO: Re-enable accent color and theme once persistence is fixed
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <Label htmlFor="accentColor">Accent Color</Label>
@@ -168,12 +222,18 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
                                         onChange={(e) => setAccentColor(e.target.value)}
                                         className={`flex-1 ${!isValidHexColor(accentColor) ? "border-destructive" : ""}`}
                                     />
-                                    {accentColor && isValidHexColor(accentColor) && (
-                                        <div
-                                            className="w-10 h-10 rounded-md border border-border shrink-0"
-                                            style={{ backgroundColor: accentColor }}
+                                    <label className="relative w-10 h-10 shrink-0 cursor-pointer">
+                                        <input
+                                            type="color"
+                                            value={accentColor || "#3b82f6"}
+                                            onChange={(e) => setAccentColor(e.target.value)}
+                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                                         />
-                                    )}
+                                        <div
+                                            className="w-full h-full rounded-md border border-border"
+                                            style={{ backgroundColor: accentColor || "#3b82f6" }}
+                                        />
+                                    </label>
                                 </div>
                                 {!isValidHexColor(accentColor) && (
                                     <p className="text-xs text-destructive">Must be #RRGGBB format</p>
@@ -194,6 +254,7 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
                                 </Select>
                             </div>
                         </div>
+                        */}
                     </div>
 
                     {/* Display Options Section */}
@@ -251,7 +312,7 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
                     </Button>
                     <Button
                         onClick={handleSave}
-                        disabled={toggleMutation.isPending || !isValidHexColor(accentColor) || !isValidLogoUrl(logoUrl)}
+                        disabled={toggleMutation.isPending || !title.trim() || !isValidHexColor(accentColor) || !isValidImageUrl(logoUrl) || !isValidImageUrl(faviconUrl)}
                         className="w-full sm:w-auto"
                     >
                         {toggleMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}

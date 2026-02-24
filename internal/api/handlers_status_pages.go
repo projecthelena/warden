@@ -49,11 +49,19 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 
 	// 3. Construct Unified List
 	type StatusPageDTO struct {
-		Slug    string  `json:"slug"`
-		Title   string  `json:"title"`
-		GroupID *string `json:"groupId"`
-		Public  bool    `json:"public"`
-		Enabled bool    `json:"enabled"`
+		Slug                 string  `json:"slug"`
+		Title                string  `json:"title"`
+		GroupID              *string `json:"groupId"`
+		Public               bool    `json:"public"`
+		Enabled              bool    `json:"enabled"`
+		Description          string  `json:"description"`
+		LogoURL              string  `json:"logoUrl"`
+		FaviconURL           string  `json:"faviconUrl"`
+		AccentColor          string  `json:"accentColor"`
+		Theme                string  `json:"theme"`
+		ShowUptimeBars       bool    `json:"showUptimeBars"`
+		ShowUptimePercentage bool    `json:"showUptimePercentage"`
+		ShowIncidentHistory  bool    `json:"showIncidentHistory"`
 	}
 
 	var result []StatusPageDTO
@@ -72,41 +80,68 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// A. Global Page
-	globalPublic := false
-	globalEnabled := false
-	if globalPage != nil {
-		globalPublic = globalPage.Public
-		globalEnabled = globalPage.Enabled
+	globalDTO := StatusPageDTO{
+		Slug:                 "all",
+		Title:                "Global Status",
+		GroupID:              nil,
+		Public:               false,
+		Enabled:              false,
+		Theme:                "system",
+		ShowUptimeBars:       true,
+		ShowUptimePercentage: true,
+		ShowIncidentHistory:  true,
 	}
-	result = append(result, StatusPageDTO{
-		Slug:    "all",
-		Title:   "Global Status",
-		GroupID: nil,
-		Public:  globalPublic,
-		Enabled: globalEnabled,
-	})
+	if globalPage != nil {
+		globalDTO.Title = globalPage.Title
+		globalDTO.Public = globalPage.Public
+		globalDTO.Enabled = globalPage.Enabled
+		globalDTO.Description = globalPage.Description
+		globalDTO.LogoURL = globalPage.LogoURL
+		globalDTO.FaviconURL = globalPage.FaviconURL
+		globalDTO.AccentColor = globalPage.AccentColor
+		globalDTO.Theme = globalPage.Theme
+		globalDTO.ShowUptimeBars = globalPage.ShowUptimeBars
+		globalDTO.ShowUptimePercentage = globalPage.ShowUptimePercentage
+		globalDTO.ShowIncidentHistory = globalPage.ShowIncidentHistory
+		if globalDTO.Theme == "" {
+			globalDTO.Theme = "system"
+		}
+	}
+	result = append(result, globalDTO)
 
 	// B. Group Pages
 	for _, g := range groups {
-		slug := strings.TrimPrefix(g.ID, "g-") // default slug (clean)
-		title := g.Name
-		public := false
-		enabled := false
-
-		if cfg, ok := configMap[g.ID]; ok {
-			slug = cfg.Slug
-			title = cfg.Title
-			public = cfg.Public
-			enabled = cfg.Enabled
+		dto := StatusPageDTO{
+			Slug:                 strings.TrimPrefix(g.ID, "g-"), // default slug (clean)
+			Title:                g.Name,
+			GroupID:              &g.ID,
+			Public:               false,
+			Enabled:              false,
+			Theme:                "system",
+			ShowUptimeBars:       true,
+			ShowUptimePercentage: true,
+			ShowIncidentHistory:  true,
 		}
 
-		result = append(result, StatusPageDTO{
-			Slug:    slug,
-			Title:   title,
-			GroupID: &g.ID,
-			Public:  public,
-			Enabled: enabled,
-		})
+		if cfg, ok := configMap[g.ID]; ok {
+			dto.Slug = cfg.Slug
+			dto.Title = cfg.Title
+			dto.Public = cfg.Public
+			dto.Enabled = cfg.Enabled
+			dto.Description = cfg.Description
+			dto.LogoURL = cfg.LogoURL
+			dto.FaviconURL = cfg.FaviconURL
+			dto.AccentColor = cfg.AccentColor
+			dto.Theme = cfg.Theme
+			dto.ShowUptimeBars = cfg.ShowUptimeBars
+			dto.ShowUptimePercentage = cfg.ShowUptimePercentage
+			dto.ShowIncidentHistory = cfg.ShowIncidentHistory
+			if dto.Theme == "" {
+				dto.Theme = "system"
+			}
+		}
+
+		result = append(result, dto)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"pages": result})
@@ -132,6 +167,7 @@ func (h *StatusPageHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 		GroupID              *string `json:"groupId"`
 		Description          *string `json:"description"`
 		LogoURL              *string `json:"logoUrl"`
+		FaviconURL           *string `json:"faviconUrl"`
 		AccentColor          *string `json:"accentColor"`
 		Theme                *string `json:"theme"`
 		ShowUptimeBars       *bool   `json:"showUptimeBars"`
@@ -174,6 +210,17 @@ func (h *StatusPageHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 		logoURL = logo
 	}
 
+	// Validate favicon_url if provided (URL or data:image/* URI)
+	faviconURL := ""
+	if req.FaviconURL != nil && *req.FaviconURL != "" {
+		favicon := *req.FaviconURL
+		if !strings.HasPrefix(favicon, "http://") && !strings.HasPrefix(favicon, "https://") && !strings.HasPrefix(favicon, "data:image/") {
+			writeError(w, http.StatusBadRequest, "invalid favicon URL (must be http/https URL or data:image/* URI)")
+			return
+		}
+		faviconURL = favicon
+	}
+
 	// Get existing page to preserve defaults
 	existing, _ := h.store.GetStatusPageBySlug(slug)
 
@@ -186,6 +233,7 @@ func (h *StatusPageHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 		Enabled:              req.Enabled,
 		Description:          "",
 		LogoURL:              logoURL,
+		FaviconURL:           faviconURL,
 		AccentColor:          accentColor,
 		Theme:                theme,
 		ShowUptimeBars:       true,
@@ -198,6 +246,9 @@ func (h *StatusPageHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 		input.Description = existing.Description
 		if logoURL == "" && req.LogoURL == nil {
 			input.LogoURL = existing.LogoURL
+		}
+		if faviconURL == "" && req.FaviconURL == nil {
+			input.FaviconURL = existing.FaviconURL
 		}
 		if accentColor == "" && req.AccentColor == nil {
 			input.AccentColor = existing.AccentColor
@@ -617,6 +668,7 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 	config := map[string]any{
 		"description":          page.Description,
 		"logoUrl":              page.LogoURL,
+		"faviconUrl":           page.FaviconURL,
 		"accentColor":          page.AccentColor,
 		"theme":                page.Theme,
 		"showUptimeBars":       page.ShowUptimeBars,
@@ -765,7 +817,7 @@ func (h *StatusPageHandler) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
 		itemsXML.WriteString("      <title>" + xmlEscape("["+severityLabel+"] "+inc.Title) + "</title>\n")
 		itemsXML.WriteString("      <description>" + xmlEscape(description) + "</description>\n")
 		itemsXML.WriteString("      <link>" + xmlEscape(statusPageURL+"#incident-"+inc.ID) + "</link>\n")
-		itemsXML.WriteString("      <guid isPermaLink=\"false\">incident-" + inc.ID + "</guid>\n")
+		itemsXML.WriteString("      <guid isPermaLink=\"false\">incident-" + xmlEscape(inc.ID) + "</guid>\n")
 		itemsXML.WriteString("      <pubDate>" + inc.StartTime.Format(time.RFC1123Z) + "</pubDate>\n")
 		itemsXML.WriteString("    </item>\n")
 	}
@@ -784,7 +836,7 @@ func (h *StatusPageHandler) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(rss))
+	_, _ = w.Write([]byte(rss)) // #nosec G705 - all user content escaped via xmlEscape()
 }
 
 // xmlEscape escapes special XML characters

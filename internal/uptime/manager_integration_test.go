@@ -200,7 +200,9 @@ func TestMonitor_EventLifecycle(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Failed to create monitor: %v", err)
 	}
-	m.SetLatencyThreshold(100)
+	// Use high threshold (500ms) so CI HTTP overhead (~50-150ms) doesn't cause
+	// false degraded events when the server responds quickly.
+	m.SetLatencyThreshold(500)
 	m.Sync()
 
 	time.Sleep(2 * time.Second) // Initial Up
@@ -228,12 +230,12 @@ func TestMonitor_EventLifecycle(t *testing.T) {
 		t.Error("Expected 'recovered' event")
 	}
 
-	// 4. Trigger Degraded (Latency > 100ms)
-	latency = 200 * time.Millisecond
-	time.Sleep(4 * time.Second) // Wait for debounce logic
+	// 4. Trigger Degraded (Latency well above 500ms threshold)
+	latency = 800 * time.Millisecond
+	time.Sleep(4 * time.Second)
 
 	// Verify "degraded" event
-	events, _ = store.GetMonitorEvents(monID, 5)
+	events, _ = store.GetMonitorEvents(monID, 10)
 	foundDegraded := false
 	for _, e := range events {
 		if e.Type == "degraded" {
@@ -245,14 +247,45 @@ func TestMonitor_EventLifecycle(t *testing.T) {
 		t.Error("Expected 'degraded' event")
 	}
 
-	// 5. Recover (Latency normal)
-	latency = 10 * time.Millisecond
-	time.Sleep(4 * time.Second)
+	// 5. Recover from degraded (Latency well below threshold)
+	latency = 0 * time.Millisecond
 
-	// Verify "recovered" event
-	events, _ = store.GetMonitorEvents(monID, 5)
-	if len(events) == 0 || events[0].Type != "recovered" {
-		t.Error("Expected 'recovered' event after degradation")
+	// Poll until the monitor's live state shows not-degraded.
+	// We check the monitor state rather than event ordering because async goroutine
+	// DB writes can cause a "degraded" event (from an in-flight check) to land after
+	// the "recovered" event in the database.
+	recoveredFromDegraded := false
+	for range 20 {
+		time.Sleep(500 * time.Millisecond)
+		mon := m.GetMonitor(monID)
+		up, _, hasHistory, isDegraded := mon.GetLastStatus()
+		if hasHistory && up && !isDegraded {
+			recoveredFromDegraded = true
+			break
+		}
+	}
+	if !recoveredFromDegraded {
+		t.Error("Expected monitor to recover from degraded state")
+		mon := m.GetMonitor(monID)
+		up, latMs, _, isDeg := mon.GetLastStatus()
+		t.Logf("Monitor state: up=%v, latency=%dms, isDegraded=%v", up, latMs, isDeg)
+	}
+
+	// Also verify a "recovered" event exists in the event history (may not be the most recent
+	// due to async event writes from concurrent checks)
+	events, _ = store.GetMonitorEvents(monID, 20)
+	foundRecovered := false
+	for _, e := range events {
+		if e.Type == "recovered" {
+			foundRecovered = true
+			break
+		}
+	}
+	if !foundRecovered {
+		t.Error("Expected at least one 'recovered' event in history")
+		for _, e := range events {
+			t.Logf("Found event: %s", e.Type)
+		}
 	}
 }
 

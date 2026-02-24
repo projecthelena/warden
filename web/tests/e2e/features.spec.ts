@@ -3,6 +3,9 @@ import { LoginPage } from '../pages/LoginPage';
 import { MaintenancePage } from '../pages/MaintenancePage';
 import { DashboardPage } from '../pages/DashboardPage';
 
+// Run tests serially to avoid conflicts
+test.describe.configure({ mode: 'serial' });
+
 test.describe('System Features', () => {
 
     test('Maintenance Windows', async ({ page }) => {

@@ -56,16 +56,46 @@ export class StatusPagesPage {
         return this.page.getByTestId(`status-page-visit-${slug}`);
     }
 
-    /** Toggle the enabled state of a status page and wait for the toast */
+    /** Toggle the enabled state of a status page and wait for UI update */
     async toggleEnabled(slug: string) {
-        await this.getEnabledToggle(slug).click();
-        await this.waitForToast();
+        const toggle = this.getEnabledToggle(slug);
+        const wasChecked = await toggle.isChecked();
+
+        // Wait for the API response before checking toggle state
+        const responsePromise = this.page.waitForResponse(
+            resp => resp.url().includes('/api/status-pages/') && resp.request().method() === 'PATCH',
+            { timeout: 10000 }
+        );
+        await toggle.click();
+        await responsePromise;
+
+        // Wait for React Query to refetch and re-render the toggle
+        if (wasChecked) {
+            await expect(toggle).not.toBeChecked({ timeout: 10000 });
+        } else {
+            await expect(toggle).toBeChecked({ timeout: 10000 });
+        }
     }
 
-    /** Toggle the public state of a status page and wait for the toast */
+    /** Toggle the public state of a status page and wait for UI update */
     async togglePublic(slug: string) {
-        await this.getPublicToggle(slug).click();
-        await this.waitForToast();
+        const toggle = this.getPublicToggle(slug);
+        const wasChecked = await toggle.isChecked();
+
+        // Wait for the API response before checking toggle state
+        const responsePromise = this.page.waitForResponse(
+            resp => resp.url().includes('/api/status-pages/') && resp.request().method() === 'PATCH',
+            { timeout: 10000 }
+        );
+        await toggle.click();
+        await responsePromise;
+
+        // Wait for React Query to refetch and re-render the toggle
+        if (wasChecked) {
+            await expect(toggle).not.toBeChecked({ timeout: 10000 });
+        } else {
+            await expect(toggle).toBeChecked({ timeout: 10000 });
+        }
     }
 
     /** Wait for the "Status Page Updated" toast to appear and then dismiss */
