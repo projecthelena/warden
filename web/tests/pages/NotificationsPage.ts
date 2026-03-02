@@ -53,11 +53,23 @@ export class NotificationsPage {
         // Open details
         await this.page.getByText(name).click();
 
-        // Click Delete
-        // The delete button in sheet is 'delete-channel-btn'
+        // Wait for the sheet to open
+        await expect(this.page.getByTestId('delete-channel-btn')).toBeVisible({ timeout: 5000 });
+
+        // Click Delete and wait for both the DELETE call and the subsequent GET refetch
+        const deletePromise = this.page.waitForResponse(
+            resp => resp.url().includes('/api/notifications/channels') && resp.request().method() === 'DELETE',
+            { timeout: 10000 }
+        );
+        const refetchPromise = this.page.waitForResponse(
+            resp => resp.url().includes('/api/notifications/channels') && resp.request().method() === 'GET' && resp.status() === 200,
+            { timeout: 10000 }
+        );
         await this.page.getByTestId('delete-channel-btn').click();
+        await deletePromise;
+        await refetchPromise;
 
         // Verify removal
-        await expect(this.page.getByText(name)).toHaveCount(0);
+        await expect(this.page.getByText(name)).toHaveCount(0, { timeout: 10000 });
     }
 }

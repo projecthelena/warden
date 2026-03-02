@@ -2,6 +2,9 @@ import { test, expect } from '@playwright/test';
 import { LoginPage } from '../pages/LoginPage';
 import { DashboardPage } from '../pages/DashboardPage';
 
+// Run tests serially to avoid race conditions with shared backend state
+test.describe.configure({ mode: 'serial' });
+
 test.describe('Monitor Management', () => {
 
     test('Create and Delete Group & Monitor', async ({ page }) => {

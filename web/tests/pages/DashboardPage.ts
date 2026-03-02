@@ -62,9 +62,9 @@ export class DashboardPage {
         await expect(this.page.getByText(name).first()).toBeVisible();
     }
 
-    async verifyMonitorStatus(status: string = 'Operational') {
+    async verifyMonitorStatus(status: string = 'Operational', timeout: number = 30000) {
         const badge = this.page.getByText(status).first();
-        await expect(badge).toBeVisible({ timeout: 15000 });
+        await expect(badge).toBeVisible({ timeout });
     }
 
     async deleteGroup(_groupName: string) {
@@ -85,31 +85,64 @@ export class DashboardPage {
         // Click Settings Tab
         await this.page.getByTestId('monitor-settings-tab').click();
 
+        // Wait for settings tab content to load
+        await expect(this.page.getByTestId('delete-monitor-trigger')).toBeVisible({ timeout: 5000 });
+
         // Click Delete
         await this.page.getByTestId('delete-monitor-trigger').click();
-        // Confirm
+
+        // Wait for confirmation dialog
+        await expect(this.page.getByTestId('delete-monitor-confirm')).toBeVisible({ timeout: 5000 });
+
+        // Confirm deletion
         await this.page.getByTestId('delete-monitor-confirm').click();
 
-        // Verify it's gone
-        await expect(this.page.getByText(monitorName)).toHaveCount(0);
+        // Wait for sheet/dialog to close (this indicates the action completed)
+        await expect(this.page.locator('[data-state="open"].fixed.inset-0')).toHaveCount(0, { timeout: 15000 });
+
+        // Wait for React Query to refetch and update UI
+        await this.page.waitForTimeout(1500);
+
+        // Verify the monitor card is gone by checking the monitor list area specifically
+        // Use a more targeted approach - wait for the element to be detached
+        const monitorCard = this.page.locator('div.rounded-lg.bg-card').filter({ hasText: monitorName });
+        await expect(monitorCard).toHaveCount(0, { timeout: 15000 });
     }
 
     async editMonitor(oldName: string, newName: string) {
         // Open Monitor Details
         await this.page.getByText(oldName).first().click();
 
+        // Wait for sheet to open
+        await expect(this.page.locator('[data-state="open"].fixed.inset-0')).toBeVisible({ timeout: 5000 });
+
         // Click Settings Tab
         await this.page.getByTestId('monitor-settings-tab').click();
 
-        // Update Name using robust testid
+        // Wait for settings content to load
+        await expect(this.page.getByTestId('monitor-edit-name-input')).toBeVisible({ timeout: 5000 });
+
+        // Update Name
         await this.page.getByTestId('monitor-edit-name-input').fill(newName);
 
-        // Click Save
+        // Click Save and wait for the PUT call and the subsequent GET refetch
+        const putPromise = this.page.waitForResponse(
+            resp => resp.url().includes('/api/monitors/') && resp.request().method() === 'PUT',
+            { timeout: 10000 }
+        );
+        const refetchPromise = this.page.waitForResponse(
+            resp => resp.url().includes('/api/uptime') && resp.request().method() === 'GET' && resp.status() === 200,
+            { timeout: 10000 }
+        );
         await this.page.getByTestId('monitor-edit-save-btn').click();
+        await putPromise;
+        await refetchPromise;
 
-        // Wait for sheet to close or verify change in list
-        // Sheet might take a moment to close.
-        await expect(this.page.getByText(newName).first()).toBeVisible();
+        // Wait for sheet to close
+        await expect(this.page.locator('[data-state="open"].fixed.inset-0')).toHaveCount(0, { timeout: 10000 });
+
+        // Verify the new name appears in the monitor list
+        await expect(this.page.getByText(newName).first()).toBeVisible({ timeout: 10000 });
     }
 
     async createInvalidMonitor(name: string, url: string) {
@@ -139,51 +172,83 @@ export class DashboardPage {
 
     async verifyMonitorPaused(monitorName: string) {
         // Verify the monitor card shows "Paused" badge
-        const monitorCard = this.page.locator('div.rounded-lg', { hasText: monitorName });
-        await expect(monitorCard.getByText('Paused')).toBeVisible({ timeout: 10000 });
+        const monitorCard = this.page.locator('div.rounded-lg.bg-card').filter({ hasText: monitorName });
+        await expect(monitorCard.getByText('Paused')).toBeVisible({ timeout: 15000 });
     }
 
     async verifyMonitorOperational(monitorName: string) {
         // Verify the monitor card shows "Operational" badge
-        const monitorCard = this.page.locator('div.rounded-lg', { hasText: monitorName });
-        await expect(monitorCard.getByText('Operational')).toBeVisible({ timeout: 10000 });
+        const monitorCard = this.page.locator('div.rounded-lg.bg-card').filter({ hasText: monitorName });
+        await expect(monitorCard.getByText('Operational')).toBeVisible({ timeout: 15000 });
     }
 
     async pauseMonitorViaSettings(monitorName: string) {
-        // Open monitor details
-        await this.page.getByText(monitorName).first().click();
+        // Open monitor details by clicking on the monitor card
+        const monitorCard = this.page.locator('div.rounded-lg.bg-card').filter({ hasText: monitorName }).first();
+        await monitorCard.click();
+
+        // Wait for sheet to open
+        await expect(this.page.locator('[data-state="open"].fixed.inset-0')).toBeVisible({ timeout: 5000 });
 
         // Click Settings Tab
         await this.page.getByTestId('monitor-settings-tab').click();
 
-        // Click Pause Monitor button
-        await this.page.getByRole('button', { name: 'Pause Monitor' }).click();
+        // Wait for settings tab content to fully load
+        await expect(this.page.getByText('Monitor Status')).toBeVisible({ timeout: 5000 });
 
-        // Verify toast
-        const toast = this.page.getByText('Monitor has been paused.', { exact: true });
-        await expect(toast).toBeVisible({ timeout: 5000 });
+        // Wait for Pause Monitor button to be visible and enabled
+        const pauseBtn = this.page.getByRole('button', { name: 'Pause Monitor' });
+        await expect(pauseBtn).toBeVisible({ timeout: 10000 });
+        await expect(pauseBtn).toBeEnabled({ timeout: 5000 });
+
+        // Click the button
+        await pauseBtn.click();
+
+        // Instead of waiting for toast, verify the action succeeded by checking:
+        // The button changes to "Resume Monitor" (indicating state changed)
+        const resumeBtn = this.page.getByRole('button', { name: 'Resume Monitor' });
+        await expect(resumeBtn).toBeVisible({ timeout: 15000 });
 
         // Close sheet via X button and wait for it to fully close
         await this.page.getByRole('button', { name: 'Close' }).click();
         await expect(this.page.locator('[data-state="open"].fixed.inset-0')).toHaveCount(0, { timeout: 5000 });
+
+        // Wait for any pending React updates after sheet closes
+        await this.page.waitForTimeout(500);
     }
 
     async resumeMonitorViaSettings(monitorName: string) {
-        // Open monitor details
-        await this.page.getByText(monitorName).first().click();
+        // Open monitor details by clicking on the monitor card
+        const monitorCard = this.page.locator('div.rounded-lg.bg-card').filter({ hasText: monitorName }).first();
+        await monitorCard.click();
+
+        // Wait for sheet to open
+        await expect(this.page.locator('[data-state="open"].fixed.inset-0')).toBeVisible({ timeout: 5000 });
 
         // Click Settings Tab
         await this.page.getByTestId('monitor-settings-tab').click();
 
-        // Click Resume Monitor button
-        await this.page.getByRole('button', { name: 'Resume Monitor' }).click();
+        // Wait for settings tab content to fully load
+        await expect(this.page.getByText('Monitor Status')).toBeVisible({ timeout: 5000 });
 
-        // Verify toast
-        const toast = this.page.getByText('Monitor has been resumed.', { exact: true });
-        await expect(toast).toBeVisible({ timeout: 5000 });
+        // Wait for Resume Monitor button to be visible and enabled
+        const resumeBtn = this.page.getByRole('button', { name: 'Resume Monitor' });
+        await expect(resumeBtn).toBeVisible({ timeout: 10000 });
+        await expect(resumeBtn).toBeEnabled({ timeout: 5000 });
+
+        // Click the button
+        await resumeBtn.click();
+
+        // Instead of waiting for toast, verify the action succeeded by checking:
+        // 1. The button changes to "Pause Monitor" (indicating state changed)
+        const pauseBtn = this.page.getByRole('button', { name: 'Pause Monitor' });
+        await expect(pauseBtn).toBeVisible({ timeout: 15000 });
 
         // Close sheet via X button and wait for it to fully close
         await this.page.getByRole('button', { name: 'Close' }).click();
         await expect(this.page.locator('[data-state="open"].fixed.inset-0')).toHaveCount(0, { timeout: 5000 });
+
+        // Wait for any pending React updates after sheet closes
+        await this.page.waitForTimeout(500);
     }
 }

@@ -1,4 +1,4 @@
-.PHONY: backend frontend build docker test test-frontend test-all clean dev-backend dev-frontend dev-bundle lint lint-frontend lint-backend security govuln vuln secrets audit hooks check docs
+.PHONY: backend frontend build docker test test-frontend test-all clean dev-backend dev-frontend dev-bundle lint lint-frontend lint-backend security govuln vuln secrets audit hooks check docs e2e-fresh
 
 BACKEND_ENV ?= LISTEN_ADDR=:9096
 BIN_DIR ?= $(PWD)/bin
@@ -82,6 +82,21 @@ clean:
 	rm -rf web/node_modules web/dist $(BIN_DIR)
 	rm -rf internal/static/dist/*
 	touch internal/static/dist/.gitkeep
+
+e2e-fresh:
+	@echo "Stopping any running dev servers..."
+	-@pkill -f 'go run ./cmd/dashboard' 2>/dev/null || true
+	-@pkill -f 'vite' 2>/dev/null || true
+	@sleep 1
+	@echo "Removing database..."
+	rm -f warden.db warden.db-wal warden.db-shm
+	@echo "Starting backend..."
+	ADMIN_SECRET=warden-e2e-magic-key $(BACKEND_ENV) go run ./cmd/dashboard &
+	@sleep 3
+	@echo "Running E2E tests..."
+	cd web && npm run test:e2e; EXIT_CODE=$$?; \
+	pkill -f 'go run ./cmd/dashboard' 2>/dev/null || true; \
+	exit $$EXIT_CODE
 
 e2e:
 	cd web && npm run test:e2e

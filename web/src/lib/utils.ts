@@ -78,6 +78,68 @@ export const getEnvironmentGroup = (env: Environment | "mixed") => {
   return "Non-prod";
 };
 
+// Convert hex color to HSL values for CSS variables
+export function hexToHSL(hex: string): { h: number; s: number; l: number } | null {
+  // Remove # if present
+  hex = hex.replace(/^#/, '');
+
+  if (!/^[0-9A-Fa-f]{6}$/.test(hex)) {
+    return null;
+  }
+
+  const r = parseInt(hex.substring(0, 2), 16) / 255;
+  const g = parseInt(hex.substring(2, 4), 16) / 255;
+  const b = parseInt(hex.substring(4, 6), 16) / 255;
+
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0;
+  let s = 0;
+  const l = (max + min) / 2;
+
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+
+    switch (max) {
+      case r:
+        h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+        break;
+      case g:
+        h = ((b - r) / d + 2) / 6;
+        break;
+      case b:
+        h = ((r - g) / d + 4) / 6;
+        break;
+    }
+  }
+
+  return {
+    h: Math.round(h * 360),
+    s: Math.round(s * 100),
+    l: Math.round(l * 100)
+  };
+}
+
+// Sanitize image URL to prevent XSS via javascript: or other dangerous protocols.
+// Only allows http(s) and data:image URIs. Returns empty string for invalid URLs.
+// Uses URL API to reconstruct the URL, breaking the taint chain for static analysis.
+export function sanitizeImageUrl(url: string | undefined): string {
+  if (!url) return "";
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+      return parsed.href;
+    }
+    if (parsed.protocol === "data:" && parsed.pathname.startsWith("image/")) {
+      return parsed.href;
+    }
+  } catch {
+    // Not a valid URL
+  }
+  return "";
+}
+
 // Timezone-aware date formatting
 export const formatDate = (date: string | Date | number, timezone: string = 'UTC') => {
   if (!date) return '';

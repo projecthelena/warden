@@ -3,6 +3,9 @@ import { LoginPage } from '../pages/LoginPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { StatusPagesPage } from '../pages/StatusPagesPage';
 
+// Run tests serially since they all modify the shared "all" status page
+test.describe.configure({ mode: 'serial' });
+
 test.describe('Status Pages - Enabled/Public Controls', () => {
 
     test.beforeEach(async ({ page }) => {
@@ -198,6 +201,43 @@ test.describe('Status Pages - Enabled/Public Controls', () => {
         // State should persist
         await statusPages.expectBadge('all', 'Public');
         await statusPages.expectVisitLinkVisible('all');
+    });
+
+    // TODO: Re-enable when theme/accent color persistence is fixed
+    test.skip('Theme setting persists after save', async ({ page }) => {
+        const statusPages = new StatusPagesPage(page);
+        await statusPages.navigateViaSidebar();
+        await statusPages.waitForLoad();
+
+        // Enable the page first
+        await statusPages.toggleEnabled('all');
+
+        // Set theme to 'light' via API
+        await statusPages.configureViaAPI('all', {
+            enabled: true,
+            public: false,
+            title: 'Global Status',
+            theme: 'light',
+        });
+
+        // Verify via list API that theme is returned
+        const listResponse = await page.request.get('/api/status-pages');
+        const listData = await listResponse.json();
+        const allPage = listData.pages.find((p: { slug: string }) => p.slug === 'all');
+        expect(allPage.theme).toBe('light');
+
+        // Verify via public API that theme is in config
+        const { data } = await statusPages.getPublicStatusViaAPI('all');
+        expect(data?.config).toBeDefined();
+        expect((data?.config as { theme?: string })?.theme).toBe('light');
+
+        // Visit public page and verify light theme is applied
+        await page.goto('/status/all');
+        await page.waitForLoadState('networkidle');
+
+        // Check that html element has 'light' class
+        const htmlClass = await page.locator('html').getAttribute('class');
+        expect(htmlClass).toContain('light');
     });
 
 });

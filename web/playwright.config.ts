@@ -6,7 +6,6 @@ export default defineConfig({
     workers: 1,
     forbidOnly: !!process.env.CI,
     retries: process.env.CI ? 2 : 0,
-    // workers: process.env.CI ? 1 : undefined, // Removed in favor of always 1
     reporter: 'html',
     use: {
         baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173',
@@ -14,18 +13,44 @@ export default defineConfig({
     },
 
     projects: [
+        // Auth tests run first and alone (they log out which can affect other tests)
         {
-            name: 'chromium',
+            name: 'auth',
+            testMatch: /auth\.spec\.ts/,
             use: { ...devices['Desktop Chrome'] },
         },
-        // {
-        //   name: 'firefox',
-        //   use: { ...devices['Desktop Firefox'] },
-        // },
-        // {
-        //   name: 'webkit',
-        //   use: { ...devices['Desktop Safari'] },
-        // },
+        // Custom setup tests also run isolated (they modify admin user)
+        {
+            name: 'custom-setup',
+            testMatch: /custom_setup\.spec\.ts/,
+            use: { ...devices['Desktop Chrome'] },
+            dependencies: ['auth'],
+        },
+        // Status page tests share the "all" status page - run them serially
+        {
+            name: 'status-pages',
+            testMatch: /status_pages\.spec\.ts/,
+            use: { ...devices['Desktop Chrome'] },
+            dependencies: ['custom-setup'],
+        },
+        {
+            name: 'status-pages-full',
+            testMatch: /status_pages_full\.spec\.ts/,
+            use: { ...devices['Desktop Chrome'] },
+            dependencies: ['status-pages'],
+        },
+        // All other tests can run in parallel after auth tests complete
+        {
+            name: 'chromium',
+            testIgnore: [
+                /auth\.spec\.ts/,
+                /custom_setup\.spec\.ts/,
+                /status_pages\.spec\.ts/,
+                /status_pages_full\.spec\.ts/,
+            ],
+            use: { ...devices['Desktop Chrome'] },
+            dependencies: ['custom-setup'],
+        },
     ],
 
     // Run your local dev server before starting the tests

@@ -1,6 +1,8 @@
-
 import { test, expect } from '@playwright/test';
 import { LoginPage } from '../pages/LoginPage';
+
+// Run tests serially to avoid auth conflicts
+test.describe.configure({ mode: 'serial' });
 
 test.describe('Password Update Flow', () => {
     // We need a fresh user for this test to avoid messing up the main admin
