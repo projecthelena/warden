@@ -203,8 +203,7 @@ test.describe('Status Pages - Enabled/Public Controls', () => {
         await statusPages.expectVisitLinkVisible('all');
     });
 
-    // TODO: Re-enable when theme/accent color persistence is fixed
-    test.skip('Theme setting persists after save', async ({ page }) => {
+    test('Theme setting persists after save', async ({ page }) => {
         const statusPages = new StatusPagesPage(page);
         await statusPages.navigateViaSidebar();
         await statusPages.waitForLoad();

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,7 @@ import { useToggleStatusPageMutation } from "@/hooks/useStatusPages";
 import { useToast } from "@/components/ui/use-toast";
 import { StatusPage } from "@/lib/store";
 import { sanitizeImageUrl } from "@/lib/utils";
-import { Loader2, Image } from "lucide-react";
+import { Loader2, Image, Upload, X } from "lucide-react";
 
 interface StatusPageConfigDialogProps {
     page: StatusPage | null;
@@ -37,6 +37,10 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
     const [logoError, setLogoError] = useState(false);
     const [faviconError, setFaviconError] = useState(false);
 
+    // File input refs
+    const logoFileInputRef = useRef<HTMLInputElement>(null);
+    const faviconFileInputRef = useRef<HTMLInputElement>(null);
+
     // Reset form when page changes
     useEffect(() => {
         if (page) {
@@ -61,6 +65,29 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
         return slug;
     };
 
+    const handleImageFileUpload = (
+        file: File,
+        setter: (url: string) => void,
+        errorSetter: (v: boolean) => void,
+        maxKB = 512
+    ) => {
+        if (file.size > maxKB * 1024) {
+            toast({
+                title: "File too large",
+                description: `Image must be under ${maxKB}KB. Consider using an external URL instead.`,
+                variant: "destructive",
+            });
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const dataUri = e.target?.result as string;
+            setter(dataUri);
+            errorSetter(false);
+        };
+        reader.readAsDataURL(file);
+    };
+
     const handleSave = async () => {
         if (!page) return;
 
@@ -73,9 +100,11 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
                 title,
                 groupId: page.groupId || undefined,
                 description,
-                logoUrl: logoUrl || undefined,
-                faviconUrl: faviconUrl || undefined,
-                accentColor: accentColor || undefined,
+                // Always send the value (even empty string) so the backend can clear it.
+                // Sending undefined/omitting would cause the backend to preserve the existing value.
+                logoUrl,
+                faviconUrl,
+                accentColor,
                 theme,
                 showUptimeBars,
                 showUptimePercentage,
@@ -142,20 +171,54 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
                             />
                         </div>
 
+                        {/* Logo */}
                         <div className="space-y-2">
-                            <Label htmlFor="logoUrl">Logo URL</Label>
-                            <Input
-                                id="logoUrl"
-                                placeholder="https://example.com/logo.png or data:image/..."
-                                value={logoUrl}
-                                onChange={(e) => {
-                                    setLogoUrl(e.target.value);
-                                    setLogoError(false);
-                                }}
-                                className={!isValidImageUrl(logoUrl) ? "border-destructive" : ""}
-                            />
+                            <Label htmlFor="logoUrl">Logo</Label>
+                            <div className="flex gap-2">
+                                <Input
+                                    id="logoUrl"
+                                    placeholder="https://example.com/logo.png"
+                                    value={logoUrl}
+                                    onChange={(e) => {
+                                        setLogoUrl(e.target.value);
+                                        setLogoError(false);
+                                    }}
+                                    className={!isValidImageUrl(logoUrl) ? "border-destructive" : ""}
+                                />
+                                <input
+                                    ref={logoFileInputRef}
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) handleImageFileUpload(file, setLogoUrl, setLogoError);
+                                        e.target.value = "";
+                                    }}
+                                />
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="icon"
+                                    title="Upload image file"
+                                    onClick={() => logoFileInputRef.current?.click()}
+                                >
+                                    <Upload className="w-4 h-4" />
+                                </Button>
+                                {logoUrl && (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="icon"
+                                        title="Remove logo"
+                                        onClick={() => { setLogoUrl(""); setLogoError(false); }}
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </Button>
+                                )}
+                            </div>
                             {!isValidImageUrl(logoUrl) && (
-                                <p className="text-xs text-destructive">Must be http/https URL or data:image URI</p>
+                                <p className="text-xs text-destructive">Must be an http/https URL or use the upload button</p>
                             )}
                             {logoUrl && isValidImageUrl(logoUrl) && (
                                 <div className="flex items-center gap-2 mt-2 p-2 bg-muted/50 rounded-md">
@@ -176,20 +239,54 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
                             )}
                         </div>
 
+                        {/* Favicon */}
                         <div className="space-y-2">
-                            <Label htmlFor="faviconUrl">Favicon URL</Label>
-                            <Input
-                                id="faviconUrl"
-                                placeholder="https://example.com/favicon.ico or data:image/..."
-                                value={faviconUrl}
-                                onChange={(e) => {
-                                    setFaviconUrl(e.target.value);
-                                    setFaviconError(false);
-                                }}
-                                className={!isValidImageUrl(faviconUrl) ? "border-destructive" : ""}
-                            />
+                            <Label htmlFor="faviconUrl">Favicon</Label>
+                            <div className="flex gap-2">
+                                <Input
+                                    id="faviconUrl"
+                                    placeholder="https://example.com/favicon.ico"
+                                    value={faviconUrl}
+                                    onChange={(e) => {
+                                        setFaviconUrl(e.target.value);
+                                        setFaviconError(false);
+                                    }}
+                                    className={!isValidImageUrl(faviconUrl) ? "border-destructive" : ""}
+                                />
+                                <input
+                                    ref={faviconFileInputRef}
+                                    type="file"
+                                    accept="image/x-icon,image/png,image/svg+xml,image/jpeg,image/gif"
+                                    className="hidden"
+                                    onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) handleImageFileUpload(file, setFaviconUrl, setFaviconError, 256);
+                                        e.target.value = "";
+                                    }}
+                                />
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="icon"
+                                    title="Upload favicon file"
+                                    onClick={() => faviconFileInputRef.current?.click()}
+                                >
+                                    <Upload className="w-4 h-4" />
+                                </Button>
+                                {faviconUrl && (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="icon"
+                                        title="Remove favicon"
+                                        onClick={() => { setFaviconUrl(""); setFaviconError(false); }}
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </Button>
+                                )}
+                            </div>
                             {!isValidImageUrl(faviconUrl) && (
-                                <p className="text-xs text-destructive">Must be http/https URL or data:image URI</p>
+                                <p className="text-xs text-destructive">Must be an http/https URL or use the upload button</p>
                             )}
                             {faviconUrl && isValidImageUrl(faviconUrl) && (
                                 <div className="flex items-center gap-2 mt-2 p-2 bg-muted/50 rounded-md">
@@ -210,7 +307,6 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
                             )}
                         </div>
 
-                        {/* TODO: Re-enable accent color and theme once persistence is fixed
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <Label htmlFor="accentColor">Accent Color</Label>
@@ -254,7 +350,6 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
                                 </Select>
                             </div>
                         </div>
-                        */}
                     </div>
 
                     {/* Display Options Section */}
