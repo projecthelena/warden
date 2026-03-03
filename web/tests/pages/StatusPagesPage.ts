@@ -6,6 +6,7 @@ export interface StatusPageConfig {
     title?: string;
     description?: string;
     logoUrl?: string;
+    faviconUrl?: string;
     accentColor?: string;
     theme?: 'light' | 'dark' | 'system';
     showUptimeBars?: boolean;
@@ -147,6 +148,7 @@ export class StatusPagesPage {
                 title: 'Global Status',
                 description: '',
                 logoUrl: '',
+                faviconUrl: '',
                 accentColor: '',
                 theme: 'system',
                 showUptimeBars: true,
@@ -154,6 +156,72 @@ export class StatusPagesPage {
                 showIncidentHistory: true,
             }
         });
+    }
+
+    // ----------------------------------------------------------------
+    // Config dialog interaction
+    // ----------------------------------------------------------------
+
+    /** Open the config dialog for a status page by clicking the settings icon */
+    async openConfigDialog(slug: string) {
+        await this.page.getByTestId(`status-page-config-${slug}`).click();
+        await this.page.waitForSelector('[role="dialog"]', { state: 'visible' });
+    }
+
+    /** Get the config dialog locator */
+    getConfigDialog(): Locator {
+        return this.page.getByRole('dialog', { name: 'Configure Status Page' });
+    }
+
+    /** Fill the logo URL input in the config dialog */
+    async fillConfigLogoUrl(url: string) {
+        await this.getConfigDialog().locator('#logoUrl').fill(url);
+    }
+
+    /** Click the "Remove logo" button in the config dialog */
+    async clearConfigLogo() {
+        await this.getConfigDialog().getByRole('button', { name: 'Remove logo' }).click();
+    }
+
+    /** Fill the favicon URL input in the config dialog */
+    async fillConfigFaviconUrl(url: string) {
+        await this.getConfigDialog().locator('#faviconUrl').fill(url);
+    }
+
+    /** Click the "Remove favicon" button in the config dialog */
+    async clearConfigFavicon() {
+        await this.getConfigDialog().getByRole('button', { name: 'Remove favicon' }).click();
+    }
+
+    /** Fill the accent color input in the config dialog */
+    async fillConfigAccentColor(color: string) {
+        await this.getConfigDialog().locator('#accentColor').fill(color);
+    }
+
+    /** Select the theme in the config dialog */
+    async selectConfigTheme(theme: 'light' | 'dark' | 'system') {
+        const displayText = { system: 'System', light: 'Light', dark: 'Dark' }[theme];
+        await this.getConfigDialog().locator('#theme').click();
+        await this.page.getByRole('option', { name: displayText }).click();
+    }
+
+    /** Click "Save Changes" in the config dialog and wait for the PATCH response + dialog close */
+    async saveConfigDialog() {
+        const responsePromise = this.page.waitForResponse(
+            resp => resp.url().includes('/api/status-pages/') && resp.request().method() === 'PATCH',
+            { timeout: 10000 }
+        );
+        await this.getConfigDialog().getByRole('button', { name: 'Save Changes' }).click();
+        await responsePromise;
+        await expect(this.getConfigDialog()).not.toBeVisible({ timeout: 5000 });
+        // Wait for React Query refetch to complete
+        await this.page.waitForLoadState('networkidle');
+    }
+
+    /** Click "Cancel" in the config dialog */
+    async cancelConfigDialog() {
+        await this.getConfigDialog().getByRole('button', { name: 'Cancel' }).click();
+        await expect(this.getConfigDialog()).not.toBeVisible({ timeout: 5000 });
     }
 
     /** Configure a status page via API */

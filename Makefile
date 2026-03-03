@@ -1,4 +1,4 @@
-.PHONY: backend frontend build docker test test-frontend test-all clean dev-backend dev-frontend dev-bundle lint lint-frontend lint-backend security govuln vuln secrets audit hooks check docs e2e-fresh
+.PHONY: backend frontend build docker test test-frontend test-all clean dev-backend dev-frontend dev-bundle lint lint-frontend lint-backend security govuln vuln secrets audit hooks check docs e2e-fresh stop
 
 BACKEND_ENV ?= LISTEN_ADDR=:9096
 BIN_DIR ?= $(PWD)/bin
@@ -83,10 +83,18 @@ clean:
 	rm -rf internal/static/dist/*
 	touch internal/static/dist/.gitkeep
 
+stop:
+	-@lsof -ti:9096 | xargs kill -9 2>/dev/null || true
+	-@lsof -ti:5173 | xargs kill -9 2>/dev/null || true
+	-@pkill -f 'go run ./cmd/dashboard' 2>/dev/null || true
+	-@pkill -f 'bin/warden' 2>/dev/null || true
+	@echo "Dev servers stopped."
+
 e2e-fresh:
 	@echo "Stopping any running dev servers..."
+	-@lsof -ti:9096 | xargs kill -9 2>/dev/null || true
+	-@lsof -ti:5173 | xargs kill -9 2>/dev/null || true
 	-@pkill -f 'go run ./cmd/dashboard' 2>/dev/null || true
-	-@pkill -f 'vite' 2>/dev/null || true
 	@sleep 1
 	@echo "Removing database..."
 	rm -f warden.db warden.db-wal warden.db-shm
@@ -95,7 +103,7 @@ e2e-fresh:
 	@sleep 3
 	@echo "Running E2E tests..."
 	cd web && npm run test:e2e; EXIT_CODE=$$?; \
-	pkill -f 'go run ./cmd/dashboard' 2>/dev/null || true; \
+	lsof -ti:9096 | xargs kill -9 2>/dev/null || true; \
 	exit $$EXIT_CODE
 
 e2e:

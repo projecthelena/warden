@@ -64,7 +64,7 @@ test.describe('Warden Smoke Tests', () => {
         // Let's close it first to be safe and use component's clean state.
         await page.getByRole('button', { name: 'Cancel' }).click();
 
-        await dashboardPage.createMonitor(monitorName, 'https://google.com');
+        await dashboardPage.createMonitor(monitorName, 'http://localhost:9096/healthz');
 
         // 8. Verify Status
         console.log('>> Verifying Status...');

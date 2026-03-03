@@ -69,7 +69,7 @@ test.describe('Monitor Pause/Resume', () => {
         await dashboard.createGroup(groupName);
 
         console.log(`Creating Monitor: ${monitorName}`);
-        await dashboard.createMonitor(monitorName, 'https://httpbin.org/get');
+        await dashboard.createMonitor(monitorName, 'http://localhost:9096/healthz');
 
         // Wait for monitor to show as operational
         await dashboard.verifyMonitorStatus('Operational');
@@ -114,7 +114,7 @@ test.describe('Monitor Pause/Resume', () => {
         await dashboard.createGroup(groupName);
 
         console.log(`Creating Monitor: ${monitorName}`);
-        await dashboard.createMonitor(monitorName, 'https://httpbin.org/get');
+        await dashboard.createMonitor(monitorName, 'http://localhost:9096/healthz');
 
         // Wait for monitor to show as operational
         await dashboard.verifyMonitorStatus('Operational');
@@ -165,7 +165,7 @@ test.describe('Monitor Pause/Resume', () => {
         await dashboard.createGroup(groupName);
 
         console.log(`Creating Monitor: ${monitorName}`);
-        await dashboard.createMonitor(monitorName, 'https://httpbin.org/get');
+        await dashboard.createMonitor(monitorName, 'http://localhost:9096/healthz');
 
         // Wait for monitor to show as operational
         await dashboard.verifyMonitorStatus('Operational');
