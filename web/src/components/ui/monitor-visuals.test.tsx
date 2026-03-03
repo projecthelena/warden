@@ -625,19 +625,19 @@ describe('UptimeHistory (render)', () => {
     const renderWithTooltip = (ui: React.ReactElement) =>
         render(<TooltipProvider>{ui}</TooltipProvider>);
 
-    it('renders paused bars with bg-slate-600/40 class', () => {
+    it('renders paused bars with muted-foreground/15 class', () => {
         const { container } = renderWithTooltip(
             <UptimeHistory history={[]} isPaused={true} />
         );
-        const bars = container.querySelectorAll('[class*="bg-slate-600/40"]');
+        const bars = container.querySelectorAll('[class*="bg-muted-foreground/15"]');
         expect(bars.length).toBe(30);
     });
 
-    it('renders active empty bars with bg-slate-800/30 class', () => {
+    it('renders active empty bars with muted-foreground/20 class', () => {
         const { container } = renderWithTooltip(
             <UptimeHistory history={[]} isPaused={false} />
         );
-        const bars = container.querySelectorAll('[class*="bg-slate-800/30"]');
+        const bars = container.querySelectorAll('[class*="bg-muted-foreground/20"]');
         expect(bars.length).toBe(30);
     });
 
@@ -645,9 +645,9 @@ describe('UptimeHistory (render)', () => {
         const { container } = renderWithTooltip(
             <UptimeHistory history={[]} />
         );
-        const bars = container.querySelectorAll('[class*="bg-slate-800/30"]');
+        const bars = container.querySelectorAll('[class*="bg-muted-foreground/20"]');
         expect(bars.length).toBe(30);
-        const pausedBars = container.querySelectorAll('[class*="bg-slate-600/40"]');
+        const pausedBars = container.querySelectorAll('[class*="bg-muted-foreground/15"]');
         expect(pausedBars.length).toBe(0);
     });
 });

@@ -62,17 +62,17 @@ export function NavGroups({
                                     </SidebarMenuAction>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent
-                                    className="w-48 bg-slate-950 border-slate-800 text-slate-100"
+                                    className="w-48"
                                     side={isMobile ? "bottom" : "right"}
                                     align={isMobile ? "end" : "start"}
                                 >
-                                    <DropdownMenuItem onClick={() => setEditingGroup(group)} className="focus:bg-slate-900 focus:text-slate-100 cursor-pointer">
+                                    <DropdownMenuItem onClick={() => setEditingGroup(group)} className="cursor-pointer">
                                         <Pencil className="text-muted-foreground mr-2 h-4 w-4" />
                                         <span>Edit Group</span>
                                     </DropdownMenuItem>
                                     {group.id !== 'g-default' && (
                                         <>
-                                            <DropdownMenuSeparator className="bg-slate-800" />
+                                            <DropdownMenuSeparator />
                                             <DropdownMenuItem onClick={() => handleDelete(group)} className="text-red-400 focus:bg-red-950/30 focus:text-red-300 cursor-pointer">
                                                 <Trash2 className="text-muted-foreground mr-2 h-4 w-4" />
                                                 <span>Delete Group</span>

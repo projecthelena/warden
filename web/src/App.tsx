@@ -26,6 +26,7 @@ import { APIKeysPage } from "./components/settings/APIKeysPage";
 import { CreateAPIKeySheet } from "./components/settings/CreateAPIKeySheet";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ThemeToggle } from "./components/theme-toggle";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -95,7 +96,7 @@ function MonitorGroup({ group }: { group: Group }) {
       </CardHeader>
       <CardContent className="space-y-2 p-4 pt-0">
         {(!group.monitors || group.monitors.length === 0) ? (
-          <div className="text-sm text-slate-500 italic py-2">No monitors in this group.</div>
+          <div className="text-sm text-muted-foreground italic py-2">No monitors in this group.</div>
         ) : (
           group.monitors.map((m) => (
             <MonitorCard key={m.id} monitor={m} groupId={group.id} />
@@ -277,7 +278,7 @@ function AdminLayout() {
   // Route Guard
   if (!isAuthChecked) {
     return (
-      <div className="min-h-screen bg-[#020617] flex items-center justify-center text-slate-100">
+      <div className="min-h-screen bg-background flex items-center justify-center text-foreground">
         <div className="flex items-center gap-2">
           <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
           Wait ...
@@ -363,6 +364,7 @@ function AdminLayout() {
               </Breadcrumb>
             </div>
             <div className="ml-auto flex items-center gap-2">
+              <ThemeToggle />
               {isIncidents ? (
                 null
               ) : isMaintenance ? (
@@ -426,7 +428,7 @@ const App = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#020617] flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" data-testid="loading-spinner"></div>
       </div>
     );
