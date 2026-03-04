@@ -26,7 +26,6 @@ import { APIKeysPage } from "./components/settings/APIKeysPage";
 import { CreateAPIKeySheet } from "./components/settings/CreateAPIKeySheet";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { ThemeToggle } from "./components/theme-toggle";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -364,7 +363,6 @@ function AdminLayout() {
               </Breadcrumb>
             </div>
             <div className="ml-auto flex items-center gap-2">
-              <ThemeToggle />
               {isIncidents ? (
                 null
               ) : isMaintenance ? (
