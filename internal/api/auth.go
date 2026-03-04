@@ -135,6 +135,8 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		Expires:  time.Now().Add(-1 * time.Hour),
 		HttpOnly: true,
 		Path:     "/",
+		SameSite: http.SameSiteLaxMode,
+		Secure:   h.config.CookieSecure,
 	})
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "logged out"})
