@@ -66,10 +66,10 @@ export function CreateIncidentSheet({ onCreate, groups }: CreateIncidentSheetPro
                     <Plus className="w-4 h-4" /> Report Incident
                 </Button>
             </SheetTrigger>
-            <SheetContent className="bg-slate-950 border-slate-800 text-slate-100 sm:max-w-[500px]">
+            <SheetContent className="sm:max-w-[500px]">
                 <SheetHeader>
-                    <SheetTitle className="text-slate-100">Report Incident</SheetTitle>
-                    <SheetDescription className="text-slate-400">
+                    <SheetTitle>Report Incident</SheetTitle>
+                    <SheetDescription>
                         Create a status update for your users.
                     </SheetDescription>
                 </SheetHeader>
@@ -77,14 +77,14 @@ export function CreateIncidentSheet({ onCreate, groups }: CreateIncidentSheetPro
                     <div className="grid gap-2">
                         <Label>Title</Label>
                         <Input value={title} onChange={e => setTitle(e.target.value)} required
-                            className="bg-slate-900 border-slate-800" placeholder="e.g. API Downtime" />
+                            placeholder="e.g. API Downtime" />
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                         <div className="grid gap-2">
                             <Label>Affected Group</Label>
                             <Select value={selectedGroup} onValueChange={setSelectedGroup}>
-                                <SelectTrigger className="bg-slate-900 border-slate-800">
+                                <SelectTrigger>
                                     <SelectValue placeholder="Select Group" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -97,7 +97,7 @@ export function CreateIncidentSheet({ onCreate, groups }: CreateIncidentSheetPro
                         <div className="grid gap-2">
                             <Label>Severity</Label>
                             <Select value={severity} onValueChange={(v: Incident['severity']) => setSeverity(v)}>
-                                <SelectTrigger className="bg-slate-900 border-slate-800">
+                                <SelectTrigger>
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -112,7 +112,7 @@ export function CreateIncidentSheet({ onCreate, groups }: CreateIncidentSheetPro
                     <div className="grid gap-2">
                         <Label>Description</Label>
                         <Input value={description} onChange={e => setDescription(e.target.value)}
-                            className="bg-slate-900 border-slate-800" placeholder="Details..." />
+                            placeholder="Details..." />
                     </div>
 
                     <SheetFooter className="mt-4">

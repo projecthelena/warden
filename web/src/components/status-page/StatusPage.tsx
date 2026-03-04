@@ -517,10 +517,17 @@ export function StatusPage() {
             isMounted = false;
             clearInterval(pollInterval);
             clearInterval(timerInterval);
-            // Cleanup: reset to dark theme for admin
-            document.documentElement.classList.remove('light');
-            document.documentElement.classList.add('dark');
-            document.documentElement.style.removeProperty('--primary');
+            // Cleanup: restore user's theme preference (not hardcoded dark)
+            const storedTheme = (localStorage.getItem('warden-theme') as 'dark' | 'light' | 'system') || 'dark';
+            const root = document.documentElement;
+            root.classList.remove('light', 'dark');
+            root.style.removeProperty('--primary');
+            if (storedTheme === 'system') {
+                const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                root.classList.add(prefersDark ? 'dark' : 'light');
+            } else {
+                root.classList.add(storedTheme);
+            }
             // Reset favicon and title
             const faviconLink = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
             if (faviconLink) faviconLink.href = '/favicon.ico';

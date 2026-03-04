@@ -8,9 +8,12 @@ import { SystemTab } from "./SystemTab";
 import { SSOSettings } from "./SSOSettings";
 import { SelectTimezone } from "@/components/ui/select-timezone";
 
+import { Monitor, Moon, Sun } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState, useEffect } from "react";
 import { useMonitorStore } from "@/lib/store";
 import { useToast } from "@/components/ui/use-toast";
+import { useTheme } from "@/components/theme-provider";
 
 import {
     AlertDialog,
@@ -69,6 +72,46 @@ function ResetDatabaseDialog() {
                 </AlertDialogContent>
             </AlertDialog>
         </div>
+    );
+}
+
+function AppearanceSettings() {
+    const { theme, setTheme } = useTheme();
+
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle>Appearance</CardTitle>
+                <CardDescription>Customize the look of your dashboard.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <div className="grid gap-2">
+                    <Label>Theme</Label>
+                    <Select value={theme} onValueChange={(v) => setTheme(v as "light" | "dark" | "system")}>
+                        <SelectTrigger className="max-w-[200px]">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="light">
+                                <span className="flex items-center gap-2">
+                                    <Sun className="h-4 w-4" /> Light
+                                </span>
+                            </SelectItem>
+                            <SelectItem value="dark">
+                                <span className="flex items-center gap-2">
+                                    <Moon className="h-4 w-4" /> Dark
+                                </span>
+                            </SelectItem>
+                            <SelectItem value="system">
+                                <span className="flex items-center gap-2">
+                                    <Monitor className="h-4 w-4" /> System
+                                </span>
+                            </SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
+            </CardContent>
+        </Card>
     );
 }
 
@@ -367,6 +410,8 @@ export function SettingsView() {
                         </form>
                     </CardContent>
                 </Card>
+
+                <AppearanceSettings />
 
                 <GeneralSettings />
 

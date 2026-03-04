@@ -54,7 +54,7 @@
     --secondary: 210 40% 96%;
     --secondary-foreground: 222 47% 11%;
     --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
+    --muted-foreground: 215 20% 35%;
     --accent: 210 40% 96%;
     --accent-foreground: 222 47% 11%;
     --destructive: 0 84% 60%;
@@ -67,6 +67,14 @@
     --chart-3: 38 92% 50%;
     --chart-4: 258 90% 66%;
     --chart-5: 0 84% 60%;
+    --sidebar-background: 210 20% 98%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-primary: 189 94% 43%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 40% 94%;
+    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-border: 214 32% 88%;
+    --sidebar-ring: 189 94% 43%;
   }
 }
 

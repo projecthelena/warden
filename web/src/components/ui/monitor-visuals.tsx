@@ -32,7 +32,7 @@ export const StatusBadge = ({ status, isMaintenance }: { status: Monitor['status
     }
     if (status === 'paused') {
         return (
-            <Badge variant="outline" className="border-slate-500/30 text-slate-400 gap-1 px-2 py-1 w-[105px] justify-center">
+            <Badge variant="outline" className="border-muted-foreground/30 text-muted-foreground gap-1 px-2 py-1 w-[105px] justify-center">
                 <Pause className="w-3 h-3" />
                 Paused
             </Badge>
@@ -124,8 +124,8 @@ export const UptimeHistory = ({ history, interval, isPaused }: { history: Monito
                         <div
                             className={cn(
                                 "flex-1 rounded-sm transition-all duration-300 min-w-[6px] cursor-pointer",
-                                slot.point === null && !isPaused && "bg-slate-800/30 h-full hover:bg-slate-800/50",
-                                slot.point === null && isPaused && "bg-slate-600/40 h-full hover:bg-slate-500/50",
+                                slot.point === null && !isPaused && "bg-muted-foreground/20 h-full hover:bg-muted-foreground/30",
+                                slot.point === null && isPaused && "bg-muted-foreground/15 h-full hover:bg-muted-foreground/25",
                                 slot.point?.status === 'up' && "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.3)] h-full hover:bg-emerald-400 hover:shadow-[0_0_12px_rgba(16,185,129,0.6)] hover:scale-y-105",
                                 slot.point?.status === 'degraded' && "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.3)] h-full hover:bg-amber-400 hover:scale-y-105",
                                 slot.point?.status === 'down' && "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.3)] h-full hover:bg-rose-400 hover:scale-y-105",
