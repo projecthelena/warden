@@ -4,9 +4,8 @@ import { useMonitorStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Lock, AlertCircle } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 
 function GoogleIcon({ className }: { className?: string }) {
     return (
@@ -89,114 +88,106 @@ export function LoginPage() {
 
     return (
         <div className="min-h-screen bg-background flex items-center justify-center p-4">
-            <div className="w-full max-w-sm space-y-8">
-                <div className="flex flex-col items-center justify-center text-center space-y-2">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-cyan-500 shadow-lg">
-                        <span className="text-lg font-bold text-[#09090b]">H</span>
-                    </div>
-                    <div className="space-y-1">
-                        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-                            Welcome back
-                        </h1>
-                        <p className="text-sm text-muted-foreground">
-                            Enter your credentials to access your dashboard
+            <div className="w-full max-w-sm">
+                <form onSubmit={handleLogin} className="grid gap-6">
+                    {/* Branding */}
+                    <div className="flex flex-col items-center gap-2 text-center">
+                        <div className="flex flex-col items-center">
+                            <span className="text-xl font-display font-bold tracking-tight">
+                                Project <span className="font-normal text-muted-foreground">Helena</span>
+                            </span>
+                            <span className="text-sm font-mono font-medium text-cyan-500 tracking-widest">WARDEN</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground" data-testid="login-header">
+                            Sign in to your account
                         </p>
                     </div>
-                </div>
 
-                <Card>
-                    <form onSubmit={handleLogin}>
-                        <CardHeader className="space-y-1">
-                            <CardTitle className="text-xl" data-testid="login-header">Sign in</CardTitle>
-                            <CardDescription>
-                                Enter your credentials to continue
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="grid gap-4">
-                            {error && (
-                                <Alert variant="destructive" className="bg-destructive/50 text-destructive-foreground border-destructive/50">
-                                    <AlertCircle className="h-4 w-4 text-destructive-foreground" />
-                                    <AlertTitle>Error</AlertTitle>
-                                    <AlertDescription>
-                                        {error}
-                                    </AlertDescription>
-                                </Alert>
+                    {/* Error alert */}
+                    {error && (
+                        <Alert variant="destructive" className="bg-destructive/50 text-destructive-foreground border-destructive/50">
+                            <AlertCircle className="h-4 w-4 text-destructive-foreground" />
+                            <AlertTitle>Error</AlertTitle>
+                            <AlertDescription>
+                                {error}
+                            </AlertDescription>
+                        </Alert>
+                    )}
+
+                    {/* Form fields */}
+                    <div className="grid gap-4">
+                        <div className="grid gap-2">
+                            <Label htmlFor="username">Username</Label>
+                            <Input
+                                id="username"
+                                type="text"
+                                placeholder="username"
+                                value={username}
+                                onChange={e => {
+                                    setUsername(e.target.value);
+                                    if (/[A-Z]/.test(e.target.value)) {
+                                        setError("Username must be lowercase.");
+                                    } else {
+                                        setError(null);
+                                    }
+                                }}
+                                required
+                                data-testid="login-username-input"
+                            />
+                        </div>
+                        <div className="grid gap-2">
+                            <Label htmlFor="password">Password</Label>
+                            <Input
+                                id="password"
+                                type="password"
+                                value={password}
+                                onChange={e => setPassword(e.target.value)}
+                                required
+                                data-testid="login-password-input"
+                            />
+                        </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="grid gap-4">
+                        <Button className="w-full" type="submit" disabled={isLoading} data-testid="login-submit-btn">
+                            {isLoading ? (
+                                <div className="flex items-center gap-2">
+                                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                                    Signing in...
+                                </div>
+                            ) : (
+                                "Sign In"
                             )}
-                            <div className="grid gap-2">
-                                <Label htmlFor="username">Username</Label>
-                                <Input
-                                    id="username"
-                                    type="text"
-                                    placeholder="username"
-                                    value={username}
-                                    onChange={e => {
-                                        setUsername(e.target.value);
-                                        if (/[A-Z]/.test(e.target.value)) {
-                                            setError("Username must be lowercase.");
-                                        } else {
-                                            setError(null);
-                                        }
-                                    }}
-                                    required
-                                    data-testid="login-username-input"
-                                />
-                            </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="password">Password</Label>
-                                <Input
-                                    id="password"
-                                    type="password"
-                                    value={password}
-                                    onChange={e => setPassword(e.target.value)}
-                                    required
-                                    data-testid="login-password-input"
-                                />
-                            </div>
-                        </CardContent>
-                        <CardFooter className="flex flex-col gap-4">
-                            <Button className="w-full" type="submit" disabled={isLoading} data-testid="login-submit-btn">
-                                {isLoading ? (
-                                    <div className="flex items-center gap-2">
-                                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                                        Signing in...
+                        </Button>
+
+                        {googleSSOEnabled && (
+                            <>
+                                <div className="relative w-full">
+                                    <div className="absolute inset-0 flex items-center">
+                                        <span className="w-full border-t" />
                                     </div>
-                                ) : (
-                                    <div className="flex items-center gap-2">
-                                        <Lock className="w-4 h-4" /> Sign In
+                                    <div className="relative flex justify-center text-xs uppercase">
+                                        <span className="bg-background px-2 text-muted-foreground">
+                                            Or continue with
+                                        </span>
                                     </div>
-                                )}
-                            </Button>
+                                </div>
 
-                            {googleSSOEnabled && (
-                                <>
-                                    <div className="relative w-full">
-                                        <div className="absolute inset-0 flex items-center">
-                                            <span className="w-full border-t" />
-                                        </div>
-                                        <div className="relative flex justify-center text-xs uppercase">
-                                            <span className="bg-card px-2 text-muted-foreground">
-                                                Or continue with
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        className="w-full"
-                                        onClick={handleGoogleLogin}
-                                        data-testid="google-sso-btn"
-                                    >
-                                        <GoogleIcon className="mr-2 h-4 w-4" />
-                                        Sign in with Google
-                                    </Button>
-                                </>
-                            )}
-                        </CardFooter>
-                    </form>
-                </Card>
-
-
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    className="w-full"
+                                    onClick={handleGoogleLogin}
+                                    data-testid="google-sso-btn"
+                                >
+                                    <GoogleIcon className="mr-2 h-4 w-4" />
+                                    Sign in with Google
+                                </Button>
+                            </>
+                        )}
+                    </div>
+                </form>
             </div>
         </div>
     );

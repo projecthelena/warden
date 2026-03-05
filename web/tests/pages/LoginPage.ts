@@ -12,7 +12,7 @@ export class LoginPage {
         this.usernameInput = page.getByLabel('Username');
         this.passwordInput = page.getByLabel('Password');
         this.submitBtn = page.getByRole('button', { name: 'Sign in' });
-        this.header = page.getByRole('heading', { name: 'Welcome back' });
+        this.header = page.getByTestId('login-header');
     }
 
     async isVisible() {

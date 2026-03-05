@@ -41,7 +41,7 @@ describe('App Routing', () => {
         );
 
         // Should find "Welcome" from SetupPage
-        expect(await screen.findByRole('heading', { name: /Welcome/i })).toBeInTheDocument();
+        expect(await screen.findByText(/Welcome to Warden/i)).toBeInTheDocument();
     });
 
     it('redirects /setup to /login when setup IS complete', async () => {
