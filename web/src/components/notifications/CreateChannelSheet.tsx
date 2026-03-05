@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Bell, Slack } from "lucide-react";
+import { Plus, Bell, Slack, Webhook, Loader2, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,32 +20,26 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { useMonitorStore, NotificationChannel } from "@/lib/store";
+import { SlackPreview } from "./SlackPreview";
+import { WebhookPayloadPreview } from "./WebhookPayloadPreview";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function CreateChannelSheet({ onCreate }: { onCreate?: (c: any) => void }) {
-    const { addChannel } = useMonitorStore();
+    const { addChannel, testChannel } = useMonitorStore();
     const [name, setName] = useState("");
     const [type, setType] = useState<NotificationChannel['type']>("slack");
     const [webhookUrl, setWebhookUrl] = useState("");
-    const [email, setEmail] = useState("");
     const [open, setOpen] = useState(false);
+    const [testing, setTesting] = useState(false);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const config: any = {};
-        if (type === 'email') {
-            config.email = email;
-        } else {
-            config.webhookUrl = webhookUrl;
-        }
-
         const channelData = {
             type,
             name,
-            config,
-            enabled: true
+            config: { webhookUrl },
+            enabled: true,
         };
 
         if (onCreate) {
@@ -57,7 +51,12 @@ export function CreateChannelSheet({ onCreate }: { onCreate?: (c: any) => void }
         setOpen(false);
         setName("");
         setWebhookUrl("");
-        setEmail("");
+    };
+
+    const handleTest = async () => {
+        setTesting(true);
+        await testChannel(type, { webhookUrl });
+        setTesting(false);
     };
 
     return (
@@ -88,6 +87,9 @@ export function CreateChannelSheet({ onCreate }: { onCreate?: (c: any) => void }
                                 <SelectItem value="slack" data-testid="channel-type-slack">
                                     <div className="flex items-center gap-2"><Slack className="w-4 h-4" /> Slack</div>
                                 </SelectItem>
+                                <SelectItem value="webhook" data-testid="channel-type-webhook">
+                                    <div className="flex items-center gap-2"><Webhook className="w-4 h-4" /> Webhook</div>
+                                </SelectItem>
                             </SelectContent>
                         </Select>
                     </div>
@@ -104,14 +106,28 @@ export function CreateChannelSheet({ onCreate }: { onCreate?: (c: any) => void }
                         <Input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} required
                             type="url"
                             className="font-mono text-xs"
-                            placeholder="https://hooks.slack.com/services/..."
+                            placeholder={type === 'slack' ? "https://hooks.slack.com/services/..." : "https://your-endpoint.com/webhook"}
                             data-testid="channel-webhook-input" />
                         <p className="text-[0.8rem] text-muted-foreground">
-                            Incoming Webhook URL from Slack App.
+                            {type === 'slack'
+                                ? "Incoming Webhook URL from your Slack App."
+                                : "Any HTTP endpoint that accepts POST requests with JSON."}
                         </p>
                     </div>
 
-                    <SheetFooter className="mt-4">
+                    {type === 'slack' ? <SlackPreview /> : <WebhookPayloadPreview />}
+
+                    <SheetFooter className="mt-4 gap-2">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            disabled={!webhookUrl || testing}
+                            onClick={handleTest}
+                            data-testid="test-channel-btn"
+                        >
+                            {testing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
+                            Send Test
+                        </Button>
                         <Button type="submit" data-testid="create-channel-submit">Add Integration</Button>
                     </SheetFooter>
                 </form>

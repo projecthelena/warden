@@ -8,9 +8,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SystemTab } from "./SystemTab";
 import { SSOSettings } from "./SSOSettings";
 import { APIKeysView } from "./APIKeysView";
-import { CreateAPIKeySheet } from "./CreateAPIKeySheet";
+
 import { NotificationsView } from "@/components/notifications/NotificationsView";
-import { CreateChannelSheet } from "@/components/notifications/CreateChannelSheet";
 import { SelectTimezone } from "@/components/ui/select-timezone";
 
 import { Monitor, Moon, Sun } from "lucide-react";
@@ -391,8 +390,6 @@ export function SettingsView() {
                         <TabsTrigger value="security">Security</TabsTrigger>
                         <TabsTrigger value="system">System</TabsTrigger>
                     </TabsList>
-                    {activeTab === "notifications" && <CreateChannelSheet />}
-                    {activeTab === "security" && <CreateAPIKeySheet />}
                 </div>
 
                 <TabsContent value="general" className="space-y-6 mt-6">
@@ -449,13 +446,13 @@ export function SettingsView() {
                 </TabsContent>
 
                 <TabsContent value="notifications" className="space-y-6 mt-6">
-                    <NotificationIntelligence />
                     <NotificationsView />
+                    <NotificationIntelligence />
                 </TabsContent>
 
                 <TabsContent value="security" className="space-y-6 mt-6">
-                    <SSOSettings />
                     <APIKeysView />
+                    <SSOSettings />
                 </TabsContent>
 
                 <TabsContent value="system" className="space-y-6 mt-6">

@@ -11,12 +11,10 @@ export interface MonitorEvent {
 
 export interface NotificationChannel {
     id: string;
-    type: 'slack' | 'email' | 'discord' | 'webhook';
+    type: 'slack' | 'webhook';
     name: string;
     config: {
         webhookUrl?: string;
-        email?: string;
-        channel?: string;
     };
     enabled: boolean;
 }
@@ -222,6 +220,7 @@ interface MonitorStore {
     updateChannel: (id: string, updates: Partial<NotificationChannel>) => void;
     deleteChannel: (id: string) => Promise<void>;
     fetchChannels: () => Promise<void>;
+    testChannel: (type: string, config: Record<string, string>) => Promise<{ success: boolean; error?: string }>;
 
     updateUser: (data: { password?: string; currentPassword?: string; timezone?: string }) => Promise<void>;
 
@@ -1007,6 +1006,28 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
         } catch (e) {
             console.error(e);
             toast({ title: "Error", description: "Failed to delete channel.", variant: "destructive" });
+        }
+    },
+
+    testChannel: async (type, config) => {
+        try {
+            const res = await fetch("/api/notifications/channels/test", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ type, config }),
+                credentials: "include"
+            });
+            if (res.ok) {
+                toast({ title: "Test Sent", description: "Test notification sent successfully." });
+                return { success: true };
+            }
+            const data = await res.json().catch(() => ({ error: "Test failed" }));
+            toast({ title: "Test Failed", description: data.error || "Could not deliver test notification.", variant: "destructive" });
+            return { success: false, error: data.error };
+        } catch (e) {
+            console.error(e);
+            toast({ title: "Error", description: "Failed to send test notification.", variant: "destructive" });
+            return { success: false, error: "Network error" };
         }
     },
 

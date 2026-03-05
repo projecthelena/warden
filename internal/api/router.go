@@ -212,6 +212,8 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 			// Notifications
 			protected.Get("/notifications/channels", notifH.GetChannels)
 			protected.Post("/notifications/channels", notifH.CreateChannel)
+			protected.Post("/notifications/channels/test", notifH.TestChannel)
+			protected.Put("/notifications/channels/{id}", notifH.UpdateChannel)
 			protected.Delete("/notifications/channels/{id}", notifH.DeleteChannel)
 
 			// Events (for history)

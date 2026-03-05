@@ -1,12 +1,21 @@
 import { useState, useEffect } from "react";
 import { useMonitorStore, NotificationChannel } from "@/lib/store";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Slack, Mail, Webhook, MessageSquare, BellOff } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Slack, Webhook, BellOff, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
 import { ChannelDetailsSheet } from "./ChannelDetailsSheet";
+import { CreateChannelSheet } from "./CreateChannelSheet";
 
 export function NotificationsView() {
-    const { channels, fetchChannels } = useMonitorStore();
+    const { channels, fetchChannels, deleteChannel } = useMonitorStore();
     const [selectedChannel, setSelectedChannel] = useState<NotificationChannel | null>(null);
     const [detailsOpen, setDetailsOpen] = useState(false);
 
@@ -21,52 +30,114 @@ export function NotificationsView() {
 
     const getIcon = (type: string) => {
         switch (type) {
-            case 'slack': return <Slack className="h-4 w-4 text-muted-foreground" />;
-            case 'email': return <Mail className="h-4 w-4 text-muted-foreground" />;
-            case 'discord': return <MessageSquare className="h-4 w-4 text-muted-foreground" />;
-            case 'webhook': return <Webhook className="h-4 w-4 text-muted-foreground" />;
-            default: return <Webhook className="h-4 w-4 text-muted-foreground" />;
+            case 'slack': return <Slack className="h-4 w-4" />;
+            case 'webhook': return <Webhook className="h-4 w-4" />;
+            default: return <Webhook className="h-4 w-4" />;
         }
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const getDisplayValue = (config: any) => {
-        if (config.email) return config.email;
-        if (config.webhookUrl) return config.webhookUrl.replace('https://', '').substring(0, 20) + '...';
+    const getTypeLabel = (type: string) => {
+        switch (type) {
+            case 'slack': return 'Slack';
+            case 'webhook': return 'Webhook';
+            default: return type;
+        }
+    }
+
+    const getDisplayValue = (config: NotificationChannel['config']) => {
+        if (config.webhookUrl) {
+            const url = config.webhookUrl.replace('https://', '').replace('http://', '');
+            return url.length > 35 ? url.substring(0, 35) + '...' : url;
+        }
         return 'Configured';
     }
 
     return (
-        <div className="space-y-6">
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {channels.map((channel) => (
-                    <Card
-                        key={channel.id}
-                        className="hover:bg-accent/50 cursor-pointer transition-colors group"
-                        onClick={() => handleChannelClick(channel)}
-                    >
-                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                            <CardTitle className="text-sm font-medium">
-                                {channel.name}
-                            </CardTitle>
-                            {getIcon(channel.type)}
-                        </CardHeader>
-                        <CardContent>
-                            <div className="text-2xl font-bold flex items-center gap-2">
-                                <span className="text-sm font-normal text-muted-foreground truncate max-w-[200px] font-mono">
-                                    {getDisplayValue(channel.config)}
-                                </span>
-                            </div>
-                            <div className="flex items-center justify-between mt-4">
-                                <Badge variant="secondary">Active</Badge>
-                                <span className="text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
-                                    Click to edit
-                                </span>
-                            </div>
-                        </CardContent>
-                    </Card>
-                ))}
-            </div>
+        <Card>
+            <CardHeader>
+                <div className="flex items-center justify-between">
+                    <div>
+                        <CardTitle>Notification Channels</CardTitle>
+                        <CardDescription>Manage where alerts are delivered.</CardDescription>
+                    </div>
+                    <CreateChannelSheet />
+                </div>
+            </CardHeader>
+            <CardContent>
+                {channels.length > 0 ? (
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Name</TableHead>
+                                <TableHead>Type</TableHead>
+                                <TableHead>Destination</TableHead>
+                                <TableHead>Status</TableHead>
+                                <TableHead className="w-[50px]"></TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {channels.map((channel) => (
+                                <TableRow
+                                    key={channel.id}
+                                    className="cursor-pointer"
+                                    onClick={() => handleChannelClick(channel)}
+                                >
+                                    <TableCell className="font-medium">{channel.name}</TableCell>
+                                    <TableCell>
+                                        <div className="flex items-center gap-2 text-muted-foreground">
+                                            {getIcon(channel.type)}
+                                            <span>{getTypeLabel(channel.type)}</span>
+                                        </div>
+                                    </TableCell>
+                                    <TableCell>
+                                        <span className="text-muted-foreground font-mono text-xs">
+                                            {getDisplayValue(channel.config)}
+                                        </span>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Badge variant="secondary">Active</Badge>
+                                    </TableCell>
+                                    <TableCell>
+                                        <DropdownMenu>
+                                            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                                                <Button variant="ghost" size="icon" className="h-8 w-8">
+                                                    <MoreHorizontal className="h-4 w-4" />
+                                                </Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent align="end">
+                                                <DropdownMenuItem onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleChannelClick(channel);
+                                                }}>
+                                                    <Pencil className="h-4 w-4 mr-2" />
+                                                    Edit
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem
+                                                    className="text-destructive focus:text-destructive"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        deleteChannel(channel.id);
+                                                    }}
+                                                >
+                                                    <Trash2 className="h-4 w-4 mr-2" />
+                                                    Delete
+                                                </DropdownMenuItem>
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                ) : (
+                    <div className="flex flex-col items-center justify-center p-12 border border-dashed border-border rounded-lg text-muted-foreground">
+                        <BellOff className="w-12 h-12 mb-4 opacity-50" />
+                        <h3 className="text-lg font-medium text-foreground mb-1">No Notification Channels</h3>
+                        <p className="text-sm mb-4">Add a channel to receive alerts when monitors go down.</p>
+                        <CreateChannelSheet />
+                    </div>
+                )}
+            </CardContent>
 
             {selectedChannel && (
                 <ChannelDetailsSheet
@@ -75,14 +146,6 @@ export function NotificationsView() {
                     onOpenChange={setDetailsOpen}
                 />
             )}
-
-            {channels.length === 0 && (
-                <div className="flex flex-col items-center justify-center p-12 border border-dashed border-border rounded-lg text-muted-foreground">
-                    <BellOff className="w-12 h-12 mb-4 opacity-50" />
-                    <h3 className="text-lg font-medium text-foreground mb-1">No Notification Channels</h3>
-                    <p className="text-sm">Add a channel to receive alerts when monitors go down.</p>
-                </div>
-            )}
-        </div>
+        </Card>
     )
 }
