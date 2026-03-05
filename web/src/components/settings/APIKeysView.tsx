@@ -100,8 +100,7 @@ export function APIKeysView() {
                     <div className="flex flex-col items-center justify-center p-12 border border-dashed border-border rounded-lg text-muted-foreground">
                         <Key className="w-12 h-12 mb-4 opacity-50" />
                         <h3 className="text-lg font-medium text-foreground mb-1">No API Keys</h3>
-                        <p className="text-sm mb-4">Generate a key to access the API programmatically.</p>
-                        <CreateAPIKeySheet />
+                        <p className="text-sm">Generate a key to access the API programmatically.</p>
                     </div>
                 )}
             </CardContent>

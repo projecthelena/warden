@@ -34,11 +34,8 @@ export class SettingsPage {
         // Check for App Level Loader first
         await expect(this.page.getByTestId('loading-spinner')).toHaveCount(0, { timeout: 10000 });
 
-        // Check for View Level Loader
-        await expect(this.page.locator('.animate-pulse')).toHaveCount(0, { timeout: 10000 });
-
         // Try semantic selector
-        const createBtn = this.page.getByRole('button', { name: 'Create API Key' });
+        const createBtn = this.page.getByTestId('create-apikey-trigger');
         await expect(createBtn).toBeVisible({ timeout: 5000 });
         await createBtn.click(); // Opens sheet
 

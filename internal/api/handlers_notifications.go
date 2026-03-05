@@ -139,17 +139,17 @@ func (h *NotificationChannelsHandler) DeleteChannel(w http.ResponseWriter, r *ht
 // validateWebhookURL checks that a URL is valid HTTP(S) and within length limits.
 func validateWebhookURL(rawURL string) (string, error) {
 	if rawURL == "" {
-		return "", fmt.Errorf("Webhook URL is required")
+		return "", fmt.Errorf("webhook URL is required")
 	}
 	if len(rawURL) > 2048 {
-		return "", fmt.Errorf("Webhook URL too long (max 2048 characters)")
+		return "", fmt.Errorf("webhook URL too long (max 2048 characters)")
 	}
 	parsedURL, err := url.ParseRequestURI(rawURL)
 	if err != nil {
-		return "", fmt.Errorf("Invalid webhook URL format")
+		return "", fmt.Errorf("invalid webhook URL format")
 	}
 	if parsedURL.Scheme != "https" && parsedURL.Scheme != "http" {
-		return "", fmt.Errorf("Webhook URL must use HTTP or HTTPS")
+		return "", fmt.Errorf("webhook URL must use HTTP or HTTPS")
 	}
 	return rawURL, nil
 }

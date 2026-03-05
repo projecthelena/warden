@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
-import { buildTimeSlots, UptimeHistory } from './monitor-visuals';
+import { buildTimeSlots } from './monitor-visuals-utils';
+import { UptimeHistory } from './monitor-visuals';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Monitor } from '@/lib/store';
 

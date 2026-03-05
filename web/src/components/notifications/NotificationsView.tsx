@@ -133,8 +133,7 @@ export function NotificationsView() {
                     <div className="flex flex-col items-center justify-center p-12 border border-dashed border-border rounded-lg text-muted-foreground">
                         <BellOff className="w-12 h-12 mb-4 opacity-50" />
                         <h3 className="text-lg font-medium text-foreground mb-1">No Notification Channels</h3>
-                        <p className="text-sm mb-4">Add a channel to receive alerts when monitors go down.</p>
-                        <CreateChannelSheet />
+                        <p className="text-sm">Add a channel to receive alerts when monitors go down.</p>
                     </div>
                 )}
             </CardContent>
