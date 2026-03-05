@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Trash2, Save, Bell, Slack, Mail, Webhook, MessageSquare } from "lucide-react";
+import { Trash2, Save, Bell, Slack, Webhook, Loader2, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +20,8 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { useMonitorStore, NotificationChannel } from "@/lib/store";
+import { SlackPreview } from "./SlackPreview";
+import { WebhookPayloadPreview } from "./WebhookPayloadPreview";
 
 interface ChannelDetailsSheetProps {
     channel: NotificationChannel;
@@ -28,33 +30,24 @@ interface ChannelDetailsSheetProps {
 }
 
 export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDetailsSheetProps) {
-    const { updateChannel, deleteChannel } = useMonitorStore();
+    const { updateChannel, deleteChannel, testChannel } = useMonitorStore();
     const [name, setName] = useState(channel.name);
     const [type, setType] = useState<NotificationChannel['type']>(channel.type);
     const [webhookUrl, setWebhookUrl] = useState(channel.config.webhookUrl || "");
-    const [email, setEmail] = useState(channel.config.email || "");
+    const [testing, setTesting] = useState(false);
 
     // Reset state when channel changes
     useEffect(() => {
         setName(channel.name);
         setType(channel.type);
         setWebhookUrl(channel.config.webhookUrl || "");
-        setEmail(channel.config.email || "");
     }, [channel, open]);
 
     const handleSave = () => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const config: any = {};
-        if (type === 'email') {
-            config.email = email;
-        } else {
-            config.webhookUrl = webhookUrl;
-        }
-
         updateChannel(channel.id, {
             name,
             type,
-            config
+            config: { webhookUrl },
         });
         onOpenChange(false);
     };
@@ -62,6 +55,12 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
     const handleDelete = () => {
         deleteChannel(channel.id);
         onOpenChange(false);
+    };
+
+    const handleTest = async () => {
+        setTesting(true);
+        await testChannel(type, { webhookUrl });
+        setTesting(false);
     };
 
     return (
@@ -88,14 +87,8 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
                                 <SelectItem value="slack">
                                     <div className="flex items-center gap-2"><Slack className="w-4 h-4" /> Slack</div>
                                 </SelectItem>
-                                <SelectItem value="email">
-                                    <div className="flex items-center gap-2"><Mail className="w-4 h-4" /> Email</div>
-                                </SelectItem>
-                                <SelectItem value="discord">
-                                    <div className="flex items-center gap-2"><MessageSquare className="w-4 h-4" /> Discord</div>
-                                </SelectItem>
                                 <SelectItem value="webhook">
-                                    <div className="flex items-center gap-2"><Webhook className="w-4 h-4" /> Global Webhook</div>
+                                    <div className="flex items-center gap-2"><Webhook className="w-4 h-4" /> Webhook</div>
                                 </SelectItem>
                             </SelectContent>
                         </Select>
@@ -106,21 +99,22 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
                         <Input value={name} onChange={e => setName(e.target.value)} />
                     </div>
 
-                    {type === 'email' ? (
-                        <div className="grid gap-2">
-                            <Label>Email Address</Label>
-                            <Input value={email} onChange={e => setEmail(e.target.value)} />
-                        </div>
-                    ) : (
-                        <div className="grid gap-2">
-                            <Label>Webhook URL</Label>
-                            <Input
-                                value={webhookUrl}
-                                onChange={e => setWebhookUrl(e.target.value)}
-                                className="font-mono text-xs"
-                            />
-                        </div>
-                    )}
+                    <div className="grid gap-2">
+                        <Label>Webhook URL</Label>
+                        <Input
+                            value={webhookUrl}
+                            onChange={e => setWebhookUrl(e.target.value)}
+                            className="font-mono text-xs"
+                            placeholder={type === 'slack' ? "https://hooks.slack.com/services/..." : "https://your-endpoint.com/webhook"}
+                        />
+                        <p className="text-[0.8rem] text-muted-foreground">
+                            {type === 'slack'
+                                ? "Incoming Webhook URL from your Slack App."
+                                : "Any HTTP endpoint that accepts POST requests with JSON."}
+                        </p>
+                    </div>
+
+                    {type === 'slack' ? <SlackPreview /> : <WebhookPayloadPreview />}
                 </div>
 
                 <Separator className="my-4" />
@@ -129,9 +123,21 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
                     <Button variant="destructive" onClick={handleDelete} className="w-full sm:w-auto" data-testid="delete-channel-btn">
                         <Trash2 className="w-4 h-4 mr-2" /> Delete Channel
                     </Button>
-                    <Button onClick={handleSave} className="w-full sm:w-auto ml-auto">
-                        <Save className="w-4 h-4 mr-2" /> Save Changes
-                    </Button>
+                    <div className="flex gap-2 w-full sm:w-auto sm:ml-auto">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            disabled={!webhookUrl || testing}
+                            onClick={handleTest}
+                            data-testid="test-channel-btn"
+                        >
+                            {testing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
+                            Send Test
+                        </Button>
+                        <Button onClick={handleSave}>
+                            <Save className="w-4 h-4 mr-2" /> Save Changes
+                        </Button>
+                    </div>
                 </SheetFooter>
             </SheetContent>
         </Sheet>

@@ -1,14 +1,7 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { ThemeContext } from "./theme-context";
 
 export type Theme = "dark" | "light" | "system";
-
-interface ThemeContextValue {
-    theme: Theme;
-    setTheme: (theme: Theme) => void;
-    resolvedTheme: "dark" | "light";
-}
-
-const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 const STORAGE_KEY = "warden-theme";
 
@@ -16,7 +9,7 @@ function getSystemTheme(): "dark" | "light" {
     return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-export function applyThemeToDOM(theme: Theme): "dark" | "light" {
+function applyThemeToDOM(theme: Theme): "dark" | "light" {
     const resolved = theme === "system" ? getSystemTheme() : theme;
     const root = document.documentElement;
     root.classList.remove("dark", "light");
@@ -64,10 +57,4 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
             {children}
         </ThemeContext.Provider>
     );
-}
-
-export function useTheme() {
-    const ctx = useContext(ThemeContext);
-    if (!ctx) throw new Error("useTheme must be used within ThemeProvider");
-    return ctx;
 }

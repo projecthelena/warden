@@ -62,6 +62,12 @@ func (s *Store) GetNotificationChannels() ([]NotificationChannel, error) {
 	return channels, nil
 }
 
+func (s *Store) UpdateNotificationChannel(id, name, channelType, config string, enabled bool) error {
+	_, err := s.db.Exec(s.rebind("UPDATE notification_channels SET name = ?, type = ?, config = ?, enabled = ? WHERE id = ?"),
+		name, channelType, config, enabled, id)
+	return err
+}
+
 func (s *Store) DeleteNotificationChannel(id string) error {
 	_, err := s.db.Exec(s.rebind("DELETE FROM notification_channels WHERE id = ?"), id)
 	return err

@@ -10,9 +10,7 @@ export class SettingsPage {
         this.page = page;
         // The create trigger is in the API Keys sheet/page. 
         // Wait, user navigates to /api-keys to see the sheet trigger? 
-        // App.tsx route /api-keys renders APIKeysPage.
-        // APIKeysView renders the list and usage.
-        // The header in App.tsx renders CreateAPIKeySheet if path is /api-keys.
+        // Settings page Security tab renders APIKeysView and CreateAPIKeySheet.
 
         this.createKeyTrigger = page.getByTestId('create-apikey-trigger');
         this.keyNameInput = page.getByTestId('apikey-name-input');
@@ -20,14 +18,14 @@ export class SettingsPage {
     }
 
     async gotoApiKeys() {
-        await this.page.goto('/settings/api-keys');
+        await this.page.goto('/settings?tab=security');
     }
 
     async createApiKey(name: string) {
         // Wait for Auth Check to complete
         await expect(this.page.getByText('Wait ...')).toBeHidden();
 
-        await expect(this.page).toHaveURL(/.*api-keys/);
+        await expect(this.page).toHaveURL(/.*tab=security/);
 
         const path = await this.page.evaluate(() => window.location.pathname);
         console.log('Current Path:', path);
@@ -36,11 +34,8 @@ export class SettingsPage {
         // Check for App Level Loader first
         await expect(this.page.getByTestId('loading-spinner')).toHaveCount(0, { timeout: 10000 });
 
-        // Check for View Level Loader
-        await expect(this.page.locator('.animate-pulse')).toHaveCount(0, { timeout: 10000 });
-
         // Try semantic selector
-        const createBtn = this.page.getByRole('button', { name: 'Create API Key' });
+        const createBtn = this.page.getByTestId('create-apikey-trigger');
         await expect(createBtn).toBeVisible({ timeout: 5000 });
         await createBtn.click(); // Opens sheet
 

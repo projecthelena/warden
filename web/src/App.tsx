@@ -16,14 +16,10 @@ import { CreateGroupSheet } from "./components/CreateGroupSheet";
 import { CreateMaintenanceSheet } from "./components/incidents/CreateMaintenanceSheet";
 import { MaintenanceView } from "./components/incidents/MaintenanceView";
 import { IncidentsView } from "./components/incidents/IncidentsView";
-import { NotificationsView } from "./components/notifications/NotificationsView";
-import { CreateChannelSheet } from "./components/notifications/CreateChannelSheet";
 import { StatusPage } from "./components/status-page/StatusPage";
 import { LoginPage } from "./components/auth/LoginPage";
 import { SettingsView } from "./components/settings/SettingsView";
 import { StatusPagesView } from "./components/status-pages/StatusPagesView";
-import { APIKeysPage } from "./components/settings/APIKeysPage";
-import { CreateAPIKeySheet } from "./components/settings/CreateAPIKeySheet";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
@@ -292,10 +288,8 @@ function AdminLayout() {
 
   const isIncidents = location.pathname.startsWith('/incidents');
   const isMaintenance = location.pathname.startsWith('/maintenance');
-  const isNotifications = location.pathname.startsWith('/notifications');
-  const isSettings = location.pathname.startsWith('/settings') && !location.pathname.startsWith('/settings/api-keys');
+  const isSettings = location.pathname.startsWith('/settings');
   const isStatusPages = location.pathname.startsWith('/status-pages');
-  const isApiKeys = location.pathname.startsWith('/settings/api-keys') || location.pathname.startsWith('/api-keys'); // Backwards compat or just use new
   const groupId = location.pathname.startsWith('/groups/') ? location.pathname.split('/')[2] : null;
   const activeGroup = groupId ? safeGroups.find(g => g.id === groupId) : null;
 
@@ -317,10 +311,8 @@ function AdminLayout() {
 
     if (isIncidents) items.push({ title: "Incidents", url: "/incidents", active: true });
     else if (isMaintenance) items.push({ title: "Maintenance", url: "/maintenance", active: true });
-    else if (isNotifications) items.push({ title: "Notifications", url: "/notifications", active: true });
     else if (isSettings) items.push({ title: "Settings", url: "/settings", active: true });
     else if (isStatusPages) items.push({ title: "Status Pages", url: "/status-pages", active: true });
-    else if (isApiKeys) items.push({ title: "API Keys", url: "/settings/api-keys", active: true });
     else if (activeGroup) {
       items.push({ title: "Groups", url: "/dashboard", active: false }); // Optional intermediate
       items.push({ title: activeGroup.name, url: `/groups/${activeGroup.id}`, active: true });
@@ -363,24 +355,14 @@ function AdminLayout() {
               </Breadcrumb>
             </div>
             <div className="ml-auto flex items-center gap-2">
-              {isIncidents ? (
-                null
-              ) : isMaintenance ? (
+              {isMaintenance ? (
                 <CreateMaintenanceSheet onCreate={addMaintenance} groups={safeGroups} />
-              ) : isNotifications ? (
-                <CreateChannelSheet />
-              ) : isSettings ? (
-                null
-              ) : isApiKeys ? (
-                <CreateAPIKeySheet />
-              ) : isStatusPages ? (
-                null
-              ) : ( // Dashboard
+              ) : !isIncidents && !isSettings && !isStatusPages ? (
                 <>
                   {!groupId && <CreateGroupSheet onCreate={addGroup} />}
                   <CreateMonitorSheet groups={safeGroups} defaultGroup={activeGroup?.name} />
                 </>
-              )}
+              ) : null}
             </div>
           </header>
           <ScrollArea className="flex-1 p-4 pt-0 h-[calc(100vh-4rem)]">
@@ -390,10 +372,10 @@ function AdminLayout() {
                 <Route path="/groups/:groupId" element={<Dashboard />} />
                 <Route path="/incidents" element={<IncidentsView />} />
                 <Route path="/maintenance" element={<MaintenanceView />} />
-                <Route path="/notifications" element={<NotificationsView />} />
+                <Route path="/notifications" element={<Navigate to="/settings?tab=notifications" replace />} />
                 <Route path="/settings" element={<SettingsView />} />
                 <Route path="/status-pages" element={<StatusPagesView />} />
-                <Route path="/settings/api-keys" element={<APIKeysPage />} />
+                <Route path="/settings/api-keys" element={<Navigate to="/settings?tab=security" replace />} />
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
               </Routes>
             </main>

@@ -48,14 +48,24 @@ export function NavMain({
   }[]
 }) {
   const { state } = useSidebar()
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
+  const fullPath = pathname + search;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const renderItems = (items: any[]) => {
     return items.map((item) => {
       const isMainActive = item.isActive ?? (item.url === pathname);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const isSubActive = item.items?.some((sub: any) => pathname === sub.url || pathname.startsWith(sub.url + "/"));
+      const isSubActive = item.items?.some((sub: any) => {
+        if (sub.url.includes("?")) {
+          return fullPath === sub.url;
+        }
+        // For items without query params, match if pathname equals the URL and there's no tab param
+        if (pathname === sub.url) {
+          return !search.includes("tab=");
+        }
+        return pathname.startsWith(sub.url + "/");
+      });
       const isOpen = isSubActive || (isMainActive && !!item.items?.length);
 
       if (item.items?.length) {
@@ -75,15 +85,20 @@ export function NavMain({
               <CollapsibleContent>
                 <SidebarMenuSub>
                   {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                  {item.items?.map((subItem: any) => (
-                    <SidebarMenuSubItem key={subItem.title}>
-                      <SidebarMenuSubButton asChild isActive={pathname === subItem.url}>
-                        <Link to={subItem.url}>
-                          <span>{subItem.title}</span>
-                        </Link>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                  ))}
+                  {item.items?.map((subItem: any) => {
+                    const isActive = subItem.url.includes("?")
+                      ? fullPath === subItem.url
+                      : pathname === subItem.url && !search.includes("tab=");
+                    return (
+                      <SidebarMenuSubItem key={subItem.title}>
+                        <SidebarMenuSubButton asChild isActive={isActive}>
+                          <Link to={subItem.url}>
+                            <span>{subItem.title}</span>
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                    );
+                  })}
                 </SidebarMenuSub>
               </CollapsibleContent>
             </SidebarMenuItem>

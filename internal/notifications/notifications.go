@@ -78,7 +78,8 @@ func (s *Service) dispatch(event NotificationEvent) {
 		switch ch.Type {
 		case "slack":
 			notifier = NewSlackNotifier(ch.Config)
-		// Add other types here (email, etc.)
+		case "webhook":
+			notifier = NewWebhookNotifier(ch.Config)
 		default:
 			log.Printf("Unknown channel type: %s", ch.Type)
 			continue
@@ -189,6 +190,50 @@ func (n *SlackNotifier) Send(event NotificationEvent) error {
 	}
 
 	return sendJSON(url, payload)
+}
+
+// WebhookNotifier sends a clean JSON payload to a generic webhook endpoint
+type WebhookNotifier struct {
+	config map[string]interface{}
+}
+
+func NewWebhookNotifier(configJSON string) *WebhookNotifier {
+	var config map[string]interface{}
+	_ = json.Unmarshal([]byte(configJSON), &config)
+	return &WebhookNotifier{config: config}
+}
+
+func (n *WebhookNotifier) Send(event NotificationEvent) error {
+	webhookURL, ok := n.config["webhookUrl"].(string)
+	if !ok || webhookURL == "" {
+		return fmt.Errorf("webhookUrl missing or invalid")
+	}
+
+	payload := map[string]interface{}{
+		"event":       string(event.Type),
+		"monitorId":   event.MonitorID,
+		"monitorName": event.MonitorName,
+		"monitorUrl":  event.MonitorURL,
+		"message":     event.Message,
+		"timestamp":   event.Time.Format(time.RFC3339),
+	}
+
+	return sendJSON(webhookURL, payload)
+}
+
+// SendDirect dispatches a NotificationEvent through the appropriate notifier
+// without going through the queue. Used for test notifications.
+func SendDirect(channelType, configJSON string, event NotificationEvent) error {
+	var notifier Notifier
+	switch channelType {
+	case "slack":
+		notifier = NewSlackNotifier(configJSON)
+	case "webhook":
+		notifier = NewWebhookNotifier(configJSON)
+	default:
+		return fmt.Errorf("unsupported channel type: %s", channelType)
+	}
+	return notifier.Send(event)
 }
 
 func sendJSON(targetURL string, payload interface{}) error {

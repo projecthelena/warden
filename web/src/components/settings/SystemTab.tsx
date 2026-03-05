@@ -1,9 +1,97 @@
-
 import { useEffect, useState } from "react";
 import { useMonitorStore, SystemStats } from "@/lib/store";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatBytes } from "@/lib/utils";
-import { Activity, Database, Server, ServerCrash, ServerOff } from "lucide-react";
+import { Activity, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
+
+function MonitorHealthCard({ stats }: { stats: SystemStats["stats"] }) {
+    const total = stats.totalMonitors;
+    const upPct = total > 0 ? (stats.activeMonitors / total) * 100 : 0;
+    const downPct = total > 0 ? (stats.downMonitors / total) * 100 : 0;
+    const degradedPct = total > 0 ? (stats.degradedMonitors / total) * 100 : 0;
+
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle>Monitor Health</CardTitle>
+                <CardDescription>Current status of all monitored services.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+                {total > 0 && (
+                    <div className="flex h-2 rounded-full overflow-hidden bg-muted">
+                        {stats.activeMonitors > 0 && (
+                            <div className="bg-green-500 transition-all" style={{ width: `${upPct}%` }} />
+                        )}
+                        {stats.degradedMonitors > 0 && (
+                            <div className="bg-yellow-500 transition-all" style={{ width: `${degradedPct}%` }} />
+                        )}
+                        {stats.downMonitors > 0 && (
+                            <div className="bg-red-500 transition-all" style={{ width: `${downPct}%` }} />
+                        )}
+                    </div>
+                )}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div className="flex items-center gap-2">
+                        <Activity className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                            <div className="text-2xl font-bold">{stats.totalMonitors}</div>
+                            <p className="text-xs text-muted-foreground">Total</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4 text-green-500" />
+                        <div>
+                            <div className="text-2xl font-bold">{stats.activeMonitors}</div>
+                            <p className="text-xs text-muted-foreground">Active</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <XCircle className="h-4 w-4 text-red-500" />
+                        <div>
+                            <div className="text-2xl font-bold">{stats.downMonitors}</div>
+                            <p className="text-xs text-muted-foreground">Down</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                        <div>
+                            <div className="text-2xl font-bold">{stats.degradedMonitors}</div>
+                            <p className="text-xs text-muted-foreground">Degraded</p>
+                        </div>
+                    </div>
+                </div>
+            </CardContent>
+        </Card>
+    );
+}
+
+function SystemDetailsCard({ data }: { data: SystemStats }) {
+    const details = [
+        { label: "Version", value: data.version },
+        { label: "Database Size", value: formatBytes(data.dbSize) },
+        { label: "Estimated Daily Pings", value: data.stats.dailyPingsEstimate.toLocaleString() },
+        { label: "Total Groups", value: String(data.stats.totalGroups) },
+    ];
+
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle>System Details</CardTitle>
+                <CardDescription>Runtime and storage information.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <dl className="grid gap-3">
+                    {details.map(({ label, value }) => (
+                        <div key={label} className="flex items-center justify-between py-2 border-b border-border last:border-0">
+                            <dt className="text-sm text-muted-foreground">{label}</dt>
+                            <dd className="text-sm font-medium font-mono">{value}</dd>
+                        </div>
+                    ))}
+                </dl>
+            </CardContent>
+        </Card>
+    );
+}
 
 export function SystemTab() {
     const { fetchSystemStats } = useMonitorStore();
@@ -27,116 +115,8 @@ export function SystemTab() {
 
     return (
         <div className="space-y-6">
-            <div>
-                <h3 className="text-lg font-medium">System Information</h3>
-                <p className="text-sm text-muted-foreground">
-                    Overview of the current system status and resource usage.
-                </p>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">
-                            Warden Version
-                        </CardTitle>
-                        <Server className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{data.version}</div>
-                        <p className="text-xs text-muted-foreground">
-                            Running latest build
-                        </p>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">
-                            Database Size
-                        </CardTitle>
-                        <Database className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{formatBytes(data.dbSize)}</div>
-                        <p className="text-xs text-muted-foreground">
-                            SQLite storage usage
-                        </p>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">
-                            Estimated Daily Pings
-                        </CardTitle>
-                        <Activity className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{data.stats.dailyPingsEstimate.toLocaleString()}</div>
-                        <p className="text-xs text-muted-foreground">
-                            Requests per day
-                        </p>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">
-                            Total Groups
-                        </CardTitle>
-                        <Server className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{data.stats.totalGroups}</div>
-                        <p className="text-xs text-muted-foreground">
-                            Active monitor groups
-                        </p>
-                    </CardContent>
-                </Card>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">
-                            Total Monitors
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{data.stats.totalMonitors}</div>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium text-green-500">
-                            Active
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{data.stats.activeMonitors}</div>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium text-red-500">
-                            Down
-                        </CardTitle>
-                        <ServerCrash className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{data.stats.downMonitors}</div>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium text-yellow-500">
-                            Degraded
-                        </CardTitle>
-                        <ServerOff className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{data.stats.degradedMonitors}</div>
-                    </CardContent>
-                </Card>
-            </div>
+            <MonitorHealthCard stats={data.stats} />
+            <SystemDetailsCard data={data} />
         </div>
     );
 }
