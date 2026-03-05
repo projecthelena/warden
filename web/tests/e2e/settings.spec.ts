@@ -27,10 +27,10 @@ test.describe('Settings & API Keys', () => {
         // 2. Navigate via SPA (Sidebar)
         // Expand Settings (Robust selector)
         await page.locator('button:has(span:text-is("Settings"))').click();
-        await page.getByRole('link', { name: 'API Keys' }).click();
+        await page.getByRole('link', { name: 'Security' }).click();
 
         // Verify URL
-        await expect(page).toHaveURL(/.*settings\/api-keys/);
+        await expect(page).toHaveURL(/.*settings\?tab=security/);
 
         // 2. Create Key
         const keyName = `CI Key ${Date.now()}`;

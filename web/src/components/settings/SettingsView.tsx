@@ -4,13 +4,19 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SystemTab } from "./SystemTab";
 import { SSOSettings } from "./SSOSettings";
+import { APIKeysView } from "./APIKeysView";
+import { CreateAPIKeySheet } from "./CreateAPIKeySheet";
+import { NotificationsView } from "@/components/notifications/NotificationsView";
+import { CreateChannelSheet } from "@/components/notifications/CreateChannelSheet";
 import { SelectTimezone } from "@/components/ui/select-timezone";
 
 import { Monitor, Moon, Sun } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMonitorStore } from "@/lib/store";
 import { useToast } from "@/components/ui/use-toast";
 import { useTheme } from "@/components/theme-provider";
@@ -314,10 +320,25 @@ function NotificationIntelligence() {
     );
 }
 
+const VALID_TABS = ["general", "notifications", "security", "system"] as const;
+type SettingsTab = typeof VALID_TABS[number];
+
 export function SettingsView() {
     const { user, updateUser } = useMonitorStore();
     const { toast } = useToast();
     const [isLoading, setIsLoading] = useState(false);
+    const [searchParams, setSearchParams] = useSearchParams();
+
+    const tabParam = searchParams.get("tab") as SettingsTab | null;
+    const activeTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : "general";
+
+    const handleTabChange = (value: string) => {
+        if (value === "general") {
+            setSearchParams({});
+        } else {
+            setSearchParams({ tab: value });
+        }
+    };
 
     const [selectedTimezone, setSelectedTimezone] = useState(user?.timezone || 'UTC');
 
@@ -361,78 +382,98 @@ export function SettingsView() {
                     Manage your workspace preferences.
                 </p>
             </div>
-            <Separator />
 
-            <div className="space-y-6">
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Account Settings</CardTitle>
-                        <CardDescription>
-                            Manage your account preferences and security.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <form onSubmit={handleUpdateProfile} className="space-y-4">
-                            <div className="grid gap-2">
-                                <Label>Username</Label>
-                                <Input value={user?.username || user?.name || ''} disabled className="max-w-md" />
-                            </div>
-                            <div className="grid gap-2">
-                                <Label>Timezone</Label>
-                                <input type="hidden" name="timezone" value={selectedTimezone} />
-                                <SelectTimezone
-                                    value={selectedTimezone}
-                                    onValueChange={setSelectedTimezone}
-                                />
-                            </div>
+            <Tabs value={activeTab} onValueChange={handleTabChange}>
+                <div className="flex items-center justify-between">
+                    <TabsList>
+                        <TabsTrigger value="general">General</TabsTrigger>
+                        <TabsTrigger value="notifications">Notifications</TabsTrigger>
+                        <TabsTrigger value="security">Security</TabsTrigger>
+                        <TabsTrigger value="system">System</TabsTrigger>
+                    </TabsList>
+                    {activeTab === "notifications" && <CreateChannelSheet />}
+                    {activeTab === "security" && <CreateAPIKeySheet />}
+                </div>
 
-                            <Separator />
+                <TabsContent value="general" className="space-y-6 mt-6">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Account Settings</CardTitle>
+                            <CardDescription>
+                                Manage your account preferences and security.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <form onSubmit={handleUpdateProfile} className="space-y-4">
+                                <div className="grid gap-2">
+                                    <Label>Username</Label>
+                                    <Input value={user?.username || user?.name || ''} disabled className="max-w-md" />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label>Timezone</Label>
+                                    <input type="hidden" name="timezone" value={selectedTimezone} />
+                                    <SelectTimezone
+                                        value={selectedTimezone}
+                                        onValueChange={setSelectedTimezone}
+                                    />
+                                </div>
 
-                            <div className="grid gap-2">
-                                <Label>Change Password</Label>
-                                <Input
-                                    name="currentPassword"
-                                    type="password"
-                                    placeholder="Current Password (Required)"
-                                    className="max-w-md"
-                                />
-                                <Input
-                                    name="password"
-                                    type="password"
-                                    placeholder="New Password"
-                                    className="max-w-md mt-2"
-                                />
-                            </div>
+                                <Separator />
 
-                            <Button type="submit" disabled={isLoading}>
-                                {isLoading ? "Saving..." : "Save Changes"}
-                            </Button>
-                        </form>
-                    </CardContent>
-                </Card>
+                                <div className="grid gap-2">
+                                    <Label>Change Password</Label>
+                                    <Input
+                                        name="currentPassword"
+                                        type="password"
+                                        placeholder="Current Password (Required)"
+                                        className="max-w-md"
+                                    />
+                                    <Input
+                                        name="password"
+                                        type="password"
+                                        placeholder="New Password"
+                                        className="max-w-md mt-2"
+                                    />
+                                </div>
 
-                <AppearanceSettings />
+                                <Button type="submit" disabled={isLoading}>
+                                    {isLoading ? "Saving..." : "Save Changes"}
+                                </Button>
+                            </form>
+                        </CardContent>
+                    </Card>
 
-                <GeneralSettings />
+                    <AppearanceSettings />
 
-                <NotificationIntelligence />
+                    <GeneralSettings />
+                </TabsContent>
 
-                <SSOSettings />
+                <TabsContent value="notifications" className="space-y-6 mt-6">
+                    <NotificationIntelligence />
+                    <NotificationsView />
+                </TabsContent>
 
-                <SystemTab />
+                <TabsContent value="security" className="space-y-6 mt-6">
+                    <SSOSettings />
+                    <APIKeysView />
+                </TabsContent>
 
-                <Card className="border-destructive/50">
-                    <CardHeader>
-                        <CardTitle className="text-destructive">Danger Zone</CardTitle>
-                        <CardDescription>
-                            Destructive actions that cannot be undone.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <ResetDatabaseDialog />
-                    </CardContent>
-                </Card>
-            </div>
+                <TabsContent value="system" className="space-y-6 mt-6">
+                    <SystemTab />
+
+                    <Card className="border-destructive/50">
+                        <CardHeader>
+                            <CardTitle className="text-destructive">Danger Zone</CardTitle>
+                            <CardDescription>
+                                Destructive actions that cannot be undone.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <ResetDatabaseDialog />
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+            </Tabs>
         </div>
     )
 }
