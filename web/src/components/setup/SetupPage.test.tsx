@@ -41,7 +41,7 @@ describe('SetupPage', () => {
         fireEvent.click(screen.getByRole('button', { name: /Get Started/i }));
 
         await waitFor(() => {
-            expect(screen.getByText(/Create Admin Account/i)).toBeInTheDocument();
+            expect(screen.getByText(/Create your admin account/i)).toBeInTheDocument();
         });
     });
 
@@ -72,7 +72,7 @@ describe('SetupPage', () => {
 
         // Step 1: Welcome -> Get Started
         fireEvent.click(screen.getByRole('button', { name: /Get Started/i }));
-        await waitFor(() => expect(screen.getByText(/Create Admin Account/i)).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByText(/Create your admin account/i)).toBeInTheDocument());
 
         // Step 2: Fill in credentials and submit
         fireEvent.change(screen.getByTestId('setup-username-input'), { target: { value: 'testadmin' } });

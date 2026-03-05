@@ -4,7 +4,6 @@ import { useMonitorStore } from '../../lib/store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertCircle, Check, X } from 'lucide-react';
 
@@ -95,34 +94,31 @@ export function SetupPage() {
     };
 
     return (
-        <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4 sm:p-8">
-            <Card className="w-full max-w-[550px] border-0 sm:border bg-card/50 sm:bg-card shadow-none sm:shadow-xl sm:ring-1 ring-border/5">
-                <CardHeader className="space-y-6 pt-10 px-8 text-center">
-                    <div className="mx-auto bg-cyan-500 rounded-2xl w-14 h-14 flex items-center justify-center mb-2">
-                        <span className="text-2xl font-bold text-[#09090b]">H</span>
-                    </div>
-
-                    <div className="space-y-2">
-                        <h1 className="text-3xl font-bold tracking-tight" data-testid={step === 0 ? "setup-welcome" : undefined}>
+        <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
+            <div className="w-full max-w-sm">
+                <div className="grid gap-6">
+                    {/* Branding — same as login */}
+                    <div className="flex flex-col items-center gap-2 text-center">
+                        <div className="flex flex-col items-center">
+                            <span className="text-xl font-display font-bold tracking-tight">
+                                Project <span className="font-normal text-muted-foreground">Helena</span>
+                            </span>
+                            <span className="text-sm font-mono font-medium text-cyan-500 tracking-widest">WARDEN</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground" data-testid={step === 0 ? "setup-welcome" : undefined}>
                             {step === 0 && "Welcome to Warden"}
-                            {step === 1 && "Create Admin Account"}
-                        </h1>
-                        <p className="text-muted-foreground text-lg max-w-sm mx-auto leading-relaxed">
-                            {step === 0 && "Your self-hosted monitoring solution is ready in seconds."}
-                            {step === 1 && "Set up your admin account to get started."}
+                            {step === 1 && "Create your admin account"}
                         </p>
                     </div>
-                </CardHeader>
 
-                {step === 1 && (
-                    <CardContent className="px-8 py-6 space-y-8">
-                        <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                            <div className="space-y-2.5">
-                                <Label htmlFor="username" className="text-base font-medium ml-1">Username</Label>
+                    {/* Step 1: form fields */}
+                    {step === 1 && (
+                        <div className="grid gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                            <div className="grid gap-2">
+                                <Label htmlFor="username">Username</Label>
                                 <Input
                                     id="username"
                                     autoFocus
-                                    className="h-12 text-lg bg-background/50"
                                     value={formData.username}
                                     onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                                     placeholder="e.g. admin"
@@ -130,12 +126,11 @@ export function SetupPage() {
                                     data-testid="setup-username-input"
                                 />
                             </div>
-                            <div className="space-y-2.5">
-                                <Label htmlFor="password" className="text-base font-medium ml-1">Password</Label>
+                            <div className="grid gap-2">
+                                <Label htmlFor="password">Password</Label>
                                 <Input
                                     id="password"
                                     type="password"
-                                    className="h-12 text-lg bg-background/50"
                                     value={formData.password}
                                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                                     placeholder="Create a secure password"
@@ -144,29 +139,28 @@ export function SetupPage() {
                                 />
 
                                 {/* Password requirements checklist */}
-                                <div className="mt-3 p-3 rounded-lg bg-muted/50 space-y-1.5">
+                                <div className="mt-1 p-3 rounded-lg bg-muted/50 space-y-1.5">
                                     <PasswordRequirement met={passwordCheck.minLength} label="At least 8 characters" />
                                     <PasswordRequirement met={passwordCheck.hasNumber} label="Contains a number" />
                                     <PasswordRequirement met={passwordCheck.hasSpecial} label="Contains a special character (!@#$%...)" />
                                 </div>
                             </div>
+
+                            {error && (
+                                <Alert variant="destructive" className="animate-in fade-in zoom-in-95">
+                                    <AlertCircle className="h-5 w-5" />
+                                    <AlertDescription className="ml-2">{error}</AlertDescription>
+                                </Alert>
+                            )}
                         </div>
+                    )}
 
-                        {error && (
-                            <Alert variant="destructive" className="animate-in fade-in zoom-in-95">
-                                <AlertCircle className="h-5 w-5" />
-                                <AlertDescription className="ml-2 text-base font-medium">{error}</AlertDescription>
-                            </Alert>
-                        )}
-                    </CardContent>
-                )}
-
-                <CardFooter className="px-8 pb-10">
-                    <div className="w-full space-y-4">
+                    {/* Actions */}
+                    <div className="grid gap-4">
                         {step === 0 && (
                             <Button
                                 onClick={() => setStep(1)}
-                                className="w-full h-12 text-lg font-semibold rounded-lg shadow-lg shadow-primary/20"
+                                className="w-full"
                                 data-testid="setup-start-btn"
                             >
                                 Get Started
@@ -177,17 +171,18 @@ export function SetupPage() {
                             <Button
                                 onClick={handleSubmit}
                                 disabled={loading || !passwordCheck.isValid}
-                                className="w-full h-14 text-xl font-bold rounded-lg shadow-xl shadow-primary/20"
+                                className="w-full"
                                 data-testid="setup-launch-btn"
                             >
                                 {loading ? "Launching..." : "Launch Dashboard"}
                             </Button>
                         )}
                     </div>
-                </CardFooter>
-            </Card>
+                </div>
+            </div>
 
-            <div className="fixed bottom-6 text-center text-xs text-muted-foreground animate-in fade-in duration-1000">
+            {/* Footer — relative, not fixed */}
+            <div className="mt-8 text-center text-xs text-muted-foreground">
                 <p>Warden by Project Helena. Open Source.</p>
             </div>
         </div>
