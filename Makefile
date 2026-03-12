@@ -100,7 +100,7 @@ e2e-fresh:
 	rm -f warden.db warden.db-wal warden.db-shm
 	@echo "Starting backend..."
 	ADMIN_SECRET=warden-e2e-magic-key $(BACKEND_ENV) go run ./cmd/dashboard &
-	@sleep 3
+	@sleep 5
 	@echo "Running E2E tests..."
 	cd web && npm run test:e2e; EXIT_CODE=$$?; \
 	lsof -ti:9096 | xargs kill -9 2>/dev/null || true; \

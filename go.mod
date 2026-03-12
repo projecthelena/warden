@@ -1,6 +1,6 @@
 module github.com/projecthelena/warden
 
-go 1.25.7
+go 1.25.8
 
 require (
 	github.com/go-chi/chi/v5 v5.2.3

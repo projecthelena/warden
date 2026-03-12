@@ -460,10 +460,10 @@ test.describe('Status Page - Full E2E Suite', () => {
             const allPage = data.pages.find((p: { slug: string }) => p.slug === 'all');
             expect(allPage.uptimeDaysRange).toBe(30);
 
-            // Visit public page and verify label
+            // Visit public page and verify bars are rendered (date labels removed, verify via aria-label)
             await page.goto('/status/all');
             await page.waitForLoadState('networkidle');
-            await expect(page.getByText('30 days ago')).toBeVisible({ timeout: 10000 });
+            await expect(page.locator('[aria-label*="Uptime over last 30 days"]').first()).toBeVisible({ timeout: 10000 });
         });
 
     });

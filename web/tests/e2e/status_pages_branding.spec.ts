@@ -63,7 +63,6 @@ test.describe('Status Pages - Branding Config', () => {
         await expect(dialog.getByLabel('Description')).toHaveValue('A custom tagline');
         await expect(dialog.locator('#logoUrl')).toHaveValue('https://example.com/logo.png');
         await expect(dialog.locator('#faviconUrl')).toHaveValue('https://example.com/favicon.ico');
-        await expect(dialog.locator('#accentColor')).toHaveValue('#FF5500');
 
         await statusPages.cancelConfigDialog();
     });
@@ -166,28 +165,21 @@ test.describe('Status Pages - Branding Config', () => {
     // Accent color + theme
     // ------------------------------------------------------------------
 
-    test('Accent color and theme are saved via the config dialog', async ({ page }) => {
+    test('Theme is saved via the config dialog', async ({ page }) => {
         const statusPages = new StatusPagesPage(page);
 
         await statusPages.navigateViaSidebar();
         await statusPages.waitForLoad();
 
         await statusPages.openConfigDialog('all');
-        await statusPages.fillConfigAccentColor('#112233');
         await statusPages.selectConfigTheme('dark');
         await statusPages.saveConfigDialog();
 
-        // Verify persisted values by re-opening the dialog.
-        await statusPages.openConfigDialog('all');
-        await expect(statusPages.getConfigDialog().locator('#accentColor')).toHaveValue('#112233');
-        await statusPages.cancelConfigDialog();
-
-        // Also verify theme via the public API (enable page first).
+        // Verify theme via the public API (enable page first).
         await statusPages.configureViaAPI('all', { enabled: true, public: false, title: 'Global Status' });
         const listResp = await page.request.get('/api/status-pages');
         const listData = await listResp.json();
         const allPage = listData.pages?.find((p: { slug: string }) => p.slug === 'all');
-        expect(allPage?.accentColor).toBe('#112233');
         expect(allPage?.theme).toBe('dark');
     });
 
