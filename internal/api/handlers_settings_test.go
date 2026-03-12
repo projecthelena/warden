@@ -34,8 +34,8 @@ func TestGetSettings(t *testing.T) {
 	if response["latency_threshold"] != "1000" {
 		t.Errorf("Expected latency_threshold '1000', got %s", response["latency_threshold"])
 	}
-	if response["data_retention_days"] != "30" {
-		t.Errorf("Expected data_retention_days '30', got %s", response["data_retention_days"])
+	if response["data_retention_days"] != "365" {
+		t.Errorf("Expected data_retention_days '365', got %s", response["data_retention_days"])
 	}
 }
 
@@ -46,7 +46,7 @@ func TestUpdateSettings_MultipleSettings(t *testing.T) {
 
 	body := map[string]string{
 		"latency_threshold":   "500",
-		"data_retention_days": "60",
+		"data_retention_days": "180",
 	}
 	bodyBytes, _ := json.Marshal(body)
 
@@ -67,8 +67,8 @@ func TestUpdateSettings_MultipleSettings(t *testing.T) {
 	}
 
 	ret, _ := s.GetSetting("data_retention_days")
-	if ret != "60" {
-		t.Errorf("Expected data_retention_days '60', got %s", ret)
+	if ret != "180" {
+		t.Errorf("Expected data_retention_days '180', got %s", ret)
 	}
 }
 

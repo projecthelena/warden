@@ -12,6 +12,7 @@ export interface StatusPageConfig {
     showUptimeBars?: boolean;
     showUptimePercentage?: boolean;
     showIncidentHistory?: boolean;
+    uptimeDaysRange?: number;
 }
 
 export class StatusPagesPage {
@@ -30,6 +31,7 @@ export class StatusPagesPage {
     async navigateViaSidebar() {
         await this.page.getByRole('link', { name: 'Status Pages' }).click();
         await expect(this.page).toHaveURL(/.*status-pages/);
+        await this.page.waitForLoadState('networkidle');
     }
 
     /** Get the row locator for a specific status page by slug */
@@ -134,6 +136,7 @@ export class StatusPagesPage {
 
     /** Wait for the status pages to load */
     async waitForLoad() {
+        await this.page.waitForLoadState('networkidle');
         await expect(this.page.getByRole('heading', { name: 'Status Pages' })).toBeVisible({ timeout: 10000 });
         // Wait for at least one row to appear (Global Status is always present)
         await expect(this.getRow('all')).toBeVisible({ timeout: 10000 });
@@ -154,6 +157,7 @@ export class StatusPagesPage {
                 showUptimeBars: true,
                 showUptimePercentage: true,
                 showIncidentHistory: true,
+                uptimeDaysRange: 90,
             }
         });
     }

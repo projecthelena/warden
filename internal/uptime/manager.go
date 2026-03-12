@@ -841,7 +841,7 @@ func (m *Manager) retentionWorker() {
 	defer m.wg.Done()
 
 	prune := func() {
-		days := 30 // Default
+		days := 365 // Default
 		if val, err := m.store.GetSetting("data_retention_days"); err == nil {
 			if i, err := strconv.Atoi(val); err == nil && i > 0 {
 				days = i
