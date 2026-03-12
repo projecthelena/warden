@@ -83,7 +83,7 @@ func TestUpdateSettings(t *testing.T) {
 	_, settingsH, _, _, s := setupTest(t)
 
 	payload := map[string]string{
-		"data_retention_days": "45",
+		"data_retention_days": "120",
 	}
 	body, _ := json.Marshal(payload)
 	req := httptest.NewRequest("PATCH", "/api/settings", bytes.NewBuffer(body))
@@ -102,8 +102,8 @@ func TestUpdateSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get setting: %v", err)
 	}
-	if val != "45" {
-		t.Errorf("Expected 45, got %s", val)
+	if val != "120" {
+		t.Errorf("Expected 120, got %s", val)
 	}
 }
 

@@ -2,7 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn, formatDate } from "@/lib/utils";
 import { Incident, IncidentUpdate } from "@/lib/store";
-import { CheckCircle2, ChevronDown, Clock, History } from "lucide-react";
+import { CheckCircle2, ChevronDown, Clock } from "lucide-react";
 import { useState } from "react";
 
 interface PastIncident extends Incident {
@@ -18,14 +18,17 @@ interface PastIncidentsSectionProps {
 const severityConfig = {
     critical: {
         color: "text-red-500 bg-red-500/10 border-red-500/30",
+        borderColor: "border-l-red-500",
         label: "Critical",
     },
     major: {
         color: "text-orange-500 bg-orange-500/10 border-orange-500/30",
+        borderColor: "border-l-orange-500",
         label: "Major",
     },
     minor: {
         color: "text-yellow-500 bg-yellow-500/10 border-yellow-500/30",
+        borderColor: "border-l-yellow-500",
         label: "Minor",
     },
 };
@@ -96,10 +99,13 @@ function PastIncidentCard({ incident, timezone }: { incident: PastIncident; time
 
     return (
         <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-            <div className="rounded-lg border border-border/50 bg-card/30 overflow-hidden">
+            <div className={cn(
+                "rounded-xl border border-border/50 bg-card/50 hover:bg-card/80 overflow-hidden transition-colors border-l-2",
+                severity.borderColor
+            )}>
                 <CollapsibleTrigger asChild>
                     <button
-                        className="w-full px-4 py-3 flex items-start justify-between gap-4 text-left hover:bg-accent/30 transition-colors"
+                        className="w-full px-4 py-3 flex items-start justify-between gap-4 text-left hover:bg-accent/20 transition-colors"
                     >
                         <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
@@ -190,10 +196,13 @@ function DateGroup({
 
 function EmptyState() {
     return (
-        <div className="flex flex-col items-center justify-center py-8 text-muted-foreground/60">
-            <CheckCircle2 className="w-8 h-8 mb-2 text-emerald-500/30" />
-            <p className="text-sm">No incidents reported</p>
-            <p className="text-xs opacity-70">in the last 14 days</p>
+        <div className="flex flex-col items-center justify-center py-10 text-muted-foreground/60">
+            <div className="relative">
+                <div className="absolute inset-0 bg-emerald-500/10 blur-xl rounded-full" />
+                <CheckCircle2 className="relative w-10 h-10 mb-3 text-emerald-500/40" />
+            </div>
+            <p className="text-sm font-medium text-muted-foreground/70">No incidents reported</p>
+            <p className="text-xs opacity-70 mt-0.5">Everything has been running smoothly</p>
         </div>
     );
 }
@@ -203,12 +212,12 @@ export function PastIncidentsSection({ incidents, timezone }: PastIncidentsSecti
 
     if (incidents.length === 0) {
         return (
-            <div className="animate-in slide-in-from-bottom-4 duration-700 fade-in fill-mode-backwards">
-                <div className="mb-3 px-1 flex items-center gap-2">
-                    <History className="w-4 h-4 text-muted-foreground" />
-                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            <div className="animate-in slide-in-from-bottom-3 duration-500 fade-in fill-mode-backwards">
+                <div className="flex items-center gap-3 mb-4">
+                    <h3 className="text-base font-semibold text-foreground">
                         Past Incidents
                     </h3>
+                    <div className="flex-1 h-px bg-border/50" />
                 </div>
                 <EmptyState />
             </div>
@@ -216,15 +225,15 @@ export function PastIncidentsSection({ incidents, timezone }: PastIncidentsSecti
     }
 
     return (
-        <div className="animate-in slide-in-from-bottom-4 duration-700 fade-in fill-mode-backwards space-y-6">
-            <div className="flex items-center gap-2 px-1">
-                <History className="w-4 h-4 text-muted-foreground" />
-                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+        <div className="animate-in slide-in-from-bottom-3 duration-500 fade-in fill-mode-backwards space-y-6">
+            <div className="flex items-center gap-3">
+                <h3 className="text-base font-semibold text-foreground">
                     Past Incidents
                 </h3>
                 <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">
                     {incidents.length}
                 </Badge>
+                <div className="flex-1 h-px bg-border/50" />
             </div>
 
             <div className="space-y-6">

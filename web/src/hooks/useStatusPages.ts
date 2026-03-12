@@ -24,6 +24,7 @@ export interface StatusPageUpdatePayload {
     showUptimeBars?: boolean;
     showUptimePercentage?: boolean;
     showIncidentHistory?: boolean;
+    uptimeDaysRange?: number;
 }
 
 async function toggleStatusPageReq(payload: StatusPageUpdatePayload) {

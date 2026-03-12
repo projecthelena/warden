@@ -22,13 +22,15 @@ type StatusPage struct {
 	ShowUptimeBars       bool      `json:"showUptimeBars"`
 	ShowUptimePercentage bool      `json:"showUptimePercentage"`
 	ShowIncidentHistory  bool      `json:"showIncidentHistory"`
+	UptimeDaysRange      int       `json:"uptimeDaysRange"`
 }
 
 // GetStatusPages returns all status page configs
 func (s *Store) GetStatusPages() ([]StatusPage, error) {
 	rows, err := s.db.Query(`SELECT id, slug, title, group_id, public, enabled, created_at,
 		COALESCE(description, ''), COALESCE(logo_url, ''), COALESCE(favicon_url, ''), COALESCE(accent_color, ''), COALESCE(theme, 'system'),
-		COALESCE(show_uptime_bars, TRUE), COALESCE(show_uptime_percentage, TRUE), COALESCE(show_incident_history, TRUE)
+		COALESCE(show_uptime_bars, TRUE), COALESCE(show_uptime_percentage, TRUE), COALESCE(show_incident_history, TRUE),
+		COALESCE(uptime_days_range, 90)
 		FROM status_pages`)
 	if err != nil {
 		return nil, err
@@ -41,7 +43,7 @@ func (s *Store) GetStatusPages() ([]StatusPage, error) {
 		var groupID sql.NullString
 		if err := rows.Scan(&p.ID, &p.Slug, &p.Title, &groupID, &p.Public, &p.Enabled, &p.CreatedAt,
 			&p.Description, &p.LogoURL, &p.FaviconURL, &p.AccentColor, &p.Theme,
-			&p.ShowUptimeBars, &p.ShowUptimePercentage, &p.ShowIncidentHistory); err != nil {
+			&p.ShowUptimeBars, &p.ShowUptimePercentage, &p.ShowIncidentHistory, &p.UptimeDaysRange); err != nil {
 			return nil, err
 		}
 		if groupID.Valid {
@@ -59,11 +61,12 @@ func (s *Store) GetStatusPageBySlug(slug string) (*StatusPage, error) {
 	var groupID sql.NullString
 	err := s.db.QueryRow(s.rebind(`SELECT id, slug, title, group_id, public, enabled, created_at,
 		COALESCE(description, ''), COALESCE(logo_url, ''), COALESCE(favicon_url, ''), COALESCE(accent_color, ''), COALESCE(theme, 'system'),
-		COALESCE(show_uptime_bars, TRUE), COALESCE(show_uptime_percentage, TRUE), COALESCE(show_incident_history, TRUE)
+		COALESCE(show_uptime_bars, TRUE), COALESCE(show_uptime_percentage, TRUE), COALESCE(show_incident_history, TRUE),
+		COALESCE(uptime_days_range, 90)
 		FROM status_pages WHERE slug = ?`), slug).
 		Scan(&p.ID, &p.Slug, &p.Title, &groupID, &p.Public, &p.Enabled, &p.CreatedAt,
 			&p.Description, &p.LogoURL, &p.FaviconURL, &p.AccentColor, &p.Theme,
-			&p.ShowUptimeBars, &p.ShowUptimePercentage, &p.ShowIncidentHistory)
+			&p.ShowUptimeBars, &p.ShowUptimePercentage, &p.ShowIncidentHistory, &p.UptimeDaysRange)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -92,6 +95,7 @@ type StatusPageInput struct {
 	ShowUptimeBars       bool
 	ShowUptimePercentage bool
 	ShowIncidentHistory  bool
+	UptimeDaysRange      int
 }
 
 // UpsertStatusPage creates or updates a status page config
@@ -110,6 +114,7 @@ func (s *Store) UpsertStatusPage(slug, title string, groupID *string, public boo
 		ShowUptimeBars:       true,
 		ShowUptimePercentage: true,
 		ShowIncidentHistory:  true,
+		UptimeDaysRange:      90,
 	})
 }
 
@@ -118,8 +123,8 @@ func (s *Store) UpsertStatusPageFull(input StatusPageInput) error {
 	var err error
 	if s.IsPostgres() {
 		_, err = s.db.Exec(`
-			INSERT INTO status_pages (slug, title, group_id, public, enabled, description, logo_url, favicon_url, accent_color, theme, show_uptime_bars, show_uptime_percentage, show_incident_history)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+			INSERT INTO status_pages (slug, title, group_id, public, enabled, description, logo_url, favicon_url, accent_color, theme, show_uptime_bars, show_uptime_percentage, show_incident_history, uptime_days_range)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 			ON CONFLICT(slug) DO UPDATE SET
 				title=excluded.title,
 				group_id=excluded.group_id,
@@ -132,18 +137,19 @@ func (s *Store) UpsertStatusPageFull(input StatusPageInput) error {
 				theme=excluded.theme,
 				show_uptime_bars=excluded.show_uptime_bars,
 				show_uptime_percentage=excluded.show_uptime_percentage,
-				show_incident_history=excluded.show_incident_history
+				show_incident_history=excluded.show_incident_history,
+				uptime_days_range=excluded.uptime_days_range
 		`, input.Slug, input.Title, input.GroupID, input.Public, input.Enabled,
 			input.Description, input.LogoURL, input.FaviconURL, input.AccentColor, input.Theme,
-			input.ShowUptimeBars, input.ShowUptimePercentage, input.ShowIncidentHistory)
+			input.ShowUptimeBars, input.ShowUptimePercentage, input.ShowIncidentHistory, input.UptimeDaysRange)
 	} else {
 		// SQLite: INSERT OR REPLACE (slug has UNIQUE constraint)
 		_, err = s.db.Exec(`
-			INSERT OR REPLACE INTO status_pages (slug, title, group_id, public, enabled, description, logo_url, favicon_url, accent_color, theme, show_uptime_bars, show_uptime_percentage, show_incident_history)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT OR REPLACE INTO status_pages (slug, title, group_id, public, enabled, description, logo_url, favicon_url, accent_color, theme, show_uptime_bars, show_uptime_percentage, show_incident_history, uptime_days_range)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, input.Slug, input.Title, input.GroupID, input.Public, input.Enabled,
 			input.Description, input.LogoURL, input.FaviconURL, input.AccentColor, input.Theme,
-			input.ShowUptimeBars, input.ShowUptimePercentage, input.ShowIncidentHistory)
+			input.ShowUptimeBars, input.ShowUptimePercentage, input.ShowIncidentHistory, input.UptimeDaysRange)
 	}
 	return err
 }

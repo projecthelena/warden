@@ -117,6 +117,7 @@ export interface StatusPage {
     showUptimeBars?: boolean;
     showUptimePercentage?: boolean;
     showIncidentHistory?: boolean;
+    uptimeDaysRange?: number;
 }
 
 export interface StatusPageConfig {
@@ -128,6 +129,7 @@ export interface StatusPageConfig {
     showUptimeBars: boolean;
     showUptimePercentage: boolean;
     showIncidentHistory: boolean;
+    uptimeDaysRange: number;
 }
 
 export interface SystemIncident {
@@ -1113,7 +1115,7 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
             });
             set((state) => ({
                 settings: {
-                    ...(state.settings || { latency_threshold: "1000", data_retention_days: "30" }),
+                    ...(state.settings || { latency_threshold: "1000", data_retention_days: "365" }),
                     ...newSettings
                 }
             }));

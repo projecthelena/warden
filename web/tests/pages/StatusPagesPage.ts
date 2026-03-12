@@ -12,6 +12,7 @@ export interface StatusPageConfig {
     showUptimeBars?: boolean;
     showUptimePercentage?: boolean;
     showIncidentHistory?: boolean;
+    uptimeDaysRange?: number;
 }
 
 export class StatusPagesPage {
@@ -154,6 +155,7 @@ export class StatusPagesPage {
                 showUptimeBars: true,
                 showUptimePercentage: true,
                 showIncidentHistory: true,
+                uptimeDaysRange: 90,
             }
         });
     }

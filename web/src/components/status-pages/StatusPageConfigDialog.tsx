@@ -27,11 +27,12 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
     const [description, setDescription] = useState("");
     const [logoUrl, setLogoUrl] = useState("");
     const [faviconUrl, setFaviconUrl] = useState("");
-    const [accentColor, setAccentColor] = useState("");
+    const [accentColor] = useState("");
     const [theme, setTheme] = useState<'light' | 'dark' | 'system'>("system");
     const [showUptimeBars, setShowUptimeBars] = useState(true);
     const [showUptimePercentage, setShowUptimePercentage] = useState(true);
     const [showIncidentHistory, setShowIncidentHistory] = useState(true);
+    const [uptimeDaysRange, setUptimeDaysRange] = useState(90);
 
     // Preview state
     const [logoError, setLogoError] = useState(false);
@@ -44,11 +45,12 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
             setDescription(page.description || "");
             setLogoUrl(page.logoUrl || "");
             setFaviconUrl(page.faviconUrl || "");
-            setAccentColor(page.accentColor || "");
+            // accentColor preserved for API compatibility but not exposed in UI
             setTheme(page.theme || "system");
             setShowUptimeBars(page.showUptimeBars ?? true);
             setShowUptimePercentage(page.showUptimePercentage ?? true);
             setShowIncidentHistory(page.showIncidentHistory ?? true);
+            setUptimeDaysRange(page.uptimeDaysRange ?? 90);
             setLogoError(false);
             setFaviconError(false);
         }
@@ -82,6 +84,7 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
                 showUptimeBars,
                 showUptimePercentage,
                 showIncidentHistory,
+                uptimeDaysRange,
             });
             toast({
                 title: "Configuration Saved",
@@ -95,11 +98,6 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
                 variant: "destructive",
             });
         }
-    };
-
-    const isValidHexColor = (color: string) => {
-        if (!color) return true;
-        return /^#[0-9A-Fa-f]{6}$/.test(color);
     };
 
     const isValidImageUrl = (url: string) => {
@@ -240,48 +238,18 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
                             )}
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="accentColor">Accent Color</Label>
-                                <div className="flex gap-2">
-                                    <Input
-                                        id="accentColor"
-                                        placeholder="#00A3FF"
-                                        value={accentColor}
-                                        onChange={(e) => setAccentColor(e.target.value)}
-                                        className={`flex-1 ${!isValidHexColor(accentColor) ? "border-destructive" : ""}`}
-                                    />
-                                    <label className="relative w-10 h-10 shrink-0 cursor-pointer">
-                                        <input
-                                            type="color"
-                                            value={accentColor || "#3b82f6"}
-                                            onChange={(e) => setAccentColor(e.target.value)}
-                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                        />
-                                        <div
-                                            className="w-full h-full rounded-md border border-border"
-                                            style={{ backgroundColor: accentColor || "#3b82f6" }}
-                                        />
-                                    </label>
-                                </div>
-                                {!isValidHexColor(accentColor) && (
-                                    <p className="text-xs text-destructive">Must be #RRGGBB format</p>
-                                )}
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label htmlFor="theme">Theme</Label>
-                                <Select value={theme} onValueChange={(v) => setTheme(v as 'light' | 'dark' | 'system')}>
-                                    <SelectTrigger id="theme">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="system">System</SelectItem>
-                                        <SelectItem value="light">Light</SelectItem>
-                                        <SelectItem value="dark">Dark</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="theme">Theme</Label>
+                            <Select value={theme} onValueChange={(v) => setTheme(v as 'light' | 'dark' | 'system')}>
+                                <SelectTrigger id="theme">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="system">System</SelectItem>
+                                    <SelectItem value="light">Light</SelectItem>
+                                    <SelectItem value="dark">Dark</SelectItem>
+                                </SelectContent>
+                            </Select>
                         </div>
                     </div>
 
@@ -295,7 +263,7 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
                             <div className="flex items-center justify-between gap-4">
                                 <div className="min-w-0">
                                     <Label htmlFor="showUptimeBars" className="cursor-pointer">Show Uptime Bars</Label>
-                                    <p className="text-xs text-muted-foreground">Display 90-day uptime history bars</p>
+                                    <p className="text-xs text-muted-foreground">Display uptime history bars</p>
                                 </div>
                                 <Switch
                                     id="showUptimeBars"
@@ -304,6 +272,29 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
                                     className="shrink-0"
                                 />
                             </div>
+
+                            {showUptimeBars && (
+                                <div className="ml-4 pl-3 border-l-2 border-border space-y-2">
+                                    <Label htmlFor="uptimeDaysRange">Uptime Range</Label>
+                                    <Select
+                                        value={String(uptimeDaysRange)}
+                                        onValueChange={(v) => setUptimeDaysRange(Number(v))}
+                                    >
+                                        <SelectTrigger id="uptimeDaysRange">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="7">7 days</SelectItem>
+                                            <SelectItem value="30">30 days</SelectItem>
+                                            <SelectItem value="60">60 days</SelectItem>
+                                            <SelectItem value="90">90 days</SelectItem>
+                                            <SelectItem value="180">180 days</SelectItem>
+                                            <SelectItem value="365">365 days</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                    <p className="text-xs text-muted-foreground">How many days of uptime history to display</p>
+                                </div>
+                            )}
 
                             <div className="flex items-center justify-between gap-4">
                                 <div className="min-w-0">
@@ -340,7 +331,7 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
                     </Button>
                     <Button
                         onClick={handleSave}
-                        disabled={toggleMutation.isPending || !title.trim() || !isValidHexColor(accentColor) || !isValidImageUrl(logoUrl) || !isValidImageUrl(faviconUrl)}
+                        disabled={toggleMutation.isPending || !title.trim() || !isValidImageUrl(logoUrl) || !isValidImageUrl(faviconUrl)}
                         className="w-full sm:w-auto"
                     >
                         {toggleMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}

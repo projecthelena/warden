@@ -99,7 +99,7 @@ test.describe('Status Page - Full E2E Suite', () => {
 
             // The page should have group sections (even if empty)
             // Look for the status banner which always appears
-            await expect(page.locator('.rounded-xl.border').first()).toBeVisible({ timeout: 10000 });
+            await expect(page.locator('.rounded-2xl.border').first()).toBeVisible({ timeout: 10000 });
         });
 
         test('Status page shows refresh countdown', async ({ page }) => {
@@ -442,6 +442,28 @@ test.describe('Status Page - Full E2E Suite', () => {
             // "Past Incidents" or "Incident History" section should not appear
             await expect(page.getByText('Incident History')).toHaveCount(0, { timeout: 5000 });
             await expect(page.getByText('Past Incidents')).toHaveCount(0, { timeout: 5000 });
+        });
+
+        test('Uptime bar range can be configured to 30 days', async ({ page }) => {
+            // Set range to 30 days
+            await statusPages.configureViaAPI('all', {
+                enabled: true,
+                public: true,
+                title: 'Global Status',
+                showUptimeBars: true,
+                uptimeDaysRange: 30,
+            });
+
+            // Verify it persists via API
+            const res = await page.request.get('/api/status-pages');
+            const data = await res.json();
+            const allPage = data.pages.find((p: { slug: string }) => p.slug === 'all');
+            expect(allPage.uptimeDaysRange).toBe(30);
+
+            // Visit public page and verify label
+            await page.goto('/status/all');
+            await page.waitForLoadState('networkidle');
+            await expect(page.getByText('30 days ago')).toBeVisible({ timeout: 10000 });
         });
 
     });
@@ -829,7 +851,7 @@ test.describe('Status Page - Full E2E Suite', () => {
 
             // If groups are empty, "No monitors configured" may appear
             // At minimum, the status banner should be present
-            await expect(page.locator('.rounded-xl.border').first()).toBeVisible({ timeout: 10000 });
+            await expect(page.locator('.rounded-2xl.border').first()).toBeVisible({ timeout: 10000 });
         });
 
         test('Invalid slug shows error UI', async ({ page }) => {
@@ -941,7 +963,7 @@ test.describe('Status Page - Full E2E Suite', () => {
             await expect(page.getByText(/E2E Very Long Incident Title/)).toBeVisible({ timeout: 10000 });
 
             // Page should not be broken - status banner still visible
-            await expect(page.locator('.rounded-xl.border').first()).toBeVisible();
+            await expect(page.locator('.rounded-2xl.border').first()).toBeVisible();
         });
 
         test('Empty incident history shows appropriate state', async ({ page }) => {

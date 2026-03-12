@@ -35,7 +35,7 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	// Data Retention
 	retention, err := h.store.GetSetting("data_retention_days")
 	if err != nil {
-		retention = "30"
+		retention = "365"
 	}
 
 	// Slack Notifications
@@ -149,6 +149,19 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 		if err != nil || i < 1 {
 			http.Error(w, "Invalid data_retention_days", http.StatusBadRequest)
 			return
+		}
+
+		// Cross-validate: no status page should have uptime_days_range > new retention
+		pages, err := h.store.GetStatusPages()
+		if err != nil {
+			http.Error(w, "Failed to validate against status pages", http.StatusInternalServerError)
+			return
+		}
+		for _, p := range pages {
+			if p.UptimeDaysRange > i {
+				writeError(w, http.StatusBadRequest, "cannot reduce retention below "+strconv.Itoa(p.UptimeDaysRange)+" days (used by status page \""+p.Title+"\")")
+				return
+			}
 		}
 
 		if err := h.store.SetSetting("data_retention_days", val); err != nil {

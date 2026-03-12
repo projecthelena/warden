@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -62,6 +63,7 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		ShowUptimeBars       bool    `json:"showUptimeBars"`
 		ShowUptimePercentage bool    `json:"showUptimePercentage"`
 		ShowIncidentHistory  bool    `json:"showIncidentHistory"`
+		UptimeDaysRange      int     `json:"uptimeDaysRange"`
 	}
 
 	var result []StatusPageDTO
@@ -90,6 +92,7 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		ShowUptimeBars:       true,
 		ShowUptimePercentage: true,
 		ShowIncidentHistory:  true,
+		UptimeDaysRange:      90,
 	}
 	if globalPage != nil {
 		globalDTO.Title = globalPage.Title
@@ -103,6 +106,10 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		globalDTO.ShowUptimeBars = globalPage.ShowUptimeBars
 		globalDTO.ShowUptimePercentage = globalPage.ShowUptimePercentage
 		globalDTO.ShowIncidentHistory = globalPage.ShowIncidentHistory
+		globalDTO.UptimeDaysRange = globalPage.UptimeDaysRange
+		if globalDTO.UptimeDaysRange == 0 {
+			globalDTO.UptimeDaysRange = 90
+		}
 		if globalDTO.Theme == "" {
 			globalDTO.Theme = "system"
 		}
@@ -121,6 +128,7 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 			ShowUptimeBars:       true,
 			ShowUptimePercentage: true,
 			ShowIncidentHistory:  true,
+			UptimeDaysRange:      90,
 		}
 
 		if cfg, ok := configMap[g.ID]; ok {
@@ -136,6 +144,10 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 			dto.ShowUptimeBars = cfg.ShowUptimeBars
 			dto.ShowUptimePercentage = cfg.ShowUptimePercentage
 			dto.ShowIncidentHistory = cfg.ShowIncidentHistory
+			dto.UptimeDaysRange = cfg.UptimeDaysRange
+			if dto.UptimeDaysRange == 0 {
+				dto.UptimeDaysRange = 90
+			}
 			if dto.Theme == "" {
 				dto.Theme = "system"
 			}
@@ -173,6 +185,7 @@ func (h *StatusPageHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 		ShowUptimeBars       *bool   `json:"showUptimeBars"`
 		ShowUptimePercentage *bool   `json:"showUptimePercentage"`
 		ShowIncidentHistory  *bool   `json:"showIncidentHistory"`
+		UptimeDaysRange      *int    `json:"uptimeDaysRange"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
@@ -224,6 +237,30 @@ func (h *StatusPageHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 	// Get existing page to preserve defaults
 	existing, _ := h.store.GetStatusPageBySlug(slug)
 
+	// Validate uptimeDaysRange if provided
+	uptimeDaysRange := 90
+	if req.UptimeDaysRange != nil {
+		allowed := map[int]bool{7: true, 30: true, 60: true, 90: true, 180: true, 365: true}
+		if !allowed[*req.UptimeDaysRange] {
+			writeError(w, http.StatusBadRequest, "invalid uptime days range (must be 7, 30, 60, 90, 180, or 365)")
+			return
+		}
+		// Cross-validate against data retention
+		retentionStr, err := h.store.GetSetting("data_retention_days")
+		if err != nil {
+			retentionStr = "365"
+		}
+		retention, err := strconv.Atoi(retentionStr)
+		if err != nil || retention <= 0 {
+			retention = 365
+		}
+		if *req.UptimeDaysRange > retention {
+			writeError(w, http.StatusBadRequest, "uptime days range cannot exceed data retention period ("+retentionStr+" days)")
+			return
+		}
+		uptimeDaysRange = *req.UptimeDaysRange
+	}
+
 	// Build input with defaults
 	input := db.StatusPageInput{
 		Slug:                 slug,
@@ -239,6 +276,7 @@ func (h *StatusPageHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 		ShowUptimeBars:       true,
 		ShowUptimePercentage: true,
 		ShowIncidentHistory:  true,
+		UptimeDaysRange:      uptimeDaysRange,
 	}
 
 	// Apply existing values as defaults
@@ -259,6 +297,12 @@ func (h *StatusPageHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 		input.ShowUptimeBars = existing.ShowUptimeBars
 		input.ShowUptimePercentage = existing.ShowUptimePercentage
 		input.ShowIncidentHistory = existing.ShowIncidentHistory
+		if req.UptimeDaysRange == nil {
+			input.UptimeDaysRange = existing.UptimeDaysRange
+			if input.UptimeDaysRange == 0 {
+				input.UptimeDaysRange = 90
+			}
+		}
 	}
 
 	// Override with request values if provided
@@ -425,8 +469,12 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 				}
 			}
 
-			// Fetch 90-day daily uptime stats from DB
-			uptimeDays, _ := h.store.GetDailyUptimeStats(meta.ID, 90)
+			// Fetch daily uptime stats from DB (configurable range)
+			daysRange := page.UptimeDaysRange
+			if daysRange == 0 {
+				daysRange = 90
+			}
+			uptimeDays, _ := h.store.GetDailyUptimeStats(meta.ID, daysRange)
 			if uptimeDays == nil {
 				uptimeDays = []db.DailyUptimeStat{}
 			}
@@ -665,6 +713,10 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Build config object for public page
+	uptimeDaysRange := page.UptimeDaysRange
+	if uptimeDaysRange == 0 {
+		uptimeDaysRange = 90
+	}
 	config := map[string]any{
 		"description":          page.Description,
 		"logoUrl":              page.LogoURL,
@@ -674,6 +726,7 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 		"showUptimeBars":       page.ShowUptimeBars,
 		"showUptimePercentage": page.ShowUptimePercentage,
 		"showIncidentHistory":  page.ShowIncidentHistory,
+		"uptimeDaysRange":      uptimeDaysRange,
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
