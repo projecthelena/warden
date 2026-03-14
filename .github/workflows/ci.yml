@@ -11,13 +11,43 @@ env:
   GO_VERSION: "1.25.8"
 
 jobs:
-  build-and-test:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      backend: ${{ steps.filter.outputs.backend }}
+      app: ${{ steps.filter.outputs.app }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            frontend:
+              - 'web/**'
+            backend:
+              - 'cmd/**'
+              - 'internal/**'
+              - 'go.mod'
+              - 'go.sum'
+            app:
+              - 'web/**'
+              - 'cmd/**'
+              - 'internal/**'
+              - 'go.mod'
+              - 'go.sum'
+
+  frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 1. Setup Environment
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -25,42 +55,42 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+        working-directory: web
+
+      - name: Unit Tests
+        run: npm run test
+        working-directory: web
+
+  backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      # Playwright Cache
-      - name: Cache Playwright Binaries
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
-
-      # 2. Install Dependencies (Frontend & Playwright)
-      - name: Install dependencies
-        working-directory: web
-        run: |
-          npm ci
-          npx playwright install --with-deps
-
-      # 3. Linting
-      - name: Go Lint
+      - name: Lint
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.6
 
-      - name: Frontend Lint
-        run: npm run lint
-        working-directory: web
-
-      # 4. Security Scanning
-      - name: Go Security Scan (gosec)
+      - name: Security Scan (gosec)
         run: |
           go install github.com/securego/gosec/v2/cmd/gosec@latest
           gosec -exclude-dir=web ./...
 
-      - name: Go Vulnerability Check (govulncheck)
+      - name: Vulnerability Check (govulncheck)
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
@@ -74,25 +104,50 @@ jobs:
           exit-code: '1'
           ignore-unfixed: true
 
-      # 5. Unit Tests
-      - name: Frontend Unit Tests
-        run: npm run test
-        working-directory: web
-
-      - name: Backend Unit Tests
+      - name: Unit Tests
         run: |
           go clean -testcache
           go test ./...
 
-      # 6. Build (Required for E2E)
+  e2e:
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Cache Playwright Binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
+
+      - name: Install dependencies
+        working-directory: web
+        run: |
+          npm ci
+          npx playwright install --with-deps
+
       - name: Build Frontend
         working-directory: web
         run: npm run build
 
-      - name: Build Backend (Production Binary)
+      - name: Build Backend
         run: go build -o warden ./cmd/dashboard
 
-      # 7. E2E Tests
       - name: Start Full Stack
         env:
           ADMIN_SECRET: warden-e2e-magic-key

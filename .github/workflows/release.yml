@@ -33,8 +33,9 @@ jobs:
       - name: Determine Next Version
         id: version
         run: |
-          # Get the latest tag, default to v0.0.0 if none
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          # Get the latest tag by version sort, default to v0.0.0 if none
+          LATEST_TAG=$(git tag --sort=-v:refname | head -n 1)
+          LATEST_TAG=${LATEST_TAG:-v0.0.0}
           echo "Current version: $LATEST_TAG"
 
           if [ -n "${{ inputs.custom_version }}" ]; then
@@ -79,43 +80,104 @@ jobs:
 
       - name: Build Changelog
         id: build_changelog
-        uses: mikepenz/release-changelog-builder-action@v5
-        with:
-          configurationJson: |
-            {
-              "categories": [
-                {
-                  "title": "## 🚀 Features",
-                  "labels": ["feat", "feature"]
-                },
-                {
-                  "title": "## 🐛 Bug Fixes",
-                  "labels": ["fix", "bug"]
-                },
-                {
-                  "title": "## ⚡ Performance",
-                  "labels": ["perf"]
-                },
-                {
-                  "title": "## ♻️ Refactor",
-                  "labels": ["refactor"]
-                },
-                {
-                  "title": "## 📦 Build & Chore",
-                  "labels": ["build", "ci", "chore", "test"]
-                }
-              ],
-              "template": "#{{CHANGELOG}}"
-            }
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST_TAG=$(git tag --sort=-v:refname | grep -v "^${{ steps.version.outputs.tag }}$" | head -n 1)
+          if [ -z "$LATEST_TAG" ]; then
+            RAW=$(git log --pretty=format:"COMMIT_START%nSUBJECT:%s%nBODY:%b%nCOMMIT_END" --no-merges)
+          else
+            RAW=$(git log "${LATEST_TAG}..HEAD" --pretty=format:"COMMIT_START%nSUBJECT:%s%nBODY:%b%nCOMMIT_END" --no-merges)
+          fi
+
+          # Extract individual changelog entries from commits
+          # For squash merges with "* type: msg" body lines, use those instead of the subject
+          ENTRIES=""
+          SUBJECT=""
+          BODY_ENTRIES=""
+          IN_COMMIT=false
+
+          while IFS= read -r line; do
+            if [ "$line" = "COMMIT_START" ]; then
+              IN_COMMIT=true
+              SUBJECT=""
+              BODY_ENTRIES=""
+              continue
+            fi
+
+            if [ "$line" = "COMMIT_END" ]; then
+              if [ -n "$BODY_ENTRIES" ]; then
+                ENTRIES="${ENTRIES}${BODY_ENTRIES}"
+              elif [ -n "$SUBJECT" ]; then
+                ENTRIES="${ENTRIES}${SUBJECT}"$'\n'
+              fi
+              IN_COMMIT=false
+              continue
+            fi
+
+            if [[ "$line" == SUBJECT:* ]]; then
+              SUBJECT="${line#SUBJECT:}"
+              continue
+            fi
+
+            if [[ "$line" == BODY:* ]]; then
+              line="${line#BODY:}"
+            fi
+
+            # Parse body lines that match "* type: msg" pattern
+            if [[ "$line" == \** ]]; then
+              entry=$(echo "$line" | sed -E 's/^\* *//')
+              if echo "$entry" | grep -qiE "^(feat|fix|perf|refactor|build|ci|chore|test|docs)(\(.*\))?:"; then
+                BODY_ENTRIES="${BODY_ENTRIES}${entry}"$'\n'
+              fi
+            fi
+          done <<< "$RAW"
+
+          FEATURES=""
+          FIXES=""
+          PERFORMANCE=""
+          REFACTOR=""
+          CHORE=""
+          OTHER=""
+
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            if echo "$line" | grep -qiE "^feat(\(.*\))?:"; then
+              msg=$(echo "$line" | sed -E 's/^feat(\(.*\))?: *//')
+              FEATURES="${FEATURES}- ${msg}\n"
+            elif echo "$line" | grep -qiE "^fix(\(.*\))?:"; then
+              msg=$(echo "$line" | sed -E 's/^fix(\(.*\))?: *//')
+              FIXES="${FIXES}- ${msg}\n"
+            elif echo "$line" | grep -qiE "^perf(\(.*\))?:"; then
+              msg=$(echo "$line" | sed -E 's/^perf(\(.*\))?: *//')
+              PERFORMANCE="${PERFORMANCE}- ${msg}\n"
+            elif echo "$line" | grep -qiE "^refactor(\(.*\))?:"; then
+              msg=$(echo "$line" | sed -E 's/^refactor(\(.*\))?: *//')
+              REFACTOR="${REFACTOR}- ${msg}\n"
+            elif echo "$line" | grep -qiE "^(build|ci|chore|test|docs)(\(.*\))?:"; then
+              msg=$(echo "$line" | sed -E 's/^(build|ci|chore|test|docs)(\(.*\))?: *//')
+              CHORE="${CHORE}- ${msg}\n"
+            else
+              OTHER="${OTHER}- ${line}\n"
+            fi
+          done <<< "$ENTRIES"
+
+          CHANGELOG=""
+          [ -n "$FEATURES" ] && CHANGELOG="${CHANGELOG}## 🚀 Features\n${FEATURES}\n"
+          [ -n "$FIXES" ] && CHANGELOG="${CHANGELOG}## 🐛 Bug Fixes\n${FIXES}\n"
+          [ -n "$PERFORMANCE" ] && CHANGELOG="${CHANGELOG}## ⚡ Performance\n${PERFORMANCE}\n"
+          [ -n "$REFACTOR" ] && CHANGELOG="${CHANGELOG}## ♻️ Refactor\n${REFACTOR}\n"
+          [ -n "$CHORE" ] && CHANGELOG="${CHANGELOG}## 📦 Build & Chore\n${CHORE}\n"
+          [ -n "$OTHER" ] && CHANGELOG="${CHANGELOG}## 📝 Other\n${OTHER}\n"
+
+          # Write to file to preserve formatting
+          echo -e "$CHANGELOG" > /tmp/changelog.md
+          echo "changelog_file=/tmp/changelog.md" >> $GITHUB_OUTPUT
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: Release ${{ steps.version.outputs.tag }}
-          body: ${{ steps.build_changelog.outputs.changelog }}
+          body_path: ${{ steps.build_changelog.outputs.changelog_file }}
           draft: false
           prerelease: false
 
