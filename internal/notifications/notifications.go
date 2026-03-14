@@ -7,6 +7,9 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/projecthelena/warden/internal/db"
@@ -234,6 +237,112 @@ func SendDirect(channelType, configJSON string, event NotificationEvent) error {
 		return fmt.Errorf("unsupported channel type: %s", channelType)
 	}
 	return notifier.Send(event)
+}
+
+// SendDigest dispatches a daily digest summary to all enabled notification channels.
+func (s *Service) SendDigest(events []db.DigestEvent) {
+	if len(events) == 0 {
+		return
+	}
+
+	channels, err := s.store.GetNotificationChannels()
+	if err != nil {
+		log.Printf("Digest: failed to fetch channels: %v", err)
+		return
+	}
+
+	// Group events by monitor
+	type monitorEvents struct {
+		name   string
+		counts map[string]int
+	}
+	byMonitor := make(map[string]*monitorEvents)
+	var monitorOrder []string
+
+	for _, e := range events {
+		me, ok := byMonitor[e.MonitorID]
+		if !ok {
+			me = &monitorEvents{name: e.MonitorName, counts: make(map[string]int)}
+			byMonitor[e.MonitorID] = me
+			monitorOrder = append(monitorOrder, e.MonitorID)
+		}
+		me.counts[e.EventType]++
+	}
+
+	// Build summary lines
+	var lines []string
+	for _, mid := range monitorOrder {
+		me := byMonitor[mid]
+		var parts []string
+		// Sort event types for consistent output
+		var types []string
+		for t := range me.counts {
+			types = append(types, t)
+		}
+		sort.Strings(types)
+		for _, t := range types {
+			parts = append(parts, t+" ("+strconv.Itoa(me.counts[t])+"x)")
+		}
+		lines = append(lines, "- "+me.name+": "+strings.Join(parts, ", "))
+	}
+
+	title := "Daily Monitoring Summary (" + strconv.Itoa(len(events)) + " events)"
+	body := strings.Join(lines, "\n")
+
+	for _, ch := range channels {
+		if !ch.Enabled {
+			continue
+		}
+
+		switch ch.Type {
+		case "slack":
+			n := NewSlackNotifier(ch.Config)
+			if err := n.sendDigest(title, body); err != nil {
+				log.Printf("Digest: failed to send to Slack (%s): %v", ch.Name, err)
+			}
+		case "webhook":
+			n := NewWebhookNotifier(ch.Config)
+			if err := n.sendDigest(title, body, events); err != nil {
+				log.Printf("Digest: failed to send to webhook (%s): %v", ch.Name, err)
+			}
+		}
+	}
+}
+
+func (n *SlackNotifier) sendDigest(title, body string) error {
+	webhookURL, ok := n.config["webhookUrl"].(string)
+	if !ok || webhookURL == "" {
+		return fmt.Errorf("webhookUrl missing or invalid")
+	}
+
+	payload := map[string]interface{}{
+		"text": ":bar_chart: *" + title + "*",
+		"attachments": []map[string]interface{}{
+			{
+				"color": "#3498db",
+				"text":  body,
+			},
+		},
+	}
+
+	return sendJSON(webhookURL, payload)
+}
+
+func (n *WebhookNotifier) sendDigest(title, body string, events []db.DigestEvent) error {
+	webhookURL, ok := n.config["webhookUrl"].(string)
+	if !ok || webhookURL == "" {
+		return fmt.Errorf("webhookUrl missing or invalid")
+	}
+
+	payload := map[string]interface{}{
+		"type":       "digest",
+		"title":      title,
+		"summary":    body,
+		"eventCount": len(events),
+		"timestamp":  time.Now().Format(time.RFC3339),
+	}
+
+	return sendJSON(webhookURL, payload)
 }
 
 func sendJSON(targetURL string, payload interface{}) error {

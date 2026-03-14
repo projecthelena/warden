@@ -192,6 +192,24 @@ function GeneralSettings() {
     );
 }
 
+const EVENT_TOGGLES = [
+    { key: "notification.event.down.enabled", label: "Down", description: "Monitor is confirmed down" },
+    { key: "notification.event.up.enabled", label: "Recovered", description: "Monitor recovered from down or degraded" },
+    { key: "notification.event.degraded.enabled", label: "Degraded", description: "High latency detected" },
+    { key: "notification.event.flapping.enabled", label: "Flapping", description: "Monitor oscillating between states" },
+    { key: "notification.event.stabilized.enabled", label: "Stabilized", description: "Monitor stopped flapping" },
+    { key: "notification.event.ssl_expiring.enabled", label: "SSL Expiring", description: "SSL certificate nearing expiry" },
+] as const;
+
+const DIGEST_EVENT_OPTIONS = [
+    { value: "degraded", label: "Degraded" },
+    { value: "flapping", label: "Flapping" },
+    { value: "stabilized", label: "Stabilized" },
+    { value: "ssl_expiring", label: "SSL Expiring" },
+    { value: "down", label: "Down" },
+    { value: "up", label: "Recovered" },
+] as const;
+
 function NotificationIntelligence() {
     const { settings, fetchSettings, updateSettings } = useMonitorStore();
     const { toast } = useToast();
@@ -201,6 +219,24 @@ function NotificationIntelligence() {
     const [flapEnabled, setFlapEnabled] = useState(settings?.["notification.flap_detection_enabled"] !== "false");
     const [flapWindow, setFlapWindow] = useState(settings?.["notification.flap_window_checks"] || "21");
     const [flapThreshold, setFlapThreshold] = useState(settings?.["notification.flap_threshold_percent"] || "25");
+    const [recoveryChecks, setRecoveryChecks] = useState(settings?.["notification.recovery_confirmation_checks"] || "1");
+
+    // Event type toggles
+    const [eventToggles, setEventToggles] = useState<Record<string, boolean>>(() => {
+        const toggles: Record<string, boolean> = {};
+        EVENT_TOGGLES.forEach(({ key }) => {
+            toggles[key] = settings?.[key] !== "false";
+        });
+        return toggles;
+    });
+
+    // Digest settings
+    const [digestEnabled, setDigestEnabled] = useState(settings?.["notification.digest.enabled"] === "true");
+    const [digestTime, setDigestTime] = useState(settings?.["notification.digest.time"] || "09:00");
+    const [digestEventTypes, setDigestEventTypes] = useState<Set<string>>(() => {
+        const types = settings?.["notification.digest.event_types"] || "degraded,flapping,stabilized,ssl_expiring";
+        return new Set(types.split(",").map(t => t.trim()).filter(Boolean));
+    });
 
     useEffect(() => {
         fetchSettings();
@@ -213,18 +249,52 @@ function NotificationIntelligence() {
             setFlapEnabled(settings["notification.flap_detection_enabled"] !== "false");
             setFlapWindow(settings["notification.flap_window_checks"] || "21");
             setFlapThreshold(settings["notification.flap_threshold_percent"] || "25");
+            setRecoveryChecks(settings["notification.recovery_confirmation_checks"] || "1");
+
+            const toggles: Record<string, boolean> = {};
+            EVENT_TOGGLES.forEach(({ key }) => {
+                toggles[key] = settings[key] !== "false";
+            });
+            setEventToggles(toggles);
+
+            setDigestEnabled(settings["notification.digest.enabled"] === "true");
+            setDigestTime(settings["notification.digest.time"] || "09:00");
+            const types = settings["notification.digest.event_types"] || "degraded,flapping,stabilized,ssl_expiring";
+            setDigestEventTypes(new Set(types.split(",").map(t => t.trim()).filter(Boolean)));
         }
     }, [settings]);
 
     const handleSave = async () => {
-        await updateSettings({
+        const updates: Record<string, string> = {
             "notification.confirmation_threshold": confirmThreshold,
             "notification.cooldown_minutes": cooldownMins,
             "notification.flap_detection_enabled": flapEnabled ? "true" : "false",
             "notification.flap_window_checks": flapWindow,
             "notification.flap_threshold_percent": flapThreshold,
+            "notification.recovery_confirmation_checks": recoveryChecks,
+            "notification.digest.enabled": digestEnabled ? "true" : "false",
+            "notification.digest.time": digestTime,
+            "notification.digest.event_types": Array.from(digestEventTypes).join(","),
+        };
+
+        EVENT_TOGGLES.forEach(({ key }) => {
+            updates[key] = eventToggles[key] ? "true" : "false";
         });
+
+        await updateSettings(updates);
         toast({ title: "Settings Saved", description: "Notification intelligence settings updated." });
+    };
+
+    const toggleDigestEventType = (type: string) => {
+        setDigestEventTypes(prev => {
+            const next = new Set(prev);
+            if (next.has(type)) {
+                next.delete(type);
+            } else {
+                next.add(type);
+            }
+            return next;
+        });
     };
 
     return (
@@ -236,6 +306,30 @@ function NotificationIntelligence() {
                 </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+                {/* Event Type Toggles */}
+                <div className="space-y-3">
+                    <Label className="text-base">Event Types</Label>
+                    <p className="text-sm text-muted-foreground">
+                        Choose which event types trigger notifications. Disabled events are still recorded in the event log.
+                    </p>
+                    <div className="grid gap-3 mt-2">
+                        {EVENT_TOGGLES.map(({ key, label, description }) => (
+                            <div key={key} className="flex items-center justify-between">
+                                <div className="space-y-0.5">
+                                    <Label className="text-sm">{label}</Label>
+                                    <p className="text-xs text-muted-foreground">{description}</p>
+                                </div>
+                                <Switch
+                                    checked={eventToggles[key] ?? true}
+                                    onCheckedChange={(checked) =>
+                                        setEventToggles(prev => ({ ...prev, [key]: checked }))
+                                    }
+                                />
+                            </div>
+                        ))}
+                    </div>
+                </div>
+                <Separator />
                 <div className="grid gap-2">
                     <Label htmlFor="confirm-threshold">Confirmation Checks</Label>
                     <div className="text-sm text-muted-foreground mb-2">
@@ -263,6 +357,21 @@ function NotificationIntelligence() {
                         max={1440}
                         value={cooldownMins}
                         onChange={(e) => setCooldownMins(e.target.value)}
+                        className="max-w-[200px]"
+                    />
+                </div>
+                <div className="grid gap-2">
+                    <Label htmlFor="recovery-checks">Recovery Confirmation Checks</Label>
+                    <div className="text-sm text-muted-foreground mb-2">
+                        Require this many consecutive successful checks before sending a recovery notification. Prevents premature recovery alerts when a monitor briefly comes back up. A value of 1 means immediate recovery (current behavior).
+                    </div>
+                    <Input
+                        id="recovery-checks"
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={recoveryChecks}
+                        onChange={(e) => setRecoveryChecks(e.target.value)}
                         className="max-w-[200px]"
                     />
                 </div>
@@ -310,6 +419,53 @@ function NotificationIntelligence() {
                                 onChange={(e) => setFlapThreshold(e.target.value)}
                                 className="max-w-[160px]"
                             />
+                        </div>
+                    </div>
+                )}
+                <Separator />
+                <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                        <Label>Daily Digest</Label>
+                        <p className="text-sm text-muted-foreground">
+                            Batch non-critical events into a single daily summary instead of real-time notifications.
+                        </p>
+                    </div>
+                    <Switch
+                        checked={digestEnabled}
+                        onCheckedChange={setDigestEnabled}
+                    />
+                </div>
+                {digestEnabled && (
+                    <div className="space-y-4 pl-1">
+                        <div className="grid gap-2">
+                            <Label htmlFor="digest-time">Digest Time</Label>
+                            <div className="text-sm text-muted-foreground mb-1">
+                                Time to send the daily digest (in your configured timezone).
+                            </div>
+                            <Input
+                                id="digest-time"
+                                type="time"
+                                value={digestTime}
+                                onChange={(e) => setDigestTime(e.target.value)}
+                                className="max-w-[160px]"
+                            />
+                        </div>
+                        <div className="grid gap-2">
+                            <Label>Digest Event Types</Label>
+                            <div className="text-sm text-muted-foreground mb-1">
+                                Select which event types are batched into the digest instead of sending immediately.
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                {DIGEST_EVENT_OPTIONS.map(({ value, label }) => (
+                                    <div key={value} className="flex items-center gap-2">
+                                        <Switch
+                                            checked={digestEventTypes.has(value)}
+                                            onCheckedChange={() => toggleDigestEventType(value)}
+                                        />
+                                        <Label className="text-sm font-normal">{label}</Label>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     </div>
                 )}
