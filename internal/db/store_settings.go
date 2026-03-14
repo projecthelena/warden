@@ -161,6 +161,60 @@ func (s *Store) GetSystemStats() (*SystemStats, error) {
 	return stats, nil
 }
 
+// DigestEvent represents a queued notification for the daily digest.
+type DigestEvent struct {
+	ID          int64     `json:"id"`
+	MonitorID   string    `json:"monitorId"`
+	MonitorName string    `json:"monitorName"`
+	MonitorURL  string    `json:"monitorUrl"`
+	EventType   string    `json:"eventType"`
+	Message     string    `json:"message"`
+	EventTime   time.Time `json:"eventTime"`
+}
+
+// InsertDigestEvent queues a notification event for the daily digest.
+func (s *Store) InsertDigestEvent(monitorID, monitorName, monitorURL, eventType, message string, eventTime time.Time) error {
+	_, err := s.db.Exec(s.rebind("INSERT INTO notification_digest_queue (monitor_id, monitor_name, monitor_url, event_type, message, event_time) VALUES (?, ?, ?, ?, ?, ?)"),
+		monitorID, monitorName, monitorURL, eventType, message, eventTime)
+	return err
+}
+
+// GetAndClearDigestEvents retrieves all queued digest events and deletes them atomically.
+func (s *Store) GetAndClearDigestEvents() ([]DigestEvent, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	rows, err := tx.Query("SELECT id, monitor_id, monitor_name, monitor_url, event_type, message, event_time FROM notification_digest_queue ORDER BY event_time ASC")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var events []DigestEvent
+	for rows.Next() {
+		var e DigestEvent
+		if err := rows.Scan(&e.ID, &e.MonitorID, &e.MonitorName, &e.MonitorURL, &e.EventType, &e.Message, &e.EventTime); err != nil {
+			return nil, err
+		}
+		events = append(events, e)
+	}
+
+	if len(events) > 0 {
+		if _, err = tx.Exec("DELETE FROM notification_digest_queue"); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	return events, nil
+}
+
 func (s *Store) GetDBSize() (int64, error) {
 	if s.IsPostgres() {
 		// PostgreSQL: use pg_database_size()

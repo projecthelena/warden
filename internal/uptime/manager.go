@@ -57,6 +57,14 @@ type Manager struct {
 	// Cached notification timezone (loaded during Sync)
 	notificationTimezone *time.Location
 
+	// Notification event filter (per-event-type toggles)
+	eventFilter NotificationEventFilter
+
+	// Digest configuration
+	digestEnabled    bool
+	digestTime       string // HH:MM
+	digestEventTypes map[string]bool
+
 	// Active Maintenance Windows
 	maintenanceWindows []db.Incident
 
@@ -81,6 +89,14 @@ func NewManager(store *db.Store) *Manager {
 		sslNotifiedThresholds: make(map[string]*sslThresholdState),
 		notificationTimezone:  time.UTC, // Default to UTC
 		notifier:              notifications.NewService(store),
+		eventFilter: NotificationEventFilter{
+			DownEnabled:        true,
+			UpEnabled:          true,
+			DegradedEnabled:    true,
+			FlappingEnabled:    true,
+			StabilizedEnabled:  true,
+			SSLExpiringEnabled: true,
+		},
 	}
 
 	// Load settings
@@ -106,6 +122,9 @@ func (m *Manager) Start() {
 
 	// Start Retention Worker
 	go m.retentionWorker()
+
+	// Start Digest Worker
+	go m.digestWorker()
 
 	// Start Notification Service
 	m.notifier.Start()
@@ -237,6 +256,11 @@ func (m *Manager) resultProcessor() {
 			mon, exists := m.monitors[res.MonitorID]
 			m.mu.RUnlock()
 
+			// Load event filter snapshot
+			m.mu.RLock()
+			eventFilter := m.eventFilter
+			m.mu.RUnlock()
+
 			if exists {
 				active, _, hasHistory, lastDegraded := mon.GetLastStatus()
 
@@ -263,6 +287,7 @@ func (m *Manager) resultProcessor() {
 				if !hasHistory {
 					// Handle Initial State — use confirmation logic
 					if !res.Status {
+						mon.ResetRecovery()
 						// Record the event in DB immediately
 						go func() { _ = m.store.CreateEvent(res.MonitorID, "down", message) }()
 
@@ -272,8 +297,8 @@ func (m *Manager) resultProcessor() {
 								_ = m.store.CloseOutage(res.MonitorID)
 								_ = m.store.CreateOutage(res.MonitorID, "down", message)
 							}()
-							if !isMaint && !mon.IsFlapping() && mon.ShouldNotify("down") {
-								m.notifier.Enqueue(notifications.NotificationEvent{
+							if !isMaint && !mon.IsFlapping() && mon.ShouldNotify("down") && eventFilter.IsEnabled("down") {
+								m.enqueueOrDigest(notifications.NotificationEvent{
 									MonitorID:   res.MonitorID,
 									MonitorName: mon.GetName(),
 									MonitorURL:  mon.GetTargetURL(),
@@ -294,8 +319,8 @@ func (m *Manager) resultProcessor() {
 								_ = m.store.CloseOutage(res.MonitorID)
 								_ = m.store.CreateOutage(res.MonitorID, "degraded", degradedMsg)
 							}()
-							if !isMaint && !mon.IsFlapping() && mon.ShouldNotify("degraded") {
-								m.notifier.Enqueue(notifications.NotificationEvent{
+							if !isMaint && !mon.IsFlapping() && mon.ShouldNotify("degraded") && eventFilter.IsEnabled("degraded") {
+								m.enqueueOrDigest(notifications.NotificationEvent{
 									MonitorID:   res.MonitorID,
 									MonitorName: mon.GetName(),
 									MonitorURL:  mon.GetTargetURL(),
@@ -312,6 +337,7 @@ func (m *Manager) resultProcessor() {
 					if !res.Status {
 						// Check is DOWN — increment counter
 						mon.ResetDegraded() // can't be degraded if down
+						mon.ResetRecovery() // reset recovery confirmation
 						go func() { _ = m.store.CreateEvent(res.MonitorID, "down", message) }()
 
 						confirmed := mon.IncrementDown()
@@ -321,8 +347,8 @@ func (m *Manager) resultProcessor() {
 								_ = m.store.CloseOutage(res.MonitorID)
 								_ = m.store.CreateOutage(res.MonitorID, "down", message)
 							}()
-							if !isMaint && !mon.IsFlapping() && mon.ShouldNotify("down") {
-								m.notifier.Enqueue(notifications.NotificationEvent{
+							if !isMaint && !mon.IsFlapping() && mon.ShouldNotify("down") && eventFilter.IsEnabled("down") {
+								m.enqueueOrDigest(notifications.NotificationEvent{
 									MonitorID:   res.MonitorID,
 									MonitorName: mon.GetName(),
 									MonitorURL:  mon.GetTargetURL(),
@@ -337,70 +363,77 @@ func (m *Manager) resultProcessor() {
 					} else {
 						// Check is UP
 						// Recovery from confirmed down?
-						wasDown := mon.ResetDown()
-						if wasDown {
-							go func() { _ = m.store.CloseOutage(res.MonitorID) }()
-							go func() { _ = m.store.CreateEvent(res.MonitorID, "recovered", "Monitor recovered") }()
-							// Recovery notifications always send immediately (no cooldown)
-							if !isMaint && !mon.IsFlapping() {
-								m.notifier.Enqueue(notifications.NotificationEvent{
-									MonitorID:   res.MonitorID,
-									MonitorName: mon.GetName(),
-									MonitorURL:  mon.GetTargetURL(),
-									Type:        notifications.EventUp,
-									Message:     "Monitor Recovered",
-									Time:        res.Timestamp,
-								})
-							}
-							log.Printf("Monitor %s RECOVERED", res.MonitorID)
-						}
-						// Note: if !active && !mon.IsConfirmedDown(), the counter was already
-						// reset by ResetDown() above — no additional action needed.
-
-						// Handle Degradation
-						if isDegraded {
-							go func() { _ = m.store.CreateEvent(res.MonitorID, "degraded", degradedMsg) }()
-
-							confirmed := mon.IncrementDegraded()
-							if confirmed {
-								go func() {
-									_ = m.store.CloseOutage(res.MonitorID)
-									_ = m.store.CreateOutage(res.MonitorID, "degraded", degradedMsg)
-								}()
-								if !isMaint && !mon.IsFlapping() && mon.ShouldNotify("degraded") {
-									m.notifier.Enqueue(notifications.NotificationEvent{
-										MonitorID:   res.MonitorID,
-										MonitorName: mon.GetName(),
-										MonitorURL:  mon.GetTargetURL(),
-										Type:        notifications.EventDegraded,
-										Message:     degradedMsg,
-										Time:        res.Timestamp,
-									})
-									mon.MarkNotified("degraded")
-								}
-							}
-						} else if wasDegraded {
-							// Degraded -> Normal
-							wasConfirmedDeg := mon.ResetDegraded()
-							if wasConfirmedDeg {
+						if mon.IsConfirmedDown() {
+							recoveryConfirmed := mon.IncrementRecovery()
+							if recoveryConfirmed {
+								mon.ResetDown()
+								mon.ResetRecovery()
 								go func() { _ = m.store.CloseOutage(res.MonitorID) }()
-								go func() { _ = m.store.CreateEvent(res.MonitorID, "recovered", "Latency normalized") }()
+								go func() { _ = m.store.CreateEvent(res.MonitorID, "recovered", "Monitor recovered") }()
 								// Recovery notifications always send immediately (no cooldown)
-								if !isMaint && !mon.IsFlapping() {
-									m.notifier.Enqueue(notifications.NotificationEvent{
+								if !isMaint && !mon.IsFlapping() && eventFilter.IsEnabled("up") {
+									m.enqueueOrDigest(notifications.NotificationEvent{
 										MonitorID:   res.MonitorID,
 										MonitorName: mon.GetName(),
 										MonitorURL:  mon.GetTargetURL(),
 										Type:        notifications.EventUp,
-										Message:     "Latency normalized",
+										Message:     "Monitor Recovered",
 										Time:        res.Timestamp,
 									})
 								}
-								log.Printf("Monitor %s RECOVERED from degraded", res.MonitorID)
+								log.Printf("Monitor %s RECOVERED", res.MonitorID)
 							}
 						} else {
-							// Normal -> Normal: reset degraded counter
-							mon.ResetDegraded()
+							// Not confirmed down — just reset the counter
+							mon.ResetDown()
+						}
+
+						// Handle Degradation (only if not still waiting for recovery confirmation)
+						if !mon.IsConfirmedDown() {
+							if isDegraded {
+								go func() { _ = m.store.CreateEvent(res.MonitorID, "degraded", degradedMsg) }()
+
+								confirmed := mon.IncrementDegraded()
+								if confirmed {
+									go func() {
+										_ = m.store.CloseOutage(res.MonitorID)
+										_ = m.store.CreateOutage(res.MonitorID, "degraded", degradedMsg)
+									}()
+									if !isMaint && !mon.IsFlapping() && mon.ShouldNotify("degraded") && eventFilter.IsEnabled("degraded") {
+										m.enqueueOrDigest(notifications.NotificationEvent{
+											MonitorID:   res.MonitorID,
+											MonitorName: mon.GetName(),
+											MonitorURL:  mon.GetTargetURL(),
+											Type:        notifications.EventDegraded,
+											Message:     degradedMsg,
+											Time:        res.Timestamp,
+										})
+										mon.MarkNotified("degraded")
+									}
+								}
+							} else if wasDegraded {
+								// Degraded -> Normal
+								wasConfirmedDeg := mon.ResetDegraded()
+								if wasConfirmedDeg {
+									go func() { _ = m.store.CloseOutage(res.MonitorID) }()
+									go func() { _ = m.store.CreateEvent(res.MonitorID, "recovered", "Latency normalized") }()
+									// Recovery notifications always send immediately (no cooldown)
+									if !isMaint && !mon.IsFlapping() && eventFilter.IsEnabled("up") {
+										m.enqueueOrDigest(notifications.NotificationEvent{
+											MonitorID:   res.MonitorID,
+											MonitorName: mon.GetName(),
+											MonitorURL:  mon.GetTargetURL(),
+											Type:        notifications.EventUp,
+											Message:     "Latency normalized",
+											Time:        res.Timestamp,
+										})
+									}
+									log.Printf("Monitor %s RECOVERED from degraded", res.MonitorID)
+								}
+							} else {
+								// Normal -> Normal: reset degraded counter
+								mon.ResetDegraded()
+							}
 						}
 					}
 				}
@@ -426,25 +459,31 @@ func (m *Manager) resultProcessor() {
 					if changed && !isMaint {
 						if isFlapping {
 							go func() { _ = m.store.CreateEvent(res.MonitorID, "flapping", "Monitor is flapping between states") }()
-							m.notifier.Enqueue(notifications.NotificationEvent{
-								MonitorID:   res.MonitorID,
-								MonitorName: mon.GetName(),
-								MonitorURL:  mon.GetTargetURL(),
-								Type:        notifications.EventFlapping,
-								Message:     "Monitor is flapping between states",
-								Time:        res.Timestamp,
-							})
+							if mon.ShouldNotify("flapping") && eventFilter.IsEnabled("flapping") {
+								m.enqueueOrDigest(notifications.NotificationEvent{
+									MonitorID:   res.MonitorID,
+									MonitorName: mon.GetName(),
+									MonitorURL:  mon.GetTargetURL(),
+									Type:        notifications.EventFlapping,
+									Message:     "Monitor is flapping between states",
+									Time:        res.Timestamp,
+								})
+								mon.MarkNotified("flapping")
+							}
 							log.Printf("Monitor %s is FLAPPING", res.MonitorID)
 						} else {
 							go func() { _ = m.store.CreateEvent(res.MonitorID, "stabilized", "Monitor has stabilized") }()
-							m.notifier.Enqueue(notifications.NotificationEvent{
-								MonitorID:   res.MonitorID,
-								MonitorName: mon.GetName(),
-								MonitorURL:  mon.GetTargetURL(),
-								Type:        notifications.EventStabilized,
-								Message:     "Monitor has stabilized",
-								Time:        res.Timestamp,
-							})
+							if mon.ShouldNotify("stabilized") && eventFilter.IsEnabled("stabilized") {
+								m.enqueueOrDigest(notifications.NotificationEvent{
+									MonitorID:   res.MonitorID,
+									MonitorName: mon.GetName(),
+									MonitorURL:  mon.GetTargetURL(),
+									Type:        notifications.EventStabilized,
+									Message:     "Monitor has stabilized",
+									Time:        res.Timestamp,
+								})
+								mon.MarkNotified("stabilized")
+							}
 							log.Printf("Monitor %s STABILIZED", res.MonitorID)
 						}
 					}
@@ -553,8 +592,12 @@ func (m *Manager) processSSLCheck(res CheckResult, mon *Monitor, isMaint bool) {
 		}
 		go func() { _ = m.store.CreateEvent(res.MonitorID, "ssl_expiring", msg) }()
 
-		if !isMaint {
-			m.notifier.Enqueue(notifications.NotificationEvent{
+		m.mu.RLock()
+		filter := m.eventFilter
+		m.mu.RUnlock()
+
+		if !isMaint && filter.IsEnabled("ssl_expiring") {
+			m.enqueueOrDigest(notifications.NotificationEvent{
 				MonitorID:   res.MonitorID,
 				MonitorName: mon.GetName(),
 				MonitorURL:  mon.GetTargetURL(),
@@ -607,11 +650,19 @@ func (m *Manager) Sync() {
 	// Load global notification fatigue settings
 	globalCfg := m.loadNotificationConfig()
 
+	// Load event filter and digest config
+	eventFilter := m.loadEventFilter()
+	digestEnabled, digestTime, digestEventTypes := m.loadDigestConfig()
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	// Update cached settings
 	m.notificationTimezone = notifTZ
+	m.eventFilter = eventFilter
+	m.digestEnabled = digestEnabled
+	m.digestTime = digestTime
+	m.digestEventTypes = digestEventTypes
 
 	// Update maintenance windows
 	m.maintenanceWindows = activeWindows
@@ -730,11 +781,12 @@ func (m *Manager) Sync() {
 // loadNotificationConfig reads global notification fatigue settings from the database.
 func (m *Manager) loadNotificationConfig() MonitorConfig {
 	cfg := MonitorConfig{
-		ConfirmationThreshold: 3,
-		CooldownMinutes:       30,
-		FlapDetectionEnabled:  true,
-		FlapWindowChecks:      21,
-		FlapThresholdPercent:  25,
+		ConfirmationThreshold:      3,
+		CooldownMinutes:            30,
+		FlapDetectionEnabled:       true,
+		FlapWindowChecks:           21,
+		FlapThresholdPercent:       25,
+		RecoveryConfirmationChecks: 1,
 	}
 
 	if val, err := m.store.GetSetting("notification.confirmation_threshold"); err == nil {
@@ -760,8 +812,97 @@ func (m *Manager) loadNotificationConfig() MonitorConfig {
 			cfg.FlapThresholdPercent = i
 		}
 	}
+	if val, err := m.store.GetSetting("notification.recovery_confirmation_checks"); err == nil {
+		if i, err := strconv.Atoi(val); err == nil && i >= 1 {
+			cfg.RecoveryConfirmationChecks = i
+		}
+	}
 
 	return cfg
+}
+
+// loadEventFilter reads per-event-type notification toggles from the database.
+func (m *Manager) loadEventFilter() NotificationEventFilter {
+	filter := NotificationEventFilter{
+		DownEnabled:        true,
+		UpEnabled:          true,
+		DegradedEnabled:    true,
+		FlappingEnabled:    true,
+		StabilizedEnabled:  true,
+		SSLExpiringEnabled: true,
+	}
+
+	if val, err := m.store.GetSetting("notification.event.down.enabled"); err == nil {
+		filter.DownEnabled = val != "false"
+	}
+	if val, err := m.store.GetSetting("notification.event.up.enabled"); err == nil {
+		filter.UpEnabled = val != "false"
+	}
+	if val, err := m.store.GetSetting("notification.event.degraded.enabled"); err == nil {
+		filter.DegradedEnabled = val != "false"
+	}
+	if val, err := m.store.GetSetting("notification.event.flapping.enabled"); err == nil {
+		filter.FlappingEnabled = val != "false"
+	}
+	if val, err := m.store.GetSetting("notification.event.stabilized.enabled"); err == nil {
+		filter.StabilizedEnabled = val != "false"
+	}
+	if val, err := m.store.GetSetting("notification.event.ssl_expiring.enabled"); err == nil {
+		filter.SSLExpiringEnabled = val != "false"
+	}
+
+	return filter
+}
+
+// loadDigestConfig reads daily digest settings from the database.
+func (m *Manager) loadDigestConfig() (bool, string, map[string]bool) {
+	enabled := false
+	digestTime := "09:00"
+	eventTypes := map[string]bool{
+		"degraded":     true,
+		"flapping":     true,
+		"stabilized":   true,
+		"ssl_expiring": true,
+	}
+
+	if val, err := m.store.GetSetting("notification.digest.enabled"); err == nil {
+		enabled = val == "true"
+	}
+	if val, err := m.store.GetSetting("notification.digest.time"); err == nil && val != "" {
+		digestTime = val
+	}
+	if val, err := m.store.GetSetting("notification.digest.event_types"); err == nil && val != "" {
+		eventTypes = make(map[string]bool)
+		for _, t := range strings.Split(val, ",") {
+			t = strings.TrimSpace(t)
+			if t != "" {
+				eventTypes[t] = true
+			}
+		}
+	}
+
+	return enabled, digestTime, eventTypes
+}
+
+// shouldDigest checks if an event type should be routed to the digest queue.
+func (m *Manager) shouldDigest(eventType string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if !m.digestEnabled {
+		return false
+	}
+	return m.digestEventTypes[eventType]
+}
+
+// enqueueOrDigest either sends a notification immediately or queues it for digest.
+func (m *Manager) enqueueOrDigest(event notifications.NotificationEvent) {
+	if m.shouldDigest(string(event.Type)) {
+		if err := m.store.InsertDigestEvent(event.MonitorID, event.MonitorName, event.MonitorURL, string(event.Type), event.Message, event.Time); err != nil {
+			log.Printf("Failed to queue digest event: %v", err)
+		}
+		return
+	}
+	m.notifier.Enqueue(event)
 }
 
 // GetMonitor returns a specific monitor instance
@@ -834,6 +975,51 @@ func (m *Manager) IsGroupInMaintenance(groupID string) bool {
 		}
 	}
 	return false
+}
+
+func (m *Manager) digestWorker() {
+	m.wg.Add(1)
+	defer m.wg.Done()
+
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	lastSentDate := ""
+
+	for {
+		select {
+		case <-m.stopCh:
+			return
+		case <-ticker.C:
+			m.mu.RLock()
+			enabled := m.digestEnabled
+			digestTime := m.digestTime
+			loc := m.notificationTimezone
+			m.mu.RUnlock()
+
+			if !enabled {
+				continue
+			}
+
+			now := time.Now().In(loc)
+			currentTime := now.Format("15:04")
+			currentDate := now.Format("2006-01-02")
+
+			if currentTime == digestTime && lastSentDate != currentDate {
+				lastSentDate = currentDate
+				events, err := m.store.GetAndClearDigestEvents()
+				if err != nil {
+					log.Printf("Digest: failed to get events: %v", err)
+					continue
+				}
+				if len(events) == 0 {
+					continue
+				}
+				m.notifier.SendDigest(events)
+				log.Printf("Digest: sent summary with %d events", len(events))
+			}
+		}
+	}
 }
 
 func (m *Manager) retentionWorker() {

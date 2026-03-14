@@ -43,15 +43,50 @@ type Monitor struct {
 	flapDetectionEnabled bool
 	flapWindowChecks     int
 	flapThresholdPercent int
+
+	// Recovery confirmation
+	recoveryConfirmationChecks int
+	consecutiveUpCount         int
+}
+
+// NotificationEventFilter holds per-event-type notification toggle state.
+type NotificationEventFilter struct {
+	DownEnabled       bool
+	UpEnabled         bool
+	DegradedEnabled   bool
+	FlappingEnabled   bool
+	StabilizedEnabled bool
+	SSLExpiringEnabled bool
+}
+
+// IsEnabled checks whether notifications for the given event type are enabled.
+func (f *NotificationEventFilter) IsEnabled(eventType string) bool {
+	switch eventType {
+	case "down":
+		return f.DownEnabled
+	case "up":
+		return f.UpEnabled
+	case "degraded":
+		return f.DegradedEnabled
+	case "flapping":
+		return f.FlappingEnabled
+	case "stabilized":
+		return f.StabilizedEnabled
+	case "ssl_expiring":
+		return f.SSLExpiringEnabled
+	default:
+		return true
+	}
 }
 
 // MonitorConfig holds per-monitor notification fatigue settings.
 type MonitorConfig struct {
-	ConfirmationThreshold int
-	CooldownMinutes       int
-	FlapDetectionEnabled  bool
-	FlapWindowChecks      int
-	FlapThresholdPercent  int
+	ConfirmationThreshold      int
+	CooldownMinutes            int
+	FlapDetectionEnabled       bool
+	FlapWindowChecks           int
+	FlapThresholdPercent       int
+	RecoveryConfirmationChecks int
 }
 
 func NewMonitor(id, groupID, name, url string, interval time.Duration, jobQueue chan<- Job, createdAt time.Time) *Monitor {
@@ -71,9 +106,10 @@ func NewMonitor(id, groupID, name, url string, interval time.Duration, jobQueue 
 		confirmationThreshold: 3,  // default
 		cooldownMinutes:       30, // default
 		lastNotifiedAt:        make(map[string]time.Time),
-		flapDetectionEnabled:  true,
-		flapWindowChecks:      21,
-		flapThresholdPercent:  25,
+		flapDetectionEnabled:       true,
+		flapWindowChecks:           21,
+		flapThresholdPercent:       25,
+		recoveryConfirmationChecks: 1,
 	}
 }
 
@@ -86,6 +122,9 @@ func (m *Monitor) ApplyConfig(cfg MonitorConfig) {
 	m.flapDetectionEnabled = cfg.FlapDetectionEnabled
 	m.flapWindowChecks = cfg.FlapWindowChecks
 	m.flapThresholdPercent = cfg.FlapThresholdPercent
+	if cfg.RecoveryConfirmationChecks >= 1 {
+		m.recoveryConfirmationChecks = cfg.RecoveryConfirmationChecks
+	}
 }
 
 // alignDelay computes the duration until the next tick aligned to createdAt.
@@ -374,6 +413,22 @@ func (m *Monitor) IsFlapping() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.isFlapping
+}
+
+// IncrementRecovery increments the consecutive up counter during recovery confirmation.
+// Returns true if the recovery confirmation threshold is met.
+func (m *Monitor) IncrementRecovery() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.consecutiveUpCount++
+	return m.consecutiveUpCount >= m.recoveryConfirmationChecks
+}
+
+// ResetRecovery resets the consecutive up counter (called when a failure occurs during recovery).
+func (m *Monitor) ResetRecovery() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.consecutiveUpCount = 0
 }
 
 // HydrateConfirmationState scans the loaded history to restore confirmation counters

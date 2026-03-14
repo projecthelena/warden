@@ -90,6 +90,32 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		flapThreshold = "25"
 	}
 
+	// Event Type Toggles
+	eventDown, _ := h.store.GetSetting("notification.event.down.enabled")
+	if eventDown == "" { eventDown = "true" }
+	eventUp, _ := h.store.GetSetting("notification.event.up.enabled")
+	if eventUp == "" { eventUp = "true" }
+	eventDegraded, _ := h.store.GetSetting("notification.event.degraded.enabled")
+	if eventDegraded == "" { eventDegraded = "true" }
+	eventFlapping, _ := h.store.GetSetting("notification.event.flapping.enabled")
+	if eventFlapping == "" { eventFlapping = "true" }
+	eventStabilized, _ := h.store.GetSetting("notification.event.stabilized.enabled")
+	if eventStabilized == "" { eventStabilized = "true" }
+	eventSSL, _ := h.store.GetSetting("notification.event.ssl_expiring.enabled")
+	if eventSSL == "" { eventSSL = "true" }
+
+	// Recovery Confirmation
+	recoveryChecks, _ := h.store.GetSetting("notification.recovery_confirmation_checks")
+	if recoveryChecks == "" { recoveryChecks = "1" }
+
+	// Digest Settings
+	digestEnabled, _ := h.store.GetSetting("notification.digest.enabled")
+	if digestEnabled == "" { digestEnabled = "false" }
+	digestTime, _ := h.store.GetSetting("notification.digest.time")
+	if digestTime == "" { digestTime = "09:00" }
+	digestEventTypes, _ := h.store.GetSetting("notification.digest.event_types")
+	if digestEventTypes == "" { digestEventTypes = "degraded,flapping,stabilized,ssl_expiring" }
+
 	writeJSON(w, http.StatusOK, map[string]string{
 		"latency_threshold":                      val,
 		"data_retention_days":                    retention,
@@ -108,6 +134,16 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		"notification.flap_detection_enabled":    flapEnabled,
 		"notification.flap_window_checks":        flapWindow,
 		"notification.flap_threshold_percent":    flapThreshold,
+		"notification.event.down.enabled":        eventDown,
+		"notification.event.up.enabled":          eventUp,
+		"notification.event.degraded.enabled":    eventDegraded,
+		"notification.event.flapping.enabled":    eventFlapping,
+		"notification.event.stabilized.enabled":  eventStabilized,
+		"notification.event.ssl_expiring.enabled": eventSSL,
+		"notification.recovery_confirmation_checks": recoveryChecks,
+		"notification.digest.enabled":            digestEnabled,
+		"notification.digest.time":               digestTime,
+		"notification.digest.event_types":        digestEventTypes,
 	})
 }
 
@@ -208,10 +244,11 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 	// Notification Fatigue Settings
 	notifFatigueChanged := false
 	notifFatigueIntKeys := map[string]struct{ min, max int }{
-		"notification.confirmation_threshold": {1, 100},
-		"notification.cooldown_minutes":       {0, 1440},
-		"notification.flap_window_checks":     {3, 100},
-		"notification.flap_threshold_percent":  {1, 100},
+		"notification.confirmation_threshold":      {1, 100},
+		"notification.cooldown_minutes":            {0, 1440},
+		"notification.flap_window_checks":          {3, 100},
+		"notification.flap_threshold_percent":       {1, 100},
+		"notification.recovery_confirmation_checks": {1, 20},
 	}
 
 	for key, bounds := range notifFatigueIntKeys {
@@ -229,16 +266,45 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	if val, ok := body["notification.flap_detection_enabled"]; ok {
-		if val != "true" && val != "false" {
-			http.Error(w, "Invalid notification.flap_detection_enabled", http.StatusBadRequest)
-			return
+	// Boolean notification settings
+	notifBoolKeys := []string{
+		"notification.flap_detection_enabled",
+		"notification.event.down.enabled",
+		"notification.event.up.enabled",
+		"notification.event.degraded.enabled",
+		"notification.event.flapping.enabled",
+		"notification.event.stabilized.enabled",
+		"notification.event.ssl_expiring.enabled",
+		"notification.digest.enabled",
+	}
+
+	for _, key := range notifBoolKeys {
+		if val, ok := body[key]; ok {
+			if val != "true" && val != "false" {
+				http.Error(w, "Invalid "+key, http.StatusBadRequest)
+				return
+			}
+			if err := h.store.SetSetting(key, val); err != nil {
+				http.Error(w, "Failed to save "+key, http.StatusInternalServerError)
+				return
+			}
+			notifFatigueChanged = true
 		}
-		if err := h.store.SetSetting("notification.flap_detection_enabled", val); err != nil {
-			http.Error(w, "Failed to save notification.flap_detection_enabled", http.StatusInternalServerError)
-			return
+	}
+
+	// Digest string settings
+	digestStringKeys := []string{
+		"notification.digest.time",
+		"notification.digest.event_types",
+	}
+	for _, key := range digestStringKeys {
+		if val, ok := body[key]; ok {
+			if err := h.store.SetSetting(key, val); err != nil {
+				http.Error(w, "Failed to save "+key, http.StatusInternalServerError)
+				return
+			}
+			notifFatigueChanged = true
 		}
-		notifFatigueChanged = true
 	}
 
 	// Trigger Sync so monitors pick up new settings immediately
