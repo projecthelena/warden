@@ -25,6 +25,9 @@ export interface StatusPageUpdatePayload {
     showUptimePercentage?: boolean;
     showIncidentHistory?: boolean;
     uptimeDaysRange?: number;
+    headerContent?: 'logo-title' | 'logo-only' | 'title-only';
+    headerAlignment?: 'left' | 'center' | 'right';
+    headerArrangement?: 'stacked' | 'inline';
 }
 
 async function toggleStatusPageReq(payload: StatusPageUpdatePayload) {

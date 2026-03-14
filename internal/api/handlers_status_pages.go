@@ -64,6 +64,9 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		ShowUptimePercentage bool    `json:"showUptimePercentage"`
 		ShowIncidentHistory  bool    `json:"showIncidentHistory"`
 		UptimeDaysRange      int     `json:"uptimeDaysRange"`
+		HeaderContent        string  `json:"headerContent"`
+		HeaderAlignment      string  `json:"headerAlignment"`
+		HeaderArrangement    string  `json:"headerArrangement"`
 	}
 
 	var result []StatusPageDTO
@@ -93,6 +96,9 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		ShowUptimePercentage: true,
 		ShowIncidentHistory:  true,
 		UptimeDaysRange:      90,
+		HeaderContent:        "logo-title",
+		HeaderAlignment:      "center",
+		HeaderArrangement:    "stacked",
 	}
 	if globalPage != nil {
 		globalDTO.Title = globalPage.Title
@@ -107,11 +113,23 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		globalDTO.ShowUptimePercentage = globalPage.ShowUptimePercentage
 		globalDTO.ShowIncidentHistory = globalPage.ShowIncidentHistory
 		globalDTO.UptimeDaysRange = globalPage.UptimeDaysRange
+		globalDTO.HeaderContent = globalPage.HeaderContent
+		globalDTO.HeaderAlignment = globalPage.HeaderAlignment
+		globalDTO.HeaderArrangement = globalPage.HeaderArrangement
 		if globalDTO.UptimeDaysRange == 0 {
 			globalDTO.UptimeDaysRange = 90
 		}
 		if globalDTO.Theme == "" {
 			globalDTO.Theme = "system"
+		}
+		if globalDTO.HeaderContent == "" {
+			globalDTO.HeaderContent = "logo-title"
+		}
+		if globalDTO.HeaderAlignment == "" {
+			globalDTO.HeaderAlignment = "center"
+		}
+		if globalDTO.HeaderArrangement == "" {
+			globalDTO.HeaderArrangement = "stacked"
 		}
 	}
 	result = append(result, globalDTO)
@@ -129,6 +147,9 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 			ShowUptimePercentage: true,
 			ShowIncidentHistory:  true,
 			UptimeDaysRange:      90,
+			HeaderContent:        "logo-title",
+			HeaderAlignment:      "center",
+			HeaderArrangement:    "stacked",
 		}
 
 		if cfg, ok := configMap[g.ID]; ok {
@@ -145,11 +166,23 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 			dto.ShowUptimePercentage = cfg.ShowUptimePercentage
 			dto.ShowIncidentHistory = cfg.ShowIncidentHistory
 			dto.UptimeDaysRange = cfg.UptimeDaysRange
+			dto.HeaderContent = cfg.HeaderContent
+			dto.HeaderAlignment = cfg.HeaderAlignment
+			dto.HeaderArrangement = cfg.HeaderArrangement
 			if dto.UptimeDaysRange == 0 {
 				dto.UptimeDaysRange = 90
 			}
 			if dto.Theme == "" {
 				dto.Theme = "system"
+			}
+			if dto.HeaderContent == "" {
+				dto.HeaderContent = "logo-title"
+			}
+			if dto.HeaderAlignment == "" {
+				dto.HeaderAlignment = "center"
+			}
+			if dto.HeaderArrangement == "" {
+				dto.HeaderArrangement = "stacked"
 			}
 		}
 
@@ -186,6 +219,9 @@ func (h *StatusPageHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 		ShowUptimePercentage *bool   `json:"showUptimePercentage"`
 		ShowIncidentHistory  *bool   `json:"showIncidentHistory"`
 		UptimeDaysRange      *int    `json:"uptimeDaysRange"`
+		HeaderContent        *string `json:"headerContent"`
+		HeaderAlignment      *string `json:"headerAlignment"`
+		HeaderArrangement    *string `json:"headerArrangement"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
@@ -234,6 +270,36 @@ func (h *StatusPageHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 		faviconURL = favicon
 	}
 
+	// Validate headerContent if provided
+	headerContent := "logo-title"
+	if req.HeaderContent != nil && *req.HeaderContent != "" {
+		if *req.HeaderContent != "logo-title" && *req.HeaderContent != "logo-only" && *req.HeaderContent != "title-only" {
+			writeError(w, http.StatusBadRequest, "invalid header content (must be logo-title, logo-only, or title-only)")
+			return
+		}
+		headerContent = *req.HeaderContent
+	}
+
+	// Validate headerAlignment if provided
+	headerAlignment := "center"
+	if req.HeaderAlignment != nil && *req.HeaderAlignment != "" {
+		if *req.HeaderAlignment != "left" && *req.HeaderAlignment != "center" && *req.HeaderAlignment != "right" {
+			writeError(w, http.StatusBadRequest, "invalid header alignment (must be left, center, or right)")
+			return
+		}
+		headerAlignment = *req.HeaderAlignment
+	}
+
+	// Validate headerArrangement if provided
+	headerArrangement := "stacked"
+	if req.HeaderArrangement != nil && *req.HeaderArrangement != "" {
+		if *req.HeaderArrangement != "stacked" && *req.HeaderArrangement != "inline" {
+			writeError(w, http.StatusBadRequest, "invalid header arrangement (must be stacked or inline)")
+			return
+		}
+		headerArrangement = *req.HeaderArrangement
+	}
+
 	// Get existing page to preserve defaults
 	existing, _ := h.store.GetStatusPageBySlug(slug)
 
@@ -277,6 +343,9 @@ func (h *StatusPageHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 		ShowUptimePercentage: true,
 		ShowIncidentHistory:  true,
 		UptimeDaysRange:      uptimeDaysRange,
+		HeaderContent:        headerContent,
+		HeaderAlignment:      headerAlignment,
+		HeaderArrangement:    headerArrangement,
 	}
 
 	// Apply existing values as defaults
@@ -293,6 +362,24 @@ func (h *StatusPageHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.Theme == nil {
 			input.Theme = existing.Theme
+		}
+		if req.HeaderContent == nil {
+			input.HeaderContent = existing.HeaderContent
+			if input.HeaderContent == "" {
+				input.HeaderContent = "logo-title"
+			}
+		}
+		if req.HeaderAlignment == nil {
+			input.HeaderAlignment = existing.HeaderAlignment
+			if input.HeaderAlignment == "" {
+				input.HeaderAlignment = "center"
+			}
+		}
+		if req.HeaderArrangement == nil {
+			input.HeaderArrangement = existing.HeaderArrangement
+			if input.HeaderArrangement == "" {
+				input.HeaderArrangement = "stacked"
+			}
 		}
 		input.ShowUptimeBars = existing.ShowUptimeBars
 		input.ShowUptimePercentage = existing.ShowUptimePercentage
@@ -727,6 +814,9 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 		"showUptimePercentage": page.ShowUptimePercentage,
 		"showIncidentHistory":  page.ShowIncidentHistory,
 		"uptimeDaysRange":      uptimeDaysRange,
+		"headerContent":       page.HeaderContent,
+		"headerAlignment":     page.HeaderAlignment,
+		"headerArrangement":   page.HeaderArrangement,
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
