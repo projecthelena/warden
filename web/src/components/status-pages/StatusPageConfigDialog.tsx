@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Info } from "lucide-react";
 import { useToggleStatusPageMutation } from "@/hooks/useStatusPages";
 import { useToast } from "@/components/ui/use-toast";
 import { StatusPage } from "@/lib/store";
@@ -33,6 +34,9 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
     const [showUptimePercentage, setShowUptimePercentage] = useState(true);
     const [showIncidentHistory, setShowIncidentHistory] = useState(true);
     const [uptimeDaysRange, setUptimeDaysRange] = useState(90);
+    const [headerContent, setHeaderContent] = useState<'logo-title' | 'logo-only' | 'title-only'>("logo-title");
+    const [headerAlignment, setHeaderAlignment] = useState<'left' | 'center' | 'right'>("center");
+    const [headerArrangement, setHeaderArrangement] = useState<'stacked' | 'inline'>("inline");
 
     // Preview state
     const [logoError, setLogoError] = useState(false);
@@ -51,6 +55,9 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
             setShowUptimePercentage(page.showUptimePercentage ?? true);
             setShowIncidentHistory(page.showIncidentHistory ?? true);
             setUptimeDaysRange(page.uptimeDaysRange ?? 90);
+            setHeaderContent(page.headerContent || "logo-title");
+            setHeaderAlignment(page.headerAlignment || "center");
+            setHeaderArrangement(page.headerArrangement || "inline");
             setLogoError(false);
             setFaviconError(false);
         }
@@ -85,6 +92,9 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
                 showUptimePercentage,
                 showIncidentHistory,
                 uptimeDaysRange,
+                headerContent,
+                headerAlignment,
+                headerArrangement,
             });
             toast({
                 title: "Configuration Saved",
@@ -186,6 +196,74 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
                                         />
                                     )}
                                     <span className="text-xs text-muted-foreground">Logo preview</span>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Header Layout */}
+                        <div className="space-y-3">
+                            <Label>Header Layout</Label>
+
+                            <div className="space-y-1.5">
+                                <span className="text-xs text-muted-foreground">Content</span>
+                                <div className="flex gap-1">
+                                    {([['logo-title', 'Logo & Title'], ['logo-only', 'Logo Only'], ['title-only', 'Title Only']] as const).map(([value, label]) => (
+                                        <Button
+                                            key={value}
+                                            type="button"
+                                            size="sm"
+                                            variant={headerContent === value ? "default" : "outline"}
+                                            className="flex-1 text-xs"
+                                            onClick={() => setHeaderContent(value)}
+                                        >
+                                            {label}
+                                        </Button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {headerContent !== 'title-only' && !logoUrl && (
+                                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                    <Info className="w-3 h-3 shrink-0" />
+                                    Set a logo URL above for the logo to appear
+                                </p>
+                            )}
+
+                            <div className="space-y-1.5">
+                                <span className="text-xs text-muted-foreground">Alignment</span>
+                                <div className="flex gap-1">
+                                    {([['left', 'Left'], ['center', 'Center'], ['right', 'Right']] as const).map(([value, label]) => (
+                                        <Button
+                                            key={value}
+                                            type="button"
+                                            size="sm"
+                                            variant={headerAlignment === value ? "default" : "outline"}
+                                            className="flex-1 text-xs"
+                                            onClick={() => setHeaderAlignment(value)}
+                                        >
+                                            {label}
+                                        </Button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {headerContent === 'logo-title' && (
+                                <div className="space-y-1.5">
+                                    <span className="text-xs text-muted-foreground">Arrangement</span>
+                                    <div className="flex gap-1">
+                                        {([['stacked', 'Stacked'], ['inline', 'Inline']] as const).map(([value, label]) => (
+                                            <Button
+                                                key={value}
+                                                type="button"
+                                                size="sm"
+                                                variant={headerArrangement === value ? "default" : "outline"}
+                                                className="flex-1 text-xs"
+                                                onClick={() => setHeaderArrangement(value)}
+                                            >
+                                                {label}
+                                            </Button>
+                                        ))}
+                                    </div>
                                 </div>
                             )}
                         </div>

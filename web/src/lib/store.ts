@@ -118,6 +118,9 @@ export interface StatusPage {
     showUptimePercentage?: boolean;
     showIncidentHistory?: boolean;
     uptimeDaysRange?: number;
+    headerContent?: 'logo-title' | 'logo-only' | 'title-only';
+    headerAlignment?: 'left' | 'center' | 'right';
+    headerArrangement?: 'stacked' | 'inline';
 }
 
 export interface StatusPageConfig {
@@ -130,6 +133,9 @@ export interface StatusPageConfig {
     showUptimePercentage: boolean;
     showIncidentHistory: boolean;
     uptimeDaysRange: number;
+    headerContent: 'logo-title' | 'logo-only' | 'title-only';
+    headerAlignment: 'left' | 'center' | 'right';
+    headerArrangement: 'stacked' | 'inline';
 }
 
 export interface SystemIncident {

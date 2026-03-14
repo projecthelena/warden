@@ -592,30 +592,74 @@ export function StatusPage() {
         <div className="min-h-screen bg-background text-foreground font-sans flex flex-col">
             <main className="max-w-3xl mx-auto px-4 sm:px-6 pb-16 w-full flex-1">
                 {/* Header */}
-                <div className="flex flex-col items-center pt-16 sm:pt-20 pb-10 sm:pb-14">
-                    <div className="relative mb-4">
-                        {/* Glow halo behind logo */}
-                        <div className="absolute inset-0 bg-primary/15 blur-2xl rounded-full scale-150" />
-                        {config?.logoUrl ? (
-                            <img
-                                src={sanitizeImageUrl(config.logoUrl)}
-                                alt="Logo"
-                                className="relative w-10 h-10 object-contain"
-                                onError={(e) => {
-                                    e.currentTarget.style.display = 'none';
-                                    e.currentTarget.parentElement?.querySelector('.fallback-icon')?.classList.remove('hidden');
-                                }}
-                            />
-                        ) : null}
-                        <Activity className={cn("relative w-8 h-8 text-primary fallback-icon", config?.logoUrl && "hidden")} />
-                    </div>
-                    <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">{data.title}</h1>
-                    {config?.description && (
-                        <p className="text-sm text-muted-foreground mt-2 text-center max-w-md leading-relaxed">
+                {(() => {
+                    const content = config?.headerContent || 'logo-title';
+                    const alignment = config?.headerAlignment || 'center';
+                    const arrangement = config?.headerArrangement || 'inline';
+                    const hasLogo = !!config?.logoUrl;
+                    const showLogo = content !== 'title-only';
+                    const showTitle = content !== 'logo-only';
+                    const isInline = content === 'logo-title' && arrangement === 'inline';
+
+                    const alignItems = alignment === 'left' ? 'items-start' : alignment === 'right' ? 'items-end' : 'items-center';
+                    const textAlign = alignment === 'left' ? 'text-left' : alignment === 'right' ? 'text-right' : 'text-center';
+
+                    const logoElement = showLogo && (
+                        <div className="relative">
+                            <div className="absolute inset-0 bg-primary/15 blur-2xl rounded-full scale-150" />
+                            {hasLogo ? (
+                                <img
+                                    src={sanitizeImageUrl(config.logoUrl)}
+                                    alt="Logo"
+                                    className={cn("relative object-contain", content === 'logo-only' ? "w-16 h-16 sm:w-20 sm:h-20" : "w-10 h-10")}
+                                    onError={(e) => {
+                                        e.currentTarget.style.display = 'none';
+                                        e.currentTarget.parentElement?.querySelector('.fallback-icon')?.classList.remove('hidden');
+                                    }}
+                                />
+                            ) : null}
+                            <Activity className={cn("relative w-8 h-8 text-primary fallback-icon", hasLogo && "hidden")} />
+                        </div>
+                    );
+
+                    const titleElement = showTitle && (
+                        <h1 className={cn(
+                            "text-2xl sm:text-3xl font-bold tracking-tight text-foreground",
+                            textAlign
+                        )}>{data.title}</h1>
+                    );
+
+                    const descriptionElement = config?.description && showTitle && (
+                        <p className={cn(
+                            "text-sm text-muted-foreground mt-2 max-w-md leading-relaxed",
+                            textAlign
+                        )}>
                             {config.description}
                         </p>
-                    )}
-                </div>
+                    );
+
+                    if (isInline) {
+                        return (
+                            <div className={cn("pt-16 sm:pt-20 pb-10 sm:pb-14 flex flex-col", alignItems)}>
+                                <div className="flex items-center gap-4">
+                                    {logoElement}
+                                    <div className="min-w-0">
+                                        {titleElement}
+                                        {descriptionElement}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    }
+
+                    return (
+                        <div className={cn("flex flex-col pt-16 sm:pt-20 pb-10 sm:pb-14", alignItems)}>
+                            {logoElement && <div className="mb-4">{logoElement}</div>}
+                            {titleElement}
+                            {descriptionElement}
+                        </div>
+                    );
+                })()}
 
                 {/* Status Banner */}
                 <div className="mb-6 animate-in fade-in duration-500">
