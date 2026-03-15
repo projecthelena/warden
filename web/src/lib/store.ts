@@ -36,6 +36,16 @@ export interface HistoryPoint {
     statusCode: number;
 }
 
+export interface RequestConfig {
+    method?: string;
+    headers?: Record<string, string>;
+    body?: string;
+    timeoutSeconds?: number;
+    followRedirects?: boolean;
+    acceptedStatusCodes?: string;
+    retryCount?: number;
+}
+
 export interface Monitor {
     id: string;
     name: string;
@@ -49,6 +59,7 @@ export interface Monitor {
     interval: number;
     confirmationThreshold?: number;
     notificationCooldownMinutes?: number;
+    requestConfig?: RequestConfig;
 }
 
 export interface Group {

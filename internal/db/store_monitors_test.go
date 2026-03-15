@@ -34,7 +34,7 @@ func TestMonitorCRUD(t *testing.T) {
 	}
 
 	// Update
-	if err := s.UpdateMonitor("m1", "Updated M1", "http://new.com", 120, nil, nil); err != nil {
+	if err := s.UpdateMonitor("m1", "Updated M1", "http://new.com", 120, nil, nil, nil); err != nil {
 		t.Fatalf("UpdateMonitor failed: %v", err)
 	}
 
@@ -982,7 +982,7 @@ func TestMonitor_PerMonitorOverrides(t *testing.T) {
 		}
 
 		// Update to add overrides
-		if err := s.UpdateMonitor("m-ov3", "Add Override", "http://example.com", 60, intPtr(7), intPtr(15)); err != nil {
+		if err := s.UpdateMonitor("m-ov3", "Add Override", "http://example.com", 60, intPtr(7), intPtr(15), nil); err != nil {
 			t.Fatalf("UpdateMonitor failed: %v", err)
 		}
 
@@ -1021,7 +1021,7 @@ func TestMonitor_PerMonitorOverrides(t *testing.T) {
 		}
 
 		// Update to clear overrides
-		if err := s.UpdateMonitor("m-ov4", "Clear Override", "http://example.com", 60, nil, nil); err != nil {
+		if err := s.UpdateMonitor("m-ov4", "Clear Override", "http://example.com", 60, nil, nil, nil); err != nil {
 			t.Fatalf("UpdateMonitor failed: %v", err)
 		}
 
@@ -1060,7 +1060,7 @@ func TestMonitor_PerMonitorOverrides(t *testing.T) {
 		}
 
 		// Update only threshold, clear cooldown
-		if err := s.UpdateMonitor("m-ov5", "Partial Override", "http://example.com", 60, intPtr(8), nil); err != nil {
+		if err := s.UpdateMonitor("m-ov5", "Partial Override", "http://example.com", 60, intPtr(8), nil, nil); err != nil {
 			t.Fatalf("UpdateMonitor failed: %v", err)
 		}
 
@@ -1082,4 +1082,131 @@ func TestMonitor_PerMonitorOverrides(t *testing.T) {
 			t.Errorf("Expected NotificationCooldownMin=nil, got %v", *found.NotificationCooldownMin)
 		}
 	})
+}
+
+
+func TestMonitorCRUD_RequestConfig(t *testing.T) {
+	s := newTestStore(t)
+	_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+
+	// 1. Create monitor WITH RequestConfig
+	followRedirects := false
+	m := Monitor{
+		ID:       "m-rc1",
+		GroupID:  "g1",
+		Name:     "ReqConfig Monitor",
+		URL:      "http://example.com",
+		Active:   true,
+		Interval: 60,
+		RequestConfig: &RequestConfig{
+			Method:              "POST",
+			Headers:             map[string]string{"Authorization": "Bearer tok", "X-Custom": "val"},
+			Body:                `{"key":"value"}`,
+			TimeoutSeconds:      10,
+			FollowRedirects:     &followRedirects,
+			AcceptedStatusCodes: "200-299,301",
+			RetryCount:          2,
+		},
+	}
+	if err := s.CreateMonitor(m); err != nil {
+		t.Fatalf("CreateMonitor with RequestConfig failed: %v", err)
+	}
+
+	// 2. Read back and verify all fields roundtrip
+	mons, err := s.GetMonitors()
+	if err != nil {
+		t.Fatalf("GetMonitors failed: %v", err)
+	}
+	var found *Monitor
+	for i := range mons {
+		if mons[i].ID == "m-rc1" {
+			found = &mons[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("Monitor m-rc1 not found")
+	}
+	if found.RequestConfig == nil {
+		t.Fatal("Expected RequestConfig to be non-nil")
+	}
+	rc := found.RequestConfig
+	if rc.Method != "POST" {
+		t.Errorf("Expected method POST, got %s", rc.Method)
+	}
+	if len(rc.Headers) != 2 {
+		t.Errorf("Expected 2 headers, got %d", len(rc.Headers))
+	}
+	if rc.Headers["Authorization"] != "Bearer tok" {
+		t.Errorf("Expected Authorization header 'Bearer tok', got %s", rc.Headers["Authorization"])
+	}
+	if rc.Headers["X-Custom"] != "val" {
+		t.Errorf("Expected X-Custom header 'val', got %s", rc.Headers["X-Custom"])
+	}
+	if rc.Body != `{"key":"value"}` {
+		t.Errorf("Expected body '{\"key\":\"value\"}', got %s", rc.Body)
+	}
+	if rc.TimeoutSeconds != 10 {
+		t.Errorf("Expected TimeoutSeconds=10, got %d", rc.TimeoutSeconds)
+	}
+	if rc.FollowRedirects == nil || *rc.FollowRedirects != false {
+		t.Errorf("Expected FollowRedirects=false, got %v", rc.FollowRedirects)
+	}
+	if rc.AcceptedStatusCodes != "200-299,301" {
+		t.Errorf("Expected AcceptedStatusCodes='200-299,301', got %s", rc.AcceptedStatusCodes)
+	}
+	if rc.RetryCount != 2 {
+		t.Errorf("Expected RetryCount=2, got %d", rc.RetryCount)
+	}
+
+	// 3. Update with different RequestConfig
+	newRC := &RequestConfig{
+		Method: "HEAD",
+	}
+	if err := s.UpdateMonitor("m-rc1", "ReqConfig Monitor", "http://example.com", 60, nil, nil, newRC); err != nil {
+		t.Fatalf("UpdateMonitor with new RequestConfig failed: %v", err)
+	}
+
+	// 4. Read back and verify updated config
+	mons, _ = s.GetMonitors()
+	found = nil
+	for i := range mons {
+		if mons[i].ID == "m-rc1" {
+			found = &mons[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("Monitor m-rc1 not found after update")
+	}
+	if found.RequestConfig == nil {
+		t.Fatal("Expected RequestConfig to be non-nil after update")
+	}
+	if found.RequestConfig.Method != "HEAD" {
+		t.Errorf("Expected method HEAD after update, got %s", found.RequestConfig.Method)
+	}
+	if len(found.RequestConfig.Headers) != 0 {
+		t.Errorf("Expected 0 headers after update, got %d", len(found.RequestConfig.Headers))
+	}
+
+	// 5. Update with nil RequestConfig
+	if err := s.UpdateMonitor("m-rc1", "ReqConfig Monitor", "http://example.com", 60, nil, nil, nil); err != nil {
+		t.Fatalf("UpdateMonitor with nil RequestConfig failed: %v", err)
+	}
+
+	// 6. Read back and verify RequestConfig is nil
+	mons, _ = s.GetMonitors()
+	found = nil
+	for i := range mons {
+		if mons[i].ID == "m-rc1" {
+			found = &mons[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("Monitor m-rc1 not found after nil update")
+	}
+	if found.RequestConfig != nil {
+		t.Errorf("Expected RequestConfig to be nil after clearing, got %+v", found.RequestConfig)
+	}
 }

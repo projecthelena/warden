@@ -2,11 +2,17 @@ package uptime
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/projecthelena/warden/internal/db"
 )
+
+var testDBCounter atomic.Int64
 
 func newTestManager(t *testing.T) (*Manager, *db.Store) {
 	store, err := db.NewStore(db.NewTestConfigWithPath("file:manager?mode=memory&cache=shared"))
@@ -50,7 +56,7 @@ func TestManager_Sync(t *testing.T) {
 	}
 
 	// Update in DB (change interval)
-	if err := s.UpdateMonitor("m-test-1", "Test Monitor", "http://example.com", 120, nil, nil); err != nil {
+	if err := s.UpdateMonitor("m-test-1", "Test Monitor", "http://example.com", 120, nil, nil, nil); err != nil {
 		t.Fatalf("Failed to update monitor: %v", err)
 	}
 
@@ -826,7 +832,7 @@ func TestManager_ServiceRestart_PausedMonitorStaysPaused(t *testing.T) {
 
 func TestMonitor_DoubleStopNoPanic(t *testing.T) {
 	jobQueue := make(chan Job, 10)
-	mon := NewMonitor("m1", "g1", "Double Stop", "http://example.com", 10*time.Millisecond, jobQueue, time.Now())
+	mon := NewMonitor("m1", "g1", "Double Stop", "http://example.com", 10*time.Millisecond, jobQueue, time.Now(), nil)
 
 	go mon.Start()
 	time.Sleep(20 * time.Millisecond)
@@ -972,7 +978,7 @@ func TestManager_UpdateWhilePaused(t *testing.T) {
 	m.Sync()
 
 	// Update the monitor while paused
-	if err := store.UpdateMonitor("m-update-paused", "Updated Name", "http://updated.com", 120, nil, nil); err != nil {
+	if err := store.UpdateMonitor("m-update-paused", "Updated Name", "http://updated.com", 120, nil, nil, nil); err != nil {
 		t.Fatalf("UpdateMonitor failed: %v", err)
 	}
 	m.Sync()
@@ -1707,5 +1713,546 @@ func TestManager_NotifFatigue_ConfigUpdatePropagates(t *testing.T) {
 	confirmed = mon.IncrementDown()
 	if !confirmed {
 		t.Error("Expected confirmation after 1 failure (threshold updated to 1)")
+	}
+}
+
+// ============== REQUEST CONFIG TESTS ==============
+
+func TestIsAcceptedStatus(t *testing.T) {
+	tests := []struct {
+		name string
+		spec string
+		code int
+		want bool
+	}{
+		// Range "200-299"
+		{"range_200", "200-299", 200, true},
+		{"range_250", "200-299", 250, true},
+		{"range_299", "200-299", 299, true},
+		{"range_300", "200-299", 300, false},
+		{"range_199", "200-299", 199, false},
+
+		// List "200,301,302"
+		{"list_200", "200,301,302", 200, true},
+		{"list_301", "200,301,302", 301, true},
+		{"list_302", "200,301,302", 302, true},
+		{"list_201", "200,301,302", 201, false},
+		{"list_300", "200,301,302", 300, false},
+
+		// Mixed "200-299,301,302"
+		{"mixed_250", "200-299,301,302", 250, true},
+		{"mixed_301", "200-299,301,302", 301, true},
+		{"mixed_300", "200-299,301,302", 300, false},
+		{"mixed_400", "200-299,301,302", 400, false},
+
+		// Empty spec
+		{"empty_200", "", 200, false},
+		{"empty_404", "", 404, false},
+
+		// Single code
+		{"single_200_match", "200", 200, true},
+		{"single_200_nomatch", "200", 201, false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isAcceptedStatus(tc.code, tc.spec)
+			if got != tc.want {
+				t.Errorf("isAcceptedStatus(%d, %q) = %v, want %v", tc.code, tc.spec, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestManager_SyncWithRequestConfig(t *testing.T) {
+	m, s := newTestManager(t)
+
+	// Create a monitor with RequestConfig
+	rc := &db.RequestConfig{
+		Method:         "POST",
+		TimeoutSeconds: 10,
+		RetryCount:     2,
+	}
+	if err := s.CreateMonitor(db.Monitor{
+		ID:            "m-rc-sync",
+		GroupID:        "g-default",
+		Name:           "RC Sync Test",
+		URL:            "http://example.com",
+		Active:         true,
+		Interval:       60,
+		RequestConfig:  rc,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	m.Sync()
+
+	// Verify the running monitor has the correct RequestConfig
+	running := m.GetMonitor("m-rc-sync")
+	if running == nil {
+		t.Fatal("Monitor should be running")
+	}
+	gotRC := running.GetRequestConfig()
+	if gotRC == nil {
+		t.Fatal("Expected RequestConfig to be non-nil")
+	}
+	if gotRC.Method != "POST" {
+		t.Errorf("Expected method POST, got %s", gotRC.Method)
+	}
+	if gotRC.TimeoutSeconds != 10 {
+		t.Errorf("Expected TimeoutSeconds=10, got %d", gotRC.TimeoutSeconds)
+	}
+	if gotRC.RetryCount != 2 {
+		t.Errorf("Expected RetryCount=2, got %d", gotRC.RetryCount)
+	}
+
+	// Update the monitor with a different RequestConfig
+	newRC := &db.RequestConfig{
+		Method: "HEAD",
+	}
+	if err := s.UpdateMonitor("m-rc-sync", "RC Sync Test", "http://example.com", 60, nil, nil, newRC); err != nil {
+		t.Fatalf("UpdateMonitor failed: %v", err)
+	}
+
+	m.Sync()
+
+	// Verify the monitor was restarted with the new config
+	running = m.GetMonitor("m-rc-sync")
+	if running == nil {
+		t.Fatal("Monitor should still be running after update")
+	}
+	gotRC = running.GetRequestConfig()
+	if gotRC == nil {
+		t.Fatal("Expected RequestConfig to be non-nil after update")
+	}
+	if gotRC.Method != "HEAD" {
+		t.Errorf("Expected method HEAD after update, got %s", gotRC.Method)
+	}
+}
+
+func TestWorker_WithRequestConfig(t *testing.T) {
+	store, err := db.NewStore(db.NewTestConfigWithPath(fmt.Sprintf("file:worker_rc_%d?mode=memory&cache=shared", testDBCounter.Add(1))))
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	setIntegrationTestDefaults(store)
+
+	m := NewManager(store)
+	m.Start()
+	defer m.Stop()
+
+	// Track received requests
+	var receivedMethod string
+	var receivedHeaders http.Header
+	var receivedBody string
+	var mu sync.Mutex
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		receivedMethod = r.Method
+		receivedHeaders = r.Header.Clone()
+		bodyBytes := make([]byte, 1024)
+		n, _ := r.Body.Read(bodyBytes)
+		receivedBody = string(bodyBytes[:n])
+		mu.Unlock()
+		w.WriteHeader(200)
+	}))
+	defer ts.Close()
+
+	// Create a monitor with custom request config
+	rc := &db.RequestConfig{
+		Method:  "POST",
+		Headers: map[string]string{"X-Custom": "test", "X-Another": "value"},
+		Body:    "hello",
+	}
+	if err := store.CreateMonitor(db.Monitor{
+		ID:            "m-worker-rc",
+		GroupID:        "g-default",
+		Name:           "Worker RC Test",
+		URL:            ts.URL,
+		Active:         true,
+		Interval:       1,
+		RequestConfig:  rc,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+	m.Sync()
+
+	// Wait for check to complete
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		method := receivedMethod
+		mu.Unlock()
+		if method != "" {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if receivedMethod != "POST" {
+		t.Errorf("Expected POST method, got %s", receivedMethod)
+	}
+	if receivedHeaders.Get("X-Custom") != "test" {
+		t.Errorf("Expected X-Custom header 'test', got %s", receivedHeaders.Get("X-Custom"))
+	}
+	if receivedHeaders.Get("X-Another") != "value" {
+		t.Errorf("Expected X-Another header 'value', got %s", receivedHeaders.Get("X-Another"))
+	}
+	if receivedBody != "hello" {
+		t.Errorf("Expected body 'hello', got %q", receivedBody)
+	}
+}
+
+func TestWorker_RetryConfig(t *testing.T) {
+	store, err := db.NewStore(db.NewTestConfigWithPath(fmt.Sprintf("file:worker_retry_%d?mode=memory&cache=shared", testDBCounter.Add(1))))
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	setIntegrationTestDefaults(store)
+
+	m := NewManager(store)
+	m.Start()
+	defer m.Stop()
+
+	// Server fails first 2 requests, succeeds on 3rd
+	var requestCount int
+	var mu sync.Mutex
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requestCount++
+		count := requestCount
+		mu.Unlock()
+		if count <= 2 {
+			w.WriteHeader(500)
+		} else {
+			w.WriteHeader(200)
+		}
+	}))
+	defer ts.Close()
+
+	rc := &db.RequestConfig{
+		RetryCount: 2,
+	}
+	if err := store.CreateMonitor(db.Monitor{
+		ID:            "m-retry",
+		GroupID:        "g-default",
+		Name:           "Retry Test",
+		URL:            ts.URL,
+		Active:         true,
+		Interval:       1,
+		RequestConfig:  rc,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+	m.Sync()
+
+	// Wait for the monitor to complete at least one check cycle (with retries)
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		count := requestCount
+		mu.Unlock()
+		if count >= 3 {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	// After retries, the final result should be success
+	mon := m.GetMonitor("m-retry")
+	if mon == nil {
+		t.Fatal("Monitor should be running")
+	}
+
+	// Wait a bit for the result to be processed
+	time.Sleep(500 * time.Millisecond)
+
+	isUp, _, hasHistory, _ := mon.GetLastStatus()
+	if !hasHistory {
+		t.Fatal("Expected history after check")
+	}
+	if !isUp {
+		t.Error("Expected monitor to be UP after successful retry")
+	}
+}
+
+func TestWorker_FollowRedirects(t *testing.T) {
+	store, err := db.NewStore(db.NewTestConfigWithPath(fmt.Sprintf("file:worker_redir_%d?mode=memory&cache=shared", testDBCounter.Add(1))))
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	setIntegrationTestDefaults(store)
+
+	// Create server that returns 301 redirect
+	finalServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+	}))
+	defer finalServer.Close()
+
+	redirectServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, finalServer.URL, http.StatusMovedPermanently)
+	}))
+	defer redirectServer.Close()
+
+	m := NewManager(store)
+	m.Start()
+	defer m.Stop()
+
+	// Test 1: Default behavior (FollowRedirects=nil, should follow)
+	if err := store.CreateMonitor(db.Monitor{
+		ID:       "m-redir-follow",
+		GroupID:  "g-default",
+		Name:     "Follow Redirects",
+		URL:      redirectServer.URL,
+		Active:   true,
+		Interval: 1,
+		// No RequestConfig = default behavior (follow redirects)
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Test 2: FollowRedirects=false
+	noFollow := false
+	if err := store.CreateMonitor(db.Monitor{
+		ID:       "m-redir-nofollow",
+		GroupID:  "g-default",
+		Name:     "No Follow Redirects",
+		URL:      redirectServer.URL,
+		Active:   true,
+		Interval: 1,
+		RequestConfig: &db.RequestConfig{
+			FollowRedirects: &noFollow,
+		},
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	m.Sync()
+
+	// Wait for checks to complete
+	time.Sleep(3 * time.Second)
+
+	// Monitor that follows redirects should see 200 and be UP
+	monFollow := m.GetMonitor("m-redir-follow")
+	if monFollow == nil {
+		t.Fatal("Follow monitor should be running")
+	}
+	history := monFollow.GetHistory()
+	if len(history) == 0 {
+		t.Fatal("Expected history for follow monitor")
+	}
+	lastFollow := history[len(history)-1]
+	if !lastFollow.IsUp {
+		t.Error("Expected follow monitor to be UP (followed redirect to 200)")
+	}
+	if lastFollow.StatusCode != 200 {
+		t.Errorf("Expected status code 200 for follow monitor, got %d", lastFollow.StatusCode)
+	}
+
+	// Monitor that does NOT follow redirects should see 301
+	monNoFollow := m.GetMonitor("m-redir-nofollow")
+	if monNoFollow == nil {
+		t.Fatal("No-follow monitor should be running")
+	}
+	history = monNoFollow.GetHistory()
+	if len(history) == 0 {
+		t.Fatal("Expected history for no-follow monitor")
+	}
+	lastNoFollow := history[len(history)-1]
+	if lastNoFollow.StatusCode != 301 {
+		t.Errorf("Expected status code 301 for no-follow monitor, got %d", lastNoFollow.StatusCode)
+	}
+	// 301 < 400 so default behavior considers it up
+	if !lastNoFollow.IsUp {
+		t.Error("Expected no-follow monitor to be UP (301 < 400)")
+	}
+}
+
+func TestWorker_AcceptedStatusCodes(t *testing.T) {
+	store, err := db.NewStore(db.NewTestConfigWithPath(fmt.Sprintf("file:worker_accepted_%d?mode=memory&cache=shared", testDBCounter.Add(1))))
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	setIntegrationTestDefaults(store)
+
+	// Server returns 301
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(301)
+	}))
+	defer ts.Close()
+
+	m := NewManager(store)
+	m.Start()
+	defer m.Stop()
+
+	// Test 1: No config -> 301 < 400, so up=true (default)
+	noFollow := false
+	if err := store.CreateMonitor(db.Monitor{
+		ID:       "m-accept-default",
+		GroupID:  "g-default",
+		Name:     "Accept Default",
+		URL:      ts.URL,
+		Active:   true,
+		Interval: 1,
+		RequestConfig: &db.RequestConfig{
+			FollowRedirects: &noFollow, // Don't follow so we get 301
+		},
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Test 2: AcceptedStatusCodes="200-299" -> 301 not in range, so up=false
+	if err := store.CreateMonitor(db.Monitor{
+		ID:       "m-accept-strict",
+		GroupID:  "g-default",
+		Name:     "Accept Strict",
+		URL:      ts.URL,
+		Active:   true,
+		Interval: 1,
+		RequestConfig: &db.RequestConfig{
+			FollowRedirects:     &noFollow,
+			AcceptedStatusCodes: "200-299",
+		},
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Test 3: AcceptedStatusCodes="200-299,301" -> up=true
+	if err := store.CreateMonitor(db.Monitor{
+		ID:       "m-accept-incl301",
+		GroupID:  "g-default",
+		Name:     "Accept Incl 301",
+		URL:      ts.URL,
+		Active:   true,
+		Interval: 1,
+		RequestConfig: &db.RequestConfig{
+			FollowRedirects:     &noFollow,
+			AcceptedStatusCodes: "200-299,301",
+		},
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	m.Sync()
+	time.Sleep(3 * time.Second)
+
+	// Default: 301 < 400, up=true
+	mon1 := m.GetMonitor("m-accept-default")
+	if mon1 == nil {
+		t.Fatal("Default monitor should be running")
+	}
+	isUp, _, hasHistory, _ := mon1.GetLastStatus()
+	if !hasHistory {
+		t.Fatal("Expected history for default monitor")
+	}
+	if !isUp {
+		t.Error("Expected default monitor UP (301 < 400)")
+	}
+
+	// Strict: 301 not in 200-299, up=false
+	mon2 := m.GetMonitor("m-accept-strict")
+	if mon2 == nil {
+		t.Fatal("Strict monitor should be running")
+	}
+	isUp, _, hasHistory, _ = mon2.GetLastStatus()
+	if !hasHistory {
+		t.Fatal("Expected history for strict monitor")
+	}
+	if isUp {
+		t.Error("Expected strict monitor DOWN (301 not in 200-299)")
+	}
+
+	// Inclusive: 301 in 200-299,301, up=true
+	mon3 := m.GetMonitor("m-accept-incl301")
+	if mon3 == nil {
+		t.Fatal("Inclusive monitor should be running")
+	}
+	isUp, _, hasHistory, _ = mon3.GetLastStatus()
+	if !hasHistory {
+		t.Fatal("Expected history for inclusive monitor")
+	}
+	if !isUp {
+		t.Error("Expected inclusive monitor UP (301 in 200-299,301)")
+	}
+}
+
+func TestWorker_CustomTimeout(t *testing.T) {
+	store, err := db.NewStore(db.NewTestConfigWithPath(fmt.Sprintf("file:worker_timeout_%d?mode=memory&cache=shared", testDBCounter.Add(1))))
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	setIntegrationTestDefaults(store)
+
+	// Server that sleeps 3 seconds
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(3 * time.Second)
+		w.WriteHeader(200)
+	}))
+	defer ts.Close()
+
+	m := NewManager(store)
+	m.Start()
+	defer m.Stop()
+
+	// Test 1: Default timeout (5s) -> should succeed (latency ~3s)
+	if err := store.CreateMonitor(db.Monitor{
+		ID:       "m-timeout-default",
+		GroupID:  "g-default",
+		Name:     "Timeout Default",
+		URL:      ts.URL,
+		Active:   true,
+		Interval: 60, // Long interval so only one check fires
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Test 2: Custom timeout (1s) -> should fail with timeout
+	if err := store.CreateMonitor(db.Monitor{
+		ID:       "m-timeout-short",
+		GroupID:  "g-default",
+		Name:     "Timeout Short",
+		URL:      ts.URL,
+		Active:   true,
+		Interval: 60,
+		RequestConfig: &db.RequestConfig{
+			TimeoutSeconds: 1,
+		},
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	m.Sync()
+
+	// Wait for checks to complete (default takes ~3s, short times out at 1s)
+	time.Sleep(5 * time.Second)
+
+	// Default timeout: should succeed
+	mon1 := m.GetMonitor("m-timeout-default")
+	if mon1 == nil {
+		t.Fatal("Default timeout monitor should be running")
+	}
+	isUp, _, hasHistory, _ := mon1.GetLastStatus()
+	if !hasHistory {
+		t.Fatal("Expected history for default timeout monitor")
+	}
+	if !isUp {
+		t.Error("Expected default timeout monitor UP (5s timeout > 3s sleep)")
+	}
+
+	// Short timeout: should fail
+	mon2 := m.GetMonitor("m-timeout-short")
+	if mon2 == nil {
+		t.Fatal("Short timeout monitor should be running")
+	}
+	isUp, _, hasHistory, _ = mon2.GetLastStatus()
+	if !hasHistory {
+		t.Fatal("Expected history for short timeout monitor")
+	}
+	if isUp {
+		t.Error("Expected short timeout monitor DOWN (1s timeout < 3s sleep)")
 	}
 }

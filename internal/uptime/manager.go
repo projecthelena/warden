@@ -14,8 +14,9 @@ import (
 )
 
 type Job struct {
-	MonitorID string
-	URL       string
+	MonitorID     string
+	URL           string
+	RequestConfig *db.RequestConfig
 }
 
 type CheckResult struct {
@@ -182,34 +183,120 @@ func (m *Manager) worker() {
 		MaxIdleConnsPerHost: 10,
 		IdleConnTimeout:     30 * time.Second,
 	}
-	client := &http.Client{
-		Timeout:   5 * time.Second,
-		Transport: transport,
-	}
 
 	for job := range m.jobQueue {
-		start := time.Now().UTC()
-		resp, err := client.Get(job.URL)
-		latency := time.Since(start).Milliseconds()
+		cfg := job.RequestConfig
 
-		isUp := true
-		var errMsg string
-		statusCode := 0
-		var certExpiry *time.Time
+		// Resolve method
+		method := "GET"
+		if cfg != nil && cfg.Method != "" {
+			method = cfg.Method
+		}
 
-		if err != nil {
-			isUp = false
-			errMsg = err.Error()
-		} else {
-			_ = resp.Body.Close()
-			statusCode = resp.StatusCode
-			if resp.StatusCode >= 400 {
-				isUp = false
+		// Resolve timeout
+		timeout := 5 * time.Second
+		if cfg != nil && cfg.TimeoutSeconds > 0 {
+			timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
+		}
+
+		// Build per-job client wrapping the shared transport
+		client := &http.Client{
+			Timeout:   timeout,
+			Transport: transport,
+		}
+
+		// Redirect policy
+		if cfg != nil && cfg.FollowRedirects != nil && !*cfg.FollowRedirects {
+			client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
 			}
-			// Extract SSL certificate expiry for HTTPS URLs
-			if resp.TLS != nil && len(resp.TLS.PeerCertificates) > 0 {
-				notAfter := resp.TLS.PeerCertificates[0].NotAfter
-				certExpiry = &notAfter
+		}
+
+		// Resolve retry count
+		retryCount := 0
+		if cfg != nil && cfg.RetryCount > 0 {
+			retryCount = cfg.RetryCount
+		}
+
+		// Resolve request body
+		var bodyStr string
+		if cfg != nil {
+			bodyStr = cfg.Body
+		}
+
+		var (
+			isUp       bool
+			errMsg     string
+			statusCode int
+			certExpiry *time.Time
+			latency    int64
+			start      time.Time
+		)
+
+		for attempt := 0; attempt <= retryCount; attempt++ {
+			if attempt > 0 {
+				time.Sleep(1 * time.Second)
+			}
+
+			// Build request
+			var bodyReader *strings.Reader
+			if bodyStr != "" {
+				bodyReader = strings.NewReader(bodyStr)
+			}
+			var req *http.Request
+			var reqErr error
+			if bodyReader != nil {
+				req, reqErr = http.NewRequest(method, job.URL, bodyReader)
+			} else {
+				req, reqErr = http.NewRequest(method, job.URL, nil)
+			}
+			if reqErr != nil {
+				isUp = false
+				errMsg = reqErr.Error()
+				break // Don't retry on request build errors
+			}
+
+			// Apply custom headers
+			if cfg != nil {
+				for k, v := range cfg.Headers {
+					req.Header.Set(k, v)
+				}
+			}
+
+			start = time.Now().UTC()
+			resp, err := client.Do(req)
+			latency = time.Since(start).Milliseconds()
+
+			isUp = true
+			errMsg = ""
+			statusCode = 0
+			certExpiry = nil
+
+			if err != nil {
+				isUp = false
+				errMsg = err.Error()
+			} else {
+				_ = resp.Body.Close()
+				statusCode = resp.StatusCode
+
+				// Determine if status code is accepted
+				if cfg != nil && cfg.AcceptedStatusCodes != "" {
+					isUp = isAcceptedStatus(resp.StatusCode, cfg.AcceptedStatusCodes)
+				} else {
+					if resp.StatusCode >= 400 {
+						isUp = false
+					}
+				}
+
+				// Extract SSL certificate expiry for HTTPS URLs
+				if resp.TLS != nil && len(resp.TLS.PeerCertificates) > 0 {
+					notAfter := resp.TLS.PeerCertificates[0].NotAfter
+					certExpiry = &notAfter
+				}
+			}
+
+			if isUp {
+				break // Success, no need to retry
 			}
 		}
 
@@ -224,6 +311,43 @@ func (m *Manager) worker() {
 			CertExpiry: certExpiry,
 		}
 	}
+}
+
+// isAcceptedStatus checks if a status code matches the accepted status code specification.
+// Spec format: "200-299,301,302" — comma-separated codes or ranges.
+func isAcceptedStatus(code int, spec string) bool {
+	for _, part := range strings.Split(spec, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if dashIdx := strings.Index(part, "-"); dashIdx >= 0 {
+			lo, err1 := strconv.Atoi(strings.TrimSpace(part[:dashIdx]))
+			hi, err2 := strconv.Atoi(strings.TrimSpace(part[dashIdx+1:]))
+			if err1 == nil && err2 == nil && code >= lo && code <= hi {
+				return true
+			}
+		} else {
+			val, err := strconv.Atoi(part)
+			if err == nil && code == val {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// requestConfigChanged compares two RequestConfig pointers for semantic equality.
+func requestConfigChanged(a, b *db.RequestConfig) bool {
+	if a == nil && b == nil {
+		return false
+	}
+	if a == nil || b == nil {
+		return true
+	}
+	aJSON, _ := json.Marshal(a)
+	bJSON, _ := json.Marshal(b)
+	return string(aJSON) != string(bJSON)
 }
 
 func (m *Manager) resultProcessor() {
@@ -703,9 +827,13 @@ func (m *Manager) Sync() {
 			// Always apply latest config to existing monitors
 			existing.ApplyConfig(cfg)
 
-			// Check for changes (URL or Interval)
-			if existing.GetTargetURL() != dbM.URL || existing.GetInterval() != interval {
-				log.Printf("Monitor %s config changed (Interval/URL). Restarting...", dbM.Name)
+			// Check for changes (URL, Interval, or RequestConfig)
+			needRestart := existing.GetTargetURL() != dbM.URL || existing.GetInterval() != interval
+			if !needRestart && requestConfigChanged(existing.GetRequestConfig(), dbM.RequestConfig) {
+				needRestart = true
+			}
+			if needRestart {
+				log.Printf("Monitor %s config changed. Restarting...", dbM.Name)
 				existing.Stop()
 				delete(m.monitors, dbM.ID)
 			}
@@ -713,7 +841,7 @@ func (m *Manager) Sync() {
 
 		if _, exists := m.monitors[dbM.ID]; !exists {
 			// Start new monitor
-			mon := NewMonitor(dbM.ID, dbM.GroupID, dbM.Name, dbM.URL, interval, m.jobQueue, dbM.CreatedAt)
+			mon := NewMonitor(dbM.ID, dbM.GroupID, dbM.Name, dbM.URL, interval, m.jobQueue, dbM.CreatedAt, dbM.RequestConfig)
 			mon.ApplyConfig(cfg)
 
 			// Hydrate history from DB

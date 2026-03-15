@@ -9,7 +9,7 @@ import (
 func TestMonitor_RecordResult(t *testing.T) {
 	// 1. Initialize Monitor
 	jobQueue := make(chan Job, 1)
-	m := NewMonitor("m1", "g1", "Test Monitor", "http://example.com", 60*time.Second, jobQueue, time.Now())
+	m := NewMonitor("m1", "g1", "Test Monitor", "http://example.com", 60*time.Second, jobQueue, time.Now(), nil)
 
 	// 2. Record 55 results (Limit is 50)
 	for i := 0; i < 55; i++ {
@@ -38,7 +38,7 @@ func TestMonitor_RecordResult(t *testing.T) {
 
 func TestMonitor_GetLastStatus(t *testing.T) {
 	jobQueue := make(chan Job, 1)
-	m := NewMonitor("m1", "g1", "Test Monitor", "http://example.com", 60*time.Second, jobQueue, time.Now())
+	m := NewMonitor("m1", "g1", "Test Monitor", "http://example.com", 60*time.Second, jobQueue, time.Now(), nil)
 
 	// Empty
 	_, _, hasHistory, _ := m.GetLastStatus()
@@ -66,7 +66,7 @@ func TestMonitor_GetLastStatus(t *testing.T) {
 
 func TestMonitor_Getters(t *testing.T) {
 	jobQueue := make(chan Job, 1)
-	m := NewMonitor("m1", "g1", "Monitor Name", "http://target.com", 10*time.Second, jobQueue, time.Now())
+	m := NewMonitor("m1", "g1", "Monitor Name", "http://target.com", 10*time.Second, jobQueue, time.Now(), nil)
 
 	if m.GetName() != "Monitor Name" {
 		t.Errorf("GetName incorrect")
@@ -85,7 +85,7 @@ func TestMonitor_Getters(t *testing.T) {
 func TestMonitor_Scheduling(t *testing.T) {
 	jobQueue := make(chan Job, 10)
 	// Short interval
-	m := NewMonitor("m1", "g1", "Fast", "http://fast.com", 10*time.Millisecond, jobQueue, time.Now())
+	m := NewMonitor("m1", "g1", "Fast", "http://fast.com", 10*time.Millisecond, jobQueue, time.Now(), nil)
 
 	go m.Start()
 
@@ -187,7 +187,7 @@ func TestMonitor_AlignedScheduling(t *testing.T) {
 	// This tests that the monitor actually uses aligned scheduling
 	createdAt := time.Now().Add(-interval - interval/2) // 1.5 intervals ago → next tick in 0.5 interval
 
-	m := NewMonitor("m1", "g1", "Aligned", "http://aligned.com", interval, jobQueue, createdAt)
+	m := NewMonitor("m1", "g1", "Aligned", "http://aligned.com", interval, jobQueue, createdAt, nil)
 
 	go m.Start()
 
@@ -215,7 +215,7 @@ loop:
 func TestNewMonitor_ZeroCreatedAtDefaultsToNow(t *testing.T) {
 	jobQueue := make(chan Job, 1)
 	before := time.Now()
-	m := NewMonitor("m1", "g1", "Zero", "http://zero.com", 60*time.Second, jobQueue, time.Time{})
+	m := NewMonitor("m1", "g1", "Zero", "http://zero.com", 60*time.Second, jobQueue, time.Time{}, nil)
 	after := time.Now()
 
 	if m.createdAt.Before(before) || m.createdAt.After(after) {
@@ -227,7 +227,7 @@ func TestNewMonitor_ZeroCreatedAtDefaultsToNow(t *testing.T) {
 
 func newTestMonitorWithConfig(cfg MonitorConfig) *Monitor {
 	jq := make(chan Job, 1)
-	m := NewMonitor("test", "g1", "Test", "http://example.com", 60*time.Second, jq, time.Now())
+	m := NewMonitor("test", "g1", "Test", "http://example.com", 60*time.Second, jq, time.Now(), nil)
 	m.ApplyConfig(cfg)
 	return m
 }
