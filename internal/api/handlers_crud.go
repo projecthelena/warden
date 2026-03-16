@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -188,12 +189,13 @@ func (h *CRUDHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 // @Router       /monitors [post]
 func (h *CRUDHandler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name                    string `json:"name"`
-		URL                     string `json:"url"`
-		GroupID                 string `json:"groupId"`
-		Interval                int    `json:"interval"`
-		ConfirmationThreshold   *int   `json:"confirmationThreshold,omitempty"`
-		NotificationCooldownMin *int   `json:"notificationCooldownMinutes,omitempty"`
+		Name                    string            `json:"name"`
+		URL                     string            `json:"url"`
+		GroupID                 string            `json:"groupId"`
+		Interval                int               `json:"interval"`
+		ConfirmationThreshold   *int              `json:"confirmationThreshold,omitempty"`
+		NotificationCooldownMin *int              `json:"notificationCooldownMinutes,omitempty"`
+		RequestConfig           *db.RequestConfig `json:"requestConfig,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -276,6 +278,12 @@ func (h *CRUDHandler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 7. Validate RequestConfig
+	if err := validateRequestConfig(req.RequestConfig); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	id := generateID(req.Name, "m-")
 
 	m := db.Monitor{
@@ -287,6 +295,7 @@ func (h *CRUDHandler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
 		Interval:                req.Interval,
 		ConfirmationThreshold:   req.ConfirmationThreshold,
 		NotificationCooldownMin: req.NotificationCooldownMin,
+		RequestConfig:           req.RequestConfig,
 	}
 
 	if err := h.store.CreateMonitor(m); err != nil {
@@ -341,11 +350,12 @@ func (h *CRUDHandler) UpdateMonitor(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name                    string `json:"name"`
-		URL                     string `json:"url"`
-		Interval                int    `json:"interval"`
-		ConfirmationThreshold   *int   `json:"confirmationThreshold,omitempty"`
-		NotificationCooldownMin *int   `json:"notificationCooldownMinutes,omitempty"`
+		Name                    string            `json:"name"`
+		URL                     string            `json:"url"`
+		Interval                int               `json:"interval"`
+		ConfirmationThreshold   *int              `json:"confirmationThreshold,omitempty"`
+		NotificationCooldownMin *int              `json:"notificationCooldownMinutes,omitempty"`
+		RequestConfig           *db.RequestConfig `json:"requestConfig,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -362,7 +372,12 @@ func (h *CRUDHandler) UpdateMonitor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.store.UpdateMonitor(id, req.Name, req.URL, req.Interval, req.ConfirmationThreshold, req.NotificationCooldownMin); err != nil {
+	if err := validateRequestConfig(req.RequestConfig); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.UpdateMonitor(id, req.Name, req.URL, req.Interval, req.ConfirmationThreshold, req.NotificationCooldownMin, req.RequestConfig); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -453,4 +468,37 @@ func (h *CRUDHandler) ResumeMonitor(w http.ResponseWriter, r *http.Request) {
 
 	h.manager.Sync() // Immediately start the monitor
 	writeJSON(w, http.StatusOK, map[string]any{"message": "monitor resumed", "active": true})
+}
+
+var validMethods = map[string]bool{"GET": true, "HEAD": true, "POST": true, "PUT": true, "DELETE": true}
+var acceptedCodesRe = regexp.MustCompile(`^[1-5][0-9]{2}(-[1-5][0-9]{2})?(,[1-5][0-9]{2}(-[1-5][0-9]{2})?)*$`)
+
+func validateRequestConfig(cfg *db.RequestConfig) error {
+	if cfg == nil {
+		return nil
+	}
+	if cfg.Method != "" && !validMethods[cfg.Method] {
+		return fmt.Errorf("method must be one of GET, HEAD, POST, PUT, DELETE")
+	}
+	if cfg.TimeoutSeconds != 0 && (cfg.TimeoutSeconds < 1 || cfg.TimeoutSeconds > 120) {
+		return fmt.Errorf("timeoutSeconds must be between 1 and 120")
+	}
+	if len(cfg.Headers) > 50 {
+		return fmt.Errorf("maximum 50 custom headers allowed")
+	}
+	for k, v := range cfg.Headers {
+		if len(k) > 256 || len(v) > 4096 {
+			return fmt.Errorf("header key max 256 chars, value max 4096 chars")
+		}
+	}
+	if len(cfg.Body) > 10240 {
+		return fmt.Errorf("request body max 10KB")
+	}
+	if cfg.AcceptedStatusCodes != "" && !acceptedCodesRe.MatchString(cfg.AcceptedStatusCodes) {
+		return fmt.Errorf("acceptedStatusCodes must match format like '200-299,301,302'")
+	}
+	if cfg.RetryCount < 0 || cfg.RetryCount > 5 {
+		return fmt.Errorf("retryCount must be between 0 and 5")
+	}
+	return nil
 }

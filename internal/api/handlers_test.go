@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -694,6 +695,324 @@ func TestGetUptime_IncludesOverrideFields(t *testing.T) {
 	}
 	if _, ok := withoutOv["notificationCooldownMinutes"]; ok {
 		t.Error("Expected notificationCooldownMinutes absent for monitor without overrides")
+	}
+
+	_ = crudH // used in setup
+}
+
+// ============== REQUEST CONFIG API TESTS ==============
+
+func TestCreateMonitor_WithRequestConfig(t *testing.T) {
+	crudH, _, _, _, s := setupTest(t)
+
+	payload := map[string]interface{}{
+		"name":     "RC Create Test",
+		"url":      "http://example.com",
+		"groupId":  "g-default",
+		"interval": 60,
+		"requestConfig": map[string]interface{}{
+			"method":              "POST",
+			"headers":             map[string]string{"X-Custom": "test"},
+			"body":                "hello",
+			"timeoutSeconds":      10,
+			"followRedirects":     false,
+			"acceptedStatusCodes": "200-299,301",
+			"retryCount":          2,
+		},
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest("POST", "/api/monitors", bytes.NewBuffer(body))
+	w := httptest.NewRecorder()
+
+	r := chi.NewRouter()
+	r.Post("/api/monitors", crudH.CreateMonitor)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("Expected 201, got %d. Body: %s", w.Code, w.Body.String())
+	}
+
+	// Verify persisted in DB
+	monitors, err := s.GetMonitors()
+	if err != nil {
+		t.Fatalf("GetMonitors failed: %v", err)
+	}
+
+	var found *db.Monitor
+	for i := range monitors {
+		if monitors[i].Name == "RC Create Test" {
+			found = &monitors[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("Monitor 'RC Create Test' not found in DB")
+	}
+	if found.RequestConfig == nil {
+		t.Fatal("Expected RequestConfig to be persisted")
+	}
+	if found.RequestConfig.Method != "POST" {
+		t.Errorf("Expected method POST, got %s", found.RequestConfig.Method)
+	}
+	if found.RequestConfig.TimeoutSeconds != 10 {
+		t.Errorf("Expected TimeoutSeconds=10, got %d", found.RequestConfig.TimeoutSeconds)
+	}
+	if found.RequestConfig.RetryCount != 2 {
+		t.Errorf("Expected RetryCount=2, got %d", found.RequestConfig.RetryCount)
+	}
+	if found.RequestConfig.AcceptedStatusCodes != "200-299,301" {
+		t.Errorf("Expected AcceptedStatusCodes='200-299,301', got %s", found.RequestConfig.AcceptedStatusCodes)
+	}
+}
+
+func TestUpdateMonitor_WithRequestConfig(t *testing.T) {
+	crudH, _, _, _, s := setupTest(t)
+
+	// Seed monitor
+	if err := s.CreateMonitor(db.Monitor{
+		ID: "m-rc-update", GroupID: "g-default", Name: "RC Update",
+		URL: "http://test.com", Interval: 60, Active: true,
+	}); err != nil {
+		t.Fatalf("Failed to create monitor: %v", err)
+	}
+
+	payload := map[string]interface{}{
+		"name":     "RC Update",
+		"url":      "http://test.com",
+		"interval": 60,
+		"requestConfig": map[string]interface{}{
+			"method":         "HEAD",
+			"timeoutSeconds": 15,
+			"retryCount":     3,
+		},
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest("PUT", "/api/monitors/m-rc-update", bytes.NewBuffer(body))
+	w := httptest.NewRecorder()
+
+	r := chi.NewRouter()
+	r.Put("/api/monitors/{id}", crudH.UpdateMonitor)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d. Body: %s", w.Code, w.Body.String())
+	}
+
+	// Verify in DB
+	monitors, _ := s.GetMonitors()
+	var found *db.Monitor
+	for i := range monitors {
+		if monitors[i].ID == "m-rc-update" {
+			found = &monitors[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("Monitor not found in DB")
+	}
+	if found.RequestConfig == nil {
+		t.Fatal("Expected RequestConfig to be persisted after update")
+	}
+	if found.RequestConfig.Method != "HEAD" {
+		t.Errorf("Expected method HEAD, got %s", found.RequestConfig.Method)
+	}
+	if found.RequestConfig.TimeoutSeconds != 15 {
+		t.Errorf("Expected TimeoutSeconds=15, got %d", found.RequestConfig.TimeoutSeconds)
+	}
+}
+
+func TestValidateRequestConfig(t *testing.T) {
+	tests := []struct {
+		name     string
+		payload  map[string]interface{}
+		expected int
+	}{
+		{
+			name: "invalid_method",
+			payload: map[string]interface{}{
+				"name": "Invalid Method", "url": "http://test.com", "groupId": "g-default", "interval": 60,
+				"requestConfig": map[string]interface{}{"method": "PATCH"},
+			},
+			expected: http.StatusBadRequest,
+		},
+		{
+			name: "timeout_too_high",
+			payload: map[string]interface{}{
+				"name": "Timeout High", "url": "http://test.com", "groupId": "g-default", "interval": 60,
+				"requestConfig": map[string]interface{}{"timeoutSeconds": 121},
+			},
+			expected: http.StatusBadRequest,
+		},
+		{
+			name: "retry_too_high",
+			payload: map[string]interface{}{
+				"name": "Retry High", "url": "http://test.com", "groupId": "g-default", "interval": 60,
+				"requestConfig": map[string]interface{}{"retryCount": 6},
+			},
+			expected: http.StatusBadRequest,
+		},
+		{
+			name: "too_many_headers",
+			payload: map[string]interface{}{
+				"name": "Headers", "url": "http://test.com", "groupId": "g-default", "interval": 60,
+				"requestConfig": map[string]interface{}{"headers": makeLargeHeaders(51)},
+			},
+			expected: http.StatusBadRequest,
+		},
+		{
+			name: "body_too_large",
+			payload: map[string]interface{}{
+				"name": "Body Large", "url": "http://test.com", "groupId": "g-default", "interval": 60,
+				"requestConfig": map[string]interface{}{"body": makeLargeString(10241)},
+			},
+			expected: http.StatusBadRequest,
+		},
+		{
+			name: "invalid_accepted_codes",
+			payload: map[string]interface{}{
+				"name": "Bad Codes", "url": "http://test.com", "groupId": "g-default", "interval": 60,
+				"requestConfig": map[string]interface{}{"acceptedStatusCodes": "abc-xyz"},
+			},
+			expected: http.StatusBadRequest,
+		},
+		{
+			name: "valid_config",
+			payload: map[string]interface{}{
+				"name": "Valid Config", "url": "http://test.com", "groupId": "g-default", "interval": 60,
+				"requestConfig": map[string]interface{}{
+					"method":              "POST",
+					"timeoutSeconds":      10,
+					"retryCount":          2,
+					"acceptedStatusCodes": "200-299,301",
+				},
+			},
+			expected: http.StatusCreated,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			crudH, _, _, _, _ := setupTest(t)
+
+			body, _ := json.Marshal(tc.payload)
+			req := httptest.NewRequest("POST", "/api/monitors", bytes.NewBuffer(body))
+			w := httptest.NewRecorder()
+
+			r := chi.NewRouter()
+			r.Post("/api/monitors", crudH.CreateMonitor)
+			r.ServeHTTP(w, req)
+
+			if w.Code != tc.expected {
+				t.Errorf("Expected %d, got %d. Body: %s", tc.expected, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func makeLargeHeaders(count int) map[string]string {
+	headers := make(map[string]string, count)
+	for i := 0; i < count; i++ {
+		headers[fmt.Sprintf("X-Header-%d", i)] = "value"
+	}
+	return headers
+}
+
+func makeLargeString(size int) string {
+	b := make([]byte, size)
+	for i := range b {
+		b[i] = 'a'
+	}
+	return string(b)
+}
+
+func TestGetUptime_IncludesRequestConfig(t *testing.T) {
+	crudH, _, _, _, s := setupTest(t)
+	manager := uptime.NewManager(s)
+	uptimeH := NewUptimeHandler(manager, s)
+
+	// Create monitor WITH RequestConfig
+	rc := &db.RequestConfig{
+		Method:         "POST",
+		TimeoutSeconds: 10,
+	}
+	if err := s.CreateMonitor(db.Monitor{
+		ID: "m-rc-uptime", GroupID: "g-default", Name: "With RC",
+		URL: "http://test.com", Interval: 60, Active: true,
+		RequestConfig: rc,
+	}); err != nil {
+		t.Fatalf("Failed to create monitor: %v", err)
+	}
+
+	// Create monitor WITHOUT RequestConfig
+	if err := s.CreateMonitor(db.Monitor{
+		ID: "m-norc-uptime", GroupID: "g-default", Name: "Without RC",
+		URL: "http://test2.com", Interval: 60, Active: true,
+	}); err != nil {
+		t.Fatalf("Failed to create monitor: %v", err)
+	}
+
+	manager.Sync()
+
+	req := httptest.NewRequest("GET", "/api/uptime", nil)
+	w := httptest.NewRecorder()
+
+	r := chi.NewRouter()
+	r.Get("/api/uptime", uptimeH.GetHistory)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d. Body: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	groups, ok := resp["groups"].([]interface{})
+	if !ok || len(groups) == 0 {
+		t.Fatal("Expected groups in response")
+	}
+
+	var withRC, withoutRC map[string]interface{}
+	for _, g := range groups {
+		group := g.(map[string]interface{})
+		monitors, ok := group["monitors"].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, mon := range monitors {
+			m := mon.(map[string]interface{})
+			if m["id"] == "m-rc-uptime" {
+				withRC = m
+			}
+			if m["id"] == "m-norc-uptime" {
+				withoutRC = m
+			}
+		}
+	}
+
+	if withRC == nil {
+		t.Fatal("Monitor m-rc-uptime not found in response")
+	}
+	if withoutRC == nil {
+		t.Fatal("Monitor m-norc-uptime not found in response")
+	}
+
+	// Monitor WITH RequestConfig should include it
+	rcData, ok := withRC["requestConfig"]
+	if !ok || rcData == nil {
+		t.Error("Expected requestConfig present for monitor with RC")
+	} else {
+		rcMap := rcData.(map[string]interface{})
+		if rcMap["method"] != "POST" {
+			t.Errorf("Expected method POST in response, got %v", rcMap["method"])
+		}
+	}
+
+	// Monitor WITHOUT RequestConfig should NOT include it (omitempty)
+	if _, ok := withoutRC["requestConfig"]; ok {
+		t.Error("Expected requestConfig absent for monitor without RC")
 	}
 
 	_ = crudH // used in setup

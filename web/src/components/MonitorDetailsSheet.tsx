@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Monitor, useMonitorStore } from "@/lib/store";
+import { Monitor, RequestConfig, useMonitorStore } from "@/lib/store";
 import { formatDate } from "@/lib/utils";
 import {
     Sheet,
@@ -17,10 +17,12 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { StatusBadge } from "@/components/ui/monitor-visuals";
-import { Trash2, Save, Activity, Clock, BarChart, Pause, Play } from "lucide-react";
+import { Trash2, Save, Activity, Clock, BarChart, Pause, Play, X } from "lucide-react";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -48,6 +50,18 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
     const [interval, setInterval] = useState(monitor.interval || 60);
     const [confirmThreshold, setConfirmThreshold] = useState<string>(monitor.confirmationThreshold?.toString() ?? "");
     const [cooldownMins, setCooldownMins] = useState<string>(monitor.notificationCooldownMinutes?.toString() ?? "");
+
+    // Request config state
+    const [httpMethod, setHttpMethod] = useState(monitor.requestConfig?.method || "GET");
+    const [requestTimeout, setRequestTimeout] = useState<string>(monitor.requestConfig?.timeoutSeconds?.toString() ?? "");
+    const [retryCount, setRetryCount] = useState(monitor.requestConfig?.retryCount?.toString() ?? "0");
+    const [followRedirects, setFollowRedirects] = useState(monitor.requestConfig?.followRedirects !== false);
+    const [acceptedCodes, setAcceptedCodes] = useState(monitor.requestConfig?.acceptedStatusCodes ?? "");
+    const [customHeaders, setCustomHeaders] = useState<{ key: string; value: string }[]>(
+        Object.entries(monitor.requestConfig?.headers ?? {}).map(([key, value]) => ({ key, value }))
+    );
+    const [requestBody, setRequestBody] = useState(monitor.requestConfig?.body ?? "");
+
     const [stats, setStats] = useState({ uptime24h: 100, uptime7d: 100, uptime30d: 100 });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [latencyData, setLatencyData] = useState<any[]>([]);
@@ -60,6 +74,15 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
             setInterval(monitor.interval || 60);
             setConfirmThreshold(monitor.confirmationThreshold?.toString() ?? "");
             setCooldownMins(monitor.notificationCooldownMinutes?.toString() ?? "");
+            setHttpMethod(monitor.requestConfig?.method || "GET");
+            setRequestTimeout(monitor.requestConfig?.timeoutSeconds?.toString() ?? "");
+            setRetryCount(monitor.requestConfig?.retryCount?.toString() ?? "0");
+            setFollowRedirects(monitor.requestConfig?.followRedirects !== false);
+            setAcceptedCodes(monitor.requestConfig?.acceptedStatusCodes ?? "");
+            setCustomHeaders(
+                Object.entries(monitor.requestConfig?.headers ?? {}).map(([key, value]) => ({ key, value }))
+            );
+            setRequestBody(monitor.requestConfig?.body ?? "");
         }
     }, [open, monitor]);
 
@@ -204,10 +227,38 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
 
 
     const handleSave = () => {
+        // Build request config
+        const headers: Record<string, string> = {};
+        for (const h of customHeaders) {
+            if (h.key.trim()) headers[h.key.trim()] = h.value.trim();
+        }
+        const hasNonDefaults = httpMethod !== "GET" || requestTimeout || parseInt(retryCount) > 0 ||
+            !followRedirects || acceptedCodes || Object.keys(headers).length > 0 || requestBody;
+
+        // Build requestConfig: if user set non-default values, include them.
+        // If monitor previously had config but user cleared everything back to defaults,
+        // we must still send an empty object so the backend clears the stored config.
+        let requestConfig: RequestConfig | undefined;
+        if (hasNonDefaults) {
+            requestConfig = {};
+            if (httpMethod !== "GET") requestConfig.method = httpMethod;
+            if (requestTimeout) requestConfig.timeoutSeconds = parseInt(requestTimeout);
+            if (parseInt(retryCount) > 0) requestConfig.retryCount = parseInt(retryCount);
+            if (!followRedirects) requestConfig.followRedirects = false;
+            if (acceptedCodes) requestConfig.acceptedStatusCodes = acceptedCodes;
+            if (Object.keys(headers).length > 0) requestConfig.headers = headers;
+            if (requestBody) requestConfig.body = requestBody;
+        } else if (monitor.requestConfig) {
+            // Monitor had config before but user reset everything to defaults.
+            // Send empty object so backend clears the stored config.
+            requestConfig = {};
+        }
+
         updateMonitor(monitor.id, {
             name, url, interval,
             confirmationThreshold: confirmThreshold ? parseInt(confirmThreshold) : undefined,
             notificationCooldownMinutes: cooldownMins ? parseInt(cooldownMins) : undefined,
+            requestConfig,
         });
         onOpenChange(false);
     };
@@ -466,6 +517,121 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                                             onChange={(e) => setCooldownMins(e.target.value)}
                                         />
                                     </div>
+                                </div>
+                            </div>
+                            <div className="pt-4 border-t border-border">
+                                <h3 className="text-sm font-medium mb-3">Request Configuration</h3>
+                                <p className="text-xs text-muted-foreground mb-3">
+                                    Customize HTTP request settings for this monitor.
+                                </p>
+                                <div className="space-y-3">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="grid gap-1.5">
+                                            <Label className="text-xs">HTTP Method</Label>
+                                            <Select onValueChange={setHttpMethod} value={httpMethod}>
+                                                <SelectTrigger data-testid="request-method-select"><SelectValue /></SelectTrigger>
+                                                <SelectContent>
+                                                    {["GET", "HEAD", "POST", "PUT", "DELETE"].map(m => (
+                                                        <SelectItem key={m} value={m} className="cursor-pointer">{m}</SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <div className="grid gap-1.5">
+                                            <Label className="text-xs">Request Timeout (s)</Label>
+                                            <Input
+                                                type="number"
+                                                min={1}
+                                                max={120}
+                                                placeholder="5"
+                                                value={requestTimeout}
+                                                onChange={(e) => setRequestTimeout(e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="grid gap-1.5">
+                                            <Label className="text-xs">Retry on Failure</Label>
+                                            <Select onValueChange={setRetryCount} value={retryCount}>
+                                                <SelectTrigger data-testid="request-retry-select"><SelectValue /></SelectTrigger>
+                                                <SelectContent>
+                                                    {[0, 1, 2, 3, 4, 5].map(n => (
+                                                        <SelectItem key={n} value={n.toString()} className="cursor-pointer">
+                                                            {n === 0 ? "No retry" : `${n} ${n === 1 ? "retry" : "retries"}`}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <div className="grid gap-1.5">
+                                            <Label className="text-xs">Accepted Status Codes</Label>
+                                            <Input
+                                                placeholder="200-399"
+                                                value={acceptedCodes}
+                                                onChange={(e) => setAcceptedCodes(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <Label className="text-xs">Follow Redirects</Label>
+                                        <Switch checked={followRedirects} onCheckedChange={setFollowRedirects} />
+                                    </div>
+                                    <div className="grid gap-1.5">
+                                        <div className="flex items-center justify-between">
+                                            <Label className="text-xs">Custom Headers</Label>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-6 text-xs"
+                                                onClick={() => setCustomHeaders([...customHeaders, { key: "", value: "" }])}
+                                            >
+                                                + Add
+                                            </Button>
+                                        </div>
+                                        {customHeaders.map((h, i) => (
+                                            <div key={i} className="flex gap-2 items-center">
+                                                <Input
+                                                    placeholder="Header name"
+                                                    value={h.key}
+                                                    onChange={(e) => {
+                                                        const next = [...customHeaders];
+                                                        next[i] = { ...next[i], key: e.target.value };
+                                                        setCustomHeaders(next);
+                                                    }}
+                                                    className="text-xs"
+                                                />
+                                                <Input
+                                                    placeholder="Value"
+                                                    value={h.value}
+                                                    onChange={(e) => {
+                                                        const next = [...customHeaders];
+                                                        next[i] = { ...next[i], value: e.target.value };
+                                                        setCustomHeaders(next);
+                                                    }}
+                                                    className="text-xs"
+                                                />
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-8 w-8 p-0 shrink-0"
+                                                    onClick={() => setCustomHeaders(customHeaders.filter((_, j) => j !== i))}
+                                                >
+                                                    <X className="w-3 h-3" />
+                                                </Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {(httpMethod === "POST" || httpMethod === "PUT") && (
+                                        <div className="grid gap-1.5">
+                                            <Label className="text-xs">Request Body</Label>
+                                            <Textarea
+                                                placeholder='{"status": "ok"}'
+                                                value={requestBody}
+                                                onChange={(e) => setRequestBody(e.target.value)}
+                                                className="font-mono text-xs min-h-[60px]"
+                                            />
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                             <Button onClick={handleSave} className="w-full" data-testid="monitor-edit-save-btn">

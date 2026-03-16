@@ -3,6 +3,8 @@ package uptime
 import (
 	"sync"
 	"time"
+
+	"github.com/projecthelena/warden/internal/db"
 )
 
 type Status struct {
@@ -25,7 +27,8 @@ type Monitor struct {
 	mu        sync.RWMutex
 	stopCh    chan struct{}
 	stopOnce  sync.Once
-	jobQueue  chan<- Job
+	jobQueue      chan<- Job
+	requestConfig *db.RequestConfig
 
 	// Notification fatigue state (protected by mu)
 	confirmationThreshold int // effective threshold (resolved from per-monitor or global)
@@ -89,7 +92,7 @@ type MonitorConfig struct {
 	RecoveryConfirmationChecks int
 }
 
-func NewMonitor(id, groupID, name, url string, interval time.Duration, jobQueue chan<- Job, createdAt time.Time) *Monitor {
+func NewMonitor(id, groupID, name, url string, interval time.Duration, jobQueue chan<- Job, createdAt time.Time, reqConfig *db.RequestConfig) *Monitor {
 	if createdAt.IsZero() {
 		createdAt = time.Now()
 	}
@@ -103,6 +106,7 @@ func NewMonitor(id, groupID, name, url string, interval time.Duration, jobQueue 
 		history:               make([]Status, 0, 50), // Keep last 50 in memory
 		stopCh:                make(chan struct{}),
 		jobQueue:              jobQueue,
+		requestConfig:         reqConfig,
 		confirmationThreshold: 3,  // default
 		cooldownMinutes:       30, // default
 		lastNotifiedAt:        make(map[string]time.Time),
@@ -189,13 +193,22 @@ func (m *Monitor) schedule() {
 			_ = r
 		}
 	}()
+	m.mu.RLock()
+	cfg := m.requestConfig
+	m.mu.RUnlock()
 	select {
-	case m.jobQueue <- Job{MonitorID: m.id, URL: m.url}:
+	case m.jobQueue <- Job{MonitorID: m.id, URL: m.url, RequestConfig: cfg}:
 		// Scheduled
 	default:
 		// Queue full, skip this tick to avoid blocking scheduler
-		// Log warning?
 	}
+}
+
+// GetRequestConfig returns the monitor's request configuration.
+func (m *Monitor) GetRequestConfig() *db.RequestConfig {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.requestConfig
 }
 
 // RecordResult is called by the ResultProcessor to update in-memory history

@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import {
     Sheet,
     SheetContent,
@@ -23,7 +25,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { Group } from "@/lib/store";
+import { Group, RequestConfig } from "@/lib/store";
 import { useCreateGroupMutation, useCreateMonitorMutation } from "@/hooks/useMonitors";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -57,6 +59,15 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
     const [showAdvanced, setShowAdvanced] = useState(false);
     const [isNewGroup, setIsNewGroup] = useState(false);
     const [newGroupName, setNewGroupName] = useState(""); // For new group input
+
+    // Request Configuration state
+    const [httpMethod, setHttpMethod] = useState("GET");
+    const [requestTimeout, setRequestTimeout] = useState<string>("");
+    const [retryCount, setRetryCount] = useState("0");
+    const [followRedirects, setFollowRedirects] = useState(true);
+    const [acceptedCodes, setAcceptedCodes] = useState("");
+    const [customHeaders, setCustomHeaders] = useState<{ key: string; value: string }[]>([]);
+    const [requestBody, setRequestBody] = useState("");
 
     const [open, setOpen] = useState(false);
 
@@ -128,6 +139,25 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                 }
             }
 
+            // Build request config if any fields are non-default
+            let requestConfig: RequestConfig | undefined;
+            const headers: Record<string, string> = {};
+            for (const h of customHeaders) {
+                if (h.key.trim()) headers[h.key.trim()] = h.value.trim();
+            }
+            const hasConfig = httpMethod !== "GET" || requestTimeout || parseInt(retryCount) > 0 ||
+                !followRedirects || acceptedCodes || Object.keys(headers).length > 0 || requestBody;
+            if (hasConfig) {
+                requestConfig = {};
+                if (httpMethod !== "GET") requestConfig.method = httpMethod;
+                if (requestTimeout) requestConfig.timeoutSeconds = parseInt(requestTimeout);
+                if (parseInt(retryCount) > 0) requestConfig.retryCount = parseInt(retryCount);
+                if (!followRedirects) requestConfig.followRedirects = false;
+                if (acceptedCodes) requestConfig.acceptedStatusCodes = acceptedCodes;
+                if (Object.keys(headers).length > 0) requestConfig.headers = headers;
+                if (requestBody) requestConfig.body = requestBody;
+            }
+
             await createMonitor.mutateAsync({
                 name,
                 url,
@@ -135,6 +165,7 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                 interval,
                 confirmationThreshold: confirmThreshold ? parseInt(confirmThreshold) : undefined,
                 notificationCooldownMinutes: cooldownMins ? parseInt(cooldownMins) : undefined,
+                requestConfig,
             });
 
             toast({ title: "Monitor Created", description: `Monitor "${name}" active and checking.` });
@@ -149,6 +180,13 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
             setCooldownMins("");
             setShowAdvanced(false);
             setIsNewGroup(false);
+            setHttpMethod("GET");
+            setRequestTimeout("");
+            setRetryCount("0");
+            setFollowRedirects(true);
+            setAcceptedCodes("");
+            setCustomHeaders([]);
+            setRequestBody("");
             setOpen(false);
 
             // Redirect to the group page
@@ -179,7 +217,7 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                     <Plus className="w-4 h-4" /> New Monitor
                 </Button>
             </SheetTrigger>
-            <SheetContent className="sm:max-w-[500px]">
+            <SheetContent className="sm:max-w-[500px] overflow-y-auto">
                 <SheetHeader>
                     <SheetTitle>Add New Monitor</SheetTitle>
                     <SheetDescription>
@@ -285,34 +323,147 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                             {showAdvanced ? "- Hide Advanced" : "+ Advanced Settings"}
                         </button>
                         {showAdvanced && (
-                            <div className="grid grid-cols-2 gap-4 p-3 rounded-lg border border-border bg-muted/30">
-                                <div className="grid gap-1.5">
-                                    <Label htmlFor="create-confirm" className="text-xs">Confirmation Checks</Label>
-                                    <Input
-                                        id="create-confirm"
-                                        type="number"
-                                        min={1}
-                                        max={100}
-                                        placeholder="Global default"
-                                        value={confirmThreshold}
-                                        onChange={(e) => setConfirmThreshold(e.target.value)}
-                                    />
+                            <div className="space-y-4 p-3 rounded-lg border border-border bg-muted/30">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="grid gap-1.5">
+                                        <Label htmlFor="create-confirm" className="text-xs">Confirmation Checks</Label>
+                                        <Input
+                                            id="create-confirm"
+                                            type="number"
+                                            min={1}
+                                            max={100}
+                                            placeholder="Global default"
+                                            value={confirmThreshold}
+                                            onChange={(e) => setConfirmThreshold(e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="grid gap-1.5">
+                                        <Label htmlFor="create-cooldown" className="text-xs">Cooldown (min)</Label>
+                                        <Input
+                                            id="create-cooldown"
+                                            type="number"
+                                            min={0}
+                                            max={1440}
+                                            placeholder="Global default"
+                                            value={cooldownMins}
+                                            onChange={(e) => setCooldownMins(e.target.value)}
+                                        />
+                                    </div>
+                                    <p className="col-span-2 text-xs text-muted-foreground">
+                                        Override global notification settings for this monitor. Leave empty to use global defaults.
+                                    </p>
                                 </div>
-                                <div className="grid gap-1.5">
-                                    <Label htmlFor="create-cooldown" className="text-xs">Cooldown (min)</Label>
-                                    <Input
-                                        id="create-cooldown"
-                                        type="number"
-                                        min={0}
-                                        max={1440}
-                                        placeholder="Global default"
-                                        value={cooldownMins}
-                                        onChange={(e) => setCooldownMins(e.target.value)}
-                                    />
+
+                                <div className="border-t border-border pt-3 space-y-3">
+                                    <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Request Configuration</h4>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="grid gap-1.5">
+                                            <Label className="text-xs">HTTP Method</Label>
+                                            <Select onValueChange={setHttpMethod} value={httpMethod}>
+                                                <SelectTrigger data-testid="request-method-select"><SelectValue /></SelectTrigger>
+                                                <SelectContent>
+                                                    {["GET", "HEAD", "POST", "PUT", "DELETE"].map(m => (
+                                                        <SelectItem key={m} value={m} className="cursor-pointer">{m}</SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <div className="grid gap-1.5">
+                                            <Label className="text-xs">Request Timeout (s)</Label>
+                                            <Input
+                                                type="number"
+                                                min={1}
+                                                max={120}
+                                                placeholder="5"
+                                                value={requestTimeout}
+                                                onChange={(e) => setRequestTimeout(e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="grid gap-1.5">
+                                            <Label className="text-xs">Retry on Failure</Label>
+                                            <Select onValueChange={setRetryCount} value={retryCount}>
+                                                <SelectTrigger data-testid="request-retry-select"><SelectValue /></SelectTrigger>
+                                                <SelectContent>
+                                                    {[0, 1, 2, 3, 4, 5].map(n => (
+                                                        <SelectItem key={n} value={n.toString()} className="cursor-pointer">
+                                                            {n === 0 ? "No retry" : `${n} ${n === 1 ? "retry" : "retries"}`}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <div className="grid gap-1.5">
+                                            <Label className="text-xs">Accepted Status Codes</Label>
+                                            <Input
+                                                placeholder="200-399"
+                                                value={acceptedCodes}
+                                                onChange={(e) => setAcceptedCodes(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <Label className="text-xs">Follow Redirects</Label>
+                                        <Switch checked={followRedirects} onCheckedChange={setFollowRedirects} />
+                                    </div>
+                                    <div className="grid gap-1.5">
+                                        <div className="flex items-center justify-between">
+                                            <Label className="text-xs">Custom Headers</Label>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-6 text-xs"
+                                                onClick={() => setCustomHeaders([...customHeaders, { key: "", value: "" }])}
+                                            >
+                                                + Add
+                                            </Button>
+                                        </div>
+                                        {customHeaders.map((h, i) => (
+                                            <div key={i} className="flex gap-2 items-center">
+                                                <Input
+                                                    placeholder="Header name"
+                                                    value={h.key}
+                                                    onChange={(e) => {
+                                                        const next = [...customHeaders];
+                                                        next[i] = { ...next[i], key: e.target.value };
+                                                        setCustomHeaders(next);
+                                                    }}
+                                                    className="text-xs"
+                                                />
+                                                <Input
+                                                    placeholder="Value"
+                                                    value={h.value}
+                                                    onChange={(e) => {
+                                                        const next = [...customHeaders];
+                                                        next[i] = { ...next[i], value: e.target.value };
+                                                        setCustomHeaders(next);
+                                                    }}
+                                                    className="text-xs"
+                                                />
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-8 w-8 p-0 shrink-0"
+                                                    onClick={() => setCustomHeaders(customHeaders.filter((_, j) => j !== i))}
+                                                >
+                                                    <X className="w-3 h-3" />
+                                                </Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {(httpMethod === "POST" || httpMethod === "PUT") && (
+                                        <div className="grid gap-1.5">
+                                            <Label className="text-xs">Request Body</Label>
+                                            <Textarea
+                                                placeholder='{"status": "ok"}'
+                                                value={requestBody}
+                                                onChange={(e) => setRequestBody(e.target.value)}
+                                                className="font-mono text-xs min-h-[60px]"
+                                            />
+                                        </div>
+                                    )}
                                 </div>
-                                <p className="col-span-2 text-xs text-muted-foreground">
-                                    Override global notification settings for this monitor. Leave empty to use global defaults.
-                                </p>
                             </div>
                         )}
                     </div>

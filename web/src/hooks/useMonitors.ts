@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Group, useMonitorStore } from "@/lib/store";
+import { Group, RequestConfig, useMonitorStore } from "@/lib/store";
 import { computePollingInterval } from "@/lib/pollingInterval";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
@@ -91,6 +91,7 @@ interface CreateMonitorPayload {
     interval: number;
     confirmationThreshold?: number;
     notificationCooldownMinutes?: number;
+    requestConfig?: RequestConfig;
 }
 
 async function createMonitorReq(payload: CreateMonitorPayload) {

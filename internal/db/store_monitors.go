@@ -2,10 +2,29 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 )
+
+// RequestConfig holds per-monitor HTTP request customization.
+type RequestConfig struct {
+	Method              string            `json:"method,omitempty"`
+	Headers             map[string]string `json:"headers,omitempty"`
+	Body                string            `json:"body,omitempty"`
+	TimeoutSeconds      int               `json:"timeoutSeconds,omitempty"`
+	FollowRedirects     *bool             `json:"followRedirects,omitempty"`
+	AcceptedStatusCodes string            `json:"acceptedStatusCodes,omitempty"`
+	RetryCount          int               `json:"retryCount,omitempty"`
+}
+
+// IsEmpty returns true if all fields are at their zero/default values.
+func (rc *RequestConfig) IsEmpty() bool {
+	return rc.Method == "" && len(rc.Headers) == 0 && rc.Body == "" &&
+		rc.TimeoutSeconds == 0 && rc.FollowRedirects == nil &&
+		rc.AcceptedStatusCodes == "" && rc.RetryCount == 0
+}
 
 // ErrMonitorNotFound is returned when a monitor is not found
 var ErrMonitorNotFound = errors.New("monitor not found")
@@ -18,8 +37,9 @@ type Monitor struct {
 	Active                  bool      `json:"active"`
 	Interval                int       `json:"interval"` // Seconds
 	CreatedAt               time.Time `json:"createdAt"`
-	ConfirmationThreshold   *int      `json:"confirmationThreshold,omitempty"`
-	NotificationCooldownMin *int      `json:"notificationCooldownMinutes,omitempty"`
+	ConfirmationThreshold   *int           `json:"confirmationThreshold,omitempty"`
+	NotificationCooldownMin *int           `json:"notificationCooldownMinutes,omitempty"`
+	RequestConfig           *RequestConfig `json:"requestConfig,omitempty"`
 }
 
 type CheckResult struct {
@@ -62,18 +82,34 @@ func (s *Store) CreateMonitor(m Monitor) error {
 	if m.Interval < 1 {
 		m.Interval = 60 // Default safety
 	}
-	_, err := s.db.Exec(s.rebind("INSERT INTO monitors (id, group_id, name, url, active, interval_seconds, created_at, confirmation_threshold, notification_cooldown_minutes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"),
-		m.ID, m.GroupID, m.Name, m.URL, m.Active, m.Interval, time.Now(), toNullInt64(m.ConfirmationThreshold), toNullInt64(m.NotificationCooldownMin))
+	var reqCfg sql.NullString
+	if m.RequestConfig != nil && !m.RequestConfig.IsEmpty() {
+		b, err := json.Marshal(m.RequestConfig)
+		if err != nil {
+			return fmt.Errorf("failed to marshal request_config: %w", err)
+		}
+		reqCfg = sql.NullString{String: string(b), Valid: true}
+	}
+	_, err := s.db.Exec(s.rebind("INSERT INTO monitors (id, group_id, name, url, active, interval_seconds, created_at, confirmation_threshold, notification_cooldown_minutes, request_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
+		m.ID, m.GroupID, m.Name, m.URL, m.Active, m.Interval, time.Now(), toNullInt64(m.ConfirmationThreshold), toNullInt64(m.NotificationCooldownMin), reqCfg)
 	return err
 }
 
-func (s *Store) UpdateMonitor(id, name, url string, interval int, confirmThreshold *int, cooldownMins *int) error {
+func (s *Store) UpdateMonitor(id, name, url string, interval int, confirmThreshold *int, cooldownMins *int, reqConfig *RequestConfig) error {
 	if interval < 1 {
 		interval = 60
 	}
+	var reqCfg sql.NullString
+	if reqConfig != nil && !reqConfig.IsEmpty() {
+		b, err := json.Marshal(reqConfig)
+		if err != nil {
+			return fmt.Errorf("failed to marshal request_config: %w", err)
+		}
+		reqCfg = sql.NullString{String: string(b), Valid: true}
+	}
 	// Don't modify active flag - it's managed separately via SetMonitorActive
-	res, err := s.db.Exec(s.rebind("UPDATE monitors SET name = ?, url = ?, interval_seconds = ?, confirmation_threshold = ?, notification_cooldown_minutes = ? WHERE id = ?"),
-		name, url, interval, toNullInt64(confirmThreshold), toNullInt64(cooldownMins), id)
+	res, err := s.db.Exec(s.rebind("UPDATE monitors SET name = ?, url = ?, interval_seconds = ?, confirmation_threshold = ?, notification_cooldown_minutes = ?, request_config = ? WHERE id = ?"),
+		name, url, interval, toNullInt64(confirmThreshold), toNullInt64(cooldownMins), reqCfg, id)
 	if err != nil {
 		return err
 	}
@@ -109,7 +145,7 @@ func (s *Store) SetMonitorActive(id string, active bool) error {
 
 // GetMonitors returns all monitors
 func (s *Store) GetMonitors() ([]Monitor, error) {
-	rows, err := s.db.Query("SELECT id, group_id, name, url, active, interval_seconds, created_at, confirmation_threshold, notification_cooldown_minutes FROM monitors ORDER BY created_at ASC")
+	rows, err := s.db.Query("SELECT id, group_id, name, url, active, interval_seconds, created_at, confirmation_threshold, notification_cooldown_minutes, request_config FROM monitors ORDER BY created_at ASC")
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +155,8 @@ func (s *Store) GetMonitors() ([]Monitor, error) {
 	for rows.Next() {
 		var m Monitor
 		var confirmThreshold, cooldownMins sql.NullInt64
-		if err := rows.Scan(&m.ID, &m.GroupID, &m.Name, &m.URL, &m.Active, &m.Interval, &m.CreatedAt, &confirmThreshold, &cooldownMins); err != nil {
+		var reqCfgStr sql.NullString
+		if err := rows.Scan(&m.ID, &m.GroupID, &m.Name, &m.URL, &m.Active, &m.Interval, &m.CreatedAt, &confirmThreshold, &cooldownMins, &reqCfgStr); err != nil {
 			return nil, err
 		}
 		if confirmThreshold.Valid {
@@ -129,6 +166,13 @@ func (s *Store) GetMonitors() ([]Monitor, error) {
 		if cooldownMins.Valid {
 			v := int(cooldownMins.Int64)
 			m.NotificationCooldownMin = &v
+		}
+		if reqCfgStr.Valid && reqCfgStr.String != "" {
+			var rc RequestConfig
+			if err := json.Unmarshal([]byte(reqCfgStr.String), &rc); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal request_config for monitor %s: %w", m.ID, err)
+			}
+			m.RequestConfig = &rc
 		}
 		monitors = append(monitors, m)
 	}

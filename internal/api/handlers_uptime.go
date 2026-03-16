@@ -46,18 +46,19 @@ type HistoryPoint struct {
 }
 
 type MonitorDTO struct {
-	ID                      string         `json:"id"`
-	Name                    string         `json:"name"`
-	URL                     string         `json:"url"`
-	Status                  string         `json:"status"`
-	Active                  bool           `json:"active"`
-	Latency                 int64          `json:"latency"`
-	Interval                int            `json:"interval"`
-	History                 []HistoryPoint `json:"history"`
-	Events                  []MonitorEvent `json:"events"`
-	LastCheck               string         `json:"lastCheck"`
-	ConfirmationThreshold   *int           `json:"confirmationThreshold,omitempty"`
-	NotificationCooldownMin *int           `json:"notificationCooldownMinutes,omitempty"`
+	ID                      string            `json:"id"`
+	Name                    string            `json:"name"`
+	URL                     string            `json:"url"`
+	Status                  string            `json:"status"`
+	Active                  bool              `json:"active"`
+	Latency                 int64             `json:"latency"`
+	Interval                int               `json:"interval"`
+	History                 []HistoryPoint    `json:"history"`
+	Events                  []MonitorEvent    `json:"events"`
+	LastCheck               string            `json:"lastCheck"`
+	ConfirmationThreshold   *int              `json:"confirmationThreshold,omitempty"`
+	NotificationCooldownMin *int              `json:"notificationCooldownMinutes,omitempty"`
+	RequestConfig           *db.RequestConfig `json:"requestConfig,omitempty"`
 }
 
 type MonitorEvent struct {
@@ -190,6 +191,7 @@ func (h *UptimeHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 				Events:                  getEventsForDTO(h.store, meta.ID),
 				ConfirmationThreshold:   meta.ConfirmationThreshold,
 				NotificationCooldownMin: meta.NotificationCooldownMin,
+				RequestConfig:           meta.RequestConfig,
 			})
 		}
 
