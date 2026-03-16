@@ -522,7 +522,7 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 				history := task.GetHistory()
 				if len(history) > 0 {
 					last := history[len(history)-1]
-					threshold := h.manager.GetLatencyThreshold()
+					threshold := task.GetLatencyThreshold()
 					if last.IsUp {
 						statusStr = "up"
 						if last.Latency > threshold {

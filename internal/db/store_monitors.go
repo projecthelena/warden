@@ -39,6 +39,7 @@ type Monitor struct {
 	CreatedAt               time.Time `json:"createdAt"`
 	ConfirmationThreshold   *int           `json:"confirmationThreshold,omitempty"`
 	NotificationCooldownMin *int           `json:"notificationCooldownMinutes,omitempty"`
+	LatencyThreshold        *int           `json:"latencyThreshold,omitempty"`
 	RequestConfig           *RequestConfig `json:"requestConfig,omitempty"`
 }
 
@@ -90,12 +91,12 @@ func (s *Store) CreateMonitor(m Monitor) error {
 		}
 		reqCfg = sql.NullString{String: string(b), Valid: true}
 	}
-	_, err := s.db.Exec(s.rebind("INSERT INTO monitors (id, group_id, name, url, active, interval_seconds, created_at, confirmation_threshold, notification_cooldown_minutes, request_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
-		m.ID, m.GroupID, m.Name, m.URL, m.Active, m.Interval, time.Now(), toNullInt64(m.ConfirmationThreshold), toNullInt64(m.NotificationCooldownMin), reqCfg)
+	_, err := s.db.Exec(s.rebind("INSERT INTO monitors (id, group_id, name, url, active, interval_seconds, created_at, confirmation_threshold, notification_cooldown_minutes, latency_threshold, request_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
+		m.ID, m.GroupID, m.Name, m.URL, m.Active, m.Interval, time.Now(), toNullInt64(m.ConfirmationThreshold), toNullInt64(m.NotificationCooldownMin), toNullInt64(m.LatencyThreshold), reqCfg)
 	return err
 }
 
-func (s *Store) UpdateMonitor(id, name, url string, interval int, confirmThreshold *int, cooldownMins *int, reqConfig *RequestConfig) error {
+func (s *Store) UpdateMonitor(id, name, url string, interval int, confirmThreshold *int, cooldownMins *int, latencyThreshold *int, reqConfig *RequestConfig) error {
 	if interval < 1 {
 		interval = 60
 	}
@@ -108,8 +109,8 @@ func (s *Store) UpdateMonitor(id, name, url string, interval int, confirmThresho
 		reqCfg = sql.NullString{String: string(b), Valid: true}
 	}
 	// Don't modify active flag - it's managed separately via SetMonitorActive
-	res, err := s.db.Exec(s.rebind("UPDATE monitors SET name = ?, url = ?, interval_seconds = ?, confirmation_threshold = ?, notification_cooldown_minutes = ?, request_config = ? WHERE id = ?"),
-		name, url, interval, toNullInt64(confirmThreshold), toNullInt64(cooldownMins), reqCfg, id)
+	res, err := s.db.Exec(s.rebind("UPDATE monitors SET name = ?, url = ?, interval_seconds = ?, confirmation_threshold = ?, notification_cooldown_minutes = ?, latency_threshold = ?, request_config = ? WHERE id = ?"),
+		name, url, interval, toNullInt64(confirmThreshold), toNullInt64(cooldownMins), toNullInt64(latencyThreshold), reqCfg, id)
 	if err != nil {
 		return err
 	}
@@ -145,7 +146,7 @@ func (s *Store) SetMonitorActive(id string, active bool) error {
 
 // GetMonitors returns all monitors
 func (s *Store) GetMonitors() ([]Monitor, error) {
-	rows, err := s.db.Query("SELECT id, group_id, name, url, active, interval_seconds, created_at, confirmation_threshold, notification_cooldown_minutes, request_config FROM monitors ORDER BY created_at ASC")
+	rows, err := s.db.Query("SELECT id, group_id, name, url, active, interval_seconds, created_at, confirmation_threshold, notification_cooldown_minutes, latency_threshold, request_config FROM monitors ORDER BY created_at ASC")
 	if err != nil {
 		return nil, err
 	}
@@ -154,9 +155,9 @@ func (s *Store) GetMonitors() ([]Monitor, error) {
 	var monitors []Monitor
 	for rows.Next() {
 		var m Monitor
-		var confirmThreshold, cooldownMins sql.NullInt64
+		var confirmThreshold, cooldownMins, latencyThresh sql.NullInt64
 		var reqCfgStr sql.NullString
-		if err := rows.Scan(&m.ID, &m.GroupID, &m.Name, &m.URL, &m.Active, &m.Interval, &m.CreatedAt, &confirmThreshold, &cooldownMins, &reqCfgStr); err != nil {
+		if err := rows.Scan(&m.ID, &m.GroupID, &m.Name, &m.URL, &m.Active, &m.Interval, &m.CreatedAt, &confirmThreshold, &cooldownMins, &latencyThresh, &reqCfgStr); err != nil {
 			return nil, err
 		}
 		if confirmThreshold.Valid {
@@ -166,6 +167,10 @@ func (s *Store) GetMonitors() ([]Monitor, error) {
 		if cooldownMins.Valid {
 			v := int(cooldownMins.Int64)
 			m.NotificationCooldownMin = &v
+		}
+		if latencyThresh.Valid {
+			v := int(latencyThresh.Int64)
+			m.LatencyThreshold = &v
 		}
 		if reqCfgStr.Valid && reqCfgStr.String != "" {
 			var rc RequestConfig

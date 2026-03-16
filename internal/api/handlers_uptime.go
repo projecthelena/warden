@@ -58,6 +58,7 @@ type MonitorDTO struct {
 	LastCheck               string            `json:"lastCheck"`
 	ConfirmationThreshold   *int              `json:"confirmationThreshold,omitempty"`
 	NotificationCooldownMin *int              `json:"notificationCooldownMinutes,omitempty"`
+	LatencyThreshold        *int              `json:"latencyThreshold,omitempty"`
 	RequestConfig           *db.RequestConfig `json:"requestConfig,omitempty"`
 }
 
@@ -142,7 +143,7 @@ func (h *UptimeHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 
 				if len(history) > 0 {
 					last := history[len(history)-1]
-					threshold := h.manager.GetLatencyThreshold()
+					threshold := task.GetLatencyThreshold()
 					if last.IsUp {
 						statusStr = "up"
 						if last.Latency > threshold {
@@ -191,6 +192,7 @@ func (h *UptimeHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 				Events:                  getEventsForDTO(h.store, meta.ID),
 				ConfirmationThreshold:   meta.ConfirmationThreshold,
 				NotificationCooldownMin: meta.NotificationCooldownMin,
+				LatencyThreshold:        meta.LatencyThreshold,
 				RequestConfig:           meta.RequestConfig,
 			})
 		}
@@ -312,7 +314,6 @@ func (h *UptimeHandler) GetOverview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var overview []GroupOverviewDTO
-	threshold := h.manager.GetLatencyThreshold()
 
 	for _, g := range groups {
 		monitors := groupMap[g.ID]
@@ -338,7 +339,7 @@ func (h *UptimeHandler) GetOverview(w http.ResponseWriter, r *http.Request) {
 							anyDown = true
 							break // Critical priority
 						}
-						if hasHistory && isUp && (isDegraded || latency > threshold) {
+						if hasHistory && isUp && (isDegraded || latency > task.GetLatencyThreshold()) {
 							anyDegraded = true
 						}
 					}

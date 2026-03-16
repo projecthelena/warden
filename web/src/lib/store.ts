@@ -59,6 +59,7 @@ export interface Monitor {
     interval: number;
     confirmationThreshold?: number;
     notificationCooldownMinutes?: number;
+    latencyThreshold?: number;
     requestConfig?: RequestConfig;
 }
 

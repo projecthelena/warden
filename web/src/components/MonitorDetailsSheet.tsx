@@ -50,6 +50,7 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
     const [interval, setInterval] = useState(monitor.interval || 60);
     const [confirmThreshold, setConfirmThreshold] = useState<string>(monitor.confirmationThreshold?.toString() ?? "");
     const [cooldownMins, setCooldownMins] = useState<string>(monitor.notificationCooldownMinutes?.toString() ?? "");
+    const [latencyThreshold, setLatencyThreshold] = useState<string>(monitor.latencyThreshold?.toString() ?? "");
 
     // Request config state
     const [httpMethod, setHttpMethod] = useState(monitor.requestConfig?.method || "GET");
@@ -74,6 +75,7 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
             setInterval(monitor.interval || 60);
             setConfirmThreshold(monitor.confirmationThreshold?.toString() ?? "");
             setCooldownMins(monitor.notificationCooldownMinutes?.toString() ?? "");
+            setLatencyThreshold(monitor.latencyThreshold?.toString() ?? "");
             setHttpMethod(monitor.requestConfig?.method || "GET");
             setRequestTimeout(monitor.requestConfig?.timeoutSeconds?.toString() ?? "");
             setRetryCount(monitor.requestConfig?.retryCount?.toString() ?? "0");
@@ -258,6 +260,7 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
             name, url, interval,
             confirmationThreshold: confirmThreshold ? parseInt(confirmThreshold) : undefined,
             notificationCooldownMinutes: cooldownMins ? parseInt(cooldownMins) : undefined,
+            latencyThreshold: latencyThreshold ? parseInt(latencyThreshold) : undefined,
             requestConfig,
         });
         onOpenChange(false);
@@ -515,6 +518,17 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                                             placeholder="Global default"
                                             value={cooldownMins}
                                             onChange={(e) => setCooldownMins(e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="grid gap-2 col-span-2">
+                                        <Label htmlFor="mon-latency">Latency Threshold (ms)</Label>
+                                        <Input
+                                            id="mon-latency"
+                                            type="number"
+                                            min={1}
+                                            placeholder="Global default"
+                                            value={latencyThreshold}
+                                            onChange={(e) => setLatencyThreshold(e.target.value)}
                                         />
                                     </div>
                                 </div>

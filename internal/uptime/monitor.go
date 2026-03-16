@@ -31,8 +31,9 @@ type Monitor struct {
 	requestConfig *db.RequestConfig
 
 	// Notification fatigue state (protected by mu)
-	confirmationThreshold int // effective threshold (resolved from per-monitor or global)
-	cooldownMinutes       int // effective cooldown (resolved from per-monitor or global)
+	confirmationThreshold int   // effective threshold (resolved from per-monitor or global)
+	cooldownMinutes       int   // effective cooldown (resolved from per-monitor or global)
+	latencyThreshold      int64 // effective latency threshold (resolved from per-monitor or global)
 
 	consecutiveDownCount int  // consecutive failed checks
 	consecutiveDegCount  int  // consecutive degraded checks
@@ -426,6 +427,20 @@ func (m *Monitor) IsFlapping() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.isFlapping
+}
+
+// GetLatencyThreshold returns the effective latency threshold for this monitor.
+func (m *Monitor) GetLatencyThreshold() int64 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.latencyThreshold
+}
+
+// SetLatencyThreshold sets the effective latency threshold for this monitor.
+func (m *Monitor) SetLatencyThreshold(v int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.latencyThreshold = v
 }
 
 // IncrementRecovery increments the consecutive up counter during recovery confirmation.

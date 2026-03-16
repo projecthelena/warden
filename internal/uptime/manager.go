@@ -388,10 +388,8 @@ func (m *Manager) resultProcessor() {
 			if exists {
 				active, _, hasHistory, lastDegraded := mon.GetLastStatus()
 
-				// 2. Latency Threshold
-				m.mu.RLock()
-				threshold := m.latencyThreshold
-				m.mu.RUnlock()
+				// 2. Latency Threshold (per-monitor override or global default)
+				threshold := mon.GetLatencyThreshold()
 
 				// Check if monitor is in maintenance
 				isMaint := m.isMonitorInMaintenance(mon.GetGroupID())
@@ -823,9 +821,16 @@ func (m *Manager) Sync() {
 		}
 		interval := time.Duration(intervalSec) * time.Second
 
+		// Resolve per-monitor latency threshold
+		monLatencyThresh := m.latencyThreshold // global default
+		if dbM.LatencyThreshold != nil {
+			monLatencyThresh = int64(*dbM.LatencyThreshold)
+		}
+
 		if existing, exists := m.monitors[dbM.ID]; exists {
 			// Always apply latest config to existing monitors
 			existing.ApplyConfig(cfg)
+			existing.SetLatencyThreshold(monLatencyThresh)
 
 			// Check for changes (URL, Interval, or RequestConfig)
 			needRestart := existing.GetTargetURL() != dbM.URL || existing.GetInterval() != interval
@@ -843,6 +848,7 @@ func (m *Manager) Sync() {
 			// Start new monitor
 			mon := NewMonitor(dbM.ID, dbM.GroupID, dbM.Name, dbM.URL, interval, m.jobQueue, dbM.CreatedAt, dbM.RequestConfig)
 			mon.ApplyConfig(cfg)
+			mon.SetLatencyThreshold(monLatencyThresh)
 
 			// Hydrate history from DB
 			checks, err := m.store.GetMonitorChecks(dbM.ID, 50)
@@ -853,7 +859,7 @@ func (m *Manager) Sync() {
 				for i := len(checks) - 1; i >= 0; i-- {
 					c := checks[i]
 					isUp := c.Status == "up" // "up" or "down"
-					isDegraded := isUp && c.Latency > m.latencyThreshold
+					isDegraded := isUp && c.Latency > mon.GetLatencyThreshold()
 					mon.RecordResult(isUp, c.Latency, c.Timestamp, c.StatusCode, "", isDegraded)
 				}
 			}

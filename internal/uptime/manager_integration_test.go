@@ -82,6 +82,7 @@ func TestMonitor_DegradedThreshold(t *testing.T) {
 
 	// 7. Update Threshold High (5000ms)
 	m.SetLatencyThreshold(5000)
+	m.Sync() // Propagate new global threshold to per-monitor thresholds
 
 	// 8. Wait for next check
 	time.Sleep(2 * time.Second)

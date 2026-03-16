@@ -56,7 +56,7 @@ func TestManager_Sync(t *testing.T) {
 	}
 
 	// Update in DB (change interval)
-	if err := s.UpdateMonitor("m-test-1", "Test Monitor", "http://example.com", 120, nil, nil, nil); err != nil {
+	if err := s.UpdateMonitor("m-test-1", "Test Monitor", "http://example.com", 120, nil, nil, nil, nil); err != nil {
 		t.Fatalf("Failed to update monitor: %v", err)
 	}
 
@@ -174,6 +174,74 @@ func TestManager_LatencyThreshold(t *testing.T) {
 	if m.GetLatencyThreshold() != 500 {
 		t.Errorf("Expected 500, got %d", m.GetLatencyThreshold())
 	}
+}
+
+func TestManager_PerMonitorLatencyThreshold(t *testing.T) {
+	n := testDBCounter.Add(1)
+	store, err := db.NewStore(db.NewTestConfigWithPath(fmt.Sprintf("file:per_mon_latency_%d?mode=memory&cache=shared", n)))
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+
+	m := NewManager(store)
+
+	// Global threshold = 1000 (default)
+	if m.GetLatencyThreshold() != 1000 {
+		t.Fatalf("Expected default global threshold 1000, got %d", m.GetLatencyThreshold())
+	}
+
+	// Create monitor with custom threshold
+	lt := 200
+	if err := store.CreateMonitor(db.Monitor{
+		ID: "m-custom-lt", GroupID: "g-default", Name: "Custom LT",
+		URL: "http://example.com", Active: true, Interval: 60,
+		LatencyThreshold: &lt,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	// Create monitor without custom threshold (should use global)
+	if err := store.CreateMonitor(db.Monitor{
+		ID: "m-global-lt", GroupID: "g-default", Name: "Global LT",
+		URL: "http://example.com", Active: true, Interval: 60,
+	}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	m.Sync()
+
+	// Verify per-monitor threshold
+	customMon := m.GetMonitor("m-custom-lt")
+	if customMon == nil {
+		t.Fatal("Monitor m-custom-lt not found")
+	}
+	if customMon.GetLatencyThreshold() != 200 {
+		t.Errorf("Expected per-monitor threshold 200, got %d", customMon.GetLatencyThreshold())
+	}
+
+	// Verify global fallback
+	globalMon := m.GetMonitor("m-global-lt")
+	if globalMon == nil {
+		t.Fatal("Monitor m-global-lt not found")
+	}
+	if globalMon.GetLatencyThreshold() != 1000 {
+		t.Errorf("Expected global threshold 1000, got %d", globalMon.GetLatencyThreshold())
+	}
+
+	// Change global threshold and re-sync
+	m.SetLatencyThreshold(3000)
+	m.Sync()
+
+	// Custom monitor should still use its own threshold
+	if customMon.GetLatencyThreshold() != 200 {
+		t.Errorf("Expected per-monitor threshold still 200 after global change, got %d", customMon.GetLatencyThreshold())
+	}
+	// Global monitor should now use the new global
+	if globalMon.GetLatencyThreshold() != 3000 {
+		t.Errorf("Expected updated global threshold 3000, got %d", globalMon.GetLatencyThreshold())
+	}
+
+	m.Stop()
 }
 
 func TestManager_IsGroupInMaintenance(t *testing.T) {
@@ -978,7 +1046,7 @@ func TestManager_UpdateWhilePaused(t *testing.T) {
 	m.Sync()
 
 	// Update the monitor while paused
-	if err := store.UpdateMonitor("m-update-paused", "Updated Name", "http://updated.com", 120, nil, nil, nil); err != nil {
+	if err := store.UpdateMonitor("m-update-paused", "Updated Name", "http://updated.com", 120, nil, nil, nil, nil); err != nil {
 		t.Fatalf("UpdateMonitor failed: %v", err)
 	}
 	m.Sync()
@@ -1810,7 +1878,7 @@ func TestManager_SyncWithRequestConfig(t *testing.T) {
 	newRC := &db.RequestConfig{
 		Method: "HEAD",
 	}
-	if err := s.UpdateMonitor("m-rc-sync", "RC Sync Test", "http://example.com", 60, nil, nil, newRC); err != nil {
+	if err := s.UpdateMonitor("m-rc-sync", "RC Sync Test", "http://example.com", 60, nil, nil, nil, newRC); err != nil {
 		t.Fatalf("UpdateMonitor failed: %v", err)
 	}
 

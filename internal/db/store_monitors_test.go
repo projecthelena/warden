@@ -34,7 +34,7 @@ func TestMonitorCRUD(t *testing.T) {
 	}
 
 	// Update
-	if err := s.UpdateMonitor("m1", "Updated M1", "http://new.com", 120, nil, nil, nil); err != nil {
+	if err := s.UpdateMonitor("m1", "Updated M1", "http://new.com", 120, nil, nil, nil, nil); err != nil {
 		t.Fatalf("UpdateMonitor failed: %v", err)
 	}
 
@@ -982,7 +982,7 @@ func TestMonitor_PerMonitorOverrides(t *testing.T) {
 		}
 
 		// Update to add overrides
-		if err := s.UpdateMonitor("m-ov3", "Add Override", "http://example.com", 60, intPtr(7), intPtr(15), nil); err != nil {
+		if err := s.UpdateMonitor("m-ov3", "Add Override", "http://example.com", 60, intPtr(7), intPtr(15), nil, nil); err != nil {
 			t.Fatalf("UpdateMonitor failed: %v", err)
 		}
 
@@ -1021,7 +1021,7 @@ func TestMonitor_PerMonitorOverrides(t *testing.T) {
 		}
 
 		// Update to clear overrides
-		if err := s.UpdateMonitor("m-ov4", "Clear Override", "http://example.com", 60, nil, nil, nil); err != nil {
+		if err := s.UpdateMonitor("m-ov4", "Clear Override", "http://example.com", 60, nil, nil, nil, nil); err != nil {
 			t.Fatalf("UpdateMonitor failed: %v", err)
 		}
 
@@ -1060,7 +1060,7 @@ func TestMonitor_PerMonitorOverrides(t *testing.T) {
 		}
 
 		// Update only threshold, clear cooldown
-		if err := s.UpdateMonitor("m-ov5", "Partial Override", "http://example.com", 60, intPtr(8), nil, nil); err != nil {
+		if err := s.UpdateMonitor("m-ov5", "Partial Override", "http://example.com", 60, intPtr(8), nil, nil, nil); err != nil {
 			t.Fatalf("UpdateMonitor failed: %v", err)
 		}
 
@@ -1084,6 +1084,130 @@ func TestMonitor_PerMonitorOverrides(t *testing.T) {
 	})
 }
 
+
+func TestMonitor_LatencyThresholdRoundtrip(t *testing.T) {
+	t.Run("create_with_threshold", func(t *testing.T) {
+		s := newTestStore(t)
+		_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+
+		m := Monitor{
+			ID: "m-lt1", GroupID: "g1", Name: "LT Create",
+			URL: "http://example.com", Active: true, Interval: 60,
+			LatencyThreshold: intPtr(2000),
+		}
+		if err := s.CreateMonitor(m); err != nil {
+			t.Fatalf("CreateMonitor failed: %v", err)
+		}
+
+		mons, _ := s.GetMonitors()
+		var found *Monitor
+		for i := range mons {
+			if mons[i].ID == "m-lt1" {
+				found = &mons[i]
+				break
+			}
+		}
+		if found == nil {
+			t.Fatal("Monitor not found")
+		}
+		if found.LatencyThreshold == nil || *found.LatencyThreshold != 2000 {
+			t.Errorf("Expected LatencyThreshold=2000, got %v", found.LatencyThreshold)
+		}
+	})
+
+	t.Run("create_without_threshold", func(t *testing.T) {
+		s := newTestStore(t)
+		_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+
+		m := Monitor{
+			ID: "m-lt2", GroupID: "g1", Name: "No LT",
+			URL: "http://example.com", Active: true, Interval: 60,
+		}
+		if err := s.CreateMonitor(m); err != nil {
+			t.Fatalf("CreateMonitor failed: %v", err)
+		}
+
+		mons, _ := s.GetMonitors()
+		var found *Monitor
+		for i := range mons {
+			if mons[i].ID == "m-lt2" {
+				found = &mons[i]
+				break
+			}
+		}
+		if found == nil {
+			t.Fatal("Monitor not found")
+		}
+		if found.LatencyThreshold != nil {
+			t.Errorf("Expected LatencyThreshold=nil, got %v", *found.LatencyThreshold)
+		}
+	})
+
+	t.Run("update_sets_threshold", func(t *testing.T) {
+		s := newTestStore(t)
+		_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+
+		m := Monitor{
+			ID: "m-lt3", GroupID: "g1", Name: "Update LT",
+			URL: "http://example.com", Active: true, Interval: 60,
+		}
+		if err := s.CreateMonitor(m); err != nil {
+			t.Fatalf("CreateMonitor failed: %v", err)
+		}
+
+		if err := s.UpdateMonitor("m-lt3", "Update LT", "http://example.com", 60, nil, nil, intPtr(500), nil); err != nil {
+			t.Fatalf("UpdateMonitor failed: %v", err)
+		}
+
+		mons, _ := s.GetMonitors()
+		var found *Monitor
+		for i := range mons {
+			if mons[i].ID == "m-lt3" {
+				found = &mons[i]
+				break
+			}
+		}
+		if found == nil {
+			t.Fatal("Monitor not found")
+		}
+		if found.LatencyThreshold == nil || *found.LatencyThreshold != 500 {
+			t.Errorf("Expected LatencyThreshold=500, got %v", found.LatencyThreshold)
+		}
+	})
+
+	t.Run("update_clears_threshold", func(t *testing.T) {
+		s := newTestStore(t)
+		_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+
+		m := Monitor{
+			ID: "m-lt4", GroupID: "g1", Name: "Clear LT",
+			URL: "http://example.com", Active: true, Interval: 60,
+			LatencyThreshold: intPtr(2000),
+		}
+		if err := s.CreateMonitor(m); err != nil {
+			t.Fatalf("CreateMonitor failed: %v", err)
+		}
+
+		if err := s.UpdateMonitor("m-lt4", "Clear LT", "http://example.com", 60, nil, nil, nil, nil); err != nil {
+			t.Fatalf("UpdateMonitor failed: %v", err)
+		}
+
+		mons, _ := s.GetMonitors()
+		var found *Monitor
+		for i := range mons {
+			if mons[i].ID == "m-lt4" {
+				found = &mons[i]
+				break
+			}
+		}
+		if found == nil {
+			t.Fatal("Monitor not found")
+		}
+		if found.LatencyThreshold != nil {
+			t.Errorf("Expected LatencyThreshold=nil after clear, got %v", *found.LatencyThreshold)
+		}
+	})
+}
 
 func TestMonitorCRUD_RequestConfig(t *testing.T) {
 	s := newTestStore(t)
@@ -1163,7 +1287,7 @@ func TestMonitorCRUD_RequestConfig(t *testing.T) {
 	newRC := &RequestConfig{
 		Method: "HEAD",
 	}
-	if err := s.UpdateMonitor("m-rc1", "ReqConfig Monitor", "http://example.com", 60, nil, nil, newRC); err != nil {
+	if err := s.UpdateMonitor("m-rc1", "ReqConfig Monitor", "http://example.com", 60, nil, nil, nil, newRC); err != nil {
 		t.Fatalf("UpdateMonitor with new RequestConfig failed: %v", err)
 	}
 
@@ -1190,7 +1314,7 @@ func TestMonitorCRUD_RequestConfig(t *testing.T) {
 	}
 
 	// 5. Update with nil RequestConfig
-	if err := s.UpdateMonitor("m-rc1", "ReqConfig Monitor", "http://example.com", 60, nil, nil, nil); err != nil {
+	if err := s.UpdateMonitor("m-rc1", "ReqConfig Monitor", "http://example.com", 60, nil, nil, nil, nil); err != nil {
 		t.Fatalf("UpdateMonitor with nil RequestConfig failed: %v", err)
 	}
 
