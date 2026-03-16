@@ -520,6 +520,21 @@ func TestCreateMonitor_NotifFatigueValidation(t *testing.T) {
 			expected: http.StatusCreated,
 		},
 		{
+			name:     "latency_threshold_0",
+			payload:  map[string]interface{}{"name": "LT0", "url": "http://test.com", "groupId": "g-default", "interval": 60, "latencyThreshold": 0},
+			expected: http.StatusBadRequest,
+		},
+		{
+			name:     "latency_threshold_negative",
+			payload:  map[string]interface{}{"name": "LTN", "url": "http://test.com", "groupId": "g-default", "interval": 60, "latencyThreshold": -1},
+			expected: http.StatusBadRequest,
+		},
+		{
+			name:     "latency_threshold_valid",
+			payload:  map[string]interface{}{"name": "LTV", "url": "http://test.com", "groupId": "g-default", "interval": 60, "latencyThreshold": 2000},
+			expected: http.StatusCreated,
+		},
+		{
 			name:     "nil_overrides",
 			payload:  map[string]interface{}{"name": "NoOv", "url": "http://test.com", "groupId": "g-default", "interval": 60},
 			expected: http.StatusCreated,
@@ -574,6 +589,21 @@ func TestUpdateMonitor_NotifFatigueValidation(t *testing.T) {
 		{
 			name:     "valid_update",
 			payload:  map[string]interface{}{"name": "Test", "url": "http://test.com", "interval": 60, "confirmationThreshold": 5, "notificationCooldownMinutes": 15},
+			expected: http.StatusOK,
+		},
+		{
+			name:     "latency_threshold_0",
+			payload:  map[string]interface{}{"name": "Test", "url": "http://test.com", "interval": 60, "latencyThreshold": 0},
+			expected: http.StatusBadRequest,
+		},
+		{
+			name:     "latency_threshold_negative",
+			payload:  map[string]interface{}{"name": "Test", "url": "http://test.com", "interval": 60, "latencyThreshold": -1},
+			expected: http.StatusBadRequest,
+		},
+		{
+			name:     "latency_threshold_valid",
+			payload:  map[string]interface{}{"name": "Test", "url": "http://test.com", "interval": 60, "latencyThreshold": 500},
 			expected: http.StatusOK,
 		},
 		{
@@ -695,6 +725,90 @@ func TestGetUptime_IncludesOverrideFields(t *testing.T) {
 	}
 	if _, ok := withoutOv["notificationCooldownMinutes"]; ok {
 		t.Error("Expected notificationCooldownMinutes absent for monitor without overrides")
+	}
+
+	_ = crudH // used in setup
+}
+
+func TestGetUptime_IncludesLatencyThreshold(t *testing.T) {
+	crudH, _, _, _, s := setupTest(t)
+	manager := uptime.NewManager(s)
+	uptimeH := NewUptimeHandler(manager, s)
+
+	// Create monitor WITH latency threshold
+	lt := 500
+	if err := s.CreateMonitor(db.Monitor{
+		ID: "m-with-lt", GroupID: "g-default", Name: "With LT",
+		URL: "http://test.com", Interval: 60, Active: true,
+		LatencyThreshold: &lt,
+	}); err != nil {
+		t.Fatalf("Failed to create monitor: %v", err)
+	}
+
+	// Create monitor WITHOUT latency threshold
+	if err := s.CreateMonitor(db.Monitor{
+		ID: "m-without-lt", GroupID: "g-default", Name: "Without LT",
+		URL: "http://test2.com", Interval: 60, Active: true,
+	}); err != nil {
+		t.Fatalf("Failed to create monitor: %v", err)
+	}
+
+	manager.Sync()
+
+	req := httptest.NewRequest("GET", "/api/uptime", nil)
+	w := httptest.NewRecorder()
+
+	r := chi.NewRouter()
+	r.Get("/api/uptime", uptimeH.GetHistory)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d. Body: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	groups, ok := resp["groups"].([]interface{})
+	if !ok || len(groups) == 0 {
+		t.Fatal("Expected groups in response")
+	}
+
+	var withLT, withoutLT map[string]interface{}
+	for _, g := range groups {
+		group := g.(map[string]interface{})
+		monitors, ok := group["monitors"].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, mon := range monitors {
+			m := mon.(map[string]interface{})
+			if m["id"] == "m-with-lt" {
+				withLT = m
+			}
+			if m["id"] == "m-without-lt" {
+				withoutLT = m
+			}
+		}
+	}
+
+	if withLT == nil {
+		t.Fatal("Monitor m-with-lt not found in response")
+	}
+	if withoutLT == nil {
+		t.Fatal("Monitor m-without-lt not found in response")
+	}
+
+	// Monitor WITH latency threshold should have the field
+	if v, ok := withLT["latencyThreshold"]; !ok || v != float64(500) {
+		t.Errorf("Expected latencyThreshold=500, got %v", v)
+	}
+
+	// Monitor WITHOUT latency threshold should NOT have the field (omitempty)
+	if _, ok := withoutLT["latencyThreshold"]; ok {
+		t.Error("Expected latencyThreshold absent for monitor without override")
 	}
 
 	_ = crudH // used in setup

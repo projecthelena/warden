@@ -91,6 +91,7 @@ interface CreateMonitorPayload {
     interval: number;
     confirmationThreshold?: number;
     notificationCooldownMinutes?: number;
+    latencyThreshold?: number;
     requestConfig?: RequestConfig;
 }
 

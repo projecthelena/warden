@@ -195,6 +195,7 @@ func (h *CRUDHandler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
 		Interval                int               `json:"interval"`
 		ConfirmationThreshold   *int              `json:"confirmationThreshold,omitempty"`
 		NotificationCooldownMin *int              `json:"notificationCooldownMinutes,omitempty"`
+		LatencyThreshold        *int              `json:"latencyThreshold,omitempty"`
 		RequestConfig           *db.RequestConfig `json:"requestConfig,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -277,6 +278,10 @@ func (h *CRUDHandler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "notificationCooldownMinutes must be between 0 and 1440", http.StatusBadRequest)
 		return
 	}
+	if req.LatencyThreshold != nil && *req.LatencyThreshold < 1 {
+		http.Error(w, "latencyThreshold must be at least 1", http.StatusBadRequest)
+		return
+	}
 
 	// 7. Validate RequestConfig
 	if err := validateRequestConfig(req.RequestConfig); err != nil {
@@ -295,6 +300,7 @@ func (h *CRUDHandler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
 		Interval:                req.Interval,
 		ConfirmationThreshold:   req.ConfirmationThreshold,
 		NotificationCooldownMin: req.NotificationCooldownMin,
+		LatencyThreshold:        req.LatencyThreshold,
 		RequestConfig:           req.RequestConfig,
 	}
 
@@ -355,6 +361,7 @@ func (h *CRUDHandler) UpdateMonitor(w http.ResponseWriter, r *http.Request) {
 		Interval                int               `json:"interval"`
 		ConfirmationThreshold   *int              `json:"confirmationThreshold,omitempty"`
 		NotificationCooldownMin *int              `json:"notificationCooldownMinutes,omitempty"`
+		LatencyThreshold        *int              `json:"latencyThreshold,omitempty"`
 		RequestConfig           *db.RequestConfig `json:"requestConfig,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -371,13 +378,17 @@ func (h *CRUDHandler) UpdateMonitor(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "notificationCooldownMinutes must be between 0 and 1440", http.StatusBadRequest)
 		return
 	}
+	if req.LatencyThreshold != nil && *req.LatencyThreshold < 1 {
+		http.Error(w, "latencyThreshold must be at least 1", http.StatusBadRequest)
+		return
+	}
 
 	if err := validateRequestConfig(req.RequestConfig); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	if err := h.store.UpdateMonitor(id, req.Name, req.URL, req.Interval, req.ConfirmationThreshold, req.NotificationCooldownMin, req.RequestConfig); err != nil {
+	if err := h.store.UpdateMonitor(id, req.Name, req.URL, req.Interval, req.ConfirmationThreshold, req.NotificationCooldownMin, req.LatencyThreshold, req.RequestConfig); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
