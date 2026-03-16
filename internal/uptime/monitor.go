@@ -42,6 +42,7 @@ type Monitor struct {
 
 	lastNotifiedAt map[string]time.Time // per-event-type cooldown tracking
 	isFlapping     bool                 // current flap state
+	flapStabilizedAt time.Time          // when flapping last stopped (grace period)
 
 	// Flap detection settings
 	flapDetectionEnabled bool
@@ -342,17 +343,35 @@ func (m *Monitor) IsConfirmedDegraded() bool {
 
 // ShouldNotify checks whether a notification for the given event type is allowed
 // (not suppressed by cooldown). Returns true if notification should be sent.
+// Flapping and stabilized share a cooldown to prevent rapid cycling between them.
 func (m *Monitor) ShouldNotify(eventType string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if m.cooldownMinutes <= 0 {
 		return true
 	}
+	cooldown := time.Duration(m.cooldownMinutes) * time.Minute
+
+	// Flapping and stabilized share a cooldown — check whichever fired most recently
+	if eventType == "flapping" || eventType == "stabilized" {
+		var latest time.Time
+		if t, ok := m.lastNotifiedAt["flapping"]; ok && t.After(latest) {
+			latest = t
+		}
+		if t, ok := m.lastNotifiedAt["stabilized"]; ok && t.After(latest) {
+			latest = t
+		}
+		if latest.IsZero() {
+			return true
+		}
+		return time.Since(latest) >= cooldown
+	}
+
 	lastTime, exists := m.lastNotifiedAt[eventType]
 	if !exists {
 		return true
 	}
-	return time.Since(lastTime) >= time.Duration(m.cooldownMinutes)*time.Minute
+	return time.Since(lastTime) >= cooldown
 }
 
 // MarkNotified records the current time as when a notification was sent for the given event type.
@@ -410,6 +429,17 @@ func (m *Monitor) ComputeFlapping() (isFlapping bool, changed bool) {
 	wasFlapping := m.isFlapping
 
 	if transitionPercent >= m.flapThresholdPercent {
+		// Grace period: don't re-enter flapping within cooldown window of stabilization.
+		// This prevents rapid flapping→stabilized→flapping cycling.
+		if !wasFlapping && !m.flapStabilizedAt.IsZero() {
+			grace := time.Duration(m.cooldownMinutes) * time.Minute
+			if grace < 5*time.Minute {
+				grace = 5 * time.Minute // minimum 5-minute grace period
+			}
+			if time.Since(m.flapStabilizedAt) < grace {
+				return false, false // still in grace period, suppress re-entry
+			}
+		}
 		m.isFlapping = true
 	} else {
 		// Use hysteresis: only stop flapping at a lower threshold (80% of start threshold)
@@ -419,7 +449,14 @@ func (m *Monitor) ComputeFlapping() (isFlapping bool, changed bool) {
 		}
 	}
 
-	return m.isFlapping, m.isFlapping != wasFlapping
+	if m.isFlapping != wasFlapping {
+		if !m.isFlapping {
+			// Record when we stopped flapping for grace period
+			m.flapStabilizedAt = time.Now()
+		}
+		return m.isFlapping, true
+	}
+	return m.isFlapping, false
 }
 
 // IsFlapping returns the current flapping state.
