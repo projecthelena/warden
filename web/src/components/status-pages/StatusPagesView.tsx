@@ -6,18 +6,18 @@ import { Switch } from "@/components/ui/switch";
 import { ExternalLink, Settings } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { StatusPage } from "@/lib/store";
-import { StatusPageConfigDialog } from "./StatusPageConfigDialog";
+import { StatusPageConfigSheet } from "./StatusPageConfigSheet";
 
 export function StatusPagesView() {
     const { data: pages = [], isLoading } = useStatusPagesQuery();
     const toggleMutation = useToggleStatusPageMutation();
     const { toast } = useToast();
-    const [configDialogOpen, setConfigDialogOpen] = useState(false);
+    const [configSheetOpen, setConfigSheetOpen] = useState(false);
     const [selectedPage, setSelectedPage] = useState<StatusPage | null>(null);
 
     const openConfig = (page: StatusPage) => {
         setSelectedPage(page);
-        setConfigDialogOpen(true);
+        setConfigSheetOpen(true);
     };
 
     const resolveSlug = (slug: string, title: string) => {
@@ -156,10 +156,10 @@ export function StatusPagesView() {
                 ))}
             </div>
 
-            <StatusPageConfigDialog
+            <StatusPageConfigSheet
                 page={selectedPage}
-                open={configDialogOpen}
-                onOpenChange={setConfigDialogOpen}
+                open={configSheetOpen}
+                onOpenChange={setConfigSheetOpen}
             />
         </div>
     )

@@ -832,6 +832,328 @@ func TestMonitor_FlapDetection(t *testing.T) {
 	})
 }
 
+func TestMonitor_FlapCooldownShared(t *testing.T) {
+	t.Run("flapping_suppresses_stabilized", func(t *testing.T) {
+		m := newTestMonitorWithConfig(MonitorConfig{
+			ConfirmationThreshold: 3, CooldownMinutes: 30,
+			FlapDetectionEnabled: true, FlapWindowChecks: 21, FlapThresholdPercent: 25,
+		})
+		m.MarkNotified("flapping")
+		if m.ShouldNotify("stabilized") {
+			t.Error("Expected stabilized suppressed after flapping notification (shared cooldown)")
+		}
+	})
+
+	t.Run("stabilized_suppresses_flapping", func(t *testing.T) {
+		m := newTestMonitorWithConfig(MonitorConfig{
+			ConfirmationThreshold: 3, CooldownMinutes: 30,
+			FlapDetectionEnabled: true, FlapWindowChecks: 21, FlapThresholdPercent: 25,
+		})
+		m.MarkNotified("stabilized")
+		if m.ShouldNotify("flapping") {
+			t.Error("Expected flapping suppressed after stabilized notification (shared cooldown)")
+		}
+	})
+
+	t.Run("shared_cooldown_expires", func(t *testing.T) {
+		m := newTestMonitorWithConfig(MonitorConfig{
+			ConfirmationThreshold: 3, CooldownMinutes: 1,
+			FlapDetectionEnabled: true, FlapWindowChecks: 21, FlapThresholdPercent: 25,
+		})
+		m.mu.Lock()
+		m.lastNotifiedAt["flapping"] = time.Now().Add(-2 * time.Minute)
+		m.mu.Unlock()
+		if !m.ShouldNotify("stabilized") {
+			t.Error("Expected stabilized allowed after shared cooldown expired")
+		}
+		if !m.ShouldNotify("flapping") {
+			t.Error("Expected flapping allowed after shared cooldown expired")
+		}
+	})
+
+	t.Run("shared_cooldown_uses_most_recent", func(t *testing.T) {
+		m := newTestMonitorWithConfig(MonitorConfig{
+			ConfirmationThreshold: 3, CooldownMinutes: 30,
+			FlapDetectionEnabled: true, FlapWindowChecks: 21, FlapThresholdPercent: 25,
+		})
+		// Flapping sent 40 minutes ago (expired), but stabilized sent 5 minutes ago (active)
+		m.mu.Lock()
+		m.lastNotifiedAt["flapping"] = time.Now().Add(-40 * time.Minute)
+		m.lastNotifiedAt["stabilized"] = time.Now().Add(-5 * time.Minute)
+		m.mu.Unlock()
+		if m.ShouldNotify("flapping") {
+			t.Error("Expected flapping suppressed — stabilized was sent recently")
+		}
+	})
+
+	t.Run("down_degraded_independent_of_flap", func(t *testing.T) {
+		m := newTestMonitorWithConfig(MonitorConfig{
+			ConfirmationThreshold: 3, CooldownMinutes: 30,
+			FlapDetectionEnabled: true, FlapWindowChecks: 21, FlapThresholdPercent: 25,
+		})
+		m.MarkNotified("flapping")
+		// Down and degraded should not be affected by flapping cooldown
+		if !m.ShouldNotify("down") {
+			t.Error("Expected down independent of flapping cooldown")
+		}
+		if !m.ShouldNotify("degraded") {
+			t.Error("Expected degraded independent of flapping cooldown")
+		}
+	})
+}
+
+func TestMonitor_FlapGracePeriod(t *testing.T) {
+	t.Run("grace_period_prevents_reentry", func(t *testing.T) {
+		cfg := MonitorConfig{
+			ConfirmationThreshold: 3, CooldownMinutes: 30,
+			FlapDetectionEnabled: true, FlapWindowChecks: 10, FlapThresholdPercent: 25,
+		}
+		m := newTestMonitorWithConfig(cfg)
+		now := time.Now()
+
+		// Build oscillating history to trigger flapping
+		for i := 0; i < 10; i++ {
+			isUp := i%2 == 0
+			m.RecordResult(isUp, 100, now.Add(time.Duration(-10+i)*time.Minute), 200, "", false)
+		}
+		isFlapping, changed := m.ComputeFlapping()
+		if !isFlapping || !changed {
+			t.Fatal("Expected monitor to enter flapping state")
+		}
+
+		// Now stabilize — make history very stable to drop below stop threshold
+		m.mu.Lock()
+		m.history = nil
+		m.mu.Unlock()
+		for i := 0; i < 10; i++ {
+			m.RecordResult(true, 100, now.Add(time.Duration(i)*time.Minute), 200, "", false)
+		}
+		isFlapping, changed = m.ComputeFlapping()
+		if isFlapping {
+			t.Fatal("Expected monitor to exit flapping")
+		}
+		if !changed {
+			t.Fatal("Expected changed=true on stabilization")
+		}
+
+		// Immediately build oscillating history again — should be blocked by grace period
+		m.mu.Lock()
+		m.history = nil
+		m.mu.Unlock()
+		for i := 0; i < 10; i++ {
+			isUp := i%2 == 0
+			m.RecordResult(isUp, 100, now.Add(time.Duration(10+i)*time.Minute), 200, "", false)
+		}
+		isFlapping, changed = m.ComputeFlapping()
+		if isFlapping {
+			t.Error("Expected grace period to prevent re-entry into flapping")
+		}
+		if changed {
+			t.Error("Expected changed=false during grace period")
+		}
+	})
+
+	t.Run("grace_period_expires_allows_reentry", func(t *testing.T) {
+		cfg := MonitorConfig{
+			ConfirmationThreshold: 3, CooldownMinutes: 5,
+			FlapDetectionEnabled: true, FlapWindowChecks: 10, FlapThresholdPercent: 25,
+		}
+		m := newTestMonitorWithConfig(cfg)
+		now := time.Now()
+
+		// Enter flapping
+		for i := 0; i < 10; i++ {
+			isUp := i%2 == 0
+			m.RecordResult(isUp, 100, now.Add(time.Duration(-10+i)*time.Minute), 200, "", false)
+		}
+		m.ComputeFlapping() // enter flapping
+
+		// Stabilize
+		m.mu.Lock()
+		m.history = nil
+		m.mu.Unlock()
+		for i := 0; i < 10; i++ {
+			m.RecordResult(true, 100, now.Add(time.Duration(i)*time.Minute), 200, "", false)
+		}
+		m.ComputeFlapping() // exit flapping, sets flapStabilizedAt
+
+		// Simulate grace period expiry by backdating flapStabilizedAt
+		m.mu.Lock()
+		m.flapStabilizedAt = time.Now().Add(-10 * time.Minute) // well past the 5-min grace
+		m.history = nil
+		m.mu.Unlock()
+
+		// Build oscillating history again
+		for i := 0; i < 10; i++ {
+			isUp := i%2 == 0
+			m.RecordResult(isUp, 100, now.Add(time.Duration(20+i)*time.Minute), 200, "", false)
+		}
+		isFlapping, changed := m.ComputeFlapping()
+		if !isFlapping {
+			t.Error("Expected flapping after grace period expired")
+		}
+		if !changed {
+			t.Error("Expected changed=true after grace period expired")
+		}
+	})
+
+	t.Run("minimum_grace_period_5_minutes", func(t *testing.T) {
+		// Even with cooldown=1 minute, grace period should be at least 5 minutes
+		cfg := MonitorConfig{
+			ConfirmationThreshold: 3, CooldownMinutes: 1,
+			FlapDetectionEnabled: true, FlapWindowChecks: 10, FlapThresholdPercent: 25,
+		}
+		m := newTestMonitorWithConfig(cfg)
+		now := time.Now()
+
+		// Enter flapping
+		for i := 0; i < 10; i++ {
+			isUp := i%2 == 0
+			m.RecordResult(isUp, 100, now.Add(time.Duration(-10+i)*time.Minute), 200, "", false)
+		}
+		m.ComputeFlapping()
+
+		// Stabilize
+		m.mu.Lock()
+		m.history = nil
+		m.mu.Unlock()
+		for i := 0; i < 10; i++ {
+			m.RecordResult(true, 100, now.Add(time.Duration(i)*time.Minute), 200, "", false)
+		}
+		m.ComputeFlapping() // exit flapping
+
+		// Set flapStabilizedAt to 2 minutes ago — should still be in grace period (min 5 min)
+		m.mu.Lock()
+		m.flapStabilizedAt = time.Now().Add(-2 * time.Minute)
+		m.history = nil
+		m.mu.Unlock()
+
+		for i := 0; i < 10; i++ {
+			isUp := i%2 == 0
+			m.RecordResult(isUp, 100, now.Add(time.Duration(20+i)*time.Minute), 200, "", false)
+		}
+		isFlapping, _ := m.ComputeFlapping()
+		if isFlapping {
+			t.Error("Expected grace period to block re-entry (minimum 5 min even with cooldown=1)")
+		}
+	})
+}
+
+func TestMonitor_DegradedOscillationFlapping(t *testing.T) {
+	// Simulates the real-world bug: a monitor with latency hovering around the threshold
+	// causes degraded→up→degraded→up oscillations that trigger flap detection spam.
+	t.Run("degraded_oscillation_triggers_flapping_once", func(t *testing.T) {
+		cfg := MonitorConfig{
+			ConfirmationThreshold: 3, CooldownMinutes: 30,
+			FlapDetectionEnabled: true, FlapWindowChecks: 10, FlapThresholdPercent: 25,
+		}
+		m := newTestMonitorWithConfig(cfg)
+		now := time.Now()
+
+		// Simulate latency oscillating around threshold: up/degraded/up/degraded...
+		// All checks are "up" (IsUp=true) but IsDegraded alternates
+		for i := 0; i < 10; i++ {
+			isDegraded := i%2 == 0
+			m.RecordResult(true, 100, now.Add(time.Duration(-10+i)*time.Minute), 200, "", isDegraded)
+		}
+
+		// Should enter flapping
+		isFlapping, changed := m.ComputeFlapping()
+		if !isFlapping {
+			t.Fatal("Expected degraded oscillation to trigger flapping")
+		}
+		if !changed {
+			t.Fatal("Expected changed=true")
+		}
+		m.MarkNotified("flapping")
+
+		// Simulate stabilization: all results are normal (no degradation)
+		m.mu.Lock()
+		m.history = nil
+		m.mu.Unlock()
+		for i := 0; i < 10; i++ {
+			m.RecordResult(true, 100, now.Add(time.Duration(i)*time.Minute), 200, "", false)
+		}
+		isFlapping, changed = m.ComputeFlapping()
+		if isFlapping {
+			t.Fatal("Expected stabilization after consistent results")
+		}
+		if !changed {
+			t.Fatal("Expected changed=true on stabilization")
+		}
+		m.MarkNotified("stabilized")
+
+		// Now oscillation resumes immediately — but should be blocked by BOTH mechanisms:
+		// 1. Grace period prevents ComputeFlapping from re-entering flapping
+		// 2. Shared cooldown prevents ShouldNotify from allowing notification
+
+		m.mu.Lock()
+		m.history = nil
+		m.mu.Unlock()
+		for i := 0; i < 10; i++ {
+			isDegraded := i%2 == 0
+			m.RecordResult(true, 100, now.Add(time.Duration(10+i)*time.Minute), 200, "", isDegraded)
+		}
+
+		isFlapping, changed = m.ComputeFlapping()
+		if isFlapping {
+			t.Error("Expected grace period to prevent flapping re-entry after degraded oscillation")
+		}
+
+		// Even if somehow ComputeFlapping returned flapping, the shared cooldown should block
+		if m.ShouldNotify("flapping") {
+			t.Error("Expected shared cooldown to block flapping notification (stabilized sent recently)")
+		}
+	})
+
+	t.Run("full_spam_cycle_simulation", func(t *testing.T) {
+		// Simulate 2 hours of degraded oscillation, counting how many notifications would be sent
+		cfg := MonitorConfig{
+			ConfirmationThreshold: 3, CooldownMinutes: 30,
+			FlapDetectionEnabled: true, FlapWindowChecks: 21, FlapThresholdPercent: 25,
+		}
+		m := newTestMonitorWithConfig(cfg)
+
+		flapNotifications := 0
+		stabilizedNotifications := 0
+		baseTime := time.Now().Add(-2 * time.Hour)
+
+		// 120 checks over 2 hours (1 per minute), alternating degraded state
+		for i := 0; i < 120; i++ {
+			isDegraded := i%2 == 0
+			checkTime := baseTime.Add(time.Duration(i) * time.Minute)
+			m.RecordResult(true, 100, checkTime, 200, "", isDegraded)
+
+			isFlapping, changed := m.ComputeFlapping()
+			if changed {
+				if isFlapping {
+					if m.ShouldNotify("flapping") {
+						flapNotifications++
+						m.MarkNotified("flapping")
+					}
+				} else {
+					if m.ShouldNotify("stabilized") {
+						stabilizedNotifications++
+						m.MarkNotified("stabilized")
+					}
+				}
+			}
+		}
+
+		// With the fixes, we should get at most 1 flapping notification over 2 hours
+		// of continuous oscillation (grace period + shared cooldown prevent spam)
+		if flapNotifications > 1 {
+			t.Errorf("Expected at most 1 flapping notification over 2 hours, got %d", flapNotifications)
+		}
+		total := flapNotifications + stabilizedNotifications
+		if total > 2 {
+			t.Errorf("Expected at most 2 total flap-related notifications over 2 hours, got %d (flapping=%d, stabilized=%d)",
+				total, flapNotifications, stabilizedNotifications)
+		}
+		t.Logf("2-hour simulation: flapping=%d, stabilized=%d notifications", flapNotifications, stabilizedNotifications)
+	})
+}
+
 func TestMonitor_ApplyConfig(t *testing.T) {
 	t.Run("updates_all_fields", func(t *testing.T) {
 		m := newTestMonitorWithConfig(MonitorConfig{ConfirmationThreshold: 1, CooldownMinutes: 0, FlapDetectionEnabled: false, FlapWindowChecks: 5, FlapThresholdPercent: 10})

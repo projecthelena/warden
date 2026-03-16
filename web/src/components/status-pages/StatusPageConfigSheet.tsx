@@ -1,11 +1,19 @@
 import { useState, useEffect } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+    Sheet,
+    SheetContent,
+    SheetDescription,
+    SheetFooter,
+    SheetHeader,
+    SheetTitle,
+} from "@/components/ui/sheet";
+import { Separator } from "@/components/ui/separator";
 import { Info } from "lucide-react";
 import { useToggleStatusPageMutation } from "@/hooks/useStatusPages";
 import { useToast } from "@/components/ui/use-toast";
@@ -13,13 +21,13 @@ import { StatusPage } from "@/lib/store";
 import { sanitizeImageUrl } from "@/lib/utils";
 import { Loader2, Image, X } from "lucide-react";
 
-interface StatusPageConfigDialogProps {
+interface StatusPageConfigSheetProps {
     page: StatusPage | null;
     open: boolean;
     onOpenChange: (open: boolean) => void;
 }
 
-export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageConfigDialogProps) {
+export function StatusPageConfigSheet({ page, open, onOpenChange }: StatusPageConfigSheetProps) {
     const { toast } = useToast();
     const toggleMutation = useToggleStatusPageMutation();
 
@@ -49,7 +57,6 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
             setDescription(page.description || "");
             setLogoUrl(page.logoUrl || "");
             setFaviconUrl(page.faviconUrl || "");
-            // accentColor preserved for API compatibility but not exposed in UI
             setTheme(page.theme || "system");
             setShowUptimeBars(page.showUptimeBars ?? true);
             setShowUptimePercentage(page.showUptimePercentage ?? true);
@@ -82,8 +89,6 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
                 title,
                 groupId: page.groupId || undefined,
                 description,
-                // Always send the value (even empty string) so the backend can clear it.
-                // Sending undefined/omitting would cause the backend to preserve the existing value.
                 logoUrl,
                 faviconUrl,
                 accentColor,
@@ -116,17 +121,18 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
     };
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="w-[calc(100vw-2rem)] max-w-[500px] max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                    <DialogTitle>Configure Status Page</DialogTitle>
-                </DialogHeader>
+        <Sheet open={open} onOpenChange={onOpenChange}>
+            <SheetContent className="sm:max-w-[500px] overflow-y-auto">
+                <SheetHeader>
+                    <SheetTitle>Configure Status Page</SheetTitle>
+                    <SheetDescription>Customize branding, layout, and display options for your status page.</SheetDescription>
+                </SheetHeader>
 
                 <div className="space-y-6 py-4">
-                    {/* Branding Section */}
+                    {/* General Section */}
                     <div className="space-y-4">
                         <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                            Branding
+                            General
                         </h3>
 
                         <div className="space-y-2">
@@ -151,6 +157,15 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
                                 rows={2}
                             />
                         </div>
+                    </div>
+
+                    <Separator />
+
+                    {/* Branding Section */}
+                    <div className="space-y-4">
+                        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                            Branding
+                        </h3>
 
                         {/* Logo */}
                         <div className="space-y-2">
@@ -198,6 +213,68 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
                                     <span className="text-xs text-muted-foreground">Logo preview</span>
                                 </div>
                             )}
+                        </div>
+
+                        {/* Favicon */}
+                        <div className="space-y-2">
+                            <Label htmlFor="faviconUrl">Favicon</Label>
+                            <div className="flex gap-2">
+                                <Input
+                                    id="faviconUrl"
+                                    placeholder="https://example.com/favicon.ico"
+                                    value={faviconUrl}
+                                    onChange={(e) => {
+                                        setFaviconUrl(e.target.value);
+                                        setFaviconError(false);
+                                    }}
+                                    className={!isValidImageUrl(faviconUrl) ? "border-destructive" : ""}
+                                />
+                                {faviconUrl && (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="icon"
+                                        title="Remove favicon"
+                                        onClick={() => { setFaviconUrl(""); setFaviconError(false); }}
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </Button>
+                                )}
+                            </div>
+                            {!isValidImageUrl(faviconUrl) && (
+                                <p className="text-xs text-destructive">Must be an http/https URL</p>
+                            )}
+                            {faviconUrl && isValidImageUrl(faviconUrl) && (
+                                <div className="flex items-center gap-2 mt-2 p-2 bg-muted/50 rounded-md">
+                                    {faviconError ? (
+                                        <div className="flex items-center justify-center w-4 h-4 bg-muted rounded border border-border">
+                                            <Image className="w-3 h-3 text-muted-foreground" />
+                                        </div>
+                                    ) : (
+                                        <img
+                                            src={sanitizeImageUrl(faviconUrl)}
+                                            alt="Favicon preview"
+                                            className="w-4 h-4 object-contain"
+                                            onError={() => setFaviconError(true)}
+                                        />
+                                    )}
+                                    <span className="text-xs text-muted-foreground">Favicon preview (browser tab icon)</span>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="theme">Theme</Label>
+                            <Select value={theme} onValueChange={(v) => setTheme(v as 'light' | 'dark' | 'system')}>
+                                <SelectTrigger id="theme">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="system">System</SelectItem>
+                                    <SelectItem value="light">Light</SelectItem>
+                                    <SelectItem value="dark">Dark</SelectItem>
+                                </SelectContent>
+                            </Select>
                         </div>
 
                         {/* Header Layout */}
@@ -267,74 +344,14 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
                                 </div>
                             )}
                         </div>
-
-                        {/* Favicon */}
-                        <div className="space-y-2">
-                            <Label htmlFor="faviconUrl">Favicon</Label>
-                            <div className="flex gap-2">
-                                <Input
-                                    id="faviconUrl"
-                                    placeholder="https://example.com/favicon.ico"
-                                    value={faviconUrl}
-                                    onChange={(e) => {
-                                        setFaviconUrl(e.target.value);
-                                        setFaviconError(false);
-                                    }}
-                                    className={!isValidImageUrl(faviconUrl) ? "border-destructive" : ""}
-                                />
-                                {faviconUrl && (
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="icon"
-                                        title="Remove favicon"
-                                        onClick={() => { setFaviconUrl(""); setFaviconError(false); }}
-                                    >
-                                        <X className="w-4 h-4" />
-                                    </Button>
-                                )}
-                            </div>
-                            {!isValidImageUrl(faviconUrl) && (
-                                <p className="text-xs text-destructive">Must be an http/https URL</p>
-                            )}
-                            {faviconUrl && isValidImageUrl(faviconUrl) && (
-                                <div className="flex items-center gap-2 mt-2 p-2 bg-muted/50 rounded-md">
-                                    {faviconError ? (
-                                        <div className="flex items-center justify-center w-4 h-4 bg-muted rounded border border-border">
-                                            <Image className="w-3 h-3 text-muted-foreground" />
-                                        </div>
-                                    ) : (
-                                        <img
-                                            src={sanitizeImageUrl(faviconUrl)}
-                                            alt="Favicon preview"
-                                            className="w-4 h-4 object-contain"
-                                            onError={() => setFaviconError(true)}
-                                        />
-                                    )}
-                                    <span className="text-xs text-muted-foreground">Favicon preview (browser tab icon)</span>
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="space-y-2">
-                            <Label htmlFor="theme">Theme</Label>
-                            <Select value={theme} onValueChange={(v) => setTheme(v as 'light' | 'dark' | 'system')}>
-                                <SelectTrigger id="theme">
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="system">System</SelectItem>
-                                    <SelectItem value="light">Light</SelectItem>
-                                    <SelectItem value="dark">Dark</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
                     </div>
+
+                    <Separator />
 
                     {/* Display Options Section */}
                     <div className="space-y-4">
                         <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                            Display Options
+                            Display
                         </h3>
 
                         <div className="space-y-3">
@@ -403,7 +420,7 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
                     </div>
                 </div>
 
-                <DialogFooter className="flex-col sm:flex-row gap-2">
+                <SheetFooter className="flex-col sm:flex-row gap-2">
                     <Button variant="outline" onClick={() => onOpenChange(false)} className="w-full sm:w-auto">
                         Cancel
                     </Button>
@@ -415,8 +432,8 @@ export function StatusPageConfigDialog({ page, open, onOpenChange }: StatusPageC
                         {toggleMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                         Save Changes
                     </Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
+                </SheetFooter>
+            </SheetContent>
+        </Sheet>
     );
 }
