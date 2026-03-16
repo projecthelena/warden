@@ -29,6 +29,7 @@ func TestStatusPages(t *testing.T) {
 	}
 	if p == nil {
 		t.Fatal("Custom page not found")
+		return
 	}
 	if p.Title != "Custom Page" {
 		t.Error("Title mismatch")
@@ -61,6 +62,7 @@ func TestStatusPages_DefaultSeedDisabled(t *testing.T) {
 	}
 	if p == nil {
 		t.Fatal("Default page missing")
+		return
 	}
 	if p.Enabled {
 		t.Error("Default seeded page should have enabled=false")
@@ -95,6 +97,7 @@ func TestStatusPages_UpsertAllCombinations(t *testing.T) {
 		}
 		if p == nil {
 			t.Fatalf("Page %s not found", tc.slug)
+			return
 		}
 		if p.Public != tc.public {
 			t.Errorf("Page %s: expected public=%v, got %v", tc.slug, tc.public, p.Public)
@@ -255,6 +258,7 @@ func TestStatusPages_WithGroupID(t *testing.T) {
 	p, _ := s.GetStatusPageBySlug("group-page")
 	if p == nil {
 		t.Fatal("Page not found")
+		return
 	}
 	if p.GroupID == nil || *p.GroupID != "g-sp-test" {
 		t.Error("Expected groupId='g-sp-test'")

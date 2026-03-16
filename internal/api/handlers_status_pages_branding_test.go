@@ -38,6 +38,7 @@ func TestBranding_SetFaviconURL(t *testing.T) {
 	page, _ := store.GetStatusPageBySlug("favicon-set")
 	if page == nil {
 		t.Fatal("Page not found after save")
+		return
 	}
 	if page.FaviconURL != "https://example.com/favicon.ico" {
 		t.Errorf("Expected faviconUrl 'https://example.com/favicon.ico', got '%s'", page.FaviconURL)

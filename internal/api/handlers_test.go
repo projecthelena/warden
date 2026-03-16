@@ -151,6 +151,7 @@ func TestPauseMonitor(t *testing.T) {
 	}
 	if m == nil {
 		t.Fatal("Monitor m1 not found in DB")
+		return
 	}
 	if m.Active {
 		t.Error("Monitor should be inactive after pause")
@@ -200,6 +201,7 @@ func TestResumeMonitor(t *testing.T) {
 	}
 	if m == nil {
 		t.Fatal("Monitor m1 not found in DB")
+		return
 	}
 	if !m.Active {
 		t.Error("Monitor should be active after resume")
@@ -861,9 +863,11 @@ func TestCreateMonitor_WithRequestConfig(t *testing.T) {
 	}
 	if found == nil {
 		t.Fatal("Monitor 'RC Create Test' not found in DB")
+		return
 	}
 	if found.RequestConfig == nil {
 		t.Fatal("Expected RequestConfig to be persisted")
+		return
 	}
 	if found.RequestConfig.Method != "POST" {
 		t.Errorf("Expected method POST, got %s", found.RequestConfig.Method)
@@ -923,9 +927,11 @@ func TestUpdateMonitor_WithRequestConfig(t *testing.T) {
 	}
 	if found == nil {
 		t.Fatal("Monitor not found in DB")
+		return
 	}
 	if found.RequestConfig == nil {
 		t.Fatal("Expected RequestConfig to be persisted after update")
+		return
 	}
 	if found.RequestConfig.Method != "HEAD" {
 		t.Errorf("Expected method HEAD, got %s", found.RequestConfig.Method)

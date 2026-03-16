@@ -1863,6 +1863,7 @@ func TestManager_SyncWithRequestConfig(t *testing.T) {
 	gotRC := running.GetRequestConfig()
 	if gotRC == nil {
 		t.Fatal("Expected RequestConfig to be non-nil")
+		return
 	}
 	if gotRC.Method != "POST" {
 		t.Errorf("Expected method POST, got %s", gotRC.Method)
@@ -1892,6 +1893,7 @@ func TestManager_SyncWithRequestConfig(t *testing.T) {
 	gotRC = running.GetRequestConfig()
 	if gotRC == nil {
 		t.Fatal("Expected RequestConfig to be non-nil after update")
+		return
 	}
 	if gotRC.Method != "HEAD" {
 		t.Errorf("Expected method HEAD after update, got %s", gotRC.Method)

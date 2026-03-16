@@ -132,6 +132,7 @@ func TestIncidentWithNewFields(t *testing.T) {
 	}
 	if incident == nil {
 		t.Fatal("Incident not found")
+		return
 	}
 	if incident.Source != "auto" {
 		t.Errorf("Source mismatch: got %s, want auto", incident.Source)
