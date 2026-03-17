@@ -391,6 +391,7 @@ func TestToggle_UpsertCreatesNewPage(t *testing.T) {
 	p, _ := store.GetStatusPageBySlug("brand-new")
 	if p == nil {
 		t.Fatal("Expected page to be created via upsert")
+		return
 	}
 	if p.Title != "Brand New" {
 		t.Errorf("Expected title 'Brand New', got '%s'", p.Title)

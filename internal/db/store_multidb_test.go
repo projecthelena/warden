@@ -160,6 +160,7 @@ func TestMultiDB_Sessions(t *testing.T) {
 		}
 		if session == nil {
 			t.Fatal("Expected session, got nil")
+			return
 		}
 		if session.UserID != user.ID {
 			t.Errorf("Expected user ID %d, got %d", user.ID, session.UserID)
@@ -388,6 +389,7 @@ func TestMultiDB_StatusPages(t *testing.T) {
 		}
 		if page == nil {
 			t.Fatal("Expected page, got nil")
+			return
 		}
 		if page.Title != "Test Status Page" {
 			t.Errorf("Expected title 'Test Status Page', got '%s'", page.Title)

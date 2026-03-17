@@ -12,7 +12,9 @@ import { APIKeysView } from "./APIKeysView";
 import { NotificationsView } from "@/components/notifications/NotificationsView";
 import { SelectTimezone } from "@/components/ui/select-timezone";
 
-import { Monitor, Moon, Sun } from "lucide-react";
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
+import { Info, Monitor, Moon, Sun } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -210,6 +212,19 @@ const DIGEST_EVENT_OPTIONS = [
     { value: "up", label: "Recovered" },
 ] as const;
 
+function HelpTip({ text }: { text: string }) {
+    return (
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help inline-block ml-1 align-text-top" />
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-[260px]">
+                {text}
+            </TooltipContent>
+        </Tooltip>
+    );
+}
+
 function NotificationIntelligence() {
     const { settings, fetchSettings, updateSettings } = useMonitorStore();
     const { toast } = useToast();
@@ -302,174 +317,191 @@ function NotificationIntelligence() {
             <CardHeader>
                 <CardTitle>Notification Intelligence</CardTitle>
                 <CardDescription>
-                    Reduce notification noise by requiring confirmation, applying cooldowns, and detecting flapping monitors.
+                    Control when and how notifications are sent.
                 </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-                {/* Event Type Toggles */}
-                <div className="space-y-3">
-                    <Label className="text-base">Event Types</Label>
-                    <p className="text-sm text-muted-foreground">
-                        Choose which event types trigger notifications. Disabled events are still recorded in the event log.
-                    </p>
-                    <div className="grid gap-3 mt-2">
-                        {EVENT_TOGGLES.map(({ key, label, description }) => (
-                            <div key={key} className="flex items-center justify-between">
-                                <div className="space-y-0.5">
-                                    <Label className="text-sm">{label}</Label>
-                                    <p className="text-xs text-muted-foreground">{description}</p>
-                                </div>
-                                <Switch
-                                    checked={eventToggles[key] ?? true}
-                                    onCheckedChange={(checked) =>
-                                        setEventToggles(prev => ({ ...prev, [key]: checked }))
-                                    }
-                                />
-                            </div>
-                        ))}
-                    </div>
-                </div>
-                <Separator />
-                <div className="grid gap-2">
-                    <Label htmlFor="confirm-threshold">Confirmation Checks</Label>
-                    <div className="text-sm text-muted-foreground mb-2">
-                        Require this many consecutive failures before declaring a monitor down and sending a notification. A value of 1 means immediate alerting (no confirmation).
-                    </div>
-                    <Input
-                        id="confirm-threshold"
-                        type="number"
-                        min={1}
-                        max={100}
-                        value={confirmThreshold}
-                        onChange={(e) => setConfirmThreshold(e.target.value)}
-                        className="max-w-[200px]"
-                    />
-                </div>
-                <div className="grid gap-2">
-                    <Label htmlFor="cooldown-mins">Notification Cooldown (Minutes)</Label>
-                    <div className="text-sm text-muted-foreground mb-2">
-                        After sending an alert, suppress duplicate notifications for the same condition for this many minutes. Recovery notifications always send immediately. Set to 0 to disable.
-                    </div>
-                    <Input
-                        id="cooldown-mins"
-                        type="number"
-                        min={0}
-                        max={1440}
-                        value={cooldownMins}
-                        onChange={(e) => setCooldownMins(e.target.value)}
-                        className="max-w-[200px]"
-                    />
-                </div>
-                <div className="grid gap-2">
-                    <Label htmlFor="recovery-checks">Recovery Confirmation Checks</Label>
-                    <div className="text-sm text-muted-foreground mb-2">
-                        Require this many consecutive successful checks before sending a recovery notification. Prevents premature recovery alerts when a monitor briefly comes back up. A value of 1 means immediate recovery (current behavior).
-                    </div>
-                    <Input
-                        id="recovery-checks"
-                        type="number"
-                        min={1}
-                        max={20}
-                        value={recoveryChecks}
-                        onChange={(e) => setRecoveryChecks(e.target.value)}
-                        className="max-w-[200px]"
-                    />
-                </div>
-                <Separator />
-                <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                        <Label>Flap Detection</Label>
-                        <p className="text-sm text-muted-foreground">
-                            Detect monitors oscillating rapidly between states and suppress individual notifications during flapping. A single "flapping" alert is sent instead.
-                        </p>
-                    </div>
-                    <Switch
-                        checked={flapEnabled}
-                        onCheckedChange={setFlapEnabled}
-                    />
-                </div>
-                {flapEnabled && (
-                    <div className="grid grid-cols-2 gap-4 pl-1">
-                        <div className="grid gap-2">
-                            <Label htmlFor="flap-window">Window (checks)</Label>
-                            <div className="text-sm text-muted-foreground mb-1">
-                                Number of recent checks to analyze.
-                            </div>
-                            <Input
-                                id="flap-window"
-                                type="number"
-                                min={3}
-                                max={100}
-                                value={flapWindow}
-                                onChange={(e) => setFlapWindow(e.target.value)}
-                                className="max-w-[160px]"
-                            />
-                        </div>
-                        <div className="grid gap-2">
-                            <Label htmlFor="flap-threshold">Threshold (%)</Label>
-                            <div className="text-sm text-muted-foreground mb-1">
-                                State transitions percentage that triggers flapping.
-                            </div>
-                            <Input
-                                id="flap-threshold"
-                                type="number"
-                                min={1}
-                                max={100}
-                                value={flapThreshold}
-                                onChange={(e) => setFlapThreshold(e.target.value)}
-                                className="max-w-[160px]"
-                            />
-                        </div>
-                    </div>
-                )}
-                <Separator />
-                <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                        <Label>Daily Digest</Label>
-                        <p className="text-sm text-muted-foreground">
-                            Batch non-critical events into a single daily summary instead of real-time notifications.
-                        </p>
-                    </div>
-                    <Switch
-                        checked={digestEnabled}
-                        onCheckedChange={setDigestEnabled}
-                    />
-                </div>
-                {digestEnabled && (
-                    <div className="space-y-4 pl-1">
-                        <div className="grid gap-2">
-                            <Label htmlFor="digest-time">Digest Time</Label>
-                            <div className="text-sm text-muted-foreground mb-1">
-                                Time to send the daily digest (in your configured timezone).
-                            </div>
-                            <Input
-                                id="digest-time"
-                                type="time"
-                                value={digestTime}
-                                onChange={(e) => setDigestTime(e.target.value)}
-                                className="max-w-[160px]"
-                            />
-                        </div>
-                        <div className="grid gap-2">
-                            <Label>Digest Event Types</Label>
-                            <div className="text-sm text-muted-foreground mb-1">
-                                Select which event types are batched into the digest instead of sending immediately.
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                                {DIGEST_EVENT_OPTIONS.map(({ value, label }) => (
-                                    <div key={value} className="flex items-center gap-2">
+            <CardContent>
+                <TooltipProvider>
+                    <div className="space-y-6">
+                        {/* Event Types — always visible */}
+                        <div className="space-y-3">
+                            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Event Types</h3>
+                            <div className="grid grid-cols-2 gap-3">
+                                {EVENT_TOGGLES.map(({ key, label }) => (
+                                    <div key={key} className="flex items-center justify-between">
+                                        <Label className="text-sm">{label}</Label>
                                         <Switch
-                                            checked={digestEventTypes.has(value)}
-                                            onCheckedChange={() => toggleDigestEventType(value)}
+                                            checked={eventToggles[key] ?? true}
+                                            onCheckedChange={(checked) =>
+                                                setEventToggles(prev => ({ ...prev, [key]: checked }))
+                                            }
                                         />
-                                        <Label className="text-sm font-normal">{label}</Label>
                                     </div>
                                 ))}
                             </div>
+                            <p className="text-xs text-muted-foreground">Disabled events are still logged.</p>
                         </div>
+
+                        <Separator />
+
+                        {/* Accordion sections */}
+                        <Accordion type="multiple" className="space-y-2">
+                            {/* Alerting Thresholds */}
+                            <AccordionItem value="thresholds" className="border-none">
+                                <AccordionTrigger className="hover:no-underline text-sm font-semibold text-muted-foreground uppercase tracking-wider py-2">
+                                    Alerting Thresholds
+                                </AccordionTrigger>
+                                <AccordionContent>
+                                    <div className="grid grid-cols-3 gap-4 pt-2">
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="confirm-threshold">
+                                                Confirmation
+                                                <HelpTip text="Consecutive failures before alerting. 1 = immediate." />
+                                            </Label>
+                                            <Input
+                                                id="confirm-threshold"
+                                                type="number"
+                                                min={1}
+                                                max={100}
+                                                value={confirmThreshold}
+                                                onChange={(e) => setConfirmThreshold(e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="cooldown-mins">
+                                                Cooldown (min)
+                                                <HelpTip text="Minutes to suppress duplicate alerts. Recovery always sends. 0 = disabled." />
+                                            </Label>
+                                            <Input
+                                                id="cooldown-mins"
+                                                type="number"
+                                                min={0}
+                                                max={1440}
+                                                value={cooldownMins}
+                                                onChange={(e) => setCooldownMins(e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="recovery-checks">
+                                                Recovery
+                                                <HelpTip text="Consecutive successes before recovery notification. 1 = immediate." />
+                                            </Label>
+                                            <Input
+                                                id="recovery-checks"
+                                                type="number"
+                                                min={1}
+                                                max={20}
+                                                value={recoveryChecks}
+                                                onChange={(e) => setRecoveryChecks(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                </AccordionContent>
+                            </AccordionItem>
+
+                            {/* Flap Detection */}
+                            <AccordionItem value="flap-detection" className="border-none">
+                                <AccordionTrigger className="hover:no-underline text-sm font-semibold text-muted-foreground uppercase tracking-wider py-2">
+                                    Flap Detection
+                                </AccordionTrigger>
+                                <AccordionContent>
+                                    <div className="space-y-4 pt-2">
+                                        <div className="flex items-center justify-between">
+                                            <Label>Enabled</Label>
+                                            <Switch
+                                                checked={flapEnabled}
+                                                onCheckedChange={setFlapEnabled}
+                                            />
+                                        </div>
+                                        {flapEnabled && (
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="grid gap-2">
+                                                    <Label htmlFor="flap-window">
+                                                        Window (checks)
+                                                        <HelpTip text="Recent checks analyzed for state changes." />
+                                                    </Label>
+                                                    <Input
+                                                        id="flap-window"
+                                                        type="number"
+                                                        min={3}
+                                                        max={100}
+                                                        value={flapWindow}
+                                                        onChange={(e) => setFlapWindow(e.target.value)}
+                                                    />
+                                                </div>
+                                                <div className="grid gap-2">
+                                                    <Label htmlFor="flap-threshold">
+                                                        Threshold (%)
+                                                        <HelpTip text="State transition percentage that triggers flapping." />
+                                                    </Label>
+                                                    <Input
+                                                        id="flap-threshold"
+                                                        type="number"
+                                                        min={1}
+                                                        max={100}
+                                                        value={flapThreshold}
+                                                        onChange={(e) => setFlapThreshold(e.target.value)}
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </AccordionContent>
+                            </AccordionItem>
+
+                            {/* Daily Digest */}
+                            <AccordionItem value="daily-digest" className="border-none">
+                                <AccordionTrigger className="hover:no-underline text-sm font-semibold text-muted-foreground uppercase tracking-wider py-2">
+                                    Daily Digest
+                                </AccordionTrigger>
+                                <AccordionContent>
+                                    <div className="space-y-4 pt-2">
+                                        <div className="flex items-center justify-between">
+                                            <Label>Enabled</Label>
+                                            <Switch
+                                                checked={digestEnabled}
+                                                onCheckedChange={setDigestEnabled}
+                                            />
+                                        </div>
+                                        {digestEnabled && (
+                                            <>
+                                                <div className="grid gap-2">
+                                                    <Label htmlFor="digest-time">
+                                                        Send at
+                                                        <HelpTip text="Uses your configured timezone." />
+                                                    </Label>
+                                                    <Input
+                                                        id="digest-time"
+                                                        type="time"
+                                                        value={digestTime}
+                                                        onChange={(e) => setDigestTime(e.target.value)}
+                                                        className="max-w-[160px]"
+                                                    />
+                                                </div>
+                                                <div className="grid gap-2">
+                                                    <Label>Batched Events</Label>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        {DIGEST_EVENT_OPTIONS.map(({ value, label }) => (
+                                                            <div key={value} className="flex items-center gap-2">
+                                                                <Switch
+                                                                    checked={digestEventTypes.has(value)}
+                                                                    onCheckedChange={() => toggleDigestEventType(value)}
+                                                                />
+                                                                <Label className="text-sm font-normal">{label}</Label>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                </AccordionContent>
+                            </AccordionItem>
+                        </Accordion>
+
+                        <Button onClick={handleSave} className="w-fit">Save Settings</Button>
                     </div>
-                )}
-                <Button onClick={handleSave} className="w-fit">Save Settings</Button>
+                </TooltipProvider>
             </CardContent>
         </Card>
     );

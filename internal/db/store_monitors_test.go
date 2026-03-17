@@ -49,6 +49,7 @@ func TestMonitorCRUD(t *testing.T) {
 	}
 	if found == nil {
 		t.Fatal("Monitor m1 not found")
+		return
 	}
 	if found.Name != "Updated M1" || found.Interval != 120 {
 		t.Error("Update verification failed")
@@ -427,6 +428,7 @@ func TestSetMonitorActive_PauseMonitor(t *testing.T) {
 	}
 	if found == nil {
 		t.Fatal("Monitor not found")
+		return
 	}
 	if !found.Active {
 		t.Error("Monitor should be active initially")
@@ -483,6 +485,7 @@ func TestSetMonitorActive_ResumeMonitor(t *testing.T) {
 	}
 	if found == nil {
 		t.Fatal("Monitor not found")
+		return
 	}
 	if !found.Active {
 		t.Error("Monitor should be active after resume")
@@ -706,6 +709,7 @@ func TestSetMonitorActive_PausePreservesOtherFields(t *testing.T) {
 	}
 	if found == nil {
 		t.Fatal("Monitor not found")
+		return
 	}
 	if found.Name != "Preserve Test" {
 		t.Errorf("Name changed unexpectedly: %s", found.Name)
@@ -791,6 +795,7 @@ func TestGetDailyUptimeStats_WithChecks(t *testing.T) {
 	}
 	if todayStat == nil {
 		t.Fatalf("Today's stats not found in results. Looking for %s", todayStr)
+		return
 	}
 	if todayStat.Total != 10 {
 		t.Errorf("Expected 10 total checks today, got %d", todayStat.Total)
@@ -924,6 +929,7 @@ func TestMonitor_PerMonitorOverrides(t *testing.T) {
 		}
 		if found == nil {
 			t.Fatal("Monitor not found")
+			return
 		}
 		if found.ConfirmationThreshold == nil || *found.ConfirmationThreshold != 5 {
 			t.Errorf("Expected ConfirmationThreshold=5, got %v", found.ConfirmationThreshold)
@@ -959,6 +965,7 @@ func TestMonitor_PerMonitorOverrides(t *testing.T) {
 		}
 		if found == nil {
 			t.Fatal("Monitor not found")
+			return
 		}
 		if found.ConfirmationThreshold != nil {
 			t.Errorf("Expected ConfirmationThreshold=nil, got %v", *found.ConfirmationThreshold)
@@ -996,6 +1003,7 @@ func TestMonitor_PerMonitorOverrides(t *testing.T) {
 		}
 		if found == nil {
 			t.Fatal("Monitor not found")
+			return
 		}
 		if found.ConfirmationThreshold == nil || *found.ConfirmationThreshold != 7 {
 			t.Errorf("Expected ConfirmationThreshold=7, got %v", found.ConfirmationThreshold)
@@ -1035,6 +1043,7 @@ func TestMonitor_PerMonitorOverrides(t *testing.T) {
 		}
 		if found == nil {
 			t.Fatal("Monitor not found")
+			return
 		}
 		if found.ConfirmationThreshold != nil {
 			t.Errorf("Expected ConfirmationThreshold=nil after clear, got %v", *found.ConfirmationThreshold)
@@ -1074,6 +1083,7 @@ func TestMonitor_PerMonitorOverrides(t *testing.T) {
 		}
 		if found == nil {
 			t.Fatal("Monitor not found")
+			return
 		}
 		if found.ConfirmationThreshold == nil || *found.ConfirmationThreshold != 8 {
 			t.Errorf("Expected ConfirmationThreshold=8, got %v", found.ConfirmationThreshold)
@@ -1109,6 +1119,7 @@ func TestMonitor_LatencyThresholdRoundtrip(t *testing.T) {
 		}
 		if found == nil {
 			t.Fatal("Monitor not found")
+			return
 		}
 		if found.LatencyThreshold == nil || *found.LatencyThreshold != 2000 {
 			t.Errorf("Expected LatencyThreshold=2000, got %v", found.LatencyThreshold)
@@ -1137,6 +1148,7 @@ func TestMonitor_LatencyThresholdRoundtrip(t *testing.T) {
 		}
 		if found == nil {
 			t.Fatal("Monitor not found")
+			return
 		}
 		if found.LatencyThreshold != nil {
 			t.Errorf("Expected LatencyThreshold=nil, got %v", *found.LatencyThreshold)
@@ -1169,6 +1181,7 @@ func TestMonitor_LatencyThresholdRoundtrip(t *testing.T) {
 		}
 		if found == nil {
 			t.Fatal("Monitor not found")
+			return
 		}
 		if found.LatencyThreshold == nil || *found.LatencyThreshold != 500 {
 			t.Errorf("Expected LatencyThreshold=500, got %v", found.LatencyThreshold)
@@ -1202,6 +1215,7 @@ func TestMonitor_LatencyThresholdRoundtrip(t *testing.T) {
 		}
 		if found == nil {
 			t.Fatal("Monitor not found")
+			return
 		}
 		if found.LatencyThreshold != nil {
 			t.Errorf("Expected LatencyThreshold=nil after clear, got %v", *found.LatencyThreshold)
@@ -1250,9 +1264,11 @@ func TestMonitorCRUD_RequestConfig(t *testing.T) {
 	}
 	if found == nil {
 		t.Fatal("Monitor m-rc1 not found")
+		return
 	}
 	if found.RequestConfig == nil {
 		t.Fatal("Expected RequestConfig to be non-nil")
+		return
 	}
 	rc := found.RequestConfig
 	if rc.Method != "POST" {
@@ -1302,9 +1318,11 @@ func TestMonitorCRUD_RequestConfig(t *testing.T) {
 	}
 	if found == nil {
 		t.Fatal("Monitor m-rc1 not found after update")
+		return
 	}
 	if found.RequestConfig == nil {
 		t.Fatal("Expected RequestConfig to be non-nil after update")
+		return
 	}
 	if found.RequestConfig.Method != "HEAD" {
 		t.Errorf("Expected method HEAD after update, got %s", found.RequestConfig.Method)
@@ -1329,6 +1347,7 @@ func TestMonitorCRUD_RequestConfig(t *testing.T) {
 	}
 	if found == nil {
 		t.Fatal("Monitor m-rc1 not found after nil update")
+		return
 	}
 	if found.RequestConfig != nil {
 		t.Errorf("Expected RequestConfig to be nil after clearing, got %+v", found.RequestConfig)
