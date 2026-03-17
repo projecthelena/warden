@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -239,6 +238,86 @@ func SendDirect(channelType, configJSON string, event NotificationEvent) error {
 	return notifier.Send(event)
 }
 
+// digestMonitor holds the summary data for one monitor in the digest.
+type digestMonitor struct {
+	Name       string
+	URL        string
+	Events     []digestEventCount
+	Severity   int    // worst event severity (lower = more severe)
+	SSLMessage string // latest SSL expiry message (e.g. "SSL certificate expires in 14 days (2026-03-30)")
+}
+
+// digestEventCount holds the count for one event type.
+type digestEventCount struct {
+	Type  string
+	Count int
+}
+
+// digestSummary holds the full digest data.
+type digestSummary struct {
+	TotalEvents  int
+	MonitorCount int
+	Monitors     []digestMonitor
+	Date         time.Time
+}
+
+func eventSeverity(eventType string) int {
+	switch eventType {
+	case "down":
+		return 0
+	case "degraded":
+		return 1
+	case "flapping":
+		return 2
+	case "ssl_expiring":
+		return 3
+	case "stabilized":
+		return 4
+	case "up":
+		return 5
+	default:
+		return 6
+	}
+}
+
+func eventEmoji(eventType string) string {
+	switch eventType {
+	case "down":
+		return ":rotating_light:"
+	case "degraded":
+		return ":warning:"
+	case "ssl_expiring":
+		return ":lock:"
+	case "flapping":
+		return ":cyclone:"
+	case "stabilized":
+		return ":large_blue_circle:"
+	case "up":
+		return ":white_check_mark:"
+	default:
+		return ":grey_question:"
+	}
+}
+
+func eventLabel(eventType string) string {
+	switch eventType {
+	case "down":
+		return "Down"
+	case "degraded":
+		return "Degraded"
+	case "ssl_expiring":
+		return "SSL Expiring"
+	case "flapping":
+		return "Flapping"
+	case "stabilized":
+		return "Stabilized"
+	case "up":
+		return "Up"
+	default:
+		return eventType
+	}
+}
+
 // SendDigest dispatches a daily digest summary to all enabled notification channels.
 func (s *Service) SendDigest(events []db.DigestEvent) {
 	if len(events) == 0 {
@@ -252,42 +331,69 @@ func (s *Service) SendDigest(events []db.DigestEvent) {
 	}
 
 	// Group events by monitor
-	type monitorEvents struct {
-		name   string
-		counts map[string]int
+	type monitorData struct {
+		name       string
+		url        string
+		counts     map[string]int
+		sslMessage string // latest SSL expiry message
 	}
-	byMonitor := make(map[string]*monitorEvents)
+	byMonitor := make(map[string]*monitorData)
 	var monitorOrder []string
 
 	for _, e := range events {
-		me, ok := byMonitor[e.MonitorID]
+		md, ok := byMonitor[e.MonitorID]
 		if !ok {
-			me = &monitorEvents{name: e.MonitorName, counts: make(map[string]int)}
-			byMonitor[e.MonitorID] = me
+			md = &monitorData{name: e.MonitorName, url: e.MonitorURL, counts: make(map[string]int)}
+			byMonitor[e.MonitorID] = md
 			monitorOrder = append(monitorOrder, e.MonitorID)
 		}
-		me.counts[e.EventType]++
+		md.counts[e.EventType]++
+		if e.EventType == "ssl_expiring" && e.Message != "" {
+			md.sslMessage = e.Message
+		}
 	}
 
-	// Build summary lines
-	var lines []string
+	// Build digestMonitor list
+	var monitors []digestMonitor
 	for _, mid := range monitorOrder {
-		me := byMonitor[mid]
-		var parts []string
-		// Sort event types for consistent output
+		md := byMonitor[mid]
 		var types []string
-		for t := range me.counts {
+		for t := range md.counts {
 			types = append(types, t)
 		}
-		sort.Strings(types)
+		sort.Slice(types, func(i, j int) bool {
+			return eventSeverity(types[i]) < eventSeverity(types[j])
+		})
+
+		var eventCounts []digestEventCount
+		worstSeverity := 99
 		for _, t := range types {
-			parts = append(parts, t+" ("+strconv.Itoa(me.counts[t])+"x)")
+			eventCounts = append(eventCounts, digestEventCount{Type: t, Count: md.counts[t]})
+			if sev := eventSeverity(t); sev < worstSeverity {
+				worstSeverity = sev
+			}
 		}
-		lines = append(lines, "- "+me.name+": "+strings.Join(parts, ", "))
+
+		monitors = append(monitors, digestMonitor{
+			Name:       md.name,
+			URL:        md.url,
+			Events:     eventCounts,
+			Severity:   worstSeverity,
+			SSLMessage: md.sslMessage,
+		})
 	}
 
-	title := "Daily Monitoring Summary (" + strconv.Itoa(len(events)) + " events)"
-	body := strings.Join(lines, "\n")
+	// Sort monitors by severity (most critical first)
+	sort.SliceStable(monitors, func(i, j int) bool {
+		return monitors[i].Severity < monitors[j].Severity
+	})
+
+	summary := digestSummary{
+		TotalEvents:  len(events),
+		MonitorCount: len(monitors),
+		Monitors:     monitors,
+		Date:         time.Now(),
+	}
 
 	for _, ch := range channels {
 		if !ch.Enabled {
@@ -297,49 +403,132 @@ func (s *Service) SendDigest(events []db.DigestEvent) {
 		switch ch.Type {
 		case "slack":
 			n := NewSlackNotifier(ch.Config)
-			if err := n.sendDigest(title, body); err != nil {
+			if err := n.sendDigest(summary); err != nil {
 				log.Printf("Digest: failed to send to Slack (%s): %v", ch.Name, err)
 			}
 		case "webhook":
 			n := NewWebhookNotifier(ch.Config)
-			if err := n.sendDigest(title, body, events); err != nil {
+			if err := n.sendDigest(summary, events); err != nil {
 				log.Printf("Digest: failed to send to webhook (%s): %v", ch.Name, err)
 			}
 		}
 	}
 }
 
-func (n *SlackNotifier) sendDigest(title, body string) error {
+func (n *SlackNotifier) sendDigest(summary digestSummary) error {
 	webhookURL, ok := n.config["webhookUrl"].(string)
 	if !ok || webhookURL == "" {
 		return fmt.Errorf("webhookUrl missing or invalid")
 	}
 
-	payload := map[string]interface{}{
-		"text": ":bar_chart: *" + title + "*",
-		"attachments": []map[string]interface{}{
-			{
-				"color": "#3498db",
-				"text":  body,
+	dateStr := summary.Date.Format("January 2, 2006")
+	subtitle := fmt.Sprintf(":clock3: %s  ·  %d events across %d monitors",
+		dateStr, summary.TotalEvents, summary.MonitorCount)
+
+	blocks := []map[string]interface{}{
+		{
+			"type": "header",
+			"text": map[string]interface{}{
+				"type":  "plain_text",
+				"text":  ":bar_chart: Daily Monitoring Summary",
+				"emoji": true,
 			},
 		},
+		{
+			"type": "context",
+			"elements": []map[string]interface{}{
+				{
+					"type": "mrkdwn",
+					"text": subtitle,
+				},
+			},
+		},
+		{
+			"type": "divider",
+		},
+	}
+
+	for _, m := range summary.Monitors {
+		var eventParts []string
+		for _, ec := range m.Events {
+			if ec.Type == "ssl_expiring" && m.SSLMessage != "" {
+				eventParts = append(eventParts, fmt.Sprintf("%s %s",
+					eventEmoji(ec.Type), m.SSLMessage))
+			} else {
+				eventParts = append(eventParts, fmt.Sprintf("%s %s `%dx`",
+					eventEmoji(ec.Type), eventLabel(ec.Type), ec.Count))
+			}
+		}
+
+		monitorEmoji := ":white_check_mark:"
+		if len(m.Events) > 0 {
+			monitorEmoji = eventEmoji(m.Events[0].Type)
+		}
+
+		text := fmt.Sprintf("%s  *%s*\n%s",
+			monitorEmoji, m.Name, strings.Join(eventParts, "  ·  "))
+
+		blocks = append(blocks, map[string]interface{}{
+			"type": "section",
+			"text": map[string]interface{}{
+				"type": "mrkdwn",
+				"text": text,
+			},
+		})
+	}
+
+	fallbackText := fmt.Sprintf(":bar_chart: Daily Monitoring Summary — %d events across %d monitors",
+		summary.TotalEvents, summary.MonitorCount)
+
+	payload := map[string]interface{}{
+		"text":   fallbackText,
+		"blocks": blocks,
 	}
 
 	return sendJSON(webhookURL, payload)
 }
 
-func (n *WebhookNotifier) sendDigest(title, body string, events []db.DigestEvent) error {
+func (n *WebhookNotifier) sendDigest(summary digestSummary, events []db.DigestEvent) error {
 	webhookURL, ok := n.config["webhookUrl"].(string)
 	if !ok || webhookURL == "" {
 		return fmt.Errorf("webhookUrl missing or invalid")
 	}
 
+	var monitorSummaries []map[string]interface{}
+	for _, m := range summary.Monitors {
+		eventCounts := make(map[string]int)
+		for _, ec := range m.Events {
+			eventCounts[ec.Type] = ec.Count
+		}
+		monitorSummaries = append(monitorSummaries, map[string]interface{}{
+			"name":   m.Name,
+			"url":    m.URL,
+			"events": eventCounts,
+		})
+	}
+
+	// Build plain-text summary for backwards compatibility
+	var lines []string
+	for _, m := range summary.Monitors {
+		var parts []string
+		for _, ec := range m.Events {
+			if ec.Type == "ssl_expiring" && m.SSLMessage != "" {
+				parts = append(parts, m.SSLMessage)
+			} else {
+				parts = append(parts, fmt.Sprintf("%s (%dx)", ec.Type, ec.Count))
+			}
+		}
+		lines = append(lines, fmt.Sprintf("- %s: %s", m.Name, strings.Join(parts, ", ")))
+	}
+
 	payload := map[string]interface{}{
-		"type":       "digest",
-		"title":      title,
-		"summary":    body,
-		"eventCount": len(events),
-		"timestamp":  time.Now().Format(time.RFC3339),
+		"type":         "digest",
+		"title":        fmt.Sprintf("Daily Monitoring Summary (%d events)", summary.TotalEvents),
+		"summary":      strings.Join(lines, "\n"),
+		"eventCount":   summary.TotalEvents,
+		"monitorCount": summary.MonitorCount,
+		"monitors":     monitorSummaries,
+		"timestamp":    summary.Date.Format(time.RFC3339),
 	}
 
 	return sendJSON(webhookURL, payload)
