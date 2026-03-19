@@ -45,6 +45,9 @@ type MaintenanceResponse struct {
 // @Failure      500  {string} string "Failed to schedule maintenance"
 // @Router       /maintenance [post]
 func (h *MaintenanceHandler) CreateMaintenance(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleEditor) {
+		return
+	}
 	var req struct {
 		Title          string   `json:"title"`
 		Description    string   `json:"description"`
@@ -175,6 +178,9 @@ func (h *MaintenanceHandler) GetMaintenance(w http.ResponseWriter, r *http.Reque
 // @Failure      500  {string} string "Failed to update maintenance"
 // @Router       /maintenance/{id} [put]
 func (h *MaintenanceHandler) UpdateMaintenance(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleEditor) {
+		return
+	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		http.Error(w, "Maintenance ID required", http.StatusBadRequest)
@@ -267,6 +273,9 @@ func (h *MaintenanceHandler) UpdateMaintenance(w http.ResponseWriter, r *http.Re
 // @Failure      500  {string} string "Failed to delete maintenance"
 // @Router       /maintenance/{id} [delete]
 func (h *MaintenanceHandler) DeleteMaintenance(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleEditor) {
+		return
+	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		http.Error(w, "Maintenance ID required", http.StatusBadRequest)

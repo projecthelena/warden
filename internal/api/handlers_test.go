@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,6 +14,20 @@ import (
 	"github.com/projecthelena/warden/internal/uptime"
 	"github.com/go-chi/chi/v5"
 )
+
+// withAdminRole adds the admin role to a request's context for testing.
+func withAdminRole(req *http.Request) *http.Request {
+	ctx := context.WithValue(req.Context(), contextKeyUserRole, RoleAdmin)
+	return req.WithContext(ctx)
+}
+
+// adminRoleMiddleware is a test middleware that injects the admin role into context.
+func adminRoleMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), contextKeyUserRole, RoleAdmin)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
 
 func setupTest(t *testing.T) (*CRUDHandler, *SettingsHandler, *AuthHandler, http.Handler, *db.Store) {
 	store, _ := db.NewStore(db.NewTestConfig())
@@ -49,6 +64,7 @@ func TestUpdateMonitor(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	r := chi.NewRouter()
+	r.Use(adminRoleMiddleware)
 	r.Put("/api/monitors/{id}", crudH.UpdateMonitor)
 	r.ServeHTTP(w, req)
 
@@ -92,7 +108,7 @@ func TestUpdateSettings(t *testing.T) {
 
 	// Settings handler doesn't use URL params, so we can call directly or via router
 	handler := http.HandlerFunc(settingsH.UpdateSettings)
-	handler.ServeHTTP(w, req)
+	handler.ServeHTTP(w, withAdminRole(req))
 
 	if w.Code != http.StatusOK {
 		t.Errorf("Expected 200, got %d", w.Code)
@@ -121,6 +137,7 @@ func TestPauseMonitor(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	r := chi.NewRouter()
+	r.Use(adminRoleMiddleware)
 	r.Post("/api/monitors/{id}/pause", crudH.PauseMonitor)
 	r.ServeHTTP(w, req)
 
@@ -171,6 +188,7 @@ func TestResumeMonitor(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	r := chi.NewRouter()
+	r.Use(adminRoleMiddleware)
 	r.Post("/api/monitors/{id}/resume", crudH.ResumeMonitor)
 	r.ServeHTTP(w, req)
 
@@ -216,6 +234,7 @@ func TestPauseMonitor_NotFound(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	r := chi.NewRouter()
+	r.Use(adminRoleMiddleware)
 	r.Post("/api/monitors/{id}/pause", crudH.PauseMonitor)
 	r.ServeHTTP(w, req)
 
@@ -241,6 +260,7 @@ func TestResumeMonitor_NotFound(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	r := chi.NewRouter()
+	r.Use(adminRoleMiddleware)
 	r.Post("/api/monitors/{id}/resume", crudH.ResumeMonitor)
 	r.ServeHTTP(w, req)
 
@@ -266,6 +286,7 @@ func TestPauseMonitor_EmptyID(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	r := chi.NewRouter()
+	r.Use(adminRoleMiddleware)
 	r.Post("/api/monitors/{id}/pause", crudH.PauseMonitor)
 	r.ServeHTTP(w, req)
 
@@ -291,6 +312,7 @@ func TestPauseResumeMonitor_FullCycle(t *testing.T) {
 	}
 
 	r := chi.NewRouter()
+	r.Use(adminRoleMiddleware)
 	r.Post("/api/monitors/{id}/pause", crudH.PauseMonitor)
 	r.Post("/api/monitors/{id}/resume", crudH.ResumeMonitor)
 
@@ -356,6 +378,7 @@ func TestPauseMonitor_AlreadyPaused(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	r := chi.NewRouter()
+	r.Use(adminRoleMiddleware)
 	r.Post("/api/monitors/{id}/pause", crudH.PauseMonitor)
 	r.ServeHTTP(w, req)
 
@@ -387,6 +410,7 @@ func TestResumeMonitor_AlreadyActive(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	r := chi.NewRouter()
+	r.Use(adminRoleMiddleware)
 	r.Post("/api/monitors/{id}/resume", crudH.ResumeMonitor)
 	r.ServeHTTP(w, req)
 
@@ -419,6 +443,7 @@ func TestPauseMonitor_UUIDStyleID(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	r := chi.NewRouter()
+	r.Use(adminRoleMiddleware)
 	r.Post("/api/monitors/{id}/pause", crudH.PauseMonitor)
 	r.ServeHTTP(w, req)
 
@@ -444,6 +469,7 @@ func TestPauseResumeMonitor_SequentialToggle(t *testing.T) {
 	}
 
 	r := chi.NewRouter()
+	r.Use(adminRoleMiddleware)
 	r.Post("/api/monitors/{id}/pause", crudH.PauseMonitor)
 	r.Post("/api/monitors/{id}/resume", crudH.ResumeMonitor)
 
@@ -552,6 +578,7 @@ func TestCreateMonitor_NotifFatigueValidation(t *testing.T) {
 			w := httptest.NewRecorder()
 
 			r := chi.NewRouter()
+			r.Use(adminRoleMiddleware)
 			r.Post("/api/monitors", crudH.CreateMonitor)
 			r.ServeHTTP(w, req)
 
@@ -629,6 +656,7 @@ func TestUpdateMonitor_NotifFatigueValidation(t *testing.T) {
 			w := httptest.NewRecorder()
 
 			r := chi.NewRouter()
+			r.Use(adminRoleMiddleware)
 			r.Put("/api/monitors/{id}", crudH.UpdateMonitor)
 			r.ServeHTTP(w, req)
 
@@ -670,6 +698,7 @@ func TestGetUptime_IncludesOverrideFields(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	r := chi.NewRouter()
+	r.Use(adminRoleMiddleware)
 	r.Get("/api/uptime", uptimeH.GetHistory)
 	r.ServeHTTP(w, req)
 
@@ -761,6 +790,7 @@ func TestGetUptime_IncludesLatencyThreshold(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	r := chi.NewRouter()
+	r.Use(adminRoleMiddleware)
 	r.Get("/api/uptime", uptimeH.GetHistory)
 	r.ServeHTTP(w, req)
 
@@ -841,6 +871,7 @@ func TestCreateMonitor_WithRequestConfig(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	r := chi.NewRouter()
+	r.Use(adminRoleMiddleware)
 	r.Post("/api/monitors", crudH.CreateMonitor)
 	r.ServeHTTP(w, req)
 
@@ -909,6 +940,7 @@ func TestUpdateMonitor_WithRequestConfig(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	r := chi.NewRouter()
+	r.Use(adminRoleMiddleware)
 	r.Put("/api/monitors/{id}", crudH.UpdateMonitor)
 	r.ServeHTTP(w, req)
 
@@ -1019,6 +1051,7 @@ func TestValidateRequestConfig(t *testing.T) {
 			w := httptest.NewRecorder()
 
 			r := chi.NewRouter()
+			r.Use(adminRoleMiddleware)
 			r.Post("/api/monitors", crudH.CreateMonitor)
 			r.ServeHTTP(w, req)
 
@@ -1077,6 +1110,7 @@ func TestGetUptime_IncludesRequestConfig(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	r := chi.NewRouter()
+	r.Use(adminRoleMiddleware)
 	r.Get("/api/uptime", uptimeH.GetHistory)
 	r.ServeHTTP(w, req)
 

@@ -27,6 +27,7 @@ export interface User {
     isAuthenticated: boolean;
     timezone?: string;
     ssoProvider?: string;
+    role?: string;
 }
 
 export interface HistoryPoint {
@@ -178,6 +179,7 @@ export interface APIKey {
     id: number;
     keyPrefix: string;
     name: string;
+    role: string;
     createdAt: string;
     lastUsed?: string;
 }
@@ -252,7 +254,7 @@ interface MonitorStore {
 
     // API Keys
     fetchAPIKeys: () => Promise<APIKey[]>;
-    createAPIKey: (name: string) => Promise<string | null>;
+    createAPIKey: (name: string, role?: string) => Promise<string | null>;
     deleteAPIKey: (id: number) => Promise<void>;
     resetDatabase: () => Promise<boolean>;
 
@@ -428,7 +430,8 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
                         avatar: data.user.avatar,
                         isAuthenticated: true,
                         timezone: data.user.timezone,
-                        ssoProvider: data.user.ssoProvider || ""
+                        ssoProvider: data.user.ssoProvider || "",
+                        role: data.user.role || "admin"
                     },
                     isAuthChecked: true
                 });
@@ -461,7 +464,8 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
                         avatar: data.user.avatar,
                         isAuthenticated: true,
                         timezone: data.user.timezone,
-                        ssoProvider: data.user.ssoProvider || ""
+                        ssoProvider: data.user.ssoProvider || "",
+                        role: data.user.role || "admin"
                     }
                 });
                 get().fetchOverview();
@@ -523,15 +527,15 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
 
     fetchPublicStatusBySlug: async (slug: string) => {
         try {
-            const res = await fetch(`/api/s/${slug}`);
+            const res = await fetch(`/api/s/${slug}`, { credentials: "include" });
             if (res.ok) {
-                const data = await res.json();
-                // Return data directly or set to a store state?
-                // For now, let's return it so component can handle loading state locally if desired, 
-                // OR we can adapt 'groups' state.
-                // But 'groups' is for the Admin dashboard. 
-                // Let's just return the data used by the public view.
-                return data;
+                return await res.json();
+            }
+            if (res.status === 401) {
+                return { _error: "auth_required" };
+            }
+            if (res.status === 403) {
+                return { _error: "forbidden" };
             }
         } catch (error) {
             console.error(error);
@@ -1065,12 +1069,12 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
         return [];
     },
 
-    createAPIKey: async (name: string) => {
+    createAPIKey: async (name: string, role?: string) => {
         try {
             const res = await fetch("/api/api-keys", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name }),
+                body: JSON.stringify({ name, role: role || "editor" }),
                 credentials: "include"
             });
             if (res.ok) {

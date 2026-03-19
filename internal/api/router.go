@@ -114,6 +114,7 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 	eventH := NewEventHandler(store, manager)
 	statusPageH := NewStatusPageHandler(store, manager, authH)
 	notifH := NewNotificationChannelsHandler(store)
+	userH := NewUserHandler(store)
 
 	// Kubernetes health probes (unauthenticated, no rate limiting)
 	r.Get("/healthz", Healthz)
@@ -153,98 +154,89 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 
 		api.Group(func(protected chi.Router) {
 			protected.Use(authH.AuthMiddleware)
+
+			// Auth endpoints - accessible by ALL authenticated users (including status_viewer)
 			protected.Get("/auth/me", authH.Me)
 			protected.Patch("/auth/me", authH.UpdateUser)
 
+			// All other endpoints require at least viewer role (blocks status_viewer)
+			protected.Group(func(dashboard chi.Router) {
+				dashboard.Use(RequireViewerMiddleware)
+
 			// Dashboard Overview
-			protected.Get("/overview", uptimeH.GetOverview)
+			dashboard.Get("/overview", uptimeH.GetOverview)
 
 			// Groups
-			protected.Post("/groups", crudH.CreateGroup)
-			protected.Put("/groups/{id}", crudH.UpdateGroup)
-			protected.Delete("/groups/{id}", crudH.DeleteGroup)
+			dashboard.Post("/groups", crudH.CreateGroup)
+			dashboard.Put("/groups/{id}", crudH.UpdateGroup)
+			dashboard.Delete("/groups/{id}", crudH.DeleteGroup)
 
 			// Monitors
-			// /uptime maps to GetHistory in handlers_uptime.go (returns list of monitors with history)
-			protected.Get("/uptime", uptimeH.GetHistory)
-			protected.Post("/monitors", crudH.CreateMonitor)
-			protected.Put("/monitors/{id}", crudH.UpdateMonitor)
-			protected.Delete("/monitors/{id}", crudH.DeleteMonitor)
-			protected.Post("/monitors/{id}/pause", crudH.PauseMonitor)
-			protected.Post("/monitors/{id}/resume", crudH.ResumeMonitor)
-			protected.Get("/monitors/{id}/uptime", uptimeH.GetMonitorUptime)
-			protected.Get("/monitors/{id}/latency", uptimeH.GetMonitorLatency)
+			dashboard.Get("/uptime", uptimeH.GetHistory)
+			dashboard.Post("/monitors", crudH.CreateMonitor)
+			dashboard.Put("/monitors/{id}", crudH.UpdateMonitor)
+			dashboard.Delete("/monitors/{id}", crudH.DeleteMonitor)
+			dashboard.Post("/monitors/{id}/pause", crudH.PauseMonitor)
+			dashboard.Post("/monitors/{id}/resume", crudH.ResumeMonitor)
+			dashboard.Get("/monitors/{id}/uptime", uptimeH.GetMonitorUptime)
+			dashboard.Get("/monitors/{id}/latency", uptimeH.GetMonitorLatency)
 
 			// Incidents
-			protected.Get("/incidents", incidentH.GetIncidents)
-			protected.Post("/incidents", incidentH.CreateIncident)
-			protected.Get("/incidents/{id}", incidentH.GetIncident)
-			protected.Put("/incidents/{id}", incidentH.UpdateIncident)
-			protected.Delete("/incidents/{id}", incidentH.DeleteIncident)
-			protected.Patch("/incidents/{id}/visibility", incidentH.SetVisibility)
-			protected.Get("/incidents/{id}/updates", incidentH.GetUpdates)
-			protected.Post("/incidents/{id}/updates", incidentH.AddUpdate)
+			dashboard.Get("/incidents", incidentH.GetIncidents)
+			dashboard.Post("/incidents", incidentH.CreateIncident)
+			dashboard.Get("/incidents/{id}", incidentH.GetIncident)
+			dashboard.Put("/incidents/{id}", incidentH.UpdateIncident)
+			dashboard.Delete("/incidents/{id}", incidentH.DeleteIncident)
+			dashboard.Patch("/incidents/{id}/visibility", incidentH.SetVisibility)
+			dashboard.Get("/incidents/{id}/updates", incidentH.GetUpdates)
+			dashboard.Post("/incidents/{id}/updates", incidentH.AddUpdate)
 
 			// Outages (promote to incident)
-			protected.Post("/outages/{id}/promote", incidentH.PromoteOutage)
+			dashboard.Post("/outages/{id}/promote", incidentH.PromoteOutage)
 
 			// Maintenance
-			protected.Post("/maintenance", maintH.CreateMaintenance)
-			protected.Get("/maintenance", maintH.GetMaintenance)
-			protected.Put("/maintenance/{id}", maintH.UpdateMaintenance)
-			protected.Delete("/maintenance/{id}", maintH.DeleteMaintenance)
+			dashboard.Post("/maintenance", maintH.CreateMaintenance)
+			dashboard.Get("/maintenance", maintH.GetMaintenance)
+			dashboard.Put("/maintenance/{id}", maintH.UpdateMaintenance)
+			dashboard.Delete("/maintenance/{id}", maintH.DeleteMaintenance)
 
 			// Settings
-			protected.Get("/settings", settingsH.GetSettings)
-			protected.Patch("/settings", settingsH.UpdateSettings)
+			dashboard.Get("/settings", settingsH.GetSettings)
+			dashboard.Patch("/settings", settingsH.UpdateSettings)
 
 			// SSO Settings (admin only)
-			protected.Post("/settings/sso/test", ssoH.TestSSOConfig)
+			dashboard.Post("/settings/sso/test", ssoH.TestSSOConfig)
 
 			// API Keys
-			protected.Get("/api-keys", apiKeyH.ListKeys)
-			protected.Post("/api-keys", apiKeyH.CreateKey)
-			protected.Delete("/api-keys/{id}", apiKeyH.DeleteKey)
+			dashboard.Get("/api-keys", apiKeyH.ListKeys)
+			dashboard.Post("/api-keys", apiKeyH.CreateKey)
+			dashboard.Delete("/api-keys/{id}", apiKeyH.DeleteKey)
 
 			// Stats
-			protected.Get("/stats", statsH.GetStats)
+			dashboard.Get("/stats", statsH.GetStats)
 
 			// Notifications
-			protected.Get("/notifications/channels", notifH.GetChannels)
-			protected.Post("/notifications/channels", notifH.CreateChannel)
-			protected.Post("/notifications/channels/test", notifH.TestChannel)
-			protected.Put("/notifications/channels/{id}", notifH.UpdateChannel)
-			protected.Delete("/notifications/channels/{id}", notifH.DeleteChannel)
+			dashboard.Get("/notifications/channels", notifH.GetChannels)
+			dashboard.Post("/notifications/channels", notifH.CreateChannel)
+			dashboard.Post("/notifications/channels/test", notifH.TestChannel)
+			dashboard.Put("/notifications/channels/{id}", notifH.UpdateChannel)
+			dashboard.Delete("/notifications/channels/{id}", notifH.DeleteChannel)
 
 			// Events (for history)
-			protected.Get("/events", eventH.GetSystemEvents)
+			dashboard.Get("/events", eventH.GetSystemEvents)
+
+			// Users (admin only)
+			dashboard.Post("/users", userH.CreateUser)
+			dashboard.Get("/users", userH.ListUsers)
+			dashboard.Patch("/users/{id}/role", userH.UpdateUserRole)
+			dashboard.Delete("/users/{id}", userH.DeleteUser)
+			dashboard.Get("/users/{id}/status-pages", userH.GetUserStatusPages)
+			dashboard.Put("/users/{id}/status-pages", userH.SetUserStatusPages)
 
 			// Status Pages Management
-			protected.Get("/status-pages", statusPageH.GetAll)
-			// Note: Create/Upd/Del methods need to be verified in handlers_status_pages.go
-			// Based on GetAll, it likely has Toggle.
-			// Let's assume standard names or check Step 1189 view.
-			// Step 1189 shows: GetAll, Toggle, GetPublicStatus.
-			// It does NOT show CreateStatusPage, UpdateStatusPage, DeleteStatusPage explicitly in the view
-			// (view truncated? No, showed 1-284 which seemed to be whole file?).
-			// Wait, Step 1189 showed lines 1-284 for handlers_status_pages.go.
-			// It handled GetAll and Toggle and GetPublicStatus.
-			// There is NO Create/Delete?
-			// The store has UpsertStatusPage used in Toggle.
-			// Maybe there is no Create? Just Toggle?
-			// The routes in Step 1146 (original) were:
-			// protected.Post("/status-pages", apiRouter.CreateStatusPage)
-			// protected.Patch("/status-pages/{slug}", apiRouter.UpdateStatusPage)
-			// protected.Delete("/status-pages/{slug}", apiRouter.DeleteStatusPage)
-
-			// If handlers_status_pages.go only has Toggle, then "UpdateStatusPage" mapping to Toggle is correct.
-			// What about Create/Delete?
-			// Maybe they were missing or I missed them in search?
-			// If they are missing, I should ommit or fix.
-			// Toggle does Upsert. So maybe Post -> Toggle?
-			protected.Patch("/status-pages/{slug}", statusPageH.Toggle)
-
-			// If Create/Delete are missing, I'll comment them out for now to avoid compilation error.
+			dashboard.Get("/status-pages", statusPageH.GetAll)
+			dashboard.Patch("/status-pages/{slug}", statusPageH.Toggle)
+			})
 		})
 	})
 

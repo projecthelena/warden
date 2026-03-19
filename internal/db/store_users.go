@@ -28,6 +28,7 @@ type User struct {
 	SSOID       string
 	AvatarURL   string
 	DisplayName string
+	Role        string
 }
 
 type Session struct {
@@ -40,8 +41,8 @@ func (s *Store) Authenticate(username, password string) (*User, error) {
 	// username = strings.ToLower(strings.TrimSpace(username)) // REMOVED for Strict Mode
 	username = strings.TrimSpace(username) // Only trim valid white space
 	var u User
-	row := s.db.QueryRow(s.rebind("SELECT id, username, password_hash, created_at, COALESCE(timezone, 'UTC') FROM users WHERE username = ?"), username)
-	err := row.Scan(&u.ID, &u.Username, &u.Password, &u.CreatedAt, &u.Timezone)
+	row := s.db.QueryRow(s.rebind("SELECT id, username, password_hash, created_at, COALESCE(timezone, 'UTC'), COALESCE(role, 'admin') FROM users WHERE username = ?"), username)
+	err := row.Scan(&u.ID, &u.Username, &u.Password, &u.CreatedAt, &u.Timezone, &u.Role)
 	if err == sql.ErrNoRows {
 		return nil, ErrUserNotFound
 	}
@@ -77,8 +78,8 @@ func (s *Store) GetSession(token string) (*Session, error) {
 func (s *Store) GetUser(id int64) (*User, error) {
 	var u User
 	var email, ssoProvider, ssoID, avatarURL, displayName sql.NullString
-	row := s.db.QueryRow(s.rebind("SELECT id, username, created_at, COALESCE(timezone, 'UTC'), email, sso_provider, sso_id, avatar_url, display_name FROM users WHERE id = ?"), id)
-	err := row.Scan(&u.ID, &u.Username, &u.CreatedAt, &u.Timezone, &email, &ssoProvider, &ssoID, &avatarURL, &displayName)
+	row := s.db.QueryRow(s.rebind("SELECT id, username, created_at, COALESCE(timezone, 'UTC'), email, sso_provider, sso_id, avatar_url, display_name, COALESCE(role, 'admin') FROM users WHERE id = ?"), id)
+	err := row.Scan(&u.ID, &u.Username, &u.CreatedAt, &u.Timezone, &email, &ssoProvider, &ssoID, &avatarURL, &displayName, &u.Role)
 	if err != nil {
 		return nil, err
 	}
@@ -115,15 +116,17 @@ func (s *Store) IsSetupComplete() (bool, error) {
 	return isComplete, err
 }
 
-// CreateUser creates a new user.
-func (s *Store) CreateUser(username, password, timezone string) error {
+// CreateUser creates a new user with the specified role.
+func (s *Store) CreateUser(username, password, timezone, role string) error {
 	username = strings.ToLower(strings.TrimSpace(username))
+	if role == "" {
+		role = "admin"
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
-	// Using context if we wanted to enforce timeouts, but standard Exec is fine for now
-	_, err = s.db.Exec(s.rebind("INSERT INTO users (username, password_hash, timezone) VALUES (?, ?, ?)"), username, string(hash), timezone)
+	_, err = s.db.Exec(s.rebind("INSERT INTO users (username, password_hash, timezone, role) VALUES (?, ?, ?, ?)"), username, string(hash), timezone, role)
 	return err
 }
 
@@ -175,8 +178,8 @@ func (s *Store) DeleteUserSessions(userID int64, exceptToken string) error {
 func (s *Store) GetUserByEmail(email string) (*User, error) {
 	var u User
 	var emailVal, ssoProvider, ssoID, avatarURL, displayName sql.NullString
-	row := s.db.QueryRow(s.rebind("SELECT id, username, created_at, COALESCE(timezone, 'UTC'), email, sso_provider, sso_id, avatar_url, display_name FROM users WHERE email = ?"), email)
-	err := row.Scan(&u.ID, &u.Username, &u.CreatedAt, &u.Timezone, &emailVal, &ssoProvider, &ssoID, &avatarURL, &displayName)
+	row := s.db.QueryRow(s.rebind("SELECT id, username, created_at, COALESCE(timezone, 'UTC'), email, sso_provider, sso_id, avatar_url, display_name, COALESCE(role, 'admin') FROM users WHERE email = ?"), email)
+	err := row.Scan(&u.ID, &u.Username, &u.CreatedAt, &u.Timezone, &emailVal, &ssoProvider, &ssoID, &avatarURL, &displayName, &u.Role)
 	if err == sql.ErrNoRows {
 		return nil, ErrUserNotFound
 	}
@@ -208,8 +211,8 @@ func (s *Store) FindOrCreateSSOUser(provider, ssoID, email, name, avatarURL stri
 	// First, try to find by SSO provider and ID
 	var u User
 	var emailVal, ssoProvider, ssoIDVal, avatarVal, displayNameVal sql.NullString
-	row := tx.QueryRow(s.rebind("SELECT id, username, created_at, COALESCE(timezone, 'UTC'), email, sso_provider, sso_id, avatar_url, display_name FROM users WHERE sso_provider = ? AND sso_id = ?"), provider, ssoID)
-	err = row.Scan(&u.ID, &u.Username, &u.CreatedAt, &u.Timezone, &emailVal, &ssoProvider, &ssoIDVal, &avatarVal, &displayNameVal)
+	row := tx.QueryRow(s.rebind("SELECT id, username, created_at, COALESCE(timezone, 'UTC'), email, sso_provider, sso_id, avatar_url, display_name, COALESCE(role, 'admin') FROM users WHERE sso_provider = ? AND sso_id = ?"), provider, ssoID)
+	err = row.Scan(&u.ID, &u.Username, &u.CreatedAt, &u.Timezone, &emailVal, &ssoProvider, &ssoIDVal, &avatarVal, &displayNameVal, &u.Role)
 	if err == nil {
 		// Found existing SSO user - update avatar and display_name if changed
 		if avatarURL != "" || name != "" {
@@ -234,8 +237,8 @@ func (s *Store) FindOrCreateSSOUser(provider, ssoID, email, name, avatarURL stri
 	// Not found by SSO, try to find by email (within transaction)
 	var existingUser User
 	var existingEmailVal, existingSSOProvider, existingSSOID, existingAvatarURL, existingDisplayName sql.NullString
-	row = tx.QueryRow(s.rebind("SELECT id, username, created_at, COALESCE(timezone, 'UTC'), email, sso_provider, sso_id, avatar_url, display_name FROM users WHERE email = ?"), email)
-	err = row.Scan(&existingUser.ID, &existingUser.Username, &existingUser.CreatedAt, &existingUser.Timezone, &existingEmailVal, &existingSSOProvider, &existingSSOID, &existingAvatarURL, &existingDisplayName)
+	row = tx.QueryRow(s.rebind("SELECT id, username, created_at, COALESCE(timezone, 'UTC'), email, sso_provider, sso_id, avatar_url, display_name, COALESCE(role, 'admin') FROM users WHERE email = ?"), email)
+	err = row.Scan(&existingUser.ID, &existingUser.Username, &existingUser.CreatedAt, &existingUser.Timezone, &existingEmailVal, &existingSSOProvider, &existingSSOID, &existingAvatarURL, &existingDisplayName, &existingUser.Role)
 	if err == nil {
 		// Found user by email - check if they have a password
 		// SECURITY: Do not automatically link SSO to existing accounts with passwords.
@@ -308,13 +311,13 @@ func (s *Store) FindOrCreateSSOUser(provider, ssoID, email, name, avatarURL stri
 		counter++
 	}
 
-	// Insert new user with empty password (SSO-only user)
+	// Insert new user with empty password (SSO-only user), default role = viewer
 	var newID int64
 	if s.IsPostgres() {
-		err = tx.QueryRow("INSERT INTO users (username, password_hash, email, sso_provider, sso_id, avatar_url, display_name) VALUES ($1, '', $2, $3, $4, $5, $6) RETURNING id",
+		err = tx.QueryRow("INSERT INTO users (username, password_hash, email, sso_provider, sso_id, avatar_url, display_name, role) VALUES ($1, '', $2, $3, $4, $5, $6, 'viewer') RETURNING id",
 			username, email, provider, ssoID, avatarURL, name).Scan(&newID)
 	} else {
-		result, execErr := tx.Exec("INSERT INTO users (username, password_hash, email, sso_provider, sso_id, avatar_url, display_name) VALUES (?, '', ?, ?, ?, ?, ?)",
+		result, execErr := tx.Exec("INSERT INTO users (username, password_hash, email, sso_provider, sso_id, avatar_url, display_name, role) VALUES (?, '', ?, ?, ?, ?, ?, 'viewer')",
 			username, email, provider, ssoID, avatarURL, name)
 		if execErr != nil {
 			return nil, execErr
@@ -339,7 +342,100 @@ func (s *Store) FindOrCreateSSOUser(provider, ssoID, email, name, avatarURL stri
 		AvatarURL:   avatarURL,
 		DisplayName: name,
 		Timezone:    "UTC",
+		Role:        "viewer",
 	}, nil
+}
+
+// GetUserRole returns the role for a given user ID.
+func (s *Store) GetUserRole(id int64) (string, error) {
+	var role string
+	err := s.db.QueryRow(s.rebind("SELECT COALESCE(role, 'admin') FROM users WHERE id = ?"), id).Scan(&role)
+	if err == sql.ErrNoRows {
+		return "", ErrUserNotFound
+	}
+	return role, err
+}
+
+// ListUsers returns all users (passwords redacted).
+func (s *Store) ListUsers() ([]User, error) {
+	rows, err := s.db.Query("SELECT id, username, created_at, COALESCE(timezone, 'UTC'), COALESCE(email, ''), COALESCE(sso_provider, ''), COALESCE(avatar_url, ''), COALESCE(display_name, ''), COALESCE(role, 'admin') FROM users ORDER BY id")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var users []User
+	for rows.Next() {
+		var u User
+		if err := rows.Scan(&u.ID, &u.Username, &u.CreatedAt, &u.Timezone, &u.Email, &u.SSOProvider, &u.AvatarURL, &u.DisplayName, &u.Role); err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, nil
+}
+
+// UpdateUserRole changes a user's role.
+func (s *Store) UpdateUserRole(id int64, role string) error {
+	_, err := s.db.Exec(s.rebind("UPDATE users SET role = ? WHERE id = ?"), role, id)
+	return err
+}
+
+// DeleteUser removes a user by ID.
+func (s *Store) DeleteUser(id int64) error {
+	// Also delete their sessions
+	_, _ = s.db.Exec(s.rebind("DELETE FROM sessions WHERE user_id = ?"), id)
+	_, err := s.db.Exec(s.rebind("DELETE FROM users WHERE id = ?"), id)
+	return err
+}
+
+// CountAdmins returns the number of users with the admin role.
+func (s *Store) CountAdmins() (int, error) {
+	var count int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM users WHERE role = 'admin'").Scan(&count)
+	return count, err
+}
+
+// GetUserStatusPages returns the status page IDs assigned to a user.
+func (s *Store) GetUserStatusPages(userID int64) ([]int64, error) {
+	rows, err := s.db.Query(s.rebind("SELECT status_page_id FROM user_status_pages WHERE user_id = ?"), userID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+// SetUserStatusPages replaces the status page assignments for a user.
+func (s *Store) SetUserStatusPages(userID int64, pageIDs []int64) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	_, err = tx.Exec(s.rebind("DELETE FROM user_status_pages WHERE user_id = ?"), userID)
+	if err != nil {
+		return err
+	}
+
+	for _, pid := range pageIDs {
+		_, err = tx.Exec(s.rebind("INSERT INTO user_status_pages (user_id, status_page_id) VALUES (?, ?)"), userID, pid)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
 }
 
 // Just to avoid unused import error for context if not used

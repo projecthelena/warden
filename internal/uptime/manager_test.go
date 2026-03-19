@@ -418,7 +418,7 @@ func TestManager_UserTimezoneLoaded(t *testing.T) {
 	m := NewManager(store)
 
 	// Create a user with a specific timezone
-	if err := store.CreateUser("admin", "password123", "America/New_York"); err != nil {
+	if err := store.CreateUser("admin", "password123", "America/New_York", "admin"); err != nil {
 		t.Fatalf("CreateUser failed: %v", err)
 	}
 
@@ -453,7 +453,7 @@ func TestManager_InvalidTimezoneHandling(t *testing.T) {
 
 	// Create user with invalid timezone (edge case - shouldn't normally happen)
 	// The CreateUser doesn't validate timezone, so we test the fallback
-	if err := store.CreateUser("admin", "password123", "Invalid/Timezone"); err != nil {
+	if err := store.CreateUser("admin", "password123", "Invalid/Timezone", "admin"); err != nil {
 		t.Fatalf("CreateUser failed: %v", err)
 	}
 

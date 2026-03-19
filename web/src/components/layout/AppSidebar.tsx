@@ -89,6 +89,10 @@ export function AppSidebar({ groups, ...props }: React.ComponentProps<typeof Sid
                         title: "System",
                         url: "/settings?tab=system",
                     },
+                    {
+                        title: "Users",
+                        url: "/settings?tab=users",
+                    },
                 ],
             },
         ],

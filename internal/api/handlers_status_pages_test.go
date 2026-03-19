@@ -56,7 +56,7 @@ func seedPage(t *testing.T, store *db.Store, slug, title string, groupID *string
 // seedAuthUser creates a user and session, returning a cookie value for auth.
 func seedAuthUser(t *testing.T, store *db.Store, username, token string) {
 	t.Helper()
-	if err := store.CreateUser(username, "password123", "UTC"); err != nil {
+	if err := store.CreateUser(username, "password123", "UTC", "admin"); err != nil {
 		t.Fatalf("Failed to create user %s: %v", username, err)
 	}
 	user, err := store.Authenticate(username, "password123")
@@ -80,7 +80,9 @@ func makeRequest(method, path, slug string, body interface{}) *http.Request {
 	req := httptest.NewRequest(method, path, reqBody)
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("slug", slug)
-	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
+	ctx = context.WithValue(ctx, contextKeyUserRole, RoleAdmin)
+	req = req.WithContext(ctx)
 	return req
 }
 
@@ -362,7 +364,9 @@ func TestToggle_InvalidBody(t *testing.T) {
 	req := httptest.NewRequest("PATCH", "/api/status-pages/test", bytes.NewBufferString("not json"))
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("slug", "test")
-	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
+	ctx = context.WithValue(ctx, contextKeyUserRole, RoleAdmin)
+	req = req.WithContext(ctx)
 
 	w := httptest.NewRecorder()
 	spH.Toggle(w, req)

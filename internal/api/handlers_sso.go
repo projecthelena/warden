@@ -367,6 +367,9 @@ func (h *SSOHandler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 
 // TestSSOConfig tests if the SSO configuration is valid (admin only)
 func (h *SSOHandler) TestSSOConfig(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleAdmin) {
+		return
+	}
 	clientID, _ := h.store.GetSetting("sso.google.client_id")
 	clientSecret, _ := h.store.GetSetting("sso.google.client_secret")
 

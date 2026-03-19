@@ -66,6 +66,9 @@ const maxNameLength = 255
 // @Failure      409  {object} object{error=string} "Group already exists"
 // @Router       /groups [post]
 func (h *CRUDHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleEditor) {
+		return
+	}
 	var req struct {
 		Name string `json:"name"`
 	}
@@ -116,6 +119,9 @@ func (h *CRUDHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 // @Failure      400  {string} string "ID required"
 // @Router       /groups/{id} [delete]
 func (h *CRUDHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleEditor) {
+		return
+	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		http.Error(w, "ID required", http.StatusBadRequest)
@@ -141,6 +147,9 @@ func (h *CRUDHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 // @Failure      400  {string} string "Name is required"
 // @Router       /groups/{id} [put]
 func (h *CRUDHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleEditor) {
+		return
+	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		http.Error(w, "ID required", http.StatusBadRequest)
@@ -188,6 +197,9 @@ func (h *CRUDHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 // @Failure      409  {string} string "Monitor name already exists"
 // @Router       /monitors [post]
 func (h *CRUDHandler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleEditor) {
+		return
+	}
 	var req struct {
 		Name                    string            `json:"name"`
 		URL                     string            `json:"url"`
@@ -349,6 +361,9 @@ func (h *CRUDHandler) GetGroups(w http.ResponseWriter, r *http.Request) {
 // @Failure      400  {string} string "ID required"
 // @Router       /monitors/{id} [put]
 func (h *CRUDHandler) UpdateMonitor(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleEditor) {
+		return
+	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		http.Error(w, "ID required", http.StatusBadRequest)
@@ -407,6 +422,9 @@ func (h *CRUDHandler) UpdateMonitor(w http.ResponseWriter, r *http.Request) {
 // @Failure      400  {string} string "ID required"
 // @Router       /monitors/{id} [delete]
 func (h *CRUDHandler) DeleteMonitor(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleEditor) {
+		return
+	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		http.Error(w, "ID required", http.StatusBadRequest)
@@ -432,6 +450,9 @@ func (h *CRUDHandler) DeleteMonitor(w http.ResponseWriter, r *http.Request) {
 // @Failure      404  {object} object{error=string} "Monitor not found"
 // @Router       /monitors/{id}/pause [post]
 func (h *CRUDHandler) PauseMonitor(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleEditor) {
+		return
+	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		writeError(w, http.StatusBadRequest, "ID required")
@@ -462,6 +483,9 @@ func (h *CRUDHandler) PauseMonitor(w http.ResponseWriter, r *http.Request) {
 // @Failure      404  {object} object{error=string} "Monitor not found"
 // @Router       /monitors/{id}/resume [post]
 func (h *CRUDHandler) ResumeMonitor(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleEditor) {
+		return
+	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		writeError(w, http.StatusBadRequest, "ID required")

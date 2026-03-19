@@ -1,5 +1,8 @@
 import { Badge } from "@/components/ui/badge";
-import { Activity, AlertTriangle, ArrowDownCircle, CheckCircle2, ChevronDown, ChevronUp, Minus, RefreshCw, Rss, Wrench, XCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Activity, AlertTriangle, ArrowDownCircle, CheckCircle2, ChevronDown, ChevronUp, Lock, Minus, RefreshCw, Rss, ShieldX, Wrench, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { useMonitorStore, Group, Incident, Monitor, StatusPageConfig } from "@/lib/store";
@@ -411,6 +414,81 @@ function StatusSkeleton() {
     );
 }
 
+// ---------- Login for Private Pages ----------
+
+function StatusPageLogin({ slug, onSuccess }: { slug?: string; onSuccess: () => void }) {
+    const [username, setUsername] = useState("");
+    const [password, setPassword] = useState("");
+    const [loginError, setLoginError] = useState("");
+    const [isLoading, setIsLoading] = useState(false);
+
+    const handleLogin = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsLoading(true);
+        setLoginError("");
+        try {
+            const res = await fetch("/api/auth/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username, password }),
+                credentials: "include",
+            });
+            if (res.ok) {
+                onSuccess();
+            } else {
+                const data = await res.json().catch(() => ({ error: "Login failed" }));
+                setLoginError(data.error || "Invalid credentials");
+            }
+        } catch {
+            setLoginError("Login failed. Please try again.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return (
+        <div className="min-h-screen bg-background flex items-center justify-center text-foreground">
+            <div className="w-full max-w-sm space-y-6 px-4">
+                <div className="text-center space-y-2">
+                    <Lock className="w-12 h-12 text-muted-foreground mx-auto" />
+                    <h1 className="text-2xl font-bold">Private Status Page</h1>
+                    <p className="text-sm text-muted-foreground">
+                        Sign in to view {slug ? `"${slug}"` : "this status page"}.
+                    </p>
+                </div>
+                <form onSubmit={handleLogin} className="space-y-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="sp-username">Username</Label>
+                        <Input
+                            id="sp-username"
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            required
+                            autoFocus
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="sp-password">Password</Label>
+                        <Input
+                            id="sp-password"
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                        />
+                    </div>
+                    {loginError && (
+                        <p className="text-sm text-destructive">{loginError}</p>
+                    )}
+                    <Button type="submit" className="w-full" disabled={isLoading}>
+                        {isLoading ? "Signing in..." : "Sign In"}
+                    </Button>
+                </form>
+            </div>
+        </div>
+    );
+}
+
 // ---------- Main Component ----------
 
 export function StatusPage() {
@@ -418,6 +496,7 @@ export function StatusPage() {
     const { fetchPublicStatusBySlug } = useMonitorStore();
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [retryKey, setRetryKey] = useState(0);
     const [data, setData] = useState<{
         title: string;
         groups: StatusGroup[];
@@ -493,17 +572,23 @@ export function StatusPage() {
             const result = await fetchPublicStatusBySlug(slug || "all");
 
             if (isMounted) {
-                if (result) {
+                if (result?._error === "auth_required") {
+                    setError("auth_required");
+                    setData(null);
+                } else if (result?._error === "forbidden") {
+                    setError("forbidden");
+                    setData(null);
+                } else if (result) {
                     setData(result);
                     setError(null);
                     applyTheme(result.config);
                     applyAccentColor(result.config);
                     applyFavicon(result.config, result.title);
                 } else {
-                    setError("Status page not found or private.");
+                    setError("Status page not found.");
                 }
                 setLoading(false);
-                if (result) setSecondsToUpdate(60);
+                if (result && !result._error) setSecondsToUpdate(60);
             }
         };
 
@@ -534,7 +619,7 @@ export function StatusPage() {
             if (faviconLink) faviconLink.href = '/favicon.ico';
             document.title = 'Warden';
         };
-    }, [slug, fetchPublicStatusBySlug, applyTheme, applyAccentColor, applyFavicon]);
+    }, [slug, fetchPublicStatusBySlug, applyTheme, applyAccentColor, applyFavicon, retryKey]);
 
     // Listen for system theme changes when using 'system' theme
     useEffect(() => {
@@ -567,6 +652,25 @@ export function StatusPage() {
     }, [data]);
 
     if (loading && !data) return <StatusSkeleton />;
+
+    if (error === "auth_required") {
+        return <StatusPageLogin slug={slug} onSuccess={() => { setError(null); setRetryKey((k) => k + 1); }} />;
+    }
+
+    if (error === "forbidden") {
+        return (
+            <div className="min-h-screen bg-background flex items-center justify-center text-foreground">
+                <div className="text-center space-y-4">
+                    <div className="relative inline-block">
+                        <div className="absolute inset-0 bg-destructive/20 blur-xl rounded-full" />
+                        <ShieldX className="relative w-16 h-16 text-muted-foreground mx-auto" />
+                    </div>
+                    <h1 className="text-2xl font-bold">Access Denied</h1>
+                    <p className="text-muted-foreground">You do not have permission to view this status page.</p>
+                </div>
+            </div>
+        );
+    }
 
     if (error || !data || !computed) {
         return (

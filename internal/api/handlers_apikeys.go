@@ -25,6 +25,9 @@ func NewAPIKeyHandler(store *db.Store) *APIKeyHandler {
 // @Success      200  {object} object{keys=[]db.APIKey}
 // @Router       /api-keys [get]
 func (h *APIKeyHandler) ListKeys(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleAdmin) {
+		return
+	}
 	keys, err := h.store.ListAPIKeys()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list keys")
@@ -44,8 +47,13 @@ func (h *APIKeyHandler) ListKeys(w http.ResponseWriter, r *http.Request) {
 // @Failure      400  {object} object{error=string} "Name is required"
 // @Router       /api-keys [post]
 func (h *APIKeyHandler) CreateKey(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleAdmin) {
+		return
+	}
+
 	var req struct {
 		Name string `json:"name"`
+		Role string `json:"role"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
@@ -55,8 +63,15 @@ func (h *APIKeyHandler) CreateKey(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
+	if req.Role != "" && !ValidRole(req.Role) {
+		writeError(w, http.StatusBadRequest, "invalid role")
+		return
+	}
+	if req.Role == "" {
+		req.Role = RoleEditor
+	}
 
-	rawKey, err := h.store.CreateAPIKey(req.Name)
+	rawKey, err := h.store.CreateAPIKey(req.Name, req.Role)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create key")
 		return
@@ -79,6 +94,9 @@ func (h *APIKeyHandler) CreateKey(w http.ResponseWriter, r *http.Request) {
 // @Failure      400  {object} object{error=string} "Invalid ID"
 // @Router       /api-keys/{id} [delete]
 func (h *APIKeyHandler) DeleteKey(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleAdmin) {
+		return
+	}
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {

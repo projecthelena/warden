@@ -9,7 +9,7 @@ func TestUserLifecycle(t *testing.T) {
 	s := newTestStore(t)
 
 	// 1. Create User
-	err := s.CreateUser("admin", "secret123", "UTC")
+	err := s.CreateUser("admin", "secret123", "UTC", "admin")
 	if err != nil {
 		t.Fatalf("CreateUser failed: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestUserLifecycle(t *testing.T) {
 
 func TestSessions(t *testing.T) {
 	s := newTestStore(t)
-	_ = s.CreateUser("user1", "pass", "UTC")
+	_ = s.CreateUser("user1", "pass", "UTC", "admin")
 	u, _ := s.Authenticate("user1", "pass")
 
 	// Create Session
@@ -107,7 +107,7 @@ func TestHasUsers(t *testing.T) {
 		t.Error("Expected no users initially")
 	}
 
-	_ = s.CreateUser("u", "p", "UTC")
+	_ = s.CreateUser("u", "p", "UTC", "admin")
 
 	has, _ = s.HasUsers()
 	if !has {

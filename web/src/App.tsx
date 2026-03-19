@@ -46,10 +46,12 @@ import {
 } from "@/components/ui/alert-dialog"
 
 import { useDeleteGroupMutation } from "@/hooks/useMonitors";
+import { useRole } from "@/hooks/useRole";
 
 function MonitorGroup({ group }: { group: Group }) {
   const mutation = useDeleteGroupMutation();
   const navigate = useNavigate();
+  const { canEdit } = useRole();
 
   const handleDelete = async () => {
     await mutation.mutateAsync(group.id);
@@ -63,7 +65,7 @@ function MonitorGroup({ group }: { group: Group }) {
           <div>
             <CardTitle>{group.name}</CardTitle>
           </div>
-          {group.id !== 'default' && (
+          {canEdit && group.id !== 'default' && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" data-testid="delete-group-trigger">
@@ -256,6 +258,7 @@ function AdminLayout() {
     addGroup,
     // addMonitor // Unused
   } = useMonitorStore();
+  const { canEdit } = useRole();
 
   useMonitorsQuery(); // Handles polling
   useSystemEventsQuery(); // Handles polling events
@@ -355,14 +358,16 @@ function AdminLayout() {
               </Breadcrumb>
             </div>
             <div className="ml-auto flex items-center gap-2">
-              {isMaintenance ? (
-                <CreateMaintenanceSheet onCreate={addMaintenance} groups={safeGroups} />
-              ) : !isIncidents && !isSettings && !isStatusPages ? (
-                <>
-                  {!groupId && <CreateGroupSheet onCreate={addGroup} />}
-                  <CreateMonitorSheet groups={safeGroups} defaultGroup={activeGroup?.name} />
-                </>
-              ) : null}
+              {canEdit && (
+                isMaintenance ? (
+                  <CreateMaintenanceSheet onCreate={addMaintenance} groups={safeGroups} />
+                ) : !isIncidents && !isSettings && !isStatusPages ? (
+                  <>
+                    {!groupId && <CreateGroupSheet onCreate={addGroup} />}
+                    <CreateMonitorSheet groups={safeGroups} defaultGroup={activeGroup?.name} />
+                  </>
+                ) : null
+              )}
             </div>
           </header>
           <ScrollArea className="flex-1 p-4 pt-0 h-[calc(100vh-4rem)]">

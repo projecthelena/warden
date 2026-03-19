@@ -1,0 +1,228 @@
+import { useState, useEffect, useCallback } from "react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/use-toast";
+import { MoreHorizontal, Trash2, Users } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useMonitorStore } from "@/lib/store";
+
+interface UserDTO {
+    id: number;
+    username: string;
+    role: string;
+    email?: string;
+    ssoProvider?: string;
+    avatar?: string;
+    displayName?: string;
+    createdAt: string;
+}
+
+const ROLE_LABELS: Record<string, string> = {
+    admin: "Admin",
+    editor: "Editor",
+    viewer: "Viewer",
+    status_viewer: "Status Viewer",
+};
+
+const ROLE_COLORS: Record<string, string> = {
+    admin: "destructive",
+    editor: "default",
+    viewer: "secondary",
+    status_viewer: "outline",
+};
+
+export function UsersView() {
+    const { toast } = useToast();
+    const currentUser = useMonitorStore((s) => s.user);
+    const [users, setUsers] = useState<UserDTO[]>([]);
+    const [deleteId, setDeleteId] = useState<number | null>(null);
+
+    const fetchUsers = useCallback(async () => {
+        try {
+            const res = await fetch("/api/users", { credentials: "include" });
+            if (res.ok) {
+                const data = await res.json();
+                setUsers(data.users || []);
+            }
+        } catch (e) {
+            console.error("Failed to fetch users:", e);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchUsers();
+    }, [fetchUsers]);
+
+    useEffect(() => {
+        const handler = () => fetchUsers();
+        window.addEventListener("users-updated", handler);
+        return () => window.removeEventListener("users-updated", handler);
+    }, [fetchUsers]);
+
+    const handleRoleChange = async (userId: number, newRole: string) => {
+        try {
+            const res = await fetch(`/api/users/${userId}/role`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ role: newRole }),
+                credentials: "include",
+            });
+            if (res.ok) {
+                toast({ title: "Role Updated", description: "User role has been changed." });
+                fetchUsers();
+            } else {
+                const data = await res.json().catch(() => ({ error: "Failed to update role" }));
+                toast({ title: "Error", description: data.error, variant: "destructive" });
+            }
+        } catch {
+            toast({ title: "Error", description: "Failed to update role.", variant: "destructive" });
+        }
+    };
+
+    const handleDelete = async () => {
+        if (deleteId === null) return;
+        try {
+            const res = await fetch(`/api/users/${deleteId}`, {
+                method: "DELETE",
+                credentials: "include",
+            });
+            if (res.ok) {
+                toast({ title: "User Deleted", description: "User has been removed." });
+                fetchUsers();
+            } else {
+                const data = await res.json().catch(() => ({ error: "Failed to delete user" }));
+                toast({ title: "Error", description: data.error, variant: "destructive" });
+            }
+        } catch {
+            toast({ title: "Error", description: "Failed to delete user.", variant: "destructive" });
+        }
+        setDeleteId(null);
+    };
+
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle>User Management</CardTitle>
+                <CardDescription>Manage users and their roles.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                {users.length > 0 ? (
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>User</TableHead>
+                                <TableHead>Role</TableHead>
+                                <TableHead>Created</TableHead>
+                                <TableHead className="w-[50px]"></TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {users.map((u) => {
+                                const isSelf = currentUser?.username === u.username;
+                                return (
+                                    <TableRow key={u.id}>
+                                        <TableCell>
+                                            <div className="flex flex-col">
+                                                <span className="font-medium">
+                                                    {u.displayName || u.username}
+                                                    {isSelf && <span className="text-muted-foreground ml-1">(you)</span>}
+                                                </span>
+                                                {u.email && (
+                                                    <span className="text-xs text-muted-foreground">{u.email}</span>
+                                                )}
+                                            </div>
+                                        </TableCell>
+                                        <TableCell>
+                                            {isSelf ? (
+                                                <Badge variant={ROLE_COLORS[u.role] as "default" | "secondary" | "destructive" | "outline"}>
+                                                    {ROLE_LABELS[u.role] || u.role}
+                                                </Badge>
+                                            ) : (
+                                                <Select value={u.role} onValueChange={(v) => handleRoleChange(u.id, v)}>
+                                                    <SelectTrigger className="w-[140px] h-8">
+                                                        <SelectValue />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="admin">Admin</SelectItem>
+                                                        <SelectItem value="editor">Editor</SelectItem>
+                                                        <SelectItem value="viewer">Viewer</SelectItem>
+                                                        <SelectItem value="status_viewer">Status Viewer</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            )}
+                                        </TableCell>
+                                        <TableCell className="text-muted-foreground">
+                                            {new Date(u.createdAt).toLocaleDateString()}
+                                        </TableCell>
+                                        <TableCell>
+                                            {!isSelf && (
+                                                <DropdownMenu>
+                                                    <DropdownMenuTrigger asChild>
+                                                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                                                            <MoreHorizontal className="h-4 w-4" />
+                                                        </Button>
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent align="end">
+                                                        <DropdownMenuItem
+                                                            className="text-destructive focus:text-destructive"
+                                                            onClick={() => setDeleteId(u.id)}
+                                                        >
+                                                            <Trash2 className="h-4 w-4 mr-2" />
+                                                            Delete User
+                                                        </DropdownMenuItem>
+                                                    </DropdownMenuContent>
+                                                </DropdownMenu>
+                                            )}
+                                        </TableCell>
+                                    </TableRow>
+                                );
+                            })}
+                        </TableBody>
+                    </Table>
+                ) : (
+                    <div className="flex flex-col items-center justify-center p-12 border border-dashed border-border rounded-lg text-muted-foreground">
+                        <Users className="w-12 h-12 mb-4 opacity-50" />
+                        <h3 className="text-lg font-medium text-foreground mb-1">No Users</h3>
+                        <p className="text-sm">No users found.</p>
+                    </div>
+                )}
+            </CardContent>
+
+            <AlertDialog open={deleteId !== null} onOpenChange={(open) => !open && setDeleteId(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Delete User?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This will permanently delete the user and all their sessions.
+                            This action cannot be undone.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                            Delete
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+        </Card>
+    );
+}

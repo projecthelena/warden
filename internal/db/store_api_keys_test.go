@@ -8,7 +8,7 @@ func TestAPIKeys(t *testing.T) {
 	s := newTestStore(t)
 
 	// Create
-	key, err := s.CreateAPIKey("Test Key")
+	key, err := s.CreateAPIKey("Test Key", "editor")
 	if err != nil {
 		t.Fatalf("CreateAPIKey failed: %v", err)
 	}
@@ -17,7 +17,7 @@ func TestAPIKeys(t *testing.T) {
 	}
 
 	// Validate Access
-	valid, err := s.ValidateAPIKey(key)
+	valid, _, err := s.ValidateAPIKey(key)
 	if err != nil {
 		t.Fatalf("ValidateAPIKey failed: %v", err)
 	}
@@ -26,7 +26,7 @@ func TestAPIKeys(t *testing.T) {
 	}
 
 	// Validate Fail
-	valid, _ = s.ValidateAPIKey("sk_live_WRONG")
+	valid, _, _ = s.ValidateAPIKey("sk_live_WRONG")
 	if valid {
 		t.Error("Expected invalid key to be rejected")
 	}
@@ -46,7 +46,7 @@ func TestAPIKeys(t *testing.T) {
 	}
 
 	// Verify Gone
-	valid, _ = s.ValidateAPIKey(key)
+	valid, _, _ = s.ValidateAPIKey(key)
 	if valid {
 		t.Error("Key should be invalid after deletion")
 	}
