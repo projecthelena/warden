@@ -122,7 +122,7 @@ func (h *SSOHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 
 	// Store state in a short-lived cookie
 	// SECURITY: Use SameSite=Strict to prevent CSRF attacks on OAuth flow
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure defaults true; configurable for local HTTP dev
 		Name:     "oauth_state",
 		Value:    state,
 		MaxAge:   300, // 5 minutes
@@ -156,7 +156,7 @@ func (h *SSOHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 
 // clearStateCookie clears the OAuth state cookie
 func (h *SSOHandler) clearStateCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure defaults true; configurable for local HTTP dev
 		Name:     "oauth_state",
 		Value:    "",
 		MaxAge:   -1,
@@ -351,7 +351,7 @@ func (h *SSOHandler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set auth cookie
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure defaults true; configurable for local HTTP dev
 		Name:     "auth_token",
 		Value:    sessionToken,
 		Expires:  expiresAt,
@@ -361,8 +361,12 @@ func (h *SSOHandler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 		Secure:   h.config.CookieSecure,
 	})
 
-	// Redirect to dashboard
-	http.Redirect(w, r, "/dashboard", http.StatusTemporaryRedirect)
+	// Redirect based on user role
+	if user.Role == RoleStatusViewer {
+		http.Redirect(w, r, "/my-pages", http.StatusTemporaryRedirect)
+	} else {
+		http.Redirect(w, r, "/dashboard", http.StatusTemporaryRedirect)
+	}
 }
 
 // TestSSOConfig tests if the SSO configuration is valid (admin only)

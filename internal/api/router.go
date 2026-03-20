@@ -158,6 +158,7 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 			// Auth endpoints - accessible by ALL authenticated users (including status_viewer)
 			protected.Get("/auth/me", authH.Me)
 			protected.Patch("/auth/me", authH.UpdateUser)
+			protected.Get("/my/status-pages", statusPageH.GetMyStatusPages)
 
 			// All other endpoints require at least viewer role (blocks status_viewer)
 			protected.Group(func(dashboard chi.Router) {

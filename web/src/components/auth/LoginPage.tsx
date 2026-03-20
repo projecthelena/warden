@@ -80,7 +80,8 @@ export function LoginPage() {
         setIsLoading(false);
 
         if (result.success) {
-            navigate('/dashboard');
+            const user = useMonitorStore.getState().user;
+            navigate(user?.role === 'status_viewer' ? '/my-pages' : '/dashboard');
         } else {
             setError(result.error || "An unexpected error occurred");
         }

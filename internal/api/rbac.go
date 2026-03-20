@@ -48,7 +48,7 @@ func getUserRole(r *http.Request) string {
 func requireRole(w http.ResponseWriter, r *http.Request, minimumRole string) bool {
 	role := getUserRole(r)
 	if !hasPermission(role, minimumRole) {
-		writeError(w, http.StatusForbidden, "insufficient permissions")
+		writeError(w, http.StatusForbidden, "your role ("+role+") does not have permission for this action")
 		return false
 	}
 	return true
@@ -60,7 +60,7 @@ func RequireViewerMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		role := getUserRole(r)
 		if role == RoleStatusViewer {
-			writeError(w, http.StatusForbidden, "insufficient permissions")
+			writeError(w, http.StatusForbidden, "your role ("+role+") does not have permission for this action")
 			return
 		}
 		next.ServeHTTP(w, r)

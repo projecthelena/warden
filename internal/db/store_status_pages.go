@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 )
 
@@ -168,6 +169,50 @@ func (s *Store) UpsertStatusPageFull(input StatusPageInput) error {
 			input.HeaderContent, input.HeaderAlignment, input.HeaderArrangement)
 	}
 	return err
+}
+
+// GetStatusPagesByIDs returns status pages matching the given IDs.
+func (s *Store) GetStatusPagesByIDs(ids []int64) ([]StatusPage, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	// Build placeholders
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	query := `SELECT id, slug, title, group_id, public, enabled, created_at,
+		COALESCE(description, ''), COALESCE(logo_url, ''), COALESCE(favicon_url, ''), COALESCE(accent_color, ''), COALESCE(theme, 'system'),
+		COALESCE(show_uptime_bars, TRUE), COALESCE(show_uptime_percentage, TRUE), COALESCE(show_incident_history, TRUE),
+		COALESCE(uptime_days_range, 90), COALESCE(header_content, 'logo-title'), COALESCE(header_alignment, 'center'), COALESCE(header_arrangement, 'inline')
+		FROM status_pages WHERE id IN (` + strings.Join(placeholders, ",") + `)`
+
+	rows, err := s.db.Query(s.rebind(query), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var pages []StatusPage
+	for rows.Next() {
+		var p StatusPage
+		var groupID sql.NullString
+		if err := rows.Scan(&p.ID, &p.Slug, &p.Title, &groupID, &p.Public, &p.Enabled, &p.CreatedAt,
+			&p.Description, &p.LogoURL, &p.FaviconURL, &p.AccentColor, &p.Theme,
+			&p.ShowUptimeBars, &p.ShowUptimePercentage, &p.ShowIncidentHistory, &p.UptimeDaysRange,
+			&p.HeaderContent, &p.HeaderAlignment, &p.HeaderArrangement); err != nil {
+			return nil, err
+		}
+		if groupID.Valid {
+			s := groupID.String
+			p.GroupID = &s
+		}
+		pages = append(pages, p)
+	}
+	return pages, nil
 }
 
 // ToggleStatusPage toggles the public status

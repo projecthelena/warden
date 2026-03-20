@@ -158,6 +158,11 @@ func (h *UserHandler) UpdateUserRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Clean up status page assignments when role changes away from status_viewer
+	if targetUser.Role == RoleStatusViewer && req.Role != RoleStatusViewer {
+		_ = h.store.SetUserStatusPages(targetID, []int64{})
+	}
+
 	writeJSON(w, http.StatusOK, map[string]string{"message": "role updated"})
 }
 

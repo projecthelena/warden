@@ -221,7 +221,7 @@ func (h *Router) PerformSetup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set auth cookie
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure defaults true; configurable for local HTTP dev
 		Name:     "auth_token",
 		Value:    token,
 		Expires:  expiresAt,

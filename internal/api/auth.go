@@ -103,7 +103,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set Cookie
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure defaults true; configurable for local HTTP dev
 		Name:     "auth_token",
 		Value:    token,
 		Expires:  expiresAt,
@@ -113,12 +113,38 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		Secure:   h.config.CookieSecure,
 	})
 
+	// Fetch full user details for the response (avatar, display name, etc.)
+	fullUser, _ := h.store.GetUser(user.ID)
+	avatar := ""
+	displayName := user.Username
+	email := ""
+	timezone := "UTC"
+	ssoProvider := ""
+	if fullUser != nil {
+		displayName = fullUser.DisplayName
+		if displayName == "" {
+			displayName = fullUser.Username
+		}
+		email = fullUser.Email
+		timezone = fullUser.Timezone
+		ssoProvider = fullUser.SSOProvider
+		avatar = fullUser.AvatarURL
+		if avatar == "" {
+			avatar = "https://ui-avatars.com/api/?name=" + url.QueryEscape(displayName) + "&background=random"
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"message": "logged in",
 		"user": map[string]any{
-			"username": user.Username,
-			"id":       user.ID,
-			"role":     user.Role,
+			"username":    user.Username,
+			"id":          user.ID,
+			"role":        user.Role,
+			"displayName": displayName,
+			"email":       email,
+			"timezone":    timezone,
+			"ssoProvider": ssoProvider,
+			"avatar":      avatar,
 		},
 	})
 }
@@ -130,7 +156,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Clear Cookie
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure defaults true; configurable for local HTTP dev
 		Name:     "auth_token",
 		Value:    "",
 		Expires:  time.Now().Add(-1 * time.Hour),

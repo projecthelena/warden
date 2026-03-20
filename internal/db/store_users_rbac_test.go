@@ -354,6 +354,7 @@ func TestUserStatusPages(t *testing.T) {
 	}
 	if sp1 == nil {
 		t.Fatal("Status page 1 not found")
+		return
 	}
 
 	sp2, err := s.GetStatusPageBySlug("test-page-2")
@@ -362,10 +363,14 @@ func TestUserStatusPages(t *testing.T) {
 	}
 	if sp2 == nil {
 		t.Fatal("Status page 2 not found")
+		return
 	}
 
+	sp1ID := sp1.ID
+	sp2ID := sp2.ID
+
 	// Assign both status pages
-	err = s.SetUserStatusPages(user.ID, []int64{sp1.ID, sp2.ID})
+	err = s.SetUserStatusPages(user.ID, []int64{sp1ID, sp2ID})
 	if err != nil {
 		t.Fatalf("SetUserStatusPages failed: %v", err)
 	}
@@ -384,15 +389,15 @@ func TestUserStatusPages(t *testing.T) {
 	for _, id := range ids {
 		idSet[id] = true
 	}
-	if !idSet[sp1.ID] {
-		t.Errorf("Expected status page ID %d in assignments", sp1.ID)
+	if !idSet[sp1ID] {
+		t.Errorf("Expected status page ID %d in assignments", sp1ID)
 	}
-	if !idSet[sp2.ID] {
-		t.Errorf("Expected status page ID %d in assignments", sp2.ID)
+	if !idSet[sp2ID] {
+		t.Errorf("Expected status page ID %d in assignments", sp2ID)
 	}
 
 	// Replace with just one status page
-	err = s.SetUserStatusPages(user.ID, []int64{sp1.ID})
+	err = s.SetUserStatusPages(user.ID, []int64{sp1ID})
 	if err != nil {
 		t.Fatalf("SetUserStatusPages (replace) failed: %v", err)
 	}
@@ -404,8 +409,8 @@ func TestUserStatusPages(t *testing.T) {
 	if len(ids) != 1 {
 		t.Fatalf("Expected 1 status page after replace, got %d", len(ids))
 	}
-	if ids[0] != sp1.ID {
-		t.Errorf("Expected status page ID %d, got %d", sp1.ID, ids[0])
+	if ids[0] != sp1ID {
+		t.Errorf("Expected status page ID %d, got %d", sp1ID, ids[0])
 	}
 
 	// Clear all assignments

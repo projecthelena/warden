@@ -510,8 +510,8 @@ function NotificationIntelligence() {
     );
 }
 
-const VALID_TABS = ["general", "notifications", "security", "system", "users"] as const;
-type SettingsTab = typeof VALID_TABS[number];
+const _VALID_TABS = ["general", "notifications", "security", "system", "users"] as const;
+type SettingsTab = typeof _VALID_TABS[number];
 
 export function SettingsView() {
     const { user, updateUser } = useMonitorStore();
@@ -521,7 +521,13 @@ export function SettingsView() {
     const [searchParams, setSearchParams] = useSearchParams();
 
     const tabParam = searchParams.get("tab") as SettingsTab | null;
-    const activeTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : "general";
+    // Enforce role-based tab access: viewers can only see "general"
+    const allowedTabs: SettingsTab[] = isAdmin
+        ? ["general", "notifications", "security", "system", "users"]
+        : canEdit
+            ? ["general", "notifications"]
+            : ["general"];
+    const activeTab = tabParam && allowedTabs.includes(tabParam) ? tabParam : "general";
 
     const handleTabChange = (value: string) => {
         if (value === "general") {
@@ -638,31 +644,37 @@ export function SettingsView() {
                     {isAdmin && <GeneralSettings />}
                 </TabsContent>
 
-                <TabsContent value="notifications" className="space-y-6 mt-6">
-                    <NotificationsView />
-                    <NotificationIntelligence />
-                </TabsContent>
+                {canEdit && (
+                    <TabsContent value="notifications" className="space-y-6 mt-6">
+                        <NotificationsView />
+                        <NotificationIntelligence />
+                    </TabsContent>
+                )}
 
-                <TabsContent value="security" className="space-y-6 mt-6">
-                    <APIKeysView />
-                    <SSOSettings />
-                </TabsContent>
+                {isAdmin && (
+                    <TabsContent value="security" className="space-y-6 mt-6">
+                        <APIKeysView />
+                        <SSOSettings />
+                    </TabsContent>
+                )}
 
-                <TabsContent value="system" className="space-y-6 mt-6">
-                    <SystemTab />
+                {isAdmin && (
+                    <TabsContent value="system" className="space-y-6 mt-6">
+                        <SystemTab />
 
-                    <Card className="border-destructive/50">
-                        <CardHeader>
-                            <CardTitle className="text-destructive">Danger Zone</CardTitle>
-                            <CardDescription>
-                                Destructive actions that cannot be undone.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <ResetDatabaseDialog />
-                        </CardContent>
-                    </Card>
-                </TabsContent>
+                        <Card className="border-destructive/50">
+                            <CardHeader>
+                                <CardTitle className="text-destructive">Danger Zone</CardTitle>
+                                <CardDescription>
+                                    Destructive actions that cannot be undone.
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <ResetDatabaseDialog />
+                            </CardContent>
+                        </Card>
+                    </TabsContent>
+                )}
 
                 {isAdmin && (
                     <TabsContent value="users" className="space-y-6 mt-6">

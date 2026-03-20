@@ -116,26 +116,38 @@ test.describe('RBAC - Role-Based Access Control', () => {
     });
 
     // ─── Test 2: Users management tab shows admin user ───────────────────────
-    test('Users management tab shows admin with correct role', async ({ page, request }) => {
+    test('Users management tab shows admin with correct role', async ({ page, request: _request }) => {
         const login = new LoginPage(page);
         const dashboard = new DashboardPage(page);
 
         await dashboard.goto();
         await page.waitForLoadState('networkidle');
 
-        if (page.url().includes('/login')) {
-            await login.login();
+        // After DB reset, the old session is invalid — always go through login
+        if (page.url().includes('/login') || page.url().includes('/setup')) {
+            if (page.url().includes('/setup')) {
+                const setup = new SetupPage(page);
+                await setup.completeSetup();
+            }
+            if (await login.isVisible()) {
+                await login.login();
+            }
         }
 
         await dashboard.waitForLoad();
 
         // Navigate to Settings > Users tab
         await page.goto('/settings?tab=users');
-        await expect(page.getByTestId('loading-spinner')).toHaveCount(0, { timeout: 10000 });
-        await expect(page.getByText('Wait ...')).toBeHidden({ timeout: 10000 });
+        await expect(page.getByTestId('loading-spinner')).toHaveCount(0, { timeout: 15000 });
+        await expect(page.getByText('Wait ...')).toBeHidden({ timeout: 15000 });
+
+        // Click the Users tab to ensure it's active
+        const tabsList = page.locator('[role="tablist"]');
+        await expect(tabsList).toBeVisible({ timeout: 10000 });
+        await tabsList.getByText('Users').click();
 
         // Verify User Management card is visible
-        await expect(page.getByText('User Management')).toBeVisible({ timeout: 10000 });
+        await expect(page.getByText('User Management').first()).toBeVisible({ timeout: 15000 });
 
         // Verify the admin user appears in the user table with "(you)" indicator
         const usersTable = page.locator('table');
@@ -153,7 +165,7 @@ test.describe('RBAC - Role-Based Access Control', () => {
     });
 
     // ─── Test 3: API key creation with role selection ────────────────────────
-    test('API key creation with role selection via UI', async ({ page, request }) => {
+    test('API key creation with role selection via UI', async ({ page, request: _request }) => {
         const login = new LoginPage(page);
         const dashboard = new DashboardPage(page);
 

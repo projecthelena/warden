@@ -289,6 +289,10 @@ function AdminLayout() {
     return <Navigate to="/login" replace />;
   }
 
+  if (user.role === 'status_viewer') {
+    return <Navigate to="/my-pages" replace />;
+  }
+
   const isIncidents = location.pathname.startsWith('/incidents');
   const isMaintenance = location.pathname.startsWith('/maintenance');
   const isSettings = location.pathname.startsWith('/settings');
@@ -393,6 +397,7 @@ function AdminLayout() {
 }
 
 import { SetupPage } from "./components/setup/SetupPage";
+import { MyPagesView } from "./components/status-viewer/MyPagesView";
 
 const App = () => {
   const { checkAuth, checkSetupStatus, isSetupComplete } = useMonitorStore(); // Use global state
@@ -433,6 +438,7 @@ const App = () => {
     <Routes>
       <Route path="/setup" element={<Navigate to="/login" replace />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/my-pages" element={<MyPagesView />} />
       <Route path="/status/:slug" element={<StatusPage />} />
       <Route path="/*" element={<AdminLayout />} />
     </Routes>

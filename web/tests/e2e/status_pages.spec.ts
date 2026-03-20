@@ -177,8 +177,8 @@ test.describe('Status Pages - Enabled/Public Controls', () => {
         await publicPage.goto(`${page.url().split('/status')[0]}/status/all`);
         await publicPage.waitForLoadState('networkidle');
 
-        // Should see error since user is not authenticated
-        await expect(publicPage.getByText('Status Page Unavailable')).toBeVisible({ timeout: 10000 });
+        // Should see login form since user is not authenticated
+        await expect(publicPage.getByText('Private Status Page')).toBeVisible({ timeout: 10000 });
 
         await publicPage.close();
         await freshContext.close();

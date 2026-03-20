@@ -1686,3 +1686,267 @@ func TestPhase4_RSSFeedAtomSelfLink(t *testing.T) {
 		t.Error("Expected rel='self' in Atom link")
 	}
 }
+
+// ============================================================
+// STATUS VIEWER TESTS
+// ============================================================
+
+// seedAuthUserWithRole creates a user with a specific role and session.
+func seedAuthUserWithRole(t *testing.T, store *db.Store, username, token, role string) int64 {
+	t.Helper()
+	if err := store.CreateUser(username, "password123", "UTC", role); err != nil {
+		t.Fatalf("Failed to create user %s: %v", username, err)
+	}
+	user, err := store.Authenticate(username, "password123")
+	if err != nil {
+		t.Fatalf("Failed to authenticate user %s: %v", username, err)
+	}
+	if err := store.CreateSession(user.ID, token, time.Now().Add(24*time.Hour)); err != nil {
+		t.Fatalf("Failed to create session for %s: %v", username, err)
+	}
+	return user.ID
+}
+
+// makeAuthRequest creates a request with auth cookie, user ID, and role in context.
+func makeAuthRequest(method, path string, body interface{}, userID int64, role string) *http.Request {
+	var reqBody *bytes.Buffer
+	if body != nil {
+		b, _ := json.Marshal(body)
+		reqBody = bytes.NewBuffer(b)
+	} else {
+		reqBody = bytes.NewBuffer(nil)
+	}
+	req := httptest.NewRequest(method, path, reqBody)
+	ctx := context.WithValue(req.Context(), contextKeyUserID, userID)
+	ctx = context.WithValue(ctx, contextKeyUserRole, role)
+	req = req.WithContext(ctx)
+	return req
+}
+
+func TestGetAll_IncludesIDField(t *testing.T) {
+	store, spH := newStatusPageTestEnv(t)
+
+	seedPage(t, store, "all", "Global Status", nil, true, true)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/status-pages", nil)
+	spH.GetAll(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d", w.Code)
+	}
+
+	body := decodeJSON(t, w)
+	pages := body["pages"].([]interface{})
+
+	for _, p := range pages {
+		page := p.(map[string]interface{})
+		if page["slug"] == "all" {
+			id, ok := page["id"].(float64)
+			if !ok {
+				t.Error("Expected 'id' field in status page DTO")
+				return
+			}
+			if id <= 0 {
+				t.Errorf("Expected positive id for saved page, got %v", id)
+			}
+			return
+		}
+	}
+	t.Error("'all' page not found in GetAll response")
+}
+
+func TestGetMyStatusPages_StatusViewerAssigned(t *testing.T) {
+	store, spH := newStatusPageTestEnv(t)
+
+	// Create a status page
+	seedPage(t, store, "viewer-page", "Viewer Page", nil, false, true)
+	page, _ := store.GetStatusPageBySlug("viewer-page")
+
+	// Create a status_viewer user and assign the page
+	userID := seedAuthUserWithRole(t, store, "linda", "linda-token", RoleStatusViewer)
+	if err := store.SetUserStatusPages(userID, []int64{page.ID}); err != nil {
+		t.Fatalf("Failed to assign pages: %v", err)
+	}
+
+	// Call GetMyStatusPages
+	req := makeAuthRequest("GET", "/api/my/status-pages", nil, userID, RoleStatusViewer)
+	w := httptest.NewRecorder()
+	spH.GetMyStatusPages(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	body := decodeJSON(t, w)
+	pages := body["pages"].([]interface{})
+	if len(pages) != 1 {
+		t.Fatalf("Expected 1 page, got %d", len(pages))
+	}
+
+	p := pages[0].(map[string]interface{})
+	if p["slug"] != "viewer-page" {
+		t.Errorf("Expected slug 'viewer-page', got '%v'", p["slug"])
+	}
+	if p["title"] != "Viewer Page" {
+		t.Errorf("Expected title 'Viewer Page', got '%v'", p["title"])
+	}
+}
+
+func TestGetMyStatusPages_StatusViewerNoAssignment(t *testing.T) {
+	_, spH := newStatusPageTestEnv(t)
+
+	// Call GetMyStatusPages without assigned pages
+	req := makeAuthRequest("GET", "/api/my/status-pages", nil, 999, RoleStatusViewer)
+	w := httptest.NewRecorder()
+	spH.GetMyStatusPages(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d", w.Code)
+	}
+
+	body := decodeJSON(t, w)
+	pages := body["pages"].([]interface{})
+	if len(pages) != 0 {
+		t.Errorf("Expected 0 pages for unassigned user, got %d", len(pages))
+	}
+}
+
+func TestGetMyStatusPages_StatusViewerDisabledPageFiltered(t *testing.T) {
+	store, spH := newStatusPageTestEnv(t)
+
+	// Create a disabled page
+	seedPage(t, store, "disabled-sv", "Disabled Page", nil, false, false)
+	page, _ := store.GetStatusPageBySlug("disabled-sv")
+
+	userID := seedAuthUserWithRole(t, store, "viewer2", "v2-token", RoleStatusViewer)
+	if err := store.SetUserStatusPages(userID, []int64{page.ID}); err != nil {
+		t.Fatalf("Failed to assign pages: %v", err)
+	}
+
+	req := makeAuthRequest("GET", "/api/my/status-pages", nil, userID, RoleStatusViewer)
+	w := httptest.NewRecorder()
+	spH.GetMyStatusPages(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d", w.Code)
+	}
+
+	body := decodeJSON(t, w)
+	pages := body["pages"].([]interface{})
+	if len(pages) != 0 {
+		t.Errorf("Expected 0 pages (disabled filtered out), got %d", len(pages))
+	}
+}
+
+func TestGetMyStatusPages_AdminSeesAllEnabled(t *testing.T) {
+	store, spH := newStatusPageTestEnv(t)
+
+	seedPage(t, store, "admin-page-1", "Admin Page 1", nil, true, true)
+	seedPage(t, store, "admin-page-2", "Admin Page 2", nil, false, true)
+	seedPage(t, store, "admin-disabled", "Disabled", nil, true, false)
+
+	userID := seedAuthUserWithRole(t, store, "adminuser", "admin-token", RoleAdmin)
+
+	req := makeAuthRequest("GET", "/api/my/status-pages", nil, userID, RoleAdmin)
+	w := httptest.NewRecorder()
+	spH.GetMyStatusPages(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d", w.Code)
+	}
+
+	body := decodeJSON(t, w)
+	pages := body["pages"].([]interface{})
+	// Should see 2 enabled pages, not the disabled one
+	if len(pages) != 2 {
+		t.Errorf("Expected 2 enabled pages for admin, got %d", len(pages))
+	}
+}
+
+func TestGetPublicStatus_StatusViewerAccessDenied(t *testing.T) {
+	store, spH := newStatusPageTestEnv(t)
+
+	// Private, enabled page
+	seedPage(t, store, "private-sv", "Private SV", nil, false, true)
+
+	// Create status_viewer user WITHOUT assignment
+	userID := seedAuthUserWithRole(t, store, "svuser", "sv-token", RoleStatusViewer)
+
+	req := makeRequest("GET", "/api/s/private-sv", "private-sv", nil)
+	req.AddCookie(&http.Cookie{Name: "auth_token", Value: "sv-token"})
+	// Inject role context (simulating middleware)
+	ctx := context.WithValue(req.Context(), contextKeyUserID, userID)
+	ctx = context.WithValue(ctx, contextKeyUserRole, RoleStatusViewer)
+	req = req.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+	spH.GetPublicStatus(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("Expected 403 for unassigned status_viewer, got %d", w.Code)
+	}
+}
+
+func TestGetPublicStatus_StatusViewerWithAccess(t *testing.T) {
+	store, spH := newStatusPageTestEnv(t)
+
+	seedGroup(t, store, "g-sv-access", "SV Access Group")
+	seedPage(t, store, "sv-access", "SV Access", nil, false, true)
+	page, _ := store.GetStatusPageBySlug("sv-access")
+
+	// Create status_viewer and assign page
+	userID := seedAuthUserWithRole(t, store, "svaccess", "sva-token", RoleStatusViewer)
+	if err := store.SetUserStatusPages(userID, []int64{page.ID}); err != nil {
+		t.Fatalf("Failed to assign pages: %v", err)
+	}
+
+	req := makeRequest("GET", "/api/s/sv-access", "sv-access", nil)
+	req.AddCookie(&http.Cookie{Name: "auth_token", Value: "sva-token"})
+	ctx := context.WithValue(req.Context(), contextKeyUserID, userID)
+	ctx = context.WithValue(ctx, contextKeyUserRole, RoleStatusViewer)
+	req = req.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+	spH.GetPublicStatus(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected 200 for assigned status_viewer, got %d (body: %s)", w.Code, w.Body.String())
+	}
+}
+
+func TestGetStatusPagesByIDs(t *testing.T) {
+	store, _ := newStatusPageTestEnv(t)
+
+	seedPage(t, store, "byid-1", "By ID 1", nil, true, true)
+	seedPage(t, store, "byid-2", "By ID 2", nil, false, true)
+
+	p1, _ := store.GetStatusPageBySlug("byid-1")
+	p2, _ := store.GetStatusPageBySlug("byid-2")
+
+	pages, err := store.GetStatusPagesByIDs([]int64{p1.ID, p2.ID})
+	if err != nil {
+		t.Fatalf("GetStatusPagesByIDs failed: %v", err)
+	}
+	if len(pages) != 2 {
+		t.Fatalf("Expected 2 pages, got %d", len(pages))
+	}
+
+	// Test empty input
+	pages, err = store.GetStatusPagesByIDs([]int64{})
+	if err != nil {
+		t.Fatalf("GetStatusPagesByIDs empty failed: %v", err)
+	}
+	if pages != nil {
+		t.Errorf("Expected nil for empty IDs, got %v", pages)
+	}
+
+	// Test non-existent IDs
+	pages, err = store.GetStatusPagesByIDs([]int64{99999})
+	if err != nil {
+		t.Fatalf("GetStatusPagesByIDs nonexistent failed: %v", err)
+	}
+	if len(pages) != 0 {
+		t.Errorf("Expected 0 pages for nonexistent IDs, got %d", len(pages))
+	}
+}

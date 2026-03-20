@@ -26,7 +26,7 @@ func Default() Config {
 		ListenAddr:   ":9096",
 		DBType:       DBTypeSQLite,
 		DBPath:       "warden.db",
-		CookieSecure: false,
+		CookieSecure: true,
 	}
 }
 
@@ -58,8 +58,8 @@ func Load() (*Config, error) {
 		}
 	}
 
-	if os.Getenv("COOKIE_SECURE") == "true" {
-		cfg.CookieSecure = true
+	if cs := os.Getenv("COOKIE_SECURE"); cs != "" {
+		cfg.CookieSecure = strings.EqualFold(cs, "true")
 	}
 
 	if secret := os.Getenv("ADMIN_SECRET"); secret != "" {

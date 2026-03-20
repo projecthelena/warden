@@ -22,6 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { StatusBadge } from "@/components/ui/monitor-visuals";
+import { useRole } from "@/hooks/useRole";
 import { Trash2, Save, Activity, Clock, BarChart, Pause, Play, X } from "lucide-react";
 import {
     AlertDialog,
@@ -44,6 +45,7 @@ interface MonitorDetailsSheetProps {
 
 export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDetailsSheetProps) {
     const { updateMonitor, deleteMonitor, pauseMonitor, resumeMonitor, user } = useMonitorStore();
+    const { canEdit } = useRole();
     const isPaused = monitor.status === 'paused';
     const [name, setName] = useState(monitor.name);
     const [url, setUrl] = useState(monitor.url);
@@ -312,7 +314,7 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                     <TabsList className="w-full grid grid-cols-3">
                         <TabsTrigger value="metrics">Metrics</TabsTrigger>
                         <TabsTrigger value="events">Events</TabsTrigger>
-                        <TabsTrigger value="settings" data-testid="monitor-settings-tab">Settings</TabsTrigger>
+                        {canEdit && <TabsTrigger value="settings" data-testid="monitor-settings-tab">Settings</TabsTrigger>}
                     </TabsList>
 
                     <TabsContent value="metrics" className="mt-6 space-y-6">

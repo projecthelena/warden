@@ -30,6 +30,7 @@ func TestAPIKeyIntegrationFlow(t *testing.T) {
 	// Use config with AdminSecret for testing
 	cfg := config.Default()
 	cfg.AdminSecret = integrationTestAdminSecret
+	cfg.CookieSecure = false // Tests use plain HTTP
 	router := NewRouter(manager, store, &cfg)
 
 	ts := httptest.NewServer(router)

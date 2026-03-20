@@ -50,6 +50,7 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 
 	// 3. Construct Unified List
 	type StatusPageDTO struct {
+		ID                   int64   `json:"id"`
 		Slug                 string  `json:"slug"`
 		Title                string  `json:"title"`
 		GroupID              *string `json:"groupId"`
@@ -101,6 +102,7 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		HeaderArrangement:    "stacked",
 	}
 	if globalPage != nil {
+		globalDTO.ID = globalPage.ID
 		globalDTO.Title = globalPage.Title
 		globalDTO.Public = globalPage.Public
 		globalDTO.Enabled = globalPage.Enabled
@@ -153,6 +155,7 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if cfg, ok := configMap[g.ID]; ok {
+			dto.ID = cfg.ID
 			dto.Slug = cfg.Slug
 			dto.Title = cfg.Title
 			dto.Public = cfg.Public
@@ -1024,6 +1027,64 @@ func (h *StatusPageHandler) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(rss)) // #nosec G705 - all user content escaped via xmlEscape()
+}
+
+// GetMyStatusPages returns status pages accessible to the logged-in user.
+// For status_viewer: returns only assigned pages. For other roles: returns all enabled pages.
+func (h *StatusPageHandler) GetMyStatusPages(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(contextKeyUserID).(int64)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	role := getUserRole(r)
+
+	type PageDTO struct {
+		ID     int64  `json:"id"`
+		Slug   string `json:"slug"`
+		Title  string `json:"title"`
+		Public bool   `json:"public"`
+	}
+
+	var result []PageDTO
+
+	if role == RoleStatusViewer {
+		pageIDs, err := h.store.GetUserStatusPages(userID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to fetch assigned pages")
+			return
+		}
+		if len(pageIDs) == 0 {
+			writeJSON(w, http.StatusOK, map[string]any{"pages": []PageDTO{}})
+			return
+		}
+		pages, err := h.store.GetStatusPagesByIDs(pageIDs)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to fetch status pages")
+			return
+		}
+		for _, p := range pages {
+			if p.Enabled {
+				result = append(result, PageDTO{ID: p.ID, Slug: p.Slug, Title: p.Title, Public: p.Public})
+			}
+		}
+	} else {
+		pages, err := h.store.GetStatusPages()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to fetch status pages")
+			return
+		}
+		for _, p := range pages {
+			if p.Enabled {
+				result = append(result, PageDTO{ID: p.ID, Slug: p.Slug, Title: p.Title, Public: p.Public})
+			}
+		}
+	}
+
+	if result == nil {
+		result = []PageDTO{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"pages": result})
 }
 
 // xmlEscape escapes special XML characters

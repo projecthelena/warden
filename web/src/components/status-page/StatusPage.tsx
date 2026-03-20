@@ -667,6 +667,10 @@ export function StatusPage() {
                     </div>
                     <h1 className="text-2xl font-bold">Access Denied</h1>
                     <p className="text-muted-foreground">You do not have permission to view this status page.</p>
+                    <div className="flex gap-2 justify-center pt-2">
+                        <Button variant="outline" onClick={() => window.history.back()}>Go Back</Button>
+                        <Button variant="outline" onClick={() => { window.location.href = "/my-pages"; }}>My Pages</Button>
+                    </div>
                 </div>
             </div>
         );

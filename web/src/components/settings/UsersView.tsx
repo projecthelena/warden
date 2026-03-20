@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
-import { MoreHorizontal, Trash2, Users } from "lucide-react";
+import { MoreHorizontal, Trash2, Users, FileText } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -22,6 +23,14 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
 import { useMonitorStore } from "@/lib/store";
 
 interface UserDTO {
@@ -49,23 +58,53 @@ const ROLE_COLORS: Record<string, string> = {
     status_viewer: "outline",
 };
 
+interface StatusPageOption {
+    id: number;
+    slug: string;
+    title: string;
+    public: boolean;
+    enabled: boolean;
+}
+
 export function UsersView() {
     const { toast } = useToast();
     const currentUser = useMonitorStore((s) => s.user);
     const [users, setUsers] = useState<UserDTO[]>([]);
     const [deleteId, setDeleteId] = useState<number | null>(null);
+    const [managePagesUser, setManagePagesUser] = useState<UserDTO | null>(null);
+    const [allStatusPages, setAllStatusPages] = useState<StatusPageOption[]>([]);
+    const [selectedPageIds, setSelectedPageIds] = useState<Set<number>>(new Set());
+    const [savingPages, setSavingPages] = useState(false);
+    const [userPageCounts, setUserPageCounts] = useState<Record<number, number>>({});
+
+    const fetchPageCounts = useCallback(async (userList: UserDTO[]) => {
+        const statusViewers = userList.filter(u => u.role === "status_viewer");
+        const counts: Record<number, number> = {};
+        await Promise.all(statusViewers.map(async (u) => {
+            try {
+                const res = await fetch(`/api/users/${u.id}/status-pages`, { credentials: "include" });
+                if (res.ok) {
+                    const data = await res.json();
+                    counts[u.id] = (data.statusPageIds || []).length;
+                }
+            } catch { /* ignore */ }
+        }));
+        setUserPageCounts(counts);
+    }, []);
 
     const fetchUsers = useCallback(async () => {
         try {
             const res = await fetch("/api/users", { credentials: "include" });
             if (res.ok) {
                 const data = await res.json();
-                setUsers(data.users || []);
+                const userList = data.users || [];
+                setUsers(userList);
+                fetchPageCounts(userList);
             }
         } catch (e) {
             console.error("Failed to fetch users:", e);
         }
-    }, []);
+    }, [fetchPageCounts]);
 
     useEffect(() => {
         fetchUsers();
@@ -117,6 +156,66 @@ export function UsersView() {
         setDeleteId(null);
     };
 
+    const openManagePages = async (user: UserDTO) => {
+        setManagePagesUser(user);
+        try {
+            // Fetch all status pages and current assignments in parallel
+            const [pagesRes, assignRes] = await Promise.all([
+                fetch("/api/status-pages", { credentials: "include" }),
+                fetch(`/api/users/${user.id}/status-pages`, { credentials: "include" }),
+            ]);
+            if (pagesRes.ok) {
+                const pagesData = await pagesRes.json();
+                // Only show saved pages (id > 0) that are enabled
+                const saved = (pagesData.pages || []).filter((p: StatusPageOption) => p.id > 0 && p.enabled);
+                setAllStatusPages(saved);
+            }
+            if (assignRes.ok) {
+                const assignData = await assignRes.json();
+                setSelectedPageIds(new Set(assignData.statusPageIds || []));
+            }
+        } catch {
+            toast({ title: "Error", description: "Failed to load status pages.", variant: "destructive" });
+        }
+    };
+
+    const handleSavePages = async () => {
+        if (!managePagesUser) return;
+        setSavingPages(true);
+        try {
+            const res = await fetch(`/api/users/${managePagesUser.id}/status-pages`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ statusPageIds: Array.from(selectedPageIds) }),
+                credentials: "include",
+            });
+            if (res.ok) {
+                toast({ title: "Pages Updated", description: "Status page assignments saved." });
+                setManagePagesUser(null);
+                fetchUsers();
+            } else {
+                const data = await res.json().catch(() => ({ error: "Failed to save" }));
+                toast({ title: "Error", description: data.error, variant: "destructive" });
+            }
+        } catch {
+            toast({ title: "Error", description: "Failed to save page assignments.", variant: "destructive" });
+        } finally {
+            setSavingPages(false);
+        }
+    };
+
+    const togglePageId = (id: number) => {
+        setSelectedPageIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) {
+                next.delete(id);
+            } else {
+                next.add(id);
+            }
+            return next;
+        });
+    };
+
     return (
         <Card>
             <CardHeader>
@@ -151,23 +250,30 @@ export function UsersView() {
                                             </div>
                                         </TableCell>
                                         <TableCell>
-                                            {isSelf ? (
-                                                <Badge variant={ROLE_COLORS[u.role] as "default" | "secondary" | "destructive" | "outline"}>
-                                                    {ROLE_LABELS[u.role] || u.role}
-                                                </Badge>
-                                            ) : (
-                                                <Select value={u.role} onValueChange={(v) => handleRoleChange(u.id, v)}>
-                                                    <SelectTrigger className="w-[140px] h-8">
-                                                        <SelectValue />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        <SelectItem value="admin">Admin</SelectItem>
-                                                        <SelectItem value="editor">Editor</SelectItem>
-                                                        <SelectItem value="viewer">Viewer</SelectItem>
-                                                        <SelectItem value="status_viewer">Status Viewer</SelectItem>
-                                                    </SelectContent>
-                                                </Select>
-                                            )}
+                                            <div className="flex items-center gap-2">
+                                                {isSelf ? (
+                                                    <Badge variant={ROLE_COLORS[u.role] as "default" | "secondary" | "destructive" | "outline"}>
+                                                        {ROLE_LABELS[u.role] || u.role}
+                                                    </Badge>
+                                                ) : (
+                                                    <Select value={u.role} onValueChange={(v) => handleRoleChange(u.id, v)}>
+                                                        <SelectTrigger className="w-[140px] h-8">
+                                                            <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value="admin">Admin</SelectItem>
+                                                            <SelectItem value="editor">Editor</SelectItem>
+                                                            <SelectItem value="viewer">Viewer</SelectItem>
+                                                            <SelectItem value="status_viewer">Status Viewer</SelectItem>
+                                                        </SelectContent>
+                                                    </Select>
+                                                )}
+                                                {u.role === "status_viewer" && (
+                                                    <span className="text-xs text-muted-foreground">
+                                                        {userPageCounts[u.id] ?? 0} {(userPageCounts[u.id] ?? 0) === 1 ? "page" : "pages"}
+                                                    </span>
+                                                )}
+                                            </div>
                                         </TableCell>
                                         <TableCell className="text-muted-foreground">
                                             {new Date(u.createdAt).toLocaleDateString()}
@@ -181,6 +287,12 @@ export function UsersView() {
                                                         </Button>
                                                     </DropdownMenuTrigger>
                                                     <DropdownMenuContent align="end">
+                                                        {u.role === "status_viewer" && (
+                                                            <DropdownMenuItem onClick={() => openManagePages(u)}>
+                                                                <FileText className="h-4 w-4 mr-2" />
+                                                                Manage Pages
+                                                            </DropdownMenuItem>
+                                                        )}
                                                         <DropdownMenuItem
                                                             className="text-destructive focus:text-destructive"
                                                             onClick={() => setDeleteId(u.id)}
@@ -205,6 +317,49 @@ export function UsersView() {
                     </div>
                 )}
             </CardContent>
+
+            <Dialog open={managePagesUser !== null} onOpenChange={(open) => !open && setManagePagesUser(null)}>
+                <DialogContent className="sm:max-w-[450px]">
+                    <DialogHeader>
+                        <DialogTitle>Manage Status Pages</DialogTitle>
+                        <DialogDescription>
+                            Assign status pages to {managePagesUser?.displayName || managePagesUser?.username}.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="py-4 space-y-3 max-h-[300px] overflow-y-auto">
+                        {allStatusPages.length === 0 ? (
+                            <p className="text-sm text-muted-foreground text-center py-4">
+                                No enabled status pages found. Enable a status page first.
+                            </p>
+                        ) : (
+                            allStatusPages.map((page) => (
+                                <label
+                                    key={page.id}
+                                    className="flex items-center gap-3 p-2 rounded-md hover:bg-accent/50 cursor-pointer"
+                                >
+                                    <Checkbox
+                                        checked={selectedPageIds.has(page.id)}
+                                        onCheckedChange={() => togglePageId(page.id)}
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-medium truncate">{page.title}</div>
+                                        <div className="text-xs text-muted-foreground">/{page.slug}</div>
+                                    </div>
+                                    <Badge variant={page.public ? "secondary" : "outline"} className="text-xs shrink-0">
+                                        {page.public ? "Public" : "Private"}
+                                    </Badge>
+                                </label>
+                            ))
+                        )}
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setManagePagesUser(null)}>Cancel</Button>
+                        <Button onClick={handleSavePages} disabled={savingPages}>
+                            {savingPages ? "Saving..." : "Save"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             <AlertDialog open={deleteId !== null} onOpenChange={(open) => !open && setDeleteId(null)}>
                 <AlertDialogContent>
