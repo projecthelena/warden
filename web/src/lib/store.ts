@@ -27,6 +27,7 @@ export interface User {
     isAuthenticated: boolean;
     timezone?: string;
     ssoProvider?: string;
+    role?: string;
 }
 
 export interface HistoryPoint {
@@ -178,6 +179,7 @@ export interface APIKey {
     id: number;
     keyPrefix: string;
     name: string;
+    role: string;
     createdAt: string;
     lastUsed?: string;
 }
@@ -252,7 +254,7 @@ interface MonitorStore {
 
     // API Keys
     fetchAPIKeys: () => Promise<APIKey[]>;
-    createAPIKey: (name: string) => Promise<string | null>;
+    createAPIKey: (name: string, role?: string) => Promise<string | null>;
     deleteAPIKey: (id: number) => Promise<void>;
     resetDatabase: () => Promise<boolean>;
 
@@ -428,12 +430,16 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
                         avatar: data.user.avatar,
                         isAuthenticated: true,
                         timezone: data.user.timezone,
-                        ssoProvider: data.user.ssoProvider || ""
+                        ssoProvider: data.user.ssoProvider || "",
+                        role: data.user.role || "admin"
                     },
                     isAuthChecked: true
                 });
                 // Once auth is confirmed, fetch overview for sidebar/dashboard
-                get().fetchOverview();
+                // status_viewer users don't have access to dashboard endpoints
+                if (data.user.role !== 'status_viewer') {
+                    get().fetchOverview();
+                }
             } else {
                 set({ user: null, isAuthChecked: true });
             }
@@ -461,10 +467,13 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
                         avatar: data.user.avatar,
                         isAuthenticated: true,
                         timezone: data.user.timezone,
-                        ssoProvider: data.user.ssoProvider || ""
+                        ssoProvider: data.user.ssoProvider || "",
+                        role: data.user.role || "admin"
                     }
                 });
-                get().fetchOverview();
+                if (data.user.role !== 'status_viewer') {
+                    get().fetchOverview();
+                }
                 return { success: true };
             }
 
@@ -497,8 +506,18 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
             const res = await fetch(url, { credentials: 'include' });
             if (res.ok) {
                 const data = await res.json();
-                // Backend now returns { groups: [...] }
-                set({ groups: data.groups || [] });
+                const fetched = data.groups || [];
+                if (groupId && fetched.length > 0) {
+                    // Merge: update only the fetched group, keep others intact
+                    set((state) => ({
+                        groups: state.groups.map((g) => {
+                            const updated = fetched.find((f: Group) => f.id === g.id);
+                            return updated || g;
+                        }),
+                    }));
+                } else {
+                    set({ groups: fetched });
+                }
             }
         } catch (e) {
             console.error("Failed to fetch monitors", e);
@@ -523,15 +542,15 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
 
     fetchPublicStatusBySlug: async (slug: string) => {
         try {
-            const res = await fetch(`/api/s/${slug}`);
+            const res = await fetch(`/api/s/${slug}`, { credentials: "include" });
             if (res.ok) {
-                const data = await res.json();
-                // Return data directly or set to a store state?
-                // For now, let's return it so component can handle loading state locally if desired, 
-                // OR we can adapt 'groups' state.
-                // But 'groups' is for the Admin dashboard. 
-                // Let's just return the data used by the public view.
-                return data;
+                return await res.json();
+            }
+            if (res.status === 401) {
+                return { _error: "auth_required" };
+            }
+            if (res.status === 403) {
+                return { _error: "forbidden" };
             }
         } catch (error) {
             console.error(error);
@@ -602,7 +621,10 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
                 body: JSON.stringify({ name }),
             });
 
-            if (!res.ok) throw new Error("Failed to update group");
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.error || "Failed to update group");
+            }
 
             set((state) => ({
                 groups: state.groups.map((g) =>
@@ -632,6 +654,9 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
             if (res.ok) {
                 get().fetchOverview();
                 toast({ title: "Group Deleted", description: "Group deleted successfully." });
+            } else {
+                const data = await res.json().catch(() => ({}));
+                toast({ title: "Error", description: data.error || "Failed to delete group.", variant: "destructive" });
             }
         } catch (e) {
             console.error(e);
@@ -675,6 +700,9 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
                     get().fetchMonitors(groupId);
                 }
                 toast({ title: "Monitor Created", description: `Monitor "${name}" created successfully.` });
+            } else {
+                const data = await res.json().catch(() => ({}));
+                toast({ title: "Error", description: data.error || "Failed to create monitor.", variant: "destructive" });
             }
         } catch (e) {
             console.error(e);
@@ -708,6 +736,9 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
                 // Also refresh overview as status might change
                 get().fetchOverview();
                 toast({ title: "Monitor Updated", description: "Monitor details updated." });
+            } else {
+                const data = await res.json().catch(() => ({}));
+                toast({ title: "Error", description: data.error || "Failed to update monitor.", variant: "destructive" });
             }
         } catch (e) {
             console.error(e);
@@ -716,26 +747,18 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
     },
 
     deleteMonitor: async (id) => {
-        const groups = get().groups;
-        let groupId: string | undefined;
-        for (const g of groups) {
-            if (g.monitors.some(m => m.id === id)) {
-                groupId = g.id;
-                break;
-            }
-        }
-
         try {
             const res = await fetch(`/api/monitors/${id}`, {
                 method: 'DELETE',
                 credentials: 'include'
             });
             if (res.ok) {
-                if (groupId) {
-                    get().fetchMonitors(groupId);
-                }
+                get().fetchMonitors();
                 get().fetchOverview();
                 toast({ title: "Monitor Deleted", description: "Monitor deleted successfully." });
+            } else {
+                const data = await res.json().catch(() => ({}));
+                toast({ title: "Error", description: data.error || "Failed to delete monitor.", variant: "destructive" });
             }
         } catch (e) {
             console.error(e);
@@ -816,6 +839,9 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
                 set((state) => ({ incidents: [newIncident, ...state.incidents] }));
                 toast({ title: "Incident Created", description: "Incident has been reported." });
                 get().fetchIncidents();
+            } else {
+                const data = await res.json().catch(() => ({}));
+                toast({ title: "Error", description: data.error || "Failed to create incident.", variant: "destructive" });
             }
         } catch (e) {
             console.error(e);
@@ -836,6 +862,9 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
                 set((state) => ({ incidents: [newMaintenance, ...state.incidents] }));
                 toast({ title: "Maintenance Scheduled", description: "Maintenance window created." });
                 get().fetchIncidents();
+            } else {
+                const data = await res.json().catch(() => ({}));
+                toast({ title: "Error", description: data.error || "Failed to schedule maintenance.", variant: "destructive" });
             }
         } catch (e) {
             console.error(e);
@@ -985,7 +1014,8 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
                 toast({ title: "Channel Added", description: "Notification channel added successfully." });
                 get().fetchChannels();
             } else {
-                toast({ title: "Error", description: "Failed to add channel.", variant: "destructive" });
+                const data = await res.json().catch(() => ({}));
+                toast({ title: "Error", description: data.error || "Failed to add channel.", variant: "destructive" });
             }
         } catch (e) {
             console.error(e);
@@ -1005,7 +1035,8 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
                 toast({ title: "Channel Updated", description: "Channel configuration updated." });
                 get().fetchChannels();
             } else {
-                toast({ title: "Error", description: "Failed to update channel.", variant: "destructive" });
+                const data = await res.json().catch(() => ({}));
+                toast({ title: "Error", description: data.error || "Failed to update channel.", variant: "destructive" });
             }
         } catch (e) {
             console.error(e);
@@ -1022,6 +1053,9 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
             if (res.ok) {
                 toast({ title: "Channel Deleted", description: "Channel deleted successfully." });
                 get().fetchChannels();
+            } else {
+                const data = await res.json().catch(() => ({}));
+                toast({ title: "Error", description: data.error || "Failed to delete channel.", variant: "destructive" });
             }
         } catch (e) {
             console.error(e);
@@ -1065,12 +1099,12 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
         return [];
     },
 
-    createAPIKey: async (name: string) => {
+    createAPIKey: async (name: string, role?: string) => {
         try {
             const res = await fetch("/api/api-keys", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name }),
+                body: JSON.stringify({ name, role: role || "editor" }),
                 credentials: "include"
             });
             if (res.ok) {

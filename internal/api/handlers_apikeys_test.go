@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ func TestAPIKeysHandler(t *testing.T) {
 
 	// List Empty
 	req := httptest.NewRequest("GET", "/api/api-keys", nil)
+	req = req.WithContext(context.WithValue(req.Context(), contextKeyUserRole, RoleAdmin))
 	w := httptest.NewRecorder()
 	h.ListKeys(w, req)
 	if w.Code != http.StatusOK {
@@ -26,6 +28,7 @@ func TestAPIKeysHandler(t *testing.T) {
 	payload := map[string]string{"name": "TestKey"}
 	body, _ := json.Marshal(payload)
 	req = httptest.NewRequest("POST", "/api/api-keys", bytes.NewBuffer(body))
+	req = req.WithContext(context.WithValue(req.Context(), contextKeyUserRole, RoleAdmin))
 	w = httptest.NewRecorder()
 	h.CreateKey(w, req)
 

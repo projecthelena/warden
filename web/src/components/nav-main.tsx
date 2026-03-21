@@ -68,6 +68,24 @@ export function NavMain({
       });
       const isOpen = isSubActive || (isMainActive && !!item.items?.length);
 
+      if (item.items?.length === 1) {
+        // Single sub-item: render as direct link (e.g. viewer sees Settings → General only)
+        const single = item.items[0];
+        const isActive = single.url.includes("?")
+          ? fullPath === single.url
+          : pathname === single.url && !search.includes("tab=");
+        return (
+          <SidebarMenuItem key={item.title}>
+            <SidebarMenuButton asChild tooltip={item.title} isActive={isActive}>
+              <Link to={single.url}>
+                <item.icon />
+                <span>{item.title}</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        )
+      }
+
       if (item.items?.length) {
         // Collapsible Parent (Events, Settings)
         const isButtonActive = state === "collapsed" ? (isMainActive || isSubActive) : false;

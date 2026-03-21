@@ -39,6 +39,27 @@ export default defineConfig({
             use: { ...devices['Desktop Chrome'] },
             dependencies: ['status-pages'],
         },
+        // RBAC tests run isolated (they reset the database)
+        {
+            name: 'rbac',
+            testMatch: /rbac\.spec\.ts/,
+            use: { ...devices['Desktop Chrome'] },
+            dependencies: ['status-pages-full'],
+        },
+        // Status viewer tests run isolated (they reset the database)
+        {
+            name: 'status-viewer',
+            testMatch: /status_viewer\.spec\.ts/,
+            use: { ...devices['Desktop Chrome'] },
+            dependencies: ['rbac'],
+        },
+        // Comprehensive RBAC role tests (reset DB, test all roles)
+        {
+            name: 'rbac-roles',
+            testMatch: /rbac_roles\.spec\.ts/,
+            use: { ...devices['Desktop Chrome'] },
+            dependencies: ['status-viewer'],
+        },
         // All other tests can run in parallel after auth tests complete
         {
             name: 'chromium',
@@ -47,6 +68,9 @@ export default defineConfig({
                 /custom_setup\.spec\.ts/,
                 /status_pages\.spec\.ts/,
                 /status_pages_full\.spec\.ts/,
+                /rbac\.spec\.ts/,
+                /status_viewer\.spec\.ts/,
+                /rbac_roles\.spec\.ts/,
             ],
             use: { ...devices['Desktop Chrome'] },
             dependencies: ['custom-setup'],

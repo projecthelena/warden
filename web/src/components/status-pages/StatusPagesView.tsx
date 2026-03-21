@@ -7,11 +7,13 @@ import { ExternalLink, Settings } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { StatusPage } from "@/lib/store";
 import { StatusPageConfigSheet } from "./StatusPageConfigSheet";
+import { useRole } from "@/hooks/useRole";
 
 export function StatusPagesView() {
     const { data: pages = [], isLoading } = useStatusPagesQuery();
     const toggleMutation = useToggleStatusPageMutation();
     const { toast } = useToast();
+    const { canEdit } = useRole();
     const [configSheetOpen, setConfigSheetOpen] = useState(false);
     const [selectedPage, setSelectedPage] = useState<StatusPage | null>(null);
 
@@ -42,8 +44,8 @@ export function StatusPagesView() {
                 title: "Status Page Updated",
                 description: `${page.title} is now ${newEnabled ? 'enabled' : 'disabled'}`,
             });
-        } catch (_e) {
-            toast({ title: "Error", description: "Failed to update status page", variant: "destructive" });
+        } catch (e) {
+            toast({ title: "Error", description: (e instanceof Error ? e.message : "Failed to update status page"), variant: "destructive" });
         }
     };
 
@@ -62,8 +64,8 @@ export function StatusPagesView() {
                 title: "Status Page Updated",
                 description: `${page.title} is now ${newPublic ? 'public' : 'private'}`,
             });
-        } catch (_e) {
-            toast({ title: "Error", description: "Failed to update status page", variant: "destructive" });
+        } catch (e) {
+            toast({ title: "Error", description: (e instanceof Error ? e.message : "Failed to update status page"), variant: "destructive" });
         }
     };
 
@@ -121,15 +123,17 @@ export function StatusPagesView() {
                         </div>
 
                         <div className="flex items-center gap-4">
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 mr-[-0.5rem]"
-                                onClick={() => openConfig(page)}
-                                data-testid={`status-page-config-${page.slug}`}
-                            >
-                                <Settings className="h-4 w-4" />
-                            </Button>
+                            {canEdit && (
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 mr-[-0.5rem]"
+                                    onClick={() => openConfig(page)}
+                                    data-testid={`status-page-config-${page.slug}`}
+                                >
+                                    <Settings className="h-4 w-4" />
+                                </Button>
+                            )}
                             <div className="flex items-center gap-2">
                                 <span className={`text-xs transition-colors min-w-[4rem] text-right ${page.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>
                                     {page.enabled ? 'Enabled' : 'Disabled'}
@@ -137,6 +141,7 @@ export function StatusPagesView() {
                                 <Switch
                                     data-testid={`status-page-enabled-toggle-${page.slug}`}
                                     checked={page.enabled}
+                                    disabled={!canEdit}
                                     onCheckedChange={() => handleToggleEnabled(page)}
                                 />
                             </div>
@@ -147,7 +152,7 @@ export function StatusPagesView() {
                                 <Switch
                                     data-testid={`status-page-public-toggle-${page.slug}`}
                                     checked={page.public}
-                                    disabled={!page.enabled}
+                                    disabled={!canEdit || !page.enabled}
                                     onCheckedChange={() => handleTogglePublic(page)}
                                 />
                             </div>

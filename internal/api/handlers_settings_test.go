@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,10 @@ import (
 	"github.com/projecthelena/warden/internal/db"
 	"github.com/projecthelena/warden/internal/uptime"
 )
+
+func withAdminCtx(req *http.Request) *http.Request {
+	return req.WithContext(context.WithValue(req.Context(), contextKeyUserRole, RoleAdmin))
+}
 
 func TestGetSettings(t *testing.T) {
 	s, _ := db.NewStore(db.NewTestConfig())
@@ -54,7 +59,7 @@ func TestUpdateSettings_MultipleSettings(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	h.UpdateSettings(w, req)
+	h.UpdateSettings(w, withAdminCtx(req))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("Expected 200, got %d", w.Code)
@@ -81,7 +86,7 @@ func TestUpdateSettings_InvalidBody(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	h.UpdateSettings(w, req)
+	h.UpdateSettings(w, withAdminCtx(req))
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("Expected 400 for invalid JSON, got %d", w.Code)
@@ -102,7 +107,7 @@ func TestUpdateSettings_LatencyThresholdUpdatesManager(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	h.UpdateSettings(w, req)
+	h.UpdateSettings(w, withAdminCtx(req))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("Expected 200, got %d", w.Code)

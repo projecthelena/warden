@@ -198,6 +198,7 @@ func (s *Store) seed() error {
 // allowedResetTables is a whitelist of table names that can be dropped during reset.
 // SECURITY: This prevents potential SQL injection if table names were ever derived from user input.
 var allowedResetTables = map[string]bool{
+	"user_status_pages":     true,
 	"users":                 true,
 	"sessions":              true,
 	"groups":                true,
@@ -228,6 +229,7 @@ func (s *Store) Reset() error {
 	}
 
 	tables := []string{
+		"user_status_pages",
 		"users", "sessions", "groups", "monitors", "monitor_checks",
 		"monitor_events", "status_pages", "api_keys", "settings", "monitor_outages",
 		"notification_channels", "incidents",

@@ -704,14 +704,14 @@ test.describe('Status Page - Full E2E Suite', () => {
             await publicPage.goto(`${baseUrl}/status/all`);
             await publicPage.waitForLoadState('networkidle');
 
-            // Should see error
-            await expect(publicPage.getByText('Status Page Unavailable')).toBeVisible({ timeout: 10000 });
+            // Should see login form since user is not authenticated
+            await expect(publicPage.getByText('Private Status Page')).toBeVisible({ timeout: 10000 });
 
             await publicPage.close();
             await freshContext.close();
         });
 
-        test('RSS feed returns 404 for private page', async ({ page }) => {
+        test('RSS feed returns 404 for private page to unauthenticated users', async ({ page, browser }) => {
             // Enable but keep private
             await statusPages.configureViaAPI('all', {
                 enabled: true,
@@ -719,9 +719,19 @@ test.describe('Status Page - Full E2E Suite', () => {
                 title: 'Global Status',
             });
 
-            const response = await page.request.get('/api/s/all/rss');
-            // Private pages should return 404 for RSS (not authenticated access for RSS)
+            // Use a fresh context without cookies to simulate unauthenticated access
+            if (!browser) {
+                test.skip();
+                return;
+            }
+            const freshContext = await browser.newContext();
+            const freshPage = await freshContext.newPage();
+            const baseUrl = new URL(page.url()).origin;
+            const response = await freshPage.request.get(`${baseUrl}/api/s/all/rss`);
+            // Private pages should return 404 for unauthenticated RSS access
             expect(response.status()).toBe(404);
+            await freshPage.close();
+            await freshContext.close();
         });
 
     });

@@ -103,7 +103,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set Cookie
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure defaults true; configurable for local HTTP dev
 		Name:     "auth_token",
 		Value:    token,
 		Expires:  expiresAt,
@@ -113,11 +113,38 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		Secure:   h.config.CookieSecure,
 	})
 
+	// Fetch full user details for the response (avatar, display name, etc.)
+	fullUser, _ := h.store.GetUser(user.ID)
+	avatar := ""
+	displayName := user.Username
+	email := ""
+	timezone := "UTC"
+	ssoProvider := ""
+	if fullUser != nil {
+		displayName = fullUser.DisplayName
+		if displayName == "" {
+			displayName = fullUser.Username
+		}
+		email = fullUser.Email
+		timezone = fullUser.Timezone
+		ssoProvider = fullUser.SSOProvider
+		avatar = fullUser.AvatarURL
+		if avatar == "" {
+			avatar = "https://ui-avatars.com/api/?name=" + url.QueryEscape(displayName) + "&background=random"
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"message": "logged in",
 		"user": map[string]any{
-			"username": user.Username,
-			"id":       user.ID,
+			"username":    user.Username,
+			"id":          user.ID,
+			"role":        user.Role,
+			"displayName": displayName,
+			"email":       email,
+			"timezone":    timezone,
+			"ssoProvider": ssoProvider,
+			"avatar":      avatar,
 		},
 	})
 }
@@ -129,7 +156,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Clear Cookie
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure defaults true; configurable for local HTTP dev
 		Name:     "auth_token",
 		Value:    "",
 		Expires:  time.Now().Add(-1 * time.Hour),
@@ -183,6 +210,7 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 			"ssoProvider": user.SSOProvider,
 			"avatar":      avatar,
 			"displayName": displayName,
+			"role":        user.Role,
 		},
 	})
 }
@@ -247,25 +275,45 @@ func (h *AuthHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "settings updated"})
 }
 
-// IsAuthenticated checks whether a request has a valid session cookie or API key
-// without writing a response. Used by handlers that need optional auth checks.
-func (h *AuthHandler) IsAuthenticated(r *http.Request) bool {
+// AuthInfo holds identity information extracted from a request.
+type AuthInfo struct {
+	Authenticated bool
+	UserID        int64
+	Role          string
+}
+
+// GetAuthInfo extracts authentication details from a request without writing a response.
+// Returns user ID, role, and whether the request is authenticated.
+func (h *AuthHandler) GetAuthInfo(r *http.Request) AuthInfo {
 	// Check Bearer token
 	authHeader := r.Header.Get("Authorization")
 	if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
 		token := authHeader[7:]
-		valid, err := h.store.ValidateAPIKey(token)
+		valid, role, err := h.store.ValidateAPIKey(token)
 		if err == nil && valid {
-			return true
+			return AuthInfo{Authenticated: true, UserID: APIKeyUserID, Role: role}
 		}
 	}
 	// Check session cookie
 	c, err := r.Cookie("auth_token")
 	if err != nil {
-		return false
+		return AuthInfo{}
 	}
 	sess, err := h.store.GetSession(c.Value)
-	return err == nil && sess != nil
+	if err != nil || sess == nil {
+		return AuthInfo{}
+	}
+	role, err := h.store.GetUserRole(sess.UserID)
+	if err != nil {
+		return AuthInfo{}
+	}
+	return AuthInfo{Authenticated: true, UserID: sess.UserID, Role: role}
+}
+
+// IsAuthenticated checks whether a request has a valid session cookie or API key
+// without writing a response. Used by handlers that need optional auth checks.
+func (h *AuthHandler) IsAuthenticated(r *http.Request) bool {
+	return h.GetAuthInfo(r).Authenticated
 }
 
 // Middleware
@@ -276,11 +324,12 @@ func (h *AuthHandler) AuthMiddleware(next http.Handler) http.Handler {
 		authHeader := r.Header.Get("Authorization")
 		if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
 			token := authHeader[7:]
-			valid, err := h.store.ValidateAPIKey(token)
+			valid, role, err := h.store.ValidateAPIKey(token)
 			if err == nil && valid {
 				// Valid API Key - use special negative ID to distinguish from real users
 				// SECURITY: APIKeyUserID (-1) prevents confusion with real user IDs
 				ctx := context.WithValue(r.Context(), contextKeyUserID, APIKeyUserID)
+				ctx = context.WithValue(ctx, contextKeyUserRole, role)
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
@@ -301,8 +350,16 @@ func (h *AuthHandler) AuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// 4. Inject UserID into Context
+		// 4. Fetch user role
+		role, err := h.store.GetUserRole(sess.UserID)
+		if err != nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		// 5. Inject UserID and Role into Context
 		ctx := context.WithValue(r.Context(), contextKeyUserID, sess.UserID)
+		ctx = context.WithValue(ctx, contextKeyUserRole, role)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

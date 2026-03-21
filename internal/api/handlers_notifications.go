@@ -53,6 +53,9 @@ func (h *NotificationChannelsHandler) GetChannels(w http.ResponseWriter, r *http
 // @Failure      400  {string} string "Type and Name are required"
 // @Router       /notifications/channels [post]
 func (h *NotificationChannelsHandler) CreateChannel(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleEditor) {
+		return
+	}
 	var body struct {
 		Type    string                 `json:"type"`
 		Name    string                 `json:"name"`
@@ -122,6 +125,9 @@ func (h *NotificationChannelsHandler) CreateChannel(w http.ResponseWriter, r *ht
 // @Failure      400  {string} string "Missing ID"
 // @Router       /notifications/channels/{id} [delete]
 func (h *NotificationChannelsHandler) DeleteChannel(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleEditor) {
+		return
+	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		http.Error(w, "Missing ID", http.StatusBadRequest)
@@ -167,6 +173,9 @@ func extractWebhookURL(config map[string]interface{}) string {
 
 // UpdateChannel modifies an existing notification channel.
 func (h *NotificationChannelsHandler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleEditor) {
+		return
+	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		http.Error(w, "Missing ID", http.StatusBadRequest)
@@ -226,6 +235,9 @@ func (h *NotificationChannelsHandler) UpdateChannel(w http.ResponseWriter, r *ht
 
 // TestChannel sends a test notification through the specified channel type and config.
 func (h *NotificationChannelsHandler) TestChannel(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleEditor) {
+		return
+	}
 	var body struct {
 		Type   string                 `json:"type"`
 		Config map[string]interface{} `json:"config"`

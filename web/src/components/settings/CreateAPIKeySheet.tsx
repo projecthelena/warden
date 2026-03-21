@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { useMonitorStore } from "@/lib/store";
 import { useToast } from "@/components/ui/use-toast";
 import { Plus, Copy } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
     Sheet,
     SheetContent,
@@ -20,12 +21,13 @@ export function CreateAPIKeySheet() {
     const { createAPIKey, fetchAPIKeys } = useMonitorStore();
     const { toast } = useToast();
     const [newKeyName, setNewKeyName] = useState("");
+    const [newKeyRole, setNewKeyRole] = useState("editor");
     const [createdKey, setCreatedKey] = useState<string | null>(null);
     const [isOpen, setIsOpen] = useState(false);
 
     const handleCreate = async () => {
         if (!newKeyName) return;
-        const key = await createAPIKey(newKeyName);
+        const key = await createAPIKey(newKeyName, newKeyRole);
         if (key) {
             setCreatedKey(key);
             setNewKeyName("");
@@ -77,6 +79,20 @@ export function CreateAPIKeySheet() {
                                 placeholder="e.g. CI/CD Pipeline"
                                 data-testid="apikey-name-input"
                             />
+                        </div>
+                        <div className="grid gap-2">
+                            <Label>Role</Label>
+                            <Select value={newKeyRole} onValueChange={setNewKeyRole}>
+                                <SelectTrigger>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="admin">Admin</SelectItem>
+                                    <SelectItem value="editor">Editor</SelectItem>
+                                    <SelectItem value="viewer">Viewer (read-only)</SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">Controls what the API key can access.</p>
                         </div>
                         <SheetFooter>
                             <Button onClick={handleCreate} disabled={!newKeyName} data-testid="apikey-create-submit">Generate Key</Button>

@@ -104,7 +104,7 @@ func TestMultiDB_MonitorCRUD(t *testing.T) {
 func TestMultiDB_UserCRUD(t *testing.T) {
 	RunTestWithBothDBs(t, "UserCRUD", func(t *testing.T, s *Store) {
 		// Create user
-		if err := s.CreateUser("testuser", "password123", "UTC"); err != nil {
+		if err := s.CreateUser("testuser", "password123", "UTC", "admin"); err != nil {
 			t.Fatalf("CreateUser failed: %v", err)
 		}
 
@@ -141,7 +141,7 @@ func TestMultiDB_UserCRUD(t *testing.T) {
 func TestMultiDB_Sessions(t *testing.T) {
 	RunTestWithBothDBs(t, "Sessions", func(t *testing.T, s *Store) {
 		// Create user first
-		if err := s.CreateUser("sessionuser", "password123", "UTC"); err != nil {
+		if err := s.CreateUser("sessionuser", "password123", "UTC", "admin"); err != nil {
 			t.Fatalf("CreateUser failed: %v", err)
 		}
 		user, _ := s.Authenticate("sessionuser", "password123")
@@ -271,7 +271,7 @@ func TestMultiDB_Incidents(t *testing.T) {
 func TestMultiDB_APIKeys(t *testing.T) {
 	RunTestWithBothDBs(t, "APIKeys", func(t *testing.T, s *Store) {
 		// Create API key
-		key, err := s.CreateAPIKey("Test Key")
+		key, err := s.CreateAPIKey("Test Key", "editor")
 		if err != nil {
 			t.Fatalf("CreateAPIKey failed: %v", err)
 		}
@@ -280,7 +280,7 @@ func TestMultiDB_APIKeys(t *testing.T) {
 		}
 
 		// Validate key
-		valid, err := s.ValidateAPIKey(key)
+		valid, _, err := s.ValidateAPIKey(key)
 		if err != nil {
 			t.Fatalf("ValidateAPIKey failed: %v", err)
 		}
@@ -289,7 +289,7 @@ func TestMultiDB_APIKeys(t *testing.T) {
 		}
 
 		// Invalid key should fail
-		valid, _ = s.ValidateAPIKey("sk_live_INVALID")
+		valid, _, _ = s.ValidateAPIKey("sk_live_INVALID")
 		if valid {
 			t.Error("Expected invalid key to be rejected")
 		}

@@ -133,8 +133,8 @@ func (h *Router) PerformSetup(w http.ResponseWriter, r *http.Request) {
 		req.Timezone = "UTC"
 	}
 
-	// Create User
-	if err := h.store.CreateUser(req.Username, req.Password, req.Timezone); err != nil {
+	// Create User (first user is always admin)
+	if err := h.store.CreateUser(req.Username, req.Password, req.Timezone, "admin"); err != nil {
 		log.Printf("AUDIT: [SETUP] Failed to create user from IP %s: %v", sanitizeLog(clientIP), err) // #nosec G706 -- sanitized
 		http.Error(w, "Failed to create user", http.StatusInternalServerError)
 		return
@@ -221,7 +221,7 @@ func (h *Router) PerformSetup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set auth cookie
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure defaults true; configurable for local HTTP dev
 		Name:     "auth_token",
 		Value:    token,
 		Expires:  expiresAt,

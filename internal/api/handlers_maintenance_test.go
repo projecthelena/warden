@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -31,6 +32,7 @@ func TestCreateMaintenance(t *testing.T) {
 	}
 	body, _ := json.Marshal(payload)
 	req := httptest.NewRequest("POST", "/api/maintenance", bytes.NewBuffer(body))
+	req = req.WithContext(context.WithValue(req.Context(), contextKeyUserRole, RoleAdmin))
 	w := httptest.NewRecorder()
 
 	h.CreateMaintenance(w, req)

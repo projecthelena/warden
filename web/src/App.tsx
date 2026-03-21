@@ -46,10 +46,12 @@ import {
 } from "@/components/ui/alert-dialog"
 
 import { useDeleteGroupMutation } from "@/hooks/useMonitors";
+import { useRole } from "@/hooks/useRole";
 
 function MonitorGroup({ group }: { group: Group }) {
   const mutation = useDeleteGroupMutation();
   const navigate = useNavigate();
+  const { canEdit } = useRole();
 
   const handleDelete = async () => {
     await mutation.mutateAsync(group.id);
@@ -63,7 +65,7 @@ function MonitorGroup({ group }: { group: Group }) {
           <div>
             <CardTitle>{group.name}</CardTitle>
           </div>
-          {group.id !== 'default' && (
+          {canEdit && group.id !== 'default' && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" data-testid="delete-group-trigger">
@@ -256,6 +258,7 @@ function AdminLayout() {
     addGroup,
     // addMonitor // Unused
   } = useMonitorStore();
+  const { canEdit } = useRole();
 
   useMonitorsQuery(); // Handles polling
   useSystemEventsQuery(); // Handles polling events
@@ -284,6 +287,10 @@ function AdminLayout() {
 
   if (!user || !user.isAuthenticated) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (user.role === 'status_viewer') {
+    return <Navigate to="/my-pages" replace />;
   }
 
   const isIncidents = location.pathname.startsWith('/incidents');
@@ -355,14 +362,16 @@ function AdminLayout() {
               </Breadcrumb>
             </div>
             <div className="ml-auto flex items-center gap-2">
-              {isMaintenance ? (
-                <CreateMaintenanceSheet onCreate={addMaintenance} groups={safeGroups} />
-              ) : !isIncidents && !isSettings && !isStatusPages ? (
-                <>
-                  {!groupId && <CreateGroupSheet onCreate={addGroup} />}
-                  <CreateMonitorSheet groups={safeGroups} defaultGroup={activeGroup?.name} />
-                </>
-              ) : null}
+              {canEdit && (
+                isMaintenance ? (
+                  <CreateMaintenanceSheet onCreate={addMaintenance} groups={safeGroups} />
+                ) : !isIncidents && !isSettings && !isStatusPages ? (
+                  <>
+                    {!groupId && <CreateGroupSheet onCreate={addGroup} />}
+                    <CreateMonitorSheet groups={safeGroups} defaultGroup={activeGroup?.name} />
+                  </>
+                ) : null
+              )}
             </div>
           </header>
           <ScrollArea className="flex-1 p-4 pt-0 h-[calc(100vh-4rem)]">
@@ -388,6 +397,7 @@ function AdminLayout() {
 }
 
 import { SetupPage } from "./components/setup/SetupPage";
+import { MyPagesView } from "./components/status-viewer/MyPagesView";
 
 const App = () => {
   const { checkAuth, checkSetupStatus, isSetupComplete } = useMonitorStore(); // Use global state
@@ -428,6 +438,7 @@ const App = () => {
     <Routes>
       <Route path="/setup" element={<Navigate to="/login" replace />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/my-pages" element={<MyPagesView />} />
       <Route path="/status/:slug" element={<StatusPage />} />
       <Route path="/*" element={<AdminLayout />} />
     </Routes>

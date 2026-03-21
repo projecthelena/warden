@@ -38,7 +38,10 @@ async function toggleStatusPageReq(payload: StatusPageUpdatePayload) {
         body: JSON.stringify({ public: isPublic, enabled, title, groupId, ...config }),
         credentials: 'include'
     });
-    if (!res.ok) throw new Error("Failed to toggle status page");
+    if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to update status page");
+    }
     return res.json();
 }
 

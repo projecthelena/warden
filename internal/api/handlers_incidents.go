@@ -87,6 +87,9 @@ func incidentToDTO(i db.Incident, updates []db.IncidentUpdate) IncidentResponseD
 // @Failure      400  {string} string "Invalid request body"
 // @Router       /incidents [post]
 func (h *IncidentHandler) CreateIncident(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleEditor) {
+		return
+	}
 	var req struct {
 		Title          string   `json:"title"`
 		Description    string   `json:"description"`
@@ -211,6 +214,9 @@ func (h *IncidentHandler) GetIncident(w http.ResponseWriter, r *http.Request) {
 // @Failure      404  {string} string "Incident not found"
 // @Router       /incidents/{id} [put]
 func (h *IncidentHandler) UpdateIncident(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleEditor) {
+		return
+	}
 	id := chi.URLParam(r, "id")
 
 	existing, err := h.store.GetIncidentByID(id)
@@ -293,6 +299,9 @@ func (h *IncidentHandler) UpdateIncident(w http.ResponseWriter, r *http.Request)
 // @Failure      500  {string} string "Failed to delete incident"
 // @Router       /incidents/{id} [delete]
 func (h *IncidentHandler) DeleteIncident(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleEditor) {
+		return
+	}
 	id := chi.URLParam(r, "id")
 
 	if err := h.store.DeleteIncident(id); err != nil {
@@ -317,6 +326,9 @@ func (h *IncidentHandler) DeleteIncident(w http.ResponseWriter, r *http.Request)
 // @Failure      404  {string} string "Outage not found"
 // @Router       /outages/{id}/promote [post]
 func (h *IncidentHandler) PromoteOutage(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleEditor) {
+		return
+	}
 	idStr := chi.URLParam(r, "id")
 	outageID, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
@@ -413,6 +425,9 @@ func (h *IncidentHandler) PromoteOutage(w http.ResponseWriter, r *http.Request) 
 // @Failure      404  {string} string "Incident not found"
 // @Router       /incidents/{id}/visibility [patch]
 func (h *IncidentHandler) SetVisibility(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleEditor) {
+		return
+	}
 	id := chi.URLParam(r, "id")
 
 	incident, err := h.store.GetIncidentByID(id)
@@ -461,6 +476,9 @@ func (h *IncidentHandler) SetVisibility(w http.ResponseWriter, r *http.Request) 
 // @Failure      404  {string} string "Incident not found"
 // @Router       /incidents/{id}/updates [post]
 func (h *IncidentHandler) AddUpdate(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleEditor) {
+		return
+	}
 	id := chi.URLParam(r, "id")
 
 	incident, err := h.store.GetIncidentByID(id)

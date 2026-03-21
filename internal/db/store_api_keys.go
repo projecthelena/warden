@@ -13,11 +13,15 @@ type APIKey struct {
 	ID        int64      `json:"id"`
 	KeyPrefix string     `json:"keyPrefix"`
 	Name      string     `json:"name"`
+	Role      string     `json:"role"`
 	CreatedAt time.Time  `json:"createdAt"`
 	LastUsed  *time.Time `json:"lastUsed,omitempty"`
 }
 
-func (s *Store) CreateAPIKey(name string) (string, error) {
+func (s *Store) CreateAPIKey(name, role string) (string, error) {
+	if role == "" {
+		role = "editor"
+	}
 	// Generate random key with 256-bit entropy (32 bytes)
 	// SECURITY: 256 bits provides adequate security strength for long-lived credentials
 	keyBytes := make([]byte, 32)
@@ -33,8 +37,8 @@ func (s *Store) CreateAPIKey(name string) (string, error) {
 		return "", err
 	}
 
-	_, err = s.db.Exec(s.rebind("INSERT INTO api_keys (key_prefix, key_hash, name) VALUES (?, ?, ?)"),
-		prefix, string(hash), name)
+	_, err = s.db.Exec(s.rebind("INSERT INTO api_keys (key_prefix, key_hash, name, role) VALUES (?, ?, ?, ?)"),
+		prefix, string(hash), name, role)
 	if err != nil {
 		return "", err
 	}
@@ -43,7 +47,7 @@ func (s *Store) CreateAPIKey(name string) (string, error) {
 }
 
 func (s *Store) ListAPIKeys() ([]APIKey, error) {
-	rows, err := s.db.Query("SELECT id, key_prefix, name, created_at, last_used_at FROM api_keys ORDER BY created_at DESC")
+	rows, err := s.db.Query("SELECT id, key_prefix, name, COALESCE(role, 'editor'), created_at, last_used_at FROM api_keys ORDER BY created_at DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +57,7 @@ func (s *Store) ListAPIKeys() ([]APIKey, error) {
 	for rows.Next() {
 		var k APIKey
 		var lastUsed sql.NullTime
-		if err := rows.Scan(&k.ID, &k.KeyPrefix, &k.Name, &k.CreatedAt, &lastUsed); err != nil {
+		if err := rows.Scan(&k.ID, &k.KeyPrefix, &k.Name, &k.Role, &k.CreatedAt, &lastUsed); err != nil {
 			return nil, err
 		}
 		if lastUsed.Valid {
@@ -69,36 +73,35 @@ func (s *Store) DeleteAPIKey(id int64) error {
 	return err
 }
 
-func (s *Store) ValidateAPIKey(key string) (bool, error) {
+// ValidateAPIKey validates the key and returns (valid, role, error).
+func (s *Store) ValidateAPIKey(key string) (bool, string, error) {
 	if len(key) < 12 {
-		return false, nil
+		return false, "", nil
 	}
 	prefix := key[:12]
 
 	// Find candidates by prefix
-	rows, err := s.db.Query(s.rebind("SELECT id, key_hash FROM api_keys WHERE key_prefix = ?"), prefix)
+	rows, err := s.db.Query(s.rebind("SELECT id, key_hash, COALESCE(role, 'editor') FROM api_keys WHERE key_prefix = ?"), prefix)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var id int64
-		var hash string
-		if err := rows.Scan(&id, &hash); err != nil {
+		var hash, role string
+		if err := rows.Scan(&id, &hash, &role); err != nil {
 			continue
 		}
 
 		if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(key)); err == nil {
 			// update last used async
 			go func(keyId int64) {
-				// Create a new generic db execution context or ignore error
-				// Since we are inside store method, s.db is safe to use concurrently? sql.DB is threadsafe.
 				_, _ = s.db.Exec(s.rebind("UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?"), keyId)
 			}(id)
-			return true, nil
+			return true, role, nil
 		}
 	}
 
-	return false, nil
+	return false, "", nil
 }

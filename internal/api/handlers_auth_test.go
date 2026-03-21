@@ -12,7 +12,7 @@ func TestAuthLogin(t *testing.T) {
 	_, _, authH, _, s := setupTest(t)
 
 	// Setup User
-	if err := s.CreateUser("admin", "correct-password", "UTC"); err != nil {
+	if err := s.CreateUser("admin", "correct-password", "UTC", "admin"); err != nil {
 		t.Fatalf("Failed to create user: %v", err)
 	}
 
@@ -79,7 +79,7 @@ func TestAuthMeIntegration(t *testing.T) {
 	_, _, _, router, s := setupTest(t)
 
 	// Setup User
-	if err := s.CreateUser("admin", "correct-password", "UTC"); err != nil {
+	if err := s.CreateUser("admin", "correct-password", "UTC", "admin"); err != nil {
 		t.Fatalf("Failed to create user: %v", err)
 	}
 

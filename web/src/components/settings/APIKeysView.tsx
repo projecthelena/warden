@@ -57,6 +57,7 @@ export function APIKeysView() {
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Name</TableHead>
+                                <TableHead>Role</TableHead>
                                 <TableHead>Key Prefix</TableHead>
                                 <TableHead>Created</TableHead>
                                 <TableHead className="w-[50px]"></TableHead>
@@ -66,6 +67,11 @@ export function APIKeysView() {
                             {apiKeys.map((key) => (
                                 <TableRow key={key.id}>
                                     <TableCell className="font-medium">{key.name}</TableCell>
+                                    <TableCell>
+                                        <span className="text-xs capitalize text-muted-foreground">
+                                            {key.role || "editor"}
+                                        </span>
+                                    </TableCell>
                                     <TableCell>
                                         <span className="font-mono text-xs text-muted-foreground">
                                             {key.keyPrefix}••••••••

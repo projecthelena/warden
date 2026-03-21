@@ -9,6 +9,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { cn, formatDate } from "@/lib/utils";
 import { PromoteOutageDialog } from "./PromoteOutageDialog";
 import { IncidentTimeline } from "./IncidentTimeline";
+import { useRole } from "@/hooks/useRole";
 
 function IncidentCard({ incident, timezone, onAddUpdate, onToggleVisibility }: {
     incident: Incident;
@@ -247,6 +248,7 @@ function SSLWarningRow({ warning, timezone }: { warning: SSLWarning; timezone?: 
 
 export function IncidentsView() {
     const { incidents, systemEvents, fetchSystemEvents, fetchIncidents, user, promoteOutage, addIncidentUpdate, setIncidentVisibility, getIncidentWithUpdates } = useMonitorStore();
+    const { canEdit } = useRole();
     const timezone = user?.timezone;
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
@@ -368,7 +370,7 @@ export function IncidentsView() {
                         <div className="space-y-3 animation-in fade-in slide-in-from-bottom-2 duration-500">
                             <h3 className="text-xs font-semibold text-red-500 uppercase tracking-widest pl-1">Critical Outages</h3>
                             <div className="rounded-xl border border-red-900/20 bg-red-950/5 overflow-hidden px-4">
-                                {downtimeEvents.map((e, i) => <SystemEventRow key={e.id + i} event={e} active={true} timezone={timezone} onPromote={handlePromoteOutage} />)}
+                                {downtimeEvents.map((e, i) => <SystemEventRow key={e.id + i} event={e} active={true} timezone={timezone} onPromote={canEdit ? handlePromoteOutage : undefined} />)}
                             </div>
                         </div>
                     )}
@@ -378,7 +380,7 @@ export function IncidentsView() {
                         <div className="space-y-3 animation-in fade-in slide-in-from-bottom-3 duration-500">
                             <h3 className="text-xs font-semibold text-yellow-500 uppercase tracking-widest pl-1">Performance Issues</h3>
                             <div className="rounded-xl border border-yellow-900/20 bg-yellow-950/5 overflow-hidden px-4">
-                                {degradedEvents.map((e, i) => <SystemEventRow key={e.id + i} event={e} active={true} timezone={timezone} onPromote={handlePromoteOutage} />)}
+                                {degradedEvents.map((e, i) => <SystemEventRow key={e.id + i} event={e} active={true} timezone={timezone} onPromote={canEdit ? handlePromoteOutage : undefined} />)}
                             </div>
                         </div>
                     )}
@@ -405,8 +407,8 @@ export function IncidentsView() {
                                             key={i.id}
                                             incident={incWithUpdates}
                                             timezone={timezone}
-                                            onAddUpdate={handleAddUpdate(i.id)}
-                                            onToggleVisibility={handleToggleVisibility(i.id, incWithUpdates.public || false)}
+                                            onAddUpdate={canEdit ? handleAddUpdate(i.id) : undefined}
+                                            onToggleVisibility={canEdit ? handleToggleVisibility(i.id, incWithUpdates.public || false) : undefined}
                                         />
                                     );
                                 })}

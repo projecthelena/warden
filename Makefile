@@ -1,6 +1,6 @@
 .PHONY: backend frontend build docker test test-frontend test-all clean dev-backend dev-frontend dev-bundle lint lint-frontend lint-backend security govuln vuln secrets audit hooks check docs e2e-fresh stop
 
-BACKEND_ENV ?= LISTEN_ADDR=:9096
+BACKEND_ENV ?= LISTEN_ADDR=:9096 COOKIE_SECURE=false
 BIN_DIR ?= $(PWD)/bin
 BINARY ?= $(BIN_DIR)/warden
 

@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -37,6 +38,7 @@ func TestGetChannels(t *testing.T) {
 	}
 
 	req, _ := http.NewRequest("GET", "/api/notifications/channels", nil)
+	req = req.WithContext(context.WithValue(req.Context(), contextKeyUserRole, RoleAdmin))
 	rr := httptest.NewRecorder()
 
 	handler.GetChannels(rr, req)
@@ -55,6 +57,13 @@ func TestGetChannels(t *testing.T) {
 	}
 }
 
+func testAdminRoleMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), contextKeyUserRole, RoleAdmin)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
 func TestCreateChannel(t *testing.T) {
 	store := newTestStore(t)
 	handler := NewNotificationChannelsHandler(store)
@@ -68,6 +77,7 @@ func TestCreateChannel(t *testing.T) {
 	body, _ := json.Marshal(payload)
 
 	req, _ := http.NewRequest("POST", "/api/notifications/channels", bytes.NewBuffer(body))
+	req = req.WithContext(context.WithValue(req.Context(), contextKeyUserRole, RoleAdmin))
 	rr := httptest.NewRecorder()
 
 	handler.CreateChannel(rr, req)
@@ -94,6 +104,7 @@ func TestDeleteChannel(t *testing.T) {
 
 	// Setup CHI router to handle params
 	r := chi.NewRouter()
+	r.Use(testAdminRoleMiddleware)
 	r.Delete("/notifications/channels/{id}", handler.DeleteChannel)
 
 	req, _ := http.NewRequest("DELETE", "/notifications/channels/nc1", nil)
@@ -124,6 +135,7 @@ func TestUpdateChannel(t *testing.T) {
 	}
 
 	r := chi.NewRouter()
+	r.Use(testAdminRoleMiddleware)
 	r.Put("/notifications/channels/{id}", handler.UpdateChannel)
 
 	payload := map[string]interface{}{
@@ -166,6 +178,7 @@ func TestUpdateChannel_ValidationErrors(t *testing.T) {
 	}
 
 	r := chi.NewRouter()
+	r.Use(testAdminRoleMiddleware)
 	r.Put("/notifications/channels/{id}", handler.UpdateChannel)
 
 	tests := []struct {
@@ -222,6 +235,7 @@ func TestCreateChannel_Webhook(t *testing.T) {
 	body, _ := json.Marshal(payload)
 
 	req, _ := http.NewRequest("POST", "/api/notifications/channels", bytes.NewBuffer(body))
+	req = req.WithContext(context.WithValue(req.Context(), contextKeyUserRole, RoleAdmin))
 	rr := httptest.NewRecorder()
 
 	handler.CreateChannel(rr, req)
@@ -270,6 +284,7 @@ func TestCreateChannel_WebhookValidation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			body, _ := json.Marshal(tc.payload)
 			req, _ := http.NewRequest("POST", "/api/notifications/channels", bytes.NewBuffer(body))
+			req = req.WithContext(context.WithValue(req.Context(), contextKeyUserRole, RoleAdmin))
 			rr := httptest.NewRecorder()
 			handler.CreateChannel(rr, req)
 
@@ -299,6 +314,7 @@ func TestTestChannel_Success(t *testing.T) {
 	body, _ := json.Marshal(payload)
 
 	req, _ := http.NewRequest("POST", "/api/notifications/channels/test", bytes.NewBuffer(body))
+	req = req.WithContext(context.WithValue(req.Context(), contextKeyUserRole, RoleAdmin))
 	rr := httptest.NewRecorder()
 
 	handler.TestChannel(rr, req)
@@ -328,6 +344,7 @@ func TestTestChannel_ServerError(t *testing.T) {
 	body, _ := json.Marshal(payload)
 
 	req, _ := http.NewRequest("POST", "/api/notifications/channels/test", bytes.NewBuffer(body))
+	req = req.WithContext(context.WithValue(req.Context(), contextKeyUserRole, RoleAdmin))
 	rr := httptest.NewRecorder()
 
 	handler.TestChannel(rr, req)
@@ -347,6 +364,7 @@ func TestTestChannel_MissingType(t *testing.T) {
 	body, _ := json.Marshal(payload)
 
 	req, _ := http.NewRequest("POST", "/api/notifications/channels/test", bytes.NewBuffer(body))
+	req = req.WithContext(context.WithValue(req.Context(), contextKeyUserRole, RoleAdmin))
 	rr := httptest.NewRecorder()
 
 	handler.TestChannel(rr, req)
@@ -367,6 +385,7 @@ func TestTestChannel_InvalidURL(t *testing.T) {
 	body, _ := json.Marshal(payload)
 
 	req, _ := http.NewRequest("POST", "/api/notifications/channels/test", bytes.NewBuffer(body))
+	req = req.WithContext(context.WithValue(req.Context(), contextKeyUserRole, RoleAdmin))
 	rr := httptest.NewRecorder()
 
 	handler.TestChannel(rr, req)

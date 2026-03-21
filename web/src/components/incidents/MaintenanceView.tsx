@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { useMonitorStore, Incident } from "@/lib/store";
+import { useRole } from "@/hooks/useRole";
 import { Calendar, CheckCircle2, MoreVertical, Pencil, Trash2 } from "lucide-react";
 import {
     DropdownMenu,
@@ -53,7 +54,7 @@ import {
     CardTitle,
 } from "@/components/ui/card";
 
-function MaintenanceCard({ incident, groups, onEdit, onDelete, onEndNow }: { incident: Incident; groups: Group[], onEdit: (i: Incident) => void, onDelete: (id: string) => void, onEndNow: (i: Incident) => void }) {
+function MaintenanceCard({ incident, groups, onEdit, onDelete, onEndNow }: { incident: Incident; groups: Group[], onEdit?: (i: Incident) => void, onDelete?: (id: string) => void, onEndNow?: (i: Incident) => void }) {
     const affectedGroupNames = incident.affectedGroups?.map(id => {
         const g = groups.find(group => group.id === id);
         return g ? g.name : id;
@@ -95,7 +96,7 @@ function MaintenanceCard({ incident, groups, onEdit, onDelete, onEndNow }: { inc
                         )}
                     </div>
 
-                    {!isHistory && (
+                    {!isHistory && onEdit && (
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" className="h-8 w-8 p-0">
@@ -105,18 +106,18 @@ function MaintenanceCard({ incident, groups, onEdit, onDelete, onEndNow }: { inc
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                                 <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                <DropdownMenuItem onClick={() => onEdit(incident)}>
+                                <DropdownMenuItem onClick={() => onEdit?.(incident)}>
                                     <Pencil className="mr-2 h-4 w-4" />
                                     Edit Details
                                 </DropdownMenuItem>
                                 {isOngoing && (
-                                    <DropdownMenuItem onClick={() => onEndNow(incident)}>
+                                    <DropdownMenuItem onClick={() => onEndNow?.(incident)}>
                                         <CheckCircle2 className="mr-2 h-4 w-4" />
                                         End Now
                                     </DropdownMenuItem>
                                 )}
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => onDelete(incident.id)}>
+                                <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => onDelete?.(incident.id)}>
                                     <Trash2 className="mr-2 h-4 w-4" />
                                     Delete
                                 </DropdownMenuItem>
@@ -152,6 +153,7 @@ function MaintenanceCard({ incident, groups, onEdit, onDelete, onEndNow }: { inc
 
 export function MaintenanceView() {
     const { incidents, groups, fetchIncidents } = useMonitorStore();
+    const { canEdit } = useRole();
     const { toast } = useToast();
     const [editingIncident, setEditingIncident] = useState<Incident | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -293,14 +295,14 @@ export function MaintenanceView() {
                             <p className="text-xs opacity-70 mt-1">All systems operating normally.</p>
                         </div>
                     )}
-                    {scheduled.map(i => <MaintenanceCard key={i.id} incident={i} groups={groups} onEdit={handleEdit} onDelete={handleDelete} onEndNow={handleEndNow} />)}
+                    {scheduled.map(i => <MaintenanceCard key={i.id} incident={i} groups={groups} onEdit={canEdit ? handleEdit : undefined} onDelete={canEdit ? handleDelete : undefined} onEndNow={canEdit ? handleEndNow : undefined} />)}
                 </TabsContent>
 
                 <TabsContent value="history" className="mt-8 space-y-4 focus-visible:outline-none focus-visible:ring-0">
                     {history.length === 0 && (
                         <div className="text-center text-muted-foreground/50 py-16 text-sm">No maintenance history.</div>
                     )}
-                    {history.map(i => <MaintenanceCard key={i.id} incident={i} groups={groups} onEdit={handleEdit} onDelete={handleDelete} onEndNow={handleEndNow} />)}
+                    {history.map(i => <MaintenanceCard key={i.id} incident={i} groups={groups} onEdit={canEdit ? handleEdit : undefined} onDelete={canEdit ? handleDelete : undefined} onEndNow={canEdit ? handleEndNow : undefined} />)}
                 </TabsContent>
             </Tabs>
 

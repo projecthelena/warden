@@ -9,8 +9,11 @@ import { SystemTab } from "./SystemTab";
 import { SSOSettings } from "./SSOSettings";
 import { APIKeysView } from "./APIKeysView";
 
+import { UsersView } from "./UsersView";
+import { CreateUserSheet } from "@/components/CreateUserSheet";
 import { NotificationsView } from "@/components/notifications/NotificationsView";
 import { SelectTimezone } from "@/components/ui/select-timezone";
+import { useRole } from "@/hooks/useRole";
 
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
@@ -507,17 +510,24 @@ function NotificationIntelligence() {
     );
 }
 
-const VALID_TABS = ["general", "notifications", "security", "system"] as const;
-type SettingsTab = typeof VALID_TABS[number];
+const _VALID_TABS = ["general", "notifications", "security", "system", "users"] as const;
+type SettingsTab = typeof _VALID_TABS[number];
 
 export function SettingsView() {
     const { user, updateUser } = useMonitorStore();
     const { toast } = useToast();
+    const { isAdmin, canEdit } = useRole();
     const [isLoading, setIsLoading] = useState(false);
     const [searchParams, setSearchParams] = useSearchParams();
 
     const tabParam = searchParams.get("tab") as SettingsTab | null;
-    const activeTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : "general";
+    // Enforce role-based tab access: viewers can only see "general"
+    const allowedTabs: SettingsTab[] = isAdmin
+        ? ["general", "notifications", "security", "system", "users"]
+        : canEdit
+            ? ["general", "notifications"]
+            : ["general"];
+    const activeTab = tabParam && allowedTabs.includes(tabParam) ? tabParam : "general";
 
     const handleTabChange = (value: string) => {
         if (value === "general") {
@@ -574,9 +584,10 @@ export function SettingsView() {
                 <div className="flex items-center justify-between">
                     <TabsList>
                         <TabsTrigger value="general">General</TabsTrigger>
-                        <TabsTrigger value="notifications">Notifications</TabsTrigger>
-                        <TabsTrigger value="security">Security</TabsTrigger>
-                        <TabsTrigger value="system">System</TabsTrigger>
+                        {canEdit && <TabsTrigger value="notifications">Notifications</TabsTrigger>}
+                        {isAdmin && <TabsTrigger value="security">Security</TabsTrigger>}
+                        {isAdmin && <TabsTrigger value="system">System</TabsTrigger>}
+                        {isAdmin && <TabsTrigger value="users">Users</TabsTrigger>}
                     </TabsList>
                 </div>
 
@@ -630,34 +641,53 @@ export function SettingsView() {
 
                     <AppearanceSettings />
 
-                    <GeneralSettings />
+                    {isAdmin && <GeneralSettings />}
                 </TabsContent>
 
-                <TabsContent value="notifications" className="space-y-6 mt-6">
-                    <NotificationsView />
-                    <NotificationIntelligence />
-                </TabsContent>
+                {canEdit && (
+                    <TabsContent value="notifications" className="space-y-6 mt-6">
+                        <NotificationsView />
+                        <NotificationIntelligence />
+                    </TabsContent>
+                )}
 
-                <TabsContent value="security" className="space-y-6 mt-6">
-                    <APIKeysView />
-                    <SSOSettings />
-                </TabsContent>
+                {isAdmin && (
+                    <TabsContent value="security" className="space-y-6 mt-6">
+                        <APIKeysView />
+                        <SSOSettings />
+                    </TabsContent>
+                )}
 
-                <TabsContent value="system" className="space-y-6 mt-6">
-                    <SystemTab />
+                {isAdmin && (
+                    <TabsContent value="system" className="space-y-6 mt-6">
+                        <SystemTab />
 
-                    <Card className="border-destructive/50">
-                        <CardHeader>
-                            <CardTitle className="text-destructive">Danger Zone</CardTitle>
-                            <CardDescription>
-                                Destructive actions that cannot be undone.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <ResetDatabaseDialog />
-                        </CardContent>
-                    </Card>
-                </TabsContent>
+                        <Card className="border-destructive/50">
+                            <CardHeader>
+                                <CardTitle className="text-destructive">Danger Zone</CardTitle>
+                                <CardDescription>
+                                    Destructive actions that cannot be undone.
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <ResetDatabaseDialog />
+                            </CardContent>
+                        </Card>
+                    </TabsContent>
+                )}
+
+                {isAdmin && (
+                    <TabsContent value="users" className="space-y-6 mt-6">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h4 className="text-sm font-medium">User Management</h4>
+                                <p className="text-sm text-muted-foreground">Create and manage users and their roles.</p>
+                            </div>
+                            <CreateUserSheet />
+                        </div>
+                        <UsersView />
+                    </TabsContent>
+                )}
             </Tabs>
         </div>
     )
