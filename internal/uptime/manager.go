@@ -1141,24 +1141,24 @@ func (m *Manager) digestWorker() {
 			currentTime := now.Format("15:04")
 			currentDate := now.Format("2006-01-02")
 
-			// Bug 3 fix: use >= instead of == so that if the ticker fires a minute
-			// late (GC pause, system load) the digest is still sent rather than skipped.
-			// The lastSentDate guard ensures at most one send per calendar day.
+			// >= rather than == ensures a tick that lands slightly past the target
+			// minute still triggers the digest rather than waiting a full day.
+			// lastSentDate guarantees exactly one send per calendar day.
 			if currentTime >= digestTime && lastSentDate != currentDate {
-				// Bug 1b fix: fetch events BEFORE updating lastSentDate so that a
-				// transient DB error causes a retry on the next tick rather than
-				// permanently skipping today.
+				// Fetch events before recording the send so that a transient store
+				// error causes a retry on the next tick instead of silently skipping
+				// the day.
 				events, err := m.store.GetUnsentDigestEvents()
 				if err != nil {
 					log.Printf("Digest: failed to get events: %v", err)
-					continue // don't mark the day as sent; retry next tick
+					continue
 				}
 
-				// Bug 1a fix: always send the digest, even when there are no events.
-				// SendDigest handles the empty-event case with an "all clear" message.
+				// Always call SendDigest: it delivers an all-clear message when the
+				// event list is empty so operators receive a daily confirmation even
+				// on incident-free days.
 				m.notifier.SendDigest(events)
 
-				// Mark events as sent in the DB so they are not re-dispatched.
 				if len(events) > 0 {
 					ids := make([]int64, len(events))
 					for i, e := range events {
@@ -1169,7 +1169,6 @@ func (m *Manager) digestWorker() {
 					}
 				}
 
-				// Update in-memory guard only after a successful dispatch attempt.
 				lastSentDate = currentDate
 				log.Printf("Digest: sent daily summary with %d events for %s", len(events), currentDate)
 			}
@@ -1191,8 +1190,6 @@ func (m *Manager) retentionWorker() {
 		if err := m.store.PruneMonitorChecks(days); err != nil {
 			log.Printf("Retention error: %v", err)
 		}
-		// Bug 5 fix: prune sent digest events using the same retention window so
-		// the notification_digest_queue table doesn't grow unbounded.
 		if err := m.store.PruneDigestEvents(days); err != nil {
 			log.Printf("Retention: failed to prune digest events: %v", err)
 		}

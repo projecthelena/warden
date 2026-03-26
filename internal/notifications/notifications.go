@@ -328,7 +328,6 @@ func (s *Service) SendDigest(events []db.DigestEvent) {
 		return
 	}
 
-	// Group events by monitor (only when there are events to summarise).
 	type monitorData struct {
 		name       string
 		url        string
@@ -508,8 +507,7 @@ func (n *WebhookNotifier) sendDigest(summary digestSummary, events []db.DigestEv
 		return fmt.Errorf("webhookUrl missing or invalid")
 	}
 
-	// Initialise as empty slice (not nil) so the JSON field is always an array,
-	// never null — even when there are no events (all-clear digest).
+	// Allocate so the field serialises as a JSON array rather than null.
 	monitorSummaries := make([]map[string]interface{}, 0, len(summary.Monitors))
 	for _, m := range summary.Monitors {
 		eventCounts := make(map[string]int)
@@ -523,7 +521,6 @@ func (n *WebhookNotifier) sendDigest(summary digestSummary, events []db.DigestEv
 		})
 	}
 
-	// Build plain-text summary line.
 	var summaryText string
 	if summary.TotalEvents == 0 {
 		summaryText = "All systems operational — no incidents today."
