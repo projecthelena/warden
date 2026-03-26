@@ -319,18 +319,16 @@ func eventLabel(eventType string) string {
 }
 
 // SendDigest dispatches a daily digest summary to all enabled notification channels.
+// When events is empty an "all systems operational" message is sent so that operators
+// receive a daily confirmation even on incident-free days.
 func (s *Service) SendDigest(events []db.DigestEvent) {
-	if len(events) == 0 {
-		return
-	}
-
 	channels, err := s.store.GetNotificationChannels()
 	if err != nil {
 		log.Printf("Digest: failed to fetch channels: %v", err)
 		return
 	}
 
-	// Group events by monitor
+	// Group events by monitor (only when there are events to summarise).
 	type monitorData struct {
 		name       string
 		url        string
@@ -353,7 +351,7 @@ func (s *Service) SendDigest(events []db.DigestEvent) {
 		}
 	}
 
-	// Build digestMonitor list
+	// Build digestMonitor list.
 	var monitors []digestMonitor
 	for _, mid := range monitorOrder {
 		md := byMonitor[mid]
@@ -383,7 +381,7 @@ func (s *Service) SendDigest(events []db.DigestEvent) {
 		})
 	}
 
-	// Sort monitors by severity (most critical first)
+	// Sort monitors by severity (most critical first).
 	sort.SliceStable(monitors, func(i, j int) bool {
 		return monitors[i].Severity < monitors[j].Severity
 	})
@@ -422,8 +420,17 @@ func (n *SlackNotifier) sendDigest(summary digestSummary) error {
 	}
 
 	dateStr := summary.Date.Format("January 2, 2006")
-	subtitle := fmt.Sprintf(":clock3: %s  ·  %d events across %d monitors",
-		dateStr, summary.TotalEvents, summary.MonitorCount)
+
+	var subtitle, fallbackText string
+	if summary.TotalEvents == 0 {
+		subtitle = fmt.Sprintf(":white_check_mark: %s  ·  All systems operational", dateStr)
+		fallbackText = ":bar_chart: Daily Monitoring Summary — All systems operational"
+	} else {
+		subtitle = fmt.Sprintf(":clock3: %s  ·  %d events across %d monitors",
+			dateStr, summary.TotalEvents, summary.MonitorCount)
+		fallbackText = fmt.Sprintf(":bar_chart: Daily Monitoring Summary — %d events across %d monitors",
+			summary.TotalEvents, summary.MonitorCount)
+	}
 
 	blocks := []map[string]interface{}{
 		{
@@ -448,37 +455,44 @@ func (n *SlackNotifier) sendDigest(summary digestSummary) error {
 		},
 	}
 
-	for _, m := range summary.Monitors {
-		var eventParts []string
-		for _, ec := range m.Events {
-			if ec.Type == "ssl_expiring" && m.SSLMessage != "" {
-				eventParts = append(eventParts, fmt.Sprintf("%s %s",
-					eventEmoji(ec.Type), m.SSLMessage))
-			} else {
-				eventParts = append(eventParts, fmt.Sprintf("%s %s `%dx`",
-					eventEmoji(ec.Type), eventLabel(ec.Type), ec.Count))
-			}
-		}
-
-		monitorEmoji := ":white_check_mark:"
-		if len(m.Events) > 0 {
-			monitorEmoji = eventEmoji(m.Events[0].Type)
-		}
-
-		text := fmt.Sprintf("%s  *%s*\n%s",
-			monitorEmoji, m.Name, strings.Join(eventParts, "  ·  "))
-
+	if summary.TotalEvents == 0 {
 		blocks = append(blocks, map[string]interface{}{
 			"type": "section",
 			"text": map[string]interface{}{
 				"type": "mrkdwn",
-				"text": text,
+				"text": ":white_check_mark:  All systems operational — no incidents today.",
 			},
 		})
-	}
+	} else {
+		for _, m := range summary.Monitors {
+			var eventParts []string
+			for _, ec := range m.Events {
+				if ec.Type == "ssl_expiring" && m.SSLMessage != "" {
+					eventParts = append(eventParts, fmt.Sprintf("%s %s",
+						eventEmoji(ec.Type), m.SSLMessage))
+				} else {
+					eventParts = append(eventParts, fmt.Sprintf("%s %s `%dx`",
+						eventEmoji(ec.Type), eventLabel(ec.Type), ec.Count))
+				}
+			}
 
-	fallbackText := fmt.Sprintf(":bar_chart: Daily Monitoring Summary — %d events across %d monitors",
-		summary.TotalEvents, summary.MonitorCount)
+			monitorEmoji := ":white_check_mark:"
+			if len(m.Events) > 0 {
+				monitorEmoji = eventEmoji(m.Events[0].Type)
+			}
+
+			text := fmt.Sprintf("%s  *%s*\n%s",
+				monitorEmoji, m.Name, strings.Join(eventParts, "  ·  "))
+
+			blocks = append(blocks, map[string]interface{}{
+				"type": "section",
+				"text": map[string]interface{}{
+					"type": "mrkdwn",
+					"text": text,
+				},
+			})
+		}
+	}
 
 	payload := map[string]interface{}{
 		"text":   fallbackText,
@@ -494,7 +508,9 @@ func (n *WebhookNotifier) sendDigest(summary digestSummary, events []db.DigestEv
 		return fmt.Errorf("webhookUrl missing or invalid")
 	}
 
-	var monitorSummaries []map[string]interface{}
+	// Initialise as empty slice (not nil) so the JSON field is always an array,
+	// never null — even when there are no events (all-clear digest).
+	monitorSummaries := make([]map[string]interface{}, 0, len(summary.Monitors))
 	for _, m := range summary.Monitors {
 		eventCounts := make(map[string]int)
 		for _, ec := range m.Events {
@@ -507,24 +523,37 @@ func (n *WebhookNotifier) sendDigest(summary digestSummary, events []db.DigestEv
 		})
 	}
 
-	// Build plain-text summary for backwards compatibility
-	var lines []string
-	for _, m := range summary.Monitors {
-		var parts []string
-		for _, ec := range m.Events {
-			if ec.Type == "ssl_expiring" && m.SSLMessage != "" {
-				parts = append(parts, m.SSLMessage)
-			} else {
-				parts = append(parts, fmt.Sprintf("%s (%dx)", ec.Type, ec.Count))
+	// Build plain-text summary line.
+	var summaryText string
+	if summary.TotalEvents == 0 {
+		summaryText = "All systems operational — no incidents today."
+	} else {
+		var lines []string
+		for _, m := range summary.Monitors {
+			var parts []string
+			for _, ec := range m.Events {
+				if ec.Type == "ssl_expiring" && m.SSLMessage != "" {
+					parts = append(parts, m.SSLMessage)
+				} else {
+					parts = append(parts, fmt.Sprintf("%s (%dx)", ec.Type, ec.Count))
+				}
 			}
+			lines = append(lines, fmt.Sprintf("- %s: %s", m.Name, strings.Join(parts, ", ")))
 		}
-		lines = append(lines, fmt.Sprintf("- %s: %s", m.Name, strings.Join(parts, ", ")))
+		summaryText = strings.Join(lines, "\n")
+	}
+
+	var title string
+	if summary.TotalEvents == 0 {
+		title = "Daily Monitoring Summary (all systems operational)"
+	} else {
+		title = fmt.Sprintf("Daily Monitoring Summary (%d events)", summary.TotalEvents)
 	}
 
 	payload := map[string]interface{}{
 		"type":         "digest",
-		"title":        fmt.Sprintf("Daily Monitoring Summary (%d events)", summary.TotalEvents),
-		"summary":      strings.Join(lines, "\n"),
+		"title":        title,
+		"summary":      summaryText,
 		"eventCount":   summary.TotalEvents,
 		"monitorCount": summary.MonitorCount,
 		"monitors":     monitorSummaries,
