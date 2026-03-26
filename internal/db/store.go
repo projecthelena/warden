@@ -198,20 +198,21 @@ func (s *Store) seed() error {
 // allowedResetTables is a whitelist of table names that can be dropped during reset.
 // SECURITY: This prevents potential SQL injection if table names were ever derived from user input.
 var allowedResetTables = map[string]bool{
-	"user_status_pages":     true,
-	"users":                 true,
-	"sessions":              true,
-	"groups":                true,
-	"monitors":              true,
-	"monitor_checks":        true,
-	"monitor_events":        true,
-	"status_pages":          true,
-	"api_keys":              true,
-	"settings":              true,
-	"monitor_outages":       true,
-	"notification_channels": true,
-	"incidents":             true,
-	"goose_db_version":      true,
+	"user_status_pages":          true,
+	"users":                      true,
+	"sessions":                   true,
+	"groups":                     true,
+	"monitors":                   true,
+	"monitor_checks":             true,
+	"monitor_events":             true,
+	"status_pages":               true,
+	"api_keys":                   true,
+	"settings":                   true,
+	"monitor_outages":            true,
+	"notification_channels":      true,
+	"notification_digest_queue":  true,
+	"incidents":                  true,
+	"goose_db_version":           true,
 }
 
 // isValidTableName checks if a table name is in the allowed whitelist.
@@ -232,7 +233,7 @@ func (s *Store) Reset() error {
 		"user_status_pages",
 		"users", "sessions", "groups", "monitors", "monitor_checks",
 		"monitor_events", "status_pages", "api_keys", "settings", "monitor_outages",
-		"notification_channels", "incidents",
+		"notification_channels", "notification_digest_queue", "incidents",
 		"goose_db_version", // Goose migration tracking table
 	}
 

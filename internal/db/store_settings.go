@@ -1,7 +1,9 @@
 package db
 
 import (
+	"fmt"
 	"log"
+	"strings"
 	"time"
 )
 
@@ -179,15 +181,10 @@ func (s *Store) InsertDigestEvent(monitorID, monitorName, monitorURL, eventType,
 	return err
 }
 
-// GetAndClearDigestEvents retrieves all queued digest events and deletes them atomically.
-func (s *Store) GetAndClearDigestEvents() ([]DigestEvent, error) {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	rows, err := tx.Query("SELECT id, monitor_id, monitor_name, monitor_url, event_type, message, event_time FROM notification_digest_queue ORDER BY event_time ASC")
+// GetUnsentDigestEvents retrieves all queued digest events that have not yet been sent.
+// Events are NOT deleted; call MarkDigestEventsSent after a successful send.
+func (s *Store) GetUnsentDigestEvents() ([]DigestEvent, error) {
+	rows, err := s.db.Query(s.rebind("SELECT id, monitor_id, monitor_name, monitor_url, event_type, message, event_time FROM notification_digest_queue WHERE sent = ? ORDER BY event_time ASC"), false)
 	if err != nil {
 		return nil, err
 	}
@@ -201,18 +198,59 @@ func (s *Store) GetAndClearDigestEvents() ([]DigestEvent, error) {
 		}
 		events = append(events, e)
 	}
-
-	if len(events) > 0 {
-		if _, err = tx.Exec("DELETE FROM notification_digest_queue"); err != nil {
-			return nil, err
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
+	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-
 	return events, nil
+}
+
+// MarkDigestEventsSent marks the given digest event IDs as sent so they are not
+// re-dispatched on the next digest run. Old sent events are cleaned up by PruneDigestEvents.
+func (s *Store) MarkDigestEventsSent(ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+
+	var query string
+	if s.IsPostgres() {
+		placeholders := make([]string, len(ids))
+		for i := range ids {
+			placeholders[i] = fmt.Sprintf("$%d", i+1)
+		}
+		query = fmt.Sprintf("UPDATE notification_digest_queue SET sent = TRUE, sent_at = NOW() WHERE id IN (%s)",
+			strings.Join(placeholders, ", "))
+	} else {
+		placeholders := make([]string, len(ids))
+		for i := range ids {
+			placeholders[i] = "?"
+		}
+		query = fmt.Sprintf("UPDATE notification_digest_queue SET sent = 1, sent_at = datetime('now') WHERE id IN (%s)",
+			strings.Join(placeholders, ", "))
+	}
+
+	_, err := s.db.Exec(query, args...)
+	return err
+}
+
+// PruneDigestEvents deletes sent digest events older than the given number of days.
+// This is called by the retention worker alongside PruneMonitorChecks.
+func (s *Store) PruneDigestEvents(days int) error {
+	if days < 1 || days > 3650 {
+		return fmt.Errorf("invalid retention days: must be between 1 and 3650")
+	}
+
+	var err error
+	if s.IsPostgres() {
+		_, err = s.db.Exec("DELETE FROM notification_digest_queue WHERE sent = TRUE AND sent_at < NOW() - MAKE_INTERVAL(days => $1)", days)
+	} else {
+		_, err = s.db.Exec("DELETE FROM notification_digest_queue WHERE sent = 1 AND sent_at < datetime('now', '-' || ? || ' days')", days)
+	}
+	return err
 }
 
 func (s *Store) GetDBSize() (int64, error) {

@@ -766,6 +766,8 @@ func (m *Manager) Sync() {
 	if user, err := m.store.GetUser(1); err == nil && user.Timezone != "" {
 		if loc, err := time.LoadLocation(user.Timezone); err == nil {
 			notifTZ = loc
+		} else {
+			log.Printf("Digest: invalid timezone %q for user 1, falling back to UTC: %v", user.Timezone, err)
 		}
 	}
 
@@ -1139,18 +1141,36 @@ func (m *Manager) digestWorker() {
 			currentTime := now.Format("15:04")
 			currentDate := now.Format("2006-01-02")
 
-			if currentTime == digestTime && lastSentDate != currentDate {
-				lastSentDate = currentDate
-				events, err := m.store.GetAndClearDigestEvents()
+			// >= rather than == ensures a tick that lands slightly past the target
+			// minute still triggers the digest rather than waiting a full day.
+			// lastSentDate guarantees exactly one send per calendar day.
+			if currentTime >= digestTime && lastSentDate != currentDate {
+				// Fetch events before recording the send so that a transient store
+				// error causes a retry on the next tick instead of silently skipping
+				// the day.
+				events, err := m.store.GetUnsentDigestEvents()
 				if err != nil {
 					log.Printf("Digest: failed to get events: %v", err)
 					continue
 				}
-				if len(events) == 0 {
-					continue
-				}
+
+				// Always call SendDigest: it delivers an all-clear message when the
+				// event list is empty so operators receive a daily confirmation even
+				// on incident-free days.
 				m.notifier.SendDigest(events)
-				log.Printf("Digest: sent summary with %d events", len(events))
+
+				if len(events) > 0 {
+					ids := make([]int64, len(events))
+					for i, e := range events {
+						ids[i] = e.ID
+					}
+					if err := m.store.MarkDigestEventsSent(ids); err != nil {
+						log.Printf("Digest: failed to mark events as sent: %v", err)
+					}
+				}
+
+				lastSentDate = currentDate
+				log.Printf("Digest: sent daily summary with %d events for %s", len(events), currentDate)
 			}
 		}
 	}
@@ -1169,6 +1189,9 @@ func (m *Manager) retentionWorker() {
 		}
 		if err := m.store.PruneMonitorChecks(days); err != nil {
 			log.Printf("Retention error: %v", err)
+		}
+		if err := m.store.PruneDigestEvents(days); err != nil {
+			log.Printf("Retention: failed to prune digest events: %v", err)
 		}
 	}
 
