@@ -891,3 +891,303 @@ func TestSendDigest_SSLMessageFromEvents(t *testing.T) {
 		t.Errorf("expected SSL message from event in digest, got: %s", text)
 	}
 }
+
+// --- All-clear (zero-event) digest tests ---
+
+// newTestChannel creates a notification channel backed by an httptest server.
+// The caller is responsible for closing srv.
+func newTestChannelAndServer(t *testing.T, store *db.Store, id, chType string) (*httptest.Server, *map[string]interface{}) {
+	t.Helper()
+	received := &map[string]interface{}{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, received)
+		w.WriteHeader(http.StatusOK)
+	}))
+	ch := db.NotificationChannel{
+		ID:        id,
+		Type:      chType,
+		Name:      "Test " + chType,
+		Config:    `{"webhookUrl":"` + srv.URL + `"}`,
+		Enabled:   true,
+		CreatedAt: time.Now(),
+	}
+	if err := store.CreateNotificationChannel(ch); err != nil {
+		t.Fatalf("Failed to create channel: %v", err)
+	}
+	return srv, received
+}
+
+func TestSendDigest_AllClear_Slack(t *testing.T) {
+	store := newTestStore(t)
+	svc := NewService(store)
+
+	srv, received := newTestChannelAndServer(t, store, "nc-slack-allclear", "slack")
+	defer srv.Close()
+
+	// Call SendDigest with no events — should still send an all-clear message.
+	svc.SendDigest(nil)
+
+	if *received == nil {
+		t.Fatal("expected Slack to receive a request, but got nothing")
+	}
+
+	// Must have fallback text field.
+	fallback, ok := (*received)["text"].(string)
+	if !ok || fallback == "" {
+		t.Error("expected non-empty fallback 'text' field")
+	}
+	if !strings.Contains(fallback, "All systems operational") {
+		t.Errorf("fallback text should mention all systems operational, got: %s", fallback)
+	}
+
+	// Must have blocks.
+	blocks, ok := (*received)["blocks"].([]interface{})
+	if !ok || len(blocks) == 0 {
+		t.Fatal("expected non-empty 'blocks' array in Slack payload")
+	}
+
+	// Expect: header + context + divider + all-clear section = 4 blocks.
+	if len(blocks) != 4 {
+		t.Errorf("expected 4 blocks for all-clear digest, got %d", len(blocks))
+	}
+
+	expectedTypes := []string{"header", "context", "divider", "section"}
+	for i, expectedType := range expectedTypes {
+		block, ok := blocks[i].(map[string]interface{})
+		if !ok {
+			t.Fatalf("block[%d] is not a map", i)
+		}
+		if block["type"] != expectedType {
+			t.Errorf("block[%d]: expected type %q, got %v", i, expectedType, block["type"])
+		}
+	}
+
+	// The context block should say "All systems operational".
+	ctx := blocks[1].(map[string]interface{})
+	elements := ctx["elements"].([]interface{})
+	ctxText := elements[0].(map[string]interface{})["text"].(string)
+	if !strings.Contains(ctxText, "All systems operational") {
+		t.Errorf("context block should mention all systems operational, got: %s", ctxText)
+	}
+
+	// The section block should have the all-clear body.
+	section := blocks[3].(map[string]interface{})
+	sectionText := section["text"].(map[string]interface{})["text"].(string)
+	if !strings.Contains(sectionText, "All systems operational") {
+		t.Errorf("section block should contain all-clear message, got: %s", sectionText)
+	}
+}
+
+func TestSendDigest_AllClear_Webhook(t *testing.T) {
+	store := newTestStore(t)
+	svc := NewService(store)
+
+	srv, received := newTestChannelAndServer(t, store, "nc-webhook-allclear", "webhook")
+	defer srv.Close()
+
+	svc.SendDigest(nil)
+
+	if *received == nil {
+		t.Fatal("expected webhook to receive a request, but got nothing")
+	}
+
+	// type field.
+	if (*received)["type"] != "digest" {
+		t.Errorf("expected type 'digest', got %v", (*received)["type"])
+	}
+
+	// title should mention all systems operational.
+	title, ok := (*received)["title"].(string)
+	if !ok {
+		t.Fatal("expected title string in payload")
+	}
+	if !strings.Contains(title, "all systems operational") {
+		t.Errorf("title should mention all systems operational, got: %s", title)
+	}
+
+	// summary text.
+	summary, ok := (*received)["summary"].(string)
+	if !ok {
+		t.Fatal("expected summary string in payload")
+	}
+	if !strings.Contains(summary, "All systems operational") {
+		t.Errorf("summary should be all-clear message, got: %s", summary)
+	}
+
+	// eventCount should be 0.
+	if count := (*received)["eventCount"].(float64); count != 0 {
+		t.Errorf("expected eventCount 0, got %v", count)
+	}
+
+	// monitorCount should be 0.
+	if count := (*received)["monitorCount"].(float64); count != 0 {
+		t.Errorf("expected monitorCount 0, got %v", count)
+	}
+
+	// monitors must be a JSON array (not null) even when empty.
+	monitors, ok := (*received)["monitors"].([]interface{})
+	if !ok {
+		t.Errorf("expected 'monitors' to be a JSON array, got %T (%v)", (*received)["monitors"], (*received)["monitors"])
+	}
+	if len(monitors) != 0 {
+		t.Errorf("expected empty monitors array, got %d entries", len(monitors))
+	}
+
+	// timestamp must be RFC3339.
+	ts, ok := (*received)["timestamp"].(string)
+	if !ok {
+		t.Fatal("expected timestamp string in payload")
+	}
+	if _, err := time.Parse(time.RFC3339, ts); err != nil {
+		t.Errorf("timestamp is not RFC3339: %s", ts)
+	}
+}
+
+func TestSendDigest_AllClear_EmptySliceEquivalentToNil(t *testing.T) {
+	// Both nil and empty-slice events should produce the same all-clear payload.
+	store := newTestStore(t)
+	svc := NewService(store)
+
+	var nilReceived, emptyReceived map[string]interface{}
+
+	srv1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &nilReceived)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv1.Close()
+
+	if err := store.CreateNotificationChannel(db.NotificationChannel{
+		ID: "nc-nil", Type: "slack", Name: "nil", Enabled: true,
+		Config: `{"webhookUrl":"` + srv1.URL + `"}`, CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	svc.SendDigest(nil)
+
+	// Swap to a fresh channel + server for the empty-slice call.
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &emptyReceived)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv2.Close()
+
+	// Disable first channel, add second.
+	_ = store.UpdateNotificationChannel("nc-nil", "nil", "slack", `{"webhookUrl":"`+srv1.URL+`"}`, false)
+	if err := store.CreateNotificationChannel(db.NotificationChannel{
+		ID: "nc-empty", Type: "slack", Name: "empty", Enabled: true,
+		Config: `{"webhookUrl":"` + srv2.URL + `"}`, CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	svc.SendDigest([]db.DigestEvent{})
+
+	// Both payloads should have the same fallback text.
+	nilText, _ := nilReceived["text"].(string)
+	emptyText, _ := emptyReceived["text"].(string)
+	if nilText != emptyText {
+		t.Errorf("nil and empty-slice digest produced different fallback text:\n  nil:   %s\n  empty: %s", nilText, emptyText)
+	}
+}
+
+func TestSendDigest_NoChannels_DoesNotPanic(t *testing.T) {
+	// With no channels configured, SendDigest should be a clean no-op.
+	store := newTestStore(t)
+	svc := NewService(store)
+
+	// Should not panic regardless of event count.
+	svc.SendDigest(nil)
+	svc.SendDigest([]db.DigestEvent{})
+	svc.SendDigest([]db.DigestEvent{
+		{MonitorID: "m1", MonitorName: "API", EventType: "down", EventTime: time.Now()},
+	})
+}
+
+func TestSendDigest_DisabledChannelNotCalled(t *testing.T) {
+	store := newTestStore(t)
+	svc := NewService(store)
+
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	// Create channel but mark it disabled.
+	if err := store.CreateNotificationChannel(db.NotificationChannel{
+		ID: "nc-disabled", Type: "slack", Name: "disabled", Enabled: false,
+		Config: `{"webhookUrl":"` + srv.URL + `"}`, CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+
+	svc.SendDigest(nil) // all-clear
+
+	if called {
+		t.Error("disabled channel should not receive any request")
+	}
+}
+
+func TestSlackDigest_AllClear_FallbackTextFormat(t *testing.T) {
+	// Directly test the Slack notifier's sendDigest with a zero-event summary.
+	var received map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &received)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	notifier := NewSlackNotifier(`{"webhookUrl":"` + srv.URL + `"}`)
+	summary := digestSummary{
+		TotalEvents:  0,
+		MonitorCount: 0,
+		Date:         time.Date(2026, 3, 25, 9, 0, 0, 0, time.UTC),
+	}
+
+	if err := notifier.sendDigest(summary); err != nil {
+		t.Fatalf("sendDigest failed: %v", err)
+	}
+
+	text := received["text"].(string)
+	if strings.Contains(text, "0 events") {
+		t.Errorf("all-clear fallback text should not say '0 events', got: %s", text)
+	}
+	if !strings.Contains(text, "All systems operational") {
+		t.Errorf("all-clear fallback text should mention all systems operational, got: %s", text)
+	}
+}
+
+func TestWebhookDigest_AllClear_MonitorsIsArray(t *testing.T) {
+	// Confirm monitors field is [] not null in zero-event webhook payload.
+	var received map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &received)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	notifier := NewWebhookNotifier(`{"webhookUrl":"` + srv.URL + `"}`)
+	summary := digestSummary{
+		TotalEvents:  0,
+		MonitorCount: 0,
+		Date:         time.Now(),
+	}
+
+	if err := notifier.sendDigest(summary, nil); err != nil {
+		t.Fatalf("sendDigest failed: %v", err)
+	}
+
+	// monitors must parse as an array ([] not null) in the JSON.
+	monitors, ok := received["monitors"].([]interface{})
+	if !ok {
+		t.Fatalf("expected monitors to be JSON array, got %T: %v", received["monitors"], received["monitors"])
+	}
+	if len(monitors) != 0 {
+		t.Errorf("expected empty monitors array, got %d entries", len(monitors))
+	}
+}
