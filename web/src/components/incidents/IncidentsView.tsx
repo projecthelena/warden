@@ -3,15 +3,18 @@ import { useEffect, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useMonitorStore, Incident, SystemIncident, SSLWarning } from "@/lib/store";
-import { Calendar, CheckCircle2, ArrowDownCircle, AlertTriangle, Clock, ShieldAlert, Megaphone, Eye, EyeOff, ChevronDown, ChevronUp } from "lucide-react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useMonitorStore, Incident, SystemIncident } from "@/lib/store";
+import { useFilteredSystemEvents } from "@/hooks/useSystemEvents";
+import { IncidentCard as OutageCard } from "@/components/IncidentCard";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Calendar, CheckCircle2, AlertTriangle, Megaphone, Eye, EyeOff, ChevronDown, ChevronUp } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import { cn, formatDate } from "@/lib/utils";
 import { PromoteOutageDialog } from "./PromoteOutageDialog";
 import { IncidentTimeline } from "./IncidentTimeline";
 import { useRole } from "@/hooks/useRole";
 
-function IncidentCard({ incident, timezone, onAddUpdate, onToggleVisibility }: {
+function ManualIncidentCard({ incident, timezone, onAddUpdate, onToggleVisibility }: {
     incident: Incident;
     timezone?: string;
     onAddUpdate?: (status: string, message: string) => Promise<void>;
@@ -99,159 +102,11 @@ function IncidentCard({ incident, timezone, onAddUpdate, onToggleVisibility }: {
     )
 }
 
-function SystemEventRow({ event, active, timezone, onPromote }: { event: SystemIncident; active: boolean; timezone?: string; onPromote?: (event: SystemIncident) => void }) {
-    const navigate = useNavigate();
-    const isDown = event.type === 'down';
-
-    // Minimalist Icon & Color Logic
-    const colorClass = isDown ? "text-red-500" : "text-yellow-500";
-    const bgBadge = isDown ? "bg-red-500/10 text-red-500 hover:bg-red-500/20" : "bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20";
-
-    // Duration Calculation (Client-side for active to be reactive, Server provided for history)
-    let durationStr = event.duration || "Just now";
-
-    // Override for active to be live (optional, but good UX)
-    if (active && event.startedAt) {
-        const start = new Date(event.startedAt).getTime();
-        const now = new Date().getTime();
-        const diffMins = Math.floor((now - start) / 60000);
-        durationStr = diffMins < 1 ? "Just now" : `${diffMins}m ongoing`;
-        if (diffMins >= 60) {
-            const h = Math.floor(diffMins / 60);
-            const m = diffMins % 60;
-            durationStr = `${h}h ${m}m ongoing`;
-        }
-    }
-
-    const handleRowClick = () => {
-        navigate(`/groups/${event.groupId}`);
-    };
-
-    const handlePromoteClick = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        onPromote?.(event);
-    };
-
-    return (
-        <div
-            onClick={handleRowClick}
-            className="group flex items-center justify-between py-3 px-4 -mx-4 hover:bg-muted/30 rounded-lg transition-colors cursor-pointer"
-        >
-            <div className="flex items-center gap-4">
-                {/* Status Indicator Icon */}
-                <div className={cn("flex items-center justify-center w-8 h-8 rounded-full bg-background border border-border/50", active ? "shadow-sm" : "opacity-70")}>
-                    {isDown ? (
-                        <ArrowDownCircle className={cn("w-4 h-4", colorClass)} />
-                    ) : (
-                        <AlertTriangle className={cn("w-4 h-4", colorClass)} />
-                    )}
-                </div>
-
-                <div className="space-y-0.5">
-                    <div className="flex items-center gap-2 text-sm">
-                        {event.groupName && (
-                            <>
-                                <span className="text-muted-foreground hover:text-foreground transition-colors">
-                                    {event.groupName}
-                                </span>
-                                <span className="text-muted-foreground/30">/</span>
-                            </>
-                        )}
-                        <span className={cn("font-medium text-foreground", !active && "text-muted-foreground line-through decoration-border")}>
-                            {event.monitorName}
-                        </span>
-                        {active && (
-                            <Badge variant="secondary" className={cn("ml-2 rounded-sm px-1.5 py-0 text-[10px] font-medium uppercase tracking-wider border-0", bgBadge)}>
-                                {event.type === 'down' ? 'UNAVAILABLE' : event.type}
-                            </Badge>
-                        )}
-                    </div>
-                    <div className="text-xs text-muted-foreground/70 font-mono">
-                        {event.message}
-                    </div>
-                </div>
-            </div>
-
-            <div className="flex items-center gap-4 text-xs text-muted-foreground tabular-nums">
-                {active && onPromote && (
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handlePromoteClick}
-                        className="h-7 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                        <Megaphone className="w-3 h-3 mr-1.5" />
-                        Create Incident
-                    </Button>
-                )}
-                <span className="flex items-center gap-1.5 opacity-50 group-hover:opacity-100 transition-opacity">
-                    <Clock className="w-3 h-3" />
-                    {active ?
-                        formatDate(event.startedAt, timezone).split(',')[1]?.trim() || formatDate(event.startedAt, timezone)
-                        : formatDate(event.startedAt, timezone)
-                    }
-                </span>
-                <span className={cn("font-medium", active ? colorClass : "text-emerald-500")}>
-                    {durationStr}
-                </span>
-            </div>
-        </div>
-    )
-}
-
-function SSLWarningRow({ warning, timezone }: { warning: SSLWarning; timezone?: string }) {
-    const navigate = useNavigate();
-
-    return (
-        <div
-            onClick={() => navigate(`/groups/${warning.groupId}`)}
-            className="group flex items-center justify-between py-3 px-4 -mx-4 hover:bg-muted/30 rounded-lg transition-colors cursor-pointer"
-        >
-            <div className="flex items-center gap-4">
-                {/* Status Indicator Icon */}
-                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-background border border-border/50 shadow-sm">
-                    <ShieldAlert className="w-4 h-4 text-orange-500" />
-                </div>
-
-                <div className="space-y-0.5">
-                    <div className="flex items-center gap-2 text-sm">
-                        {warning.groupName && (
-                            <>
-                                <span className="text-muted-foreground hover:text-foreground transition-colors">
-                                    {warning.groupName}
-                                </span>
-                                <span className="text-muted-foreground/30">/</span>
-                            </>
-                        )}
-                        <span className="font-medium text-foreground">
-                            {warning.monitorName}
-                        </span>
-                        <Badge variant="outline" className="ml-2 rounded-sm px-1.5 py-0 text-[10px] font-medium uppercase tracking-wider border-orange-500/30 bg-orange-500/10 text-orange-500">
-                            SSL WARNING
-                        </Badge>
-                    </div>
-                    <div className="text-xs text-muted-foreground/70 font-mono">
-                        {warning.message}
-                    </div>
-                </div>
-            </div>
-
-            <div className="flex items-center gap-4 text-xs text-muted-foreground tabular-nums">
-                <span className="flex items-center gap-1.5 opacity-50 group-hover:opacity-100 transition-opacity">
-                    <Clock className="w-3 h-3" />
-                    {formatDate(warning.timestamp, timezone)}
-                </span>
-            </div>
-        </div>
-    );
-}
-
 export function IncidentsView() {
-    const { incidents, systemEvents, fetchSystemEvents, fetchIncidents, user, promoteOutage, addIncidentUpdate, setIncidentVisibility, getIncidentWithUpdates } = useMonitorStore();
+    const { incidents, systemEvents, fetchSystemEvents, fetchIncidents, user, promoteOutage, addIncidentUpdate, setIncidentVisibility, getIncidentWithUpdates, groups } = useMonitorStore();
     const { canEdit } = useRole();
     const timezone = user?.timezone;
-    const [searchParams] = useSearchParams();
-    const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
 
     // Promote dialog state
     const [promoteDialogOpen, setPromoteDialogOpen] = useState(false);
@@ -260,10 +115,30 @@ export function IncidentsView() {
     // Expanded incidents with updates loaded
     const [incidentUpdates, setIncidentUpdates] = useState<Record<string, Incident>>({});
 
+    // Three optional filters, all combinable, all URL-synced. Slack digest deep-links use
+    // ?date=; the MonitorPage cross-link uses ?monitorId=; the Group dropdown sets ?groupId=.
+    const dateFilter = searchParams.get('date') || '';
+    const isValidDate = /^\d{4}-\d{2}-\d{2}$/.test(dateFilter);
+    const monitorFilter = searchParams.get('monitorId') || '';
+    const groupFilter = searchParams.get('groupId') || '';
+    const hasAnyFilter = isValidDate || !!monitorFilter || !!groupFilter;
+
+    // When any filter is active, fetch into a local snapshot so the global App-level poll
+    // (which hits /api/events with no filters and writes to Zustand) can't clobber it.
+    const scoped = useFilteredSystemEvents({
+        date: isValidDate ? dateFilter : undefined,
+        monitorId: monitorFilter || undefined,
+        groupId: groupFilter || undefined,
+    });
+
     useEffect(() => {
-        fetchSystemEvents();
+        // Only refresh the global store on the fully-unfiltered view; filtered mode reads
+        // from `scoped` instead.
+        if (!hasAnyFilter) {
+            fetchSystemEvents();
+        }
         fetchIncidents();
-    }, [fetchSystemEvents, fetchIncidents]);
+    }, [fetchSystemEvents, fetchIncidents, hasAnyFilter]);
 
     // Load updates for all incidents
     useEffect(() => {
@@ -284,15 +159,54 @@ export function IncidentsView() {
         }
     }, [incidents, getIncidentWithUpdates]);
 
-    const currentTab = searchParams.get('tab') || 'active';
+    // When a date filter is present, default to History tab (active outages don't have a date).
+    const currentTab = searchParams.get('tab') || (isValidDate ? 'history' : 'active');
 
     const handleTabChange = (value: string) => {
+        const next = new URLSearchParams(searchParams);
         if (value === 'active') {
-            navigate('/incidents');
+            next.delete('tab');
         } else {
-            navigate(`/incidents?tab=${value}`);
+            next.set('tab', value);
         }
+        setSearchParams(next, { replace: true });
     };
+
+    const updateFilter = (key: 'date' | 'monitorId' | 'groupId', value: string) => {
+        const next = new URLSearchParams(searchParams);
+        if (!value) {
+            next.delete(key);
+        } else {
+            next.set(key, value);
+        }
+        // When the group changes, drop the monitor filter if it no longer belongs to that group.
+        if (key === 'groupId') {
+            const m = next.get('monitorId');
+            if (m && value) {
+                const stillBelongs = groups?.some(g => g.id === value && g.monitors?.some(mm => mm.id === m));
+                if (!stillBelongs) next.delete('monitorId');
+            }
+        }
+        setSearchParams(next, { replace: true });
+    };
+
+    const clearAllFilters = () => {
+        const next = new URLSearchParams(searchParams);
+        next.delete('date');
+        next.delete('monitorId');
+        next.delete('groupId');
+        setSearchParams(next, { replace: true });
+    };
+
+    // Monitors available in the dropdown: all by default, or only those in the selected group.
+    const visibleMonitors = (() => {
+        if (!groups) return [];
+        if (groupFilter) {
+            const g = groups.find(gg => gg.id === groupFilter);
+            return g?.monitors ?? [];
+        }
+        return groups.flatMap(g => g.monitors ?? []);
+    })();
 
     const handlePromoteOutage = (event: SystemIncident) => {
         setSelectedOutage(event);
@@ -318,11 +232,41 @@ export function IncidentsView() {
     };
 
     const activeIncidents = incidents.filter(i => i.type === 'incident' && i.status !== 'resolved' && i.status !== 'completed');
-    const history = incidents.filter(i => i.status === 'resolved' || i.status === 'completed');
+    let history = incidents.filter(i => i.status === 'resolved' || i.status === 'completed');
 
-    const activeSystemEvents = systemEvents?.active || [];
-    const historySystemEvents = systemEvents?.history || [];
-    const sslWarnings = systemEvents?.sslWarnings || [];
+    // Prefer the local scoped fetch when any filter is active, so the global App-level
+    // poll over /api/events can't overwrite the filtered list mid-view.
+    const sourceSystemEvents = hasAnyFilter
+        ? (scoped.data ?? { active: [], history: [], sslWarnings: [] })
+        : (systemEvents ?? { active: [], history: [], sslWarnings: [] });
+    const activeSystemEvents = sourceSystemEvents.active || [];
+    const historySystemEvents = sourceSystemEvents.history || [];
+    const sslWarnings = sourceSystemEvents.sslWarnings || [];
+
+    // Apply filters to manual incidents client-side (we don't have a server-side filter
+    // for them yet, but volume is low). Date scopes to that UTC day; monitor/group match
+    // against the affectedGroups list — manual incidents are group-scoped, not per-monitor,
+    // so monitorFilter narrows to incidents whose affectedGroups include the monitor's group.
+    if (isValidDate) {
+        const dayStart = new Date(`${dateFilter}T00:00:00Z`).getTime();
+        const dayEnd = dayStart + 24 * 60 * 60 * 1000;
+        history = history.filter(i => {
+            const start = new Date(i.startTime).getTime();
+            return start >= dayStart && start < dayEnd;
+        });
+    }
+    if (groupFilter) {
+        history = history.filter(i => i.affectedGroups?.includes(groupFilter));
+    }
+    if (monitorFilter) {
+        // Resolve monitor → group to keep this consistent with how manual incidents target groups.
+        const owningGroupId = groups?.find(g => g.monitors?.some(m => m.id === monitorFilter))?.id;
+        if (owningGroupId) {
+            history = history.filter(i => i.affectedGroups?.includes(owningGroupId));
+        } else {
+            history = [];
+        }
+    }
 
     // Split Active Events
     const downtimeEvents = activeSystemEvents.filter(e => e.type === 'down');
@@ -337,6 +281,58 @@ export function IncidentsView() {
                     <h2 className="text-xl font-semibold tracking-tight text-foreground">Monitor Events</h2>
                     <p className="text-sm text-muted-foreground mt-1">Track active downtimes and review historical monitor events.</p>
                 </div>
+            </div>
+
+            {/* Filter row — Group / Monitor / Date. All optional and combinable. URL syncs
+                via useSearchParams so links from Slack, MonitorPage, and dashboard can deep-link
+                into any combination. */}
+            <div className="flex flex-wrap items-end gap-3">
+                <div className="grid gap-1.5">
+                    <span className="text-xs text-muted-foreground">Group</span>
+                    <Select
+                        value={groupFilter || "__all__"}
+                        onValueChange={v => updateFilter('groupId', v === '__all__' ? '' : v)}
+                    >
+                        <SelectTrigger className="w-48"><SelectValue placeholder="All groups" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="__all__">All groups</SelectItem>
+                            {(groups ?? []).map(g => (
+                                <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div className="grid gap-1.5">
+                    <span className="text-xs text-muted-foreground">Monitor</span>
+                    <Select
+                        value={monitorFilter || "__all__"}
+                        onValueChange={v => updateFilter('monitorId', v === '__all__' ? '' : v)}
+                    >
+                        <SelectTrigger className="w-56"><SelectValue placeholder="All monitors" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="__all__">All monitors</SelectItem>
+                            {visibleMonitors.map(m => (
+                                <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div className="grid gap-1.5">
+                    <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+                        <Calendar className="w-3 h-3" />Date (UTC)
+                    </span>
+                    <input
+                        type="date"
+                        value={dateFilter}
+                        onChange={e => updateFilter('date', e.target.value)}
+                        className="h-9 w-44 rounded-md border border-input bg-background px-3 text-sm"
+                    />
+                </div>
+                {hasAnyFilter && (
+                    <Button variant="ghost" size="sm" onClick={clearAllFilters}>
+                        Clear all
+                    </Button>
+                )}
             </div>
 
             <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
@@ -369,8 +365,31 @@ export function IncidentsView() {
                     {downtimeEvents.length > 0 && (
                         <div className="space-y-3 animation-in fade-in slide-in-from-bottom-2 duration-500">
                             <h3 className="text-xs font-semibold text-red-500 uppercase tracking-widest pl-1">Critical Outages</h3>
-                            <div className="rounded-xl border border-red-900/20 bg-red-950/5 overflow-hidden px-4">
-                                {downtimeEvents.map((e, i) => <SystemEventRow key={e.id + i} event={e} active={true} timezone={timezone} onPromote={canEdit ? handlePromoteOutage : undefined} />)}
+                            <div className="space-y-2">
+                                {downtimeEvents.map(e => (
+                                    <OutageCard
+                                        key={e.id}
+                                        monitorId={e.monitorId}
+                                        monitorName={e.monitorName}
+                                        groupName={e.groupName}
+                                        type="down"
+                                        summary={e.message}
+                                        startedAt={e.startedAt}
+                                        endedAt={e.resolvedAt}
+                                        duration={e.duration ?? "0m"}
+                                        rightAction={canEdit ? (
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={ev => { ev.stopPropagation(); handlePromoteOutage(e); }}
+                                                className="h-7 text-xs"
+                                            >
+                                                <Megaphone className="w-3 h-3 mr-1.5" />
+                                                Promote
+                                            </Button>
+                                        ) : undefined}
+                                    />
+                                ))}
                             </div>
                         </div>
                     )}
@@ -379,8 +398,31 @@ export function IncidentsView() {
                     {degradedEvents.length > 0 && (
                         <div className="space-y-3 animation-in fade-in slide-in-from-bottom-3 duration-500">
                             <h3 className="text-xs font-semibold text-yellow-500 uppercase tracking-widest pl-1">Performance Issues</h3>
-                            <div className="rounded-xl border border-yellow-900/20 bg-yellow-950/5 overflow-hidden px-4">
-                                {degradedEvents.map((e, i) => <SystemEventRow key={e.id + i} event={e} active={true} timezone={timezone} onPromote={canEdit ? handlePromoteOutage : undefined} />)}
+                            <div className="space-y-2">
+                                {degradedEvents.map(e => (
+                                    <OutageCard
+                                        key={e.id}
+                                        monitorId={e.monitorId}
+                                        monitorName={e.monitorName}
+                                        groupName={e.groupName}
+                                        type="degraded"
+                                        summary={e.message}
+                                        startedAt={e.startedAt}
+                                        endedAt={e.resolvedAt}
+                                        duration={e.duration ?? "0m"}
+                                        rightAction={canEdit ? (
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={ev => { ev.stopPropagation(); handlePromoteOutage(e); }}
+                                                className="h-7 text-xs"
+                                            >
+                                                <Megaphone className="w-3 h-3 mr-1.5" />
+                                                Promote
+                                            </Button>
+                                        ) : undefined}
+                                    />
+                                ))}
                             </div>
                         </div>
                     )}
@@ -389,8 +431,19 @@ export function IncidentsView() {
                     {sslWarnings.length > 0 && (
                         <div className="space-y-3 animation-in fade-in slide-in-from-bottom-3 duration-500">
                             <h3 className="text-xs font-semibold text-orange-500 uppercase tracking-widest pl-1">Certificate Warnings</h3>
-                            <div className="rounded-xl border border-orange-900/20 bg-orange-950/5 overflow-hidden px-4">
-                                {sslWarnings.map((w, i) => <SSLWarningRow key={w.id + i} warning={w} timezone={timezone} />)}
+                            <div className="space-y-2">
+                                {sslWarnings.map(w => (
+                                    <OutageCard
+                                        key={w.id}
+                                        monitorId={w.monitorId}
+                                        monitorName={w.monitorName}
+                                        groupName={w.groupName}
+                                        type="ssl_expiring"
+                                        summary={w.message}
+                                        startedAt={w.timestamp}
+                                        duration=""
+                                    />
+                                ))}
                             </div>
                         </div>
                     )}
@@ -403,7 +456,7 @@ export function IncidentsView() {
                                 {activeIncidents.map(i => {
                                     const incWithUpdates = incidentUpdates[i.id] || i;
                                     return (
-                                        <IncidentCard
+                                        <ManualIncidentCard
                                             key={i.id}
                                             incident={incWithUpdates}
                                             timezone={timezone}
@@ -422,16 +475,31 @@ export function IncidentsView() {
                         <div className="text-center text-muted-foreground/50 py-16 text-sm">No recent history.</div>
                     )}
 
-                    <div className="divide-y divide-border/30">
-                        {historySystemEvents.map((e, i) => <SystemEventRow key={e.id + i} event={e} active={false} timezone={timezone} />)}
+                    <div className="space-y-2">
+                        {historySystemEvents.map(e => (
+                            <OutageCard
+                                key={e.id}
+                                monitorId={e.monitorId}
+                                monitorName={e.monitorName}
+                                groupName={e.groupName}
+                                type={e.type as 'down' | 'degraded'}
+                                summary={e.message}
+                                startedAt={e.startedAt}
+                                endedAt={e.resolvedAt}
+                                duration={e.duration ?? "0m"}
+                            />
+                        ))}
                     </div>
 
-                    <div className="pt-6 space-y-3">
-                        {history.map(i => {
-                            const incWithUpdates = incidentUpdates[i.id] || i;
-                            return <IncidentCard key={i.id} incident={incWithUpdates} timezone={timezone} />;
-                        })}
-                    </div>
+                    {history.length > 0 && (
+                        <div className="pt-6 space-y-3">
+                            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest pl-1">Reported Incidents</h3>
+                            {history.map(i => {
+                                const incWithUpdates = incidentUpdates[i.id] || i;
+                                return <ManualIncidentCard key={i.id} incident={incWithUpdates} timezone={timezone} />;
+                            })}
+                        </div>
+                    )}
                 </TabsContent>
             </Tabs>
 

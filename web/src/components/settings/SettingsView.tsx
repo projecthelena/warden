@@ -231,6 +231,10 @@ function HelpTip({ text }: { text: string }) {
 function NotificationIntelligence() {
     const { settings, fetchSettings, updateSettings } = useMonitorStore();
     const { toast } = useToast();
+    // Dashboard URL is admin-only because the underlying PATCH /api/settings endpoint
+    // requires the admin role; hiding the field prevents editors from staging a value
+    // and losing the rest of their edits to a 403.
+    const { isAdmin } = useRole();
 
     const [confirmThreshold, setConfirmThreshold] = useState(settings?.["notification.confirmation_threshold"] || "3");
     const [cooldownMins, setCooldownMins] = useState(settings?.["notification.cooldown_minutes"] || "30");
@@ -255,6 +259,7 @@ function NotificationIntelligence() {
         const types = settings?.["notification.digest.event_types"] || "degraded,flapping,stabilized,ssl_expiring";
         return new Set(types.split(",").map(t => t.trim()).filter(Boolean));
     });
+    const [appUrl, setAppUrl] = useState(settings?.["app_url"] || "");
 
     useEffect(() => {
         fetchSettings();
@@ -279,6 +284,7 @@ function NotificationIntelligence() {
             setDigestTime(settings["notification.digest.time"] || "09:00");
             const types = settings["notification.digest.event_types"] || "degraded,flapping,stabilized,ssl_expiring";
             setDigestEventTypes(new Set(types.split(",").map(t => t.trim()).filter(Boolean)));
+            setAppUrl(settings["app_url"] || "");
         }
     }, [settings]);
 
@@ -294,6 +300,11 @@ function NotificationIntelligence() {
             "notification.digest.time": digestTime,
             "notification.digest.event_types": Array.from(digestEventTypes).join(","),
         };
+        // app_url is admin-only — only include in the patch when the current user has
+        // the admin role, so editors don't unintentionally send (and trip backend RBAC).
+        if (isAdmin) {
+            updates["app_url"] = appUrl.trim();
+        }
 
         EVENT_TOGGLES.forEach(({ key }) => {
             updates[key] = eventToggles[key] ? "true" : "false";
@@ -495,6 +506,22 @@ function NotificationIntelligence() {
                                                         ))}
                                                     </div>
                                                 </div>
+                                                {isAdmin && (
+                                                    <div className="grid gap-2">
+                                                        <Label htmlFor="digest-app-url">
+                                                            Dashboard URL
+                                                            <HelpTip text="Public base URL of this Warden install (e.g. https://warden.example.com). When set, the daily digest message becomes clickable: the header links to the full report and each monitor name links to its day-specific drill-down. Leave empty to keep messages plain-text." />
+                                                        </Label>
+                                                        <Input
+                                                            id="digest-app-url"
+                                                            type="url"
+                                                            placeholder="https://warden.example.com"
+                                                            value={appUrl}
+                                                            onChange={(e) => setAppUrl(e.target.value)}
+                                                            className="max-w-md font-mono text-xs"
+                                                        />
+                                                    </div>
+                                                )}
                                             </>
                                         )}
                                     </div>

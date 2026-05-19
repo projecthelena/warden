@@ -2,12 +2,14 @@ package uptime
 
 import (
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/projecthelena/warden/internal/db"
 	"github.com/projecthelena/warden/internal/notifications"
@@ -20,15 +22,39 @@ type Job struct {
 }
 
 type CheckResult struct {
-	MonitorID  string
-	URL        string
-	Status     bool
-	Latency    int64
-	Timestamp  time.Time
-	StatusCode int
-	Error      string
-	IsDegraded bool
-	CertExpiry *time.Time // SSL certificate NotAfter (nil if not HTTPS or unavailable)
+	MonitorID       string
+	URL             string
+	Status          bool
+	Latency         int64
+	Timestamp       time.Time
+	StatusCode      int
+	Error           string
+	IsDegraded      bool
+	CertExpiry      *time.Time // SSL certificate NotAfter (nil if not HTTPS or unavailable)
+	ResponseBody    string     // Truncated to ResponseBodyMaxBytes; only populated on failed/degraded checks
+	ResponseHeaders string     // JSON-encoded filtered headers; only populated on failed/degraded checks
+}
+
+// ResponseBodyMaxBytes caps how much of a failed response body is captured for diagnostics.
+const ResponseBodyMaxBytes = 2048
+
+// captureHeaderAllowlist lists response headers worth storing for diagnostics.
+// Sensitive headers (set-cookie, authorization, etc.) are deliberately excluded.
+var captureHeaderAllowlist = map[string]bool{
+	"content-type":      true,
+	"content-length":    true,
+	"content-encoding":  true,
+	"cache-control":     true,
+	"server":            true,
+	"date":              true,
+	"location":          true,
+	"retry-after":       true,
+	"x-request-id":      true,
+	"x-correlation-id":  true,
+	"x-trace-id":        true,
+	"x-served-by":       true,
+	"cf-ray":            true,
+	"via":               true,
 }
 
 // SSL notification thresholds in days
@@ -225,12 +251,14 @@ func (m *Manager) worker() {
 		}
 
 		var (
-			isUp       bool
-			errMsg     string
-			statusCode int
-			certExpiry *time.Time
-			latency    int64
-			start      time.Time
+			isUp          bool
+			errMsg        string
+			statusCode    int
+			certExpiry    *time.Time
+			latency       int64
+			start         time.Time
+			respBody      string
+			respHeaders   string
 		)
 
 		for attempt := 0; attempt <= retryCount; attempt++ {
@@ -271,12 +299,13 @@ func (m *Manager) worker() {
 			errMsg = ""
 			statusCode = 0
 			certExpiry = nil
+			respBody = ""
+			respHeaders = ""
 
 			if err != nil {
 				isUp = false
 				errMsg = err.Error()
 			} else {
-				_ = resp.Body.Close()
 				statusCode = resp.StatusCode
 
 				// Determine if status code is accepted
@@ -287,6 +316,14 @@ func (m *Manager) worker() {
 						isUp = false
 					}
 				}
+
+				// Capture diagnostics on failed checks so the daily digest drill-down
+				// can show what the server actually returned.
+				if !isUp {
+					respBody = readLimitedBody(resp.Body)
+					respHeaders = encodeAllowedHeaders(resp.Header)
+				}
+				_ = resp.Body.Close()
 
 				// Extract SSL certificate expiry for HTTPS URLs
 				if resp.TLS != nil && len(resp.TLS.PeerCertificates) > 0 {
@@ -301,16 +338,78 @@ func (m *Manager) worker() {
 		}
 
 		m.resultQueue <- CheckResult{
-			MonitorID:  job.MonitorID,
-			URL:        job.URL,
-			Status:     isUp,
-			Latency:    latency,
-			Timestamp:  start,
-			StatusCode: statusCode,
-			Error:      errMsg,
-			CertExpiry: certExpiry,
+			MonitorID:       job.MonitorID,
+			URL:             job.URL,
+			Status:          isUp,
+			Latency:         latency,
+			Timestamp:       start,
+			StatusCode:      statusCode,
+			Error:           errMsg,
+			CertExpiry:      certExpiry,
+			ResponseBody:    respBody,
+			ResponseHeaders: respHeaders,
 		}
 	}
+}
+
+// eventDetailsFromResult builds the diagnostic payload that we persist alongside a monitor
+// event so the drill-down view can show what the check actually returned. We keep the heavy
+// fields (response body, headers) only when the check itself failed.
+func eventDetailsFromResult(res CheckResult) *db.EventDetails {
+	d := &db.EventDetails{
+		StatusCode:   res.StatusCode,
+		Latency:      res.Latency,
+		ErrorMessage: res.Error,
+	}
+	if !res.Status {
+		d.ResponseBody = res.ResponseBody
+		d.ResponseHeaders = res.ResponseHeaders
+	}
+	return d
+}
+
+// readLimitedBody reads up to ResponseBodyMaxBytes of an HTTP response body and returns it as a
+// UTF-8 safe string. Used only for diagnostic capture on failed checks.
+func readLimitedBody(body io.ReadCloser) string {
+	if body == nil {
+		return ""
+	}
+	buf := make([]byte, ResponseBodyMaxBytes)
+	n, _ := io.ReadFull(io.LimitReader(body, ResponseBodyMaxBytes), buf)
+	if n == 0 {
+		return ""
+	}
+	out := buf[:n]
+	if !utf8.Valid(out) {
+		return strconv.Quote(string(out))
+	}
+	return string(out)
+}
+
+// encodeAllowedHeaders serializes the subset of response headers listed in captureHeaderAllowlist
+// to a compact JSON object. Sensitive headers (cookies, auth) are dropped to avoid leaking
+// session material into the digest archive.
+func encodeAllowedHeaders(h http.Header) string {
+	if len(h) == 0 {
+		return ""
+	}
+	filtered := make(map[string]string, len(captureHeaderAllowlist))
+	for k, vs := range h {
+		if len(vs) == 0 {
+			continue
+		}
+		if captureHeaderAllowlist[strings.ToLower(k)] {
+			filtered[k] = strings.Join(vs, ", ")
+		}
+	}
+	if len(filtered) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(filtered)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 // isAcceptedStatus checks if a status code matches the accepted status code specification.
@@ -411,7 +510,8 @@ func (m *Manager) resultProcessor() {
 					if !res.Status {
 						mon.ResetRecovery()
 						// Record the event in DB immediately
-						go func() { _ = m.store.CreateEvent(res.MonitorID, "down", message) }()
+						eventDetails := eventDetailsFromResult(res)
+						go func() { _ = m.store.CreateEventWithDetails(res.MonitorID, "down", message, eventDetails) }()
 
 						confirmed := mon.IncrementDown()
 						if confirmed {
@@ -433,7 +533,8 @@ func (m *Manager) resultProcessor() {
 							log.Printf("Monitor %s is DOWN (confirmed)", res.MonitorID)
 						}
 					} else if isDegraded {
-						go func() { _ = m.store.CreateEvent(res.MonitorID, "degraded", degradedMsg) }()
+						degDetails := eventDetailsFromResult(res)
+						go func() { _ = m.store.CreateEventWithDetails(res.MonitorID, "degraded", degradedMsg, degDetails) }()
 
 						confirmed := mon.IncrementDegraded()
 						if confirmed {
@@ -460,7 +561,8 @@ func (m *Manager) resultProcessor() {
 						// Check is DOWN — increment counter
 						mon.ResetDegraded() // can't be degraded if down
 						mon.ResetRecovery() // reset recovery confirmation
-						go func() { _ = m.store.CreateEvent(res.MonitorID, "down", message) }()
+						downDetails := eventDetailsFromResult(res)
+						go func() { _ = m.store.CreateEventWithDetails(res.MonitorID, "down", message, downDetails) }()
 
 						confirmed := mon.IncrementDown()
 						if confirmed {
@@ -491,7 +593,8 @@ func (m *Manager) resultProcessor() {
 								mon.ResetDown()
 								mon.ResetRecovery()
 								go func() { _ = m.store.CloseOutage(res.MonitorID) }()
-								go func() { _ = m.store.CreateEvent(res.MonitorID, "recovered", "Monitor recovered") }()
+								recDetails := eventDetailsFromResult(res)
+								go func() { _ = m.store.CreateEventWithDetails(res.MonitorID, "recovered", "Monitor recovered", recDetails) }()
 								// Recovery notifications always send immediately (no cooldown)
 								if !isMaint && !mon.IsFlapping() && eventFilter.IsEnabled("up") {
 									m.enqueueOrDigest(notifications.NotificationEvent{
@@ -513,7 +616,8 @@ func (m *Manager) resultProcessor() {
 						// Handle Degradation (only if not still waiting for recovery confirmation)
 						if !mon.IsConfirmedDown() {
 							if isDegraded {
-								go func() { _ = m.store.CreateEvent(res.MonitorID, "degraded", degradedMsg) }()
+								degDetails := eventDetailsFromResult(res)
+								go func() { _ = m.store.CreateEventWithDetails(res.MonitorID, "degraded", degradedMsg, degDetails) }()
 
 								confirmed := mon.IncrementDegraded()
 								if confirmed {
@@ -538,7 +642,8 @@ func (m *Manager) resultProcessor() {
 								wasConfirmedDeg := mon.ResetDegraded()
 								if wasConfirmedDeg {
 									go func() { _ = m.store.CloseOutage(res.MonitorID) }()
-									go func() { _ = m.store.CreateEvent(res.MonitorID, "recovered", "Latency normalized") }()
+									recDetails := eventDetailsFromResult(res)
+									go func() { _ = m.store.CreateEventWithDetails(res.MonitorID, "recovered", "Latency normalized", recDetails) }()
 									// Recovery notifications always send immediately (no cooldown)
 									if !isMaint && !mon.IsFlapping() && eventFilter.IsEnabled("up") {
 										m.enqueueOrDigest(notifications.NotificationEvent{

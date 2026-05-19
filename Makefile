@@ -1,4 +1,4 @@
-.PHONY: backend frontend build docker test test-frontend test-all clean dev-backend dev-frontend dev-bundle lint lint-frontend lint-backend security govuln vuln secrets audit hooks check docs e2e-fresh stop
+.PHONY: backend frontend build docker test test-frontend test-all clean dev-backend dev-frontend dev-bundle lint lint-frontend lint-backend security govuln vuln secrets audit hooks check docs e2e-fresh stop faketarget
 
 BACKEND_ENV ?= LISTEN_ADDR=:9096 COOKIE_SECURE=false
 BIN_DIR ?= $(PWD)/bin
@@ -8,6 +8,11 @@ dev-backend:
 	ADMIN_SECRET=warden-e2e-magic-key $(BACKEND_ENV) go run ./cmd/dashboard
 
 backend: dev-backend
+
+# Fake HTTP target for exercising monitor failures locally.
+# Routes: /healthy /down /error /slow /flaky?fail=N /timeout /status/{code}
+faketarget:
+	go run ./cmd/faketarget -listen :8888
 
 dev-frontend:
 	cd web && npm install && npm run dev

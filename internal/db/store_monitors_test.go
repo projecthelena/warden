@@ -104,6 +104,152 @@ func TestMonitorChecksAndEvents(t *testing.T) {
 	}
 }
 
+// TestCreateEventWithDetails verifies that enriched event details (status code, latency,
+// error message, response body, headers) round-trip through the store and that bare
+// CreateEvent leaves them nil for backwards compatibility.
+func TestCreateEventWithDetails(t *testing.T) {
+	s := newTestStore(t)
+	_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+	_ = s.CreateMonitor(Monitor{ID: "m1", GroupID: "g1", Name: "M1", URL: "http://x", Interval: 60})
+
+	details := &EventDetails{
+		StatusCode:      500,
+		Latency:         1234,
+		ErrorMessage:    "boom",
+		ResponseBody:    "<html>error</html>",
+		ResponseHeaders: `{"content-type":"text/html"}`,
+	}
+	if err := s.CreateEventWithDetails("m1", "down", "Monitor is down (Status: 500)", details); err != nil {
+		t.Fatalf("CreateEventWithDetails failed: %v", err)
+	}
+	// A second, plain CreateEvent must coexist with nil detail fields.
+	if err := s.CreateEvent("m1", "flapping", "Monitor is flapping"); err != nil {
+		t.Fatalf("CreateEvent failed: %v", err)
+	}
+
+	events, err := s.GetMonitorEvents("m1", 10)
+	if err != nil {
+		t.Fatalf("GetMonitorEvents: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(events))
+	}
+
+	byType := make(map[string]MonitorEvent)
+	for _, e := range events {
+		byType[e.Type] = e
+	}
+	down, hasDown := byType["down"]
+	flap, hasFlap := byType["flapping"]
+	if !hasDown || !hasFlap {
+		t.Fatalf("expected one down and one flapping event, got %+v", events)
+	}
+
+	if down.StatusCode == nil || *down.StatusCode != 500 {
+		t.Errorf("down.StatusCode = %v, want 500", down.StatusCode)
+	}
+	if down.Latency == nil || *down.Latency != 1234 {
+		t.Errorf("down.Latency = %v, want 1234", down.Latency)
+	}
+	if down.ErrorMessage == nil || *down.ErrorMessage != "boom" {
+		t.Errorf("down.ErrorMessage = %v, want boom", down.ErrorMessage)
+	}
+	if down.ResponseBody == nil || *down.ResponseBody != "<html>error</html>" {
+		t.Errorf("down.ResponseBody mismatch")
+	}
+	if down.ResponseHeaders == nil || *down.ResponseHeaders != `{"content-type":"text/html"}` {
+		t.Errorf("down.ResponseHeaders mismatch")
+	}
+
+	if flap.StatusCode != nil || flap.Latency != nil || flap.ErrorMessage != nil || flap.ResponseBody != nil || flap.ResponseHeaders != nil {
+		t.Errorf("plain CreateEvent must leave detail fields nil, got %+v", flap)
+	}
+}
+
+// TestGetResolvedOutages_WithFilter verifies the OutageFilter struct narrows results
+// to a single monitor (and that the GroupID branch works too). Backstops the
+// /incidents?monitorId= drill-down path.
+func TestGetResolvedOutages_WithFilter(t *testing.T) {
+	s := newTestStore(t)
+	_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+	_ = s.CreateGroup(Group{ID: "g2", Name: "G2"})
+	_ = s.CreateMonitor(Monitor{ID: "m1", GroupID: "g1", Name: "M1", URL: "http://a", Interval: 60})
+	_ = s.CreateMonitor(Monitor{ID: "m2", GroupID: "g2", Name: "M2", URL: "http://b", Interval: 60})
+
+	// Create + close two outages, one per monitor.
+	for _, id := range []string{"m1", "m2"} {
+		if err := s.CreateOutage(id, "down", "boom"); err != nil {
+			t.Fatalf("CreateOutage: %v", err)
+		}
+		if err := s.CloseOutage(id); err != nil {
+			t.Fatalf("CloseOutage: %v", err)
+		}
+	}
+	since := time.Now().Add(-1 * time.Hour)
+
+	byMon, err := s.GetResolvedOutagesFiltered(since, OutageFilter{MonitorID: "m1"})
+	if err != nil {
+		t.Fatalf("byMon: %v", err)
+	}
+	if len(byMon) != 1 || byMon[0].MonitorID != "m1" {
+		t.Errorf("MonitorID filter: expected exactly m1, got %+v", byMon)
+	}
+
+	byGroup, err := s.GetResolvedOutagesFiltered(since, OutageFilter{GroupID: "g2"})
+	if err != nil {
+		t.Fatalf("byGroup: %v", err)
+	}
+	if len(byGroup) != 1 || byGroup[0].GroupID != "g2" {
+		t.Errorf("GroupID filter: expected exactly g2, got %+v", byGroup)
+	}
+
+	noFilter, err := s.GetResolvedOutagesFiltered(since, OutageFilter{})
+	if err != nil {
+		t.Fatalf("noFilter: %v", err)
+	}
+	if len(noFilter) != 2 {
+		t.Errorf("no filter: expected both outages, got %d", len(noFilter))
+	}
+}
+
+// TestGetMonitorEventsBetween verifies date-window filtering used by the digest drill-down.
+func TestGetMonitorEventsBetween(t *testing.T) {
+	s := newTestStore(t)
+	_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+	_ = s.CreateMonitor(Monitor{ID: "m1", GroupID: "g1", Name: "M1", URL: "http://x", Interval: 60})
+
+	// Three events spread across days; the filter window should pick exactly the middle one.
+	now := time.Now().UTC()
+	d := func(daysAgo int) time.Time { return now.AddDate(0, 0, -daysAgo) }
+
+	if _, err := s.db.Exec(s.rebind(
+		`INSERT INTO monitor_events (monitor_id, type, message, timestamp) VALUES (?, 'down', 'a', ?)`),
+		"m1", d(2)); err != nil {
+		t.Fatalf("seed event: %v", err)
+	}
+	if _, err := s.db.Exec(s.rebind(
+		`INSERT INTO monitor_events (monitor_id, type, message, timestamp) VALUES (?, 'down', 'b', ?)`),
+		"m1", d(1)); err != nil {
+		t.Fatalf("seed event: %v", err)
+	}
+	if _, err := s.db.Exec(s.rebind(
+		`INSERT INTO monitor_events (monitor_id, type, message, timestamp) VALUES (?, 'down', 'c', ?)`),
+		"m1", d(0)); err != nil {
+		t.Fatalf("seed event: %v", err)
+	}
+
+	yesterdayStart := time.Date(d(1).Year(), d(1).Month(), d(1).Day(), 0, 0, 0, 0, time.UTC)
+	yesterdayEnd := yesterdayStart.Add(24 * time.Hour)
+
+	got, err := s.GetMonitorEventsBetween("m1", yesterdayStart, yesterdayEnd, 50)
+	if err != nil {
+		t.Fatalf("GetMonitorEventsBetween: %v", err)
+	}
+	if len(got) != 1 || got[0].Message != "b" {
+		t.Errorf("expected exactly 'b', got %+v", got)
+	}
+}
+
 func TestCascadingDeletion(t *testing.T) {
 	s := newTestStore(t)
 

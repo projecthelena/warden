@@ -5,6 +5,7 @@ import * as React from "react"
 import { Link, useLocation } from "react-router-dom"
 import {
     Activity,
+    CalendarClock,
     LayoutDashboard,
     LifeBuoy,
     Settings2,
@@ -59,22 +60,16 @@ export function AppSidebar({ groups, ...props }: React.ComponentProps<typeof Sid
                 isActive: pathname === "/status-pages",
             },
             {
-                title: "Events",
-                url: "#",
+                title: "Incidents",
+                url: "/incidents",
                 icon: Siren,
-                isActive: pathname.startsWith("/incidents") || pathname.startsWith("/maintenance"),
-                items: [
-                    {
-                        title: "Incidents",
-                        url: "/incidents",
-                        isActive: pathname === "/incidents",
-                    },
-                    {
-                        title: "Maintenance",
-                        url: "/maintenance",
-                        isActive: pathname === "/maintenance",
-                    },
-                ],
+                isActive: pathname.startsWith("/incidents"),
+            },
+            {
+                title: "Maintenance",
+                url: "/maintenance",
+                icon: CalendarClock,
+                isActive: pathname.startsWith("/maintenance"),
             },
         ],
         navSettings: [

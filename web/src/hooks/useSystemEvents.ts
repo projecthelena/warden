@@ -4,14 +4,26 @@ import { computePollingInterval } from "@/lib/pollingInterval";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 
-interface SystemEventsResponse {
+export interface SystemEventsResponse {
     active: SystemIncident[];
     history: SystemIncident[];
     sslWarnings: SSLWarning[];
 }
 
-async function fetchSystemEventsData(): Promise<SystemEventsResponse> {
-    const res = await fetch(`${API_URL}/api/events`, { credentials: 'include' });
+export interface SystemEventsFilter {
+    date?: string;
+    monitorId?: string;
+    groupId?: string;
+}
+
+async function fetchSystemEventsData(filter: SystemEventsFilter = {}): Promise<SystemEventsResponse> {
+    const params = new URLSearchParams();
+    if (filter.date) params.set("date", filter.date);
+    if (filter.monitorId) params.set("monitorId", filter.monitorId);
+    if (filter.groupId) params.set("groupId", filter.groupId);
+    const qs = params.toString();
+    const url = qs ? `${API_URL}/api/events?${qs}` : `${API_URL}/api/events`;
+    const res = await fetch(url, { credentials: 'include' });
     if (!res.ok) throw new Error("Failed to fetch system events");
     return res.json();
 }
@@ -40,4 +52,28 @@ export function useSystemEventsQuery() {
         enabled: isAuthChecked && !!user, // Only fetch if authenticated
         staleTime: 0,
     });
+}
+
+// useFilteredSystemEvents fetches a snapshot of /api/events with optional filters WITHOUT
+// touching the global Zustand store. The App-level useSystemEventsQuery polls /api/events
+// with no filters and writes to Zustand; any filtered page (IncidentsView, MonitorPage)
+// must keep its data local so the global poll doesn't clobber it.
+//
+// Enabled whenever at least one filter dimension is set, so passing an empty filter is
+// effectively a no-op (returns no data, no fetch).
+export function useFilteredSystemEvents(filter: SystemEventsFilter) {
+    const hasFilter = !!(filter.date || filter.monitorId || filter.groupId);
+    return useQuery({
+        queryKey: ["system-events", "filtered", filter.date ?? "", filter.monitorId ?? "", filter.groupId ?? ""],
+        queryFn: () => fetchSystemEventsData(filter),
+        enabled: hasFilter,
+        staleTime: 30_000,
+        refetchInterval: 30_000, // keep "ongoing" durations fresh
+    });
+}
+
+// useSystemEventsByDate is preserved for callers that only need date scoping. New code
+// should prefer useFilteredSystemEvents.
+export function useSystemEventsByDate(date: string | undefined) {
+    return useFilteredSystemEvents({ date });
 }

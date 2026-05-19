@@ -23,7 +23,8 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { StatusBadge } from "@/components/ui/monitor-visuals";
 import { useRole } from "@/hooks/useRole";
-import { Trash2, Save, Activity, Clock, BarChart, Pause, Play, X } from "lucide-react";
+import { Trash2, Save, BarChart, Pause, Play, X, ExternalLink } from "lucide-react";
+import { Link } from "react-router-dom";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -305,15 +306,23 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                         <SheetTitle>{monitor.name}</SheetTitle>
                         <StatusBadge status={monitor.status} />
                     </div>
-                    <SheetDescription className="font-mono text-xs">
-                        ID: {monitor.id}
+                    <SheetDescription className="font-mono text-xs flex items-center gap-3">
+                        <span>ID: {monitor.id}</span>
+                        <Link
+                            to={`/monitors/${monitor.id}`}
+                            onClick={() => onOpenChange(false)}
+                            className="text-primary hover:underline inline-flex items-center gap-1 font-sans"
+                            data-testid="monitor-open-full-view"
+                        >
+                            Open full view
+                            <ExternalLink className="w-3 h-3" />
+                        </Link>
                     </SheetDescription>
                 </SheetHeader>
 
                 <Tabs defaultValue="metrics" className="w-full">
-                    <TabsList className="w-full grid grid-cols-3">
+                    <TabsList className={`w-full grid ${canEdit ? 'grid-cols-2' : 'grid-cols-1'}`}>
                         <TabsTrigger value="metrics">Metrics</TabsTrigger>
-                        <TabsTrigger value="events">Events</TabsTrigger>
                         {canEdit && <TabsTrigger value="settings" data-testid="monitor-settings-tab">Settings</TabsTrigger>}
                     </TabsList>
 
@@ -433,38 +442,6 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                                 </ResponsiveContainer>
                             </div>
                         </div>
-                    </TabsContent>
-
-                    <TabsContent value="events" className="mt-6 space-y-4">
-                        <h3 className="text-sm font-medium text-foreground mb-4 flex items-center gap-2">
-                            <Activity className="w-4 h-4 text-muted-foreground" /> Activity Log
-                        </h3>
-                        {monitor.events && monitor.events.length > 0 ? (
-                            <div className="relative border-l border-border ml-2 space-y-6">
-                                {monitor.events.map((event) => (
-                                    <div key={event.id} className="ml-6 relative">
-                                        <div className={`absolute -left-[31px] top-1 w-2.5 h-2.5 rounded-full ring-4 ring-background ${event.type === 'up' ? 'bg-emerald-500' :
-                                            event.type === 'down' ? 'bg-destructive' :
-                                            event.type === 'ssl_expiring' ? 'bg-orange-500' :
-                                            event.type === 'flapping' ? 'bg-purple-500' :
-                                            event.type === 'stabilized' ? 'bg-blue-500' : 'bg-yellow-500'
-                                            }`} />
-                                        <div className="flex flex-col gap-1">
-
-                                            <span className="text-xs text-muted-foreground flex items-center gap-1">
-                                                <Clock className="w-3 h-3" />
-                                                {formatDate(event.timestamp, user?.timezone)}
-                                            </span>
-                                            <p className="text-sm text-foreground">{event.message}</p>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="text-center py-12 text-muted-foreground text-sm border border-dashed border-border rounded-lg">
-                                No events recorded yet.
-                            </div>
-                        )}
                     </TabsContent>
 
                     <TabsContent value="settings" className="mt-6 space-y-6">

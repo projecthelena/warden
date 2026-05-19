@@ -181,6 +181,7 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 			dashboard.Post("/monitors/{id}/resume", crudH.ResumeMonitor)
 			dashboard.Get("/monitors/{id}/uptime", uptimeH.GetMonitorUptime)
 			dashboard.Get("/monitors/{id}/latency", uptimeH.GetMonitorLatency)
+			dashboard.Get("/monitors/{id}/events", uptimeH.GetMonitorEvents)
 
 			// Incidents
 			dashboard.Get("/incidents", incidentH.GetIncidents)

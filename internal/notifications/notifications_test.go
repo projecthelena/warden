@@ -451,6 +451,102 @@ func TestSlackDigest_BlockKitFormat(t *testing.T) {
 	}
 }
 
+// TestSlackDigest_AppURLLinks verifies that when AppURL is set the digest header carries a
+// "View full report" link and each monitor name becomes a clickable link to its day page.
+// This is the wire-up that lets the daily Slack digest function as a real drill-down entry point.
+func TestSlackDigest_AppURLLinks(t *testing.T) {
+	var received map[string]interface{}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &received)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	notifier := NewSlackNotifier(`{"webhookUrl":"` + srv.URL + `"}`)
+
+	summary := digestSummary{
+		TotalEvents:  2,
+		MonitorCount: 1,
+		Monitors: []digestMonitor{
+			{
+				ID:       "mon-abc",
+				Name:     "API | Server", // intentionally includes a pipe to exercise escaping
+				URL:      "https://api.example.com",
+				Events:   []digestEventCount{{Type: "down", Count: 2}},
+				Severity: 0,
+			},
+		},
+		Date:   time.Date(2026, 3, 15, 9, 0, 0, 0, time.UTC),
+		AppURL: "https://warden.example.com",
+	}
+
+	if err := notifier.sendDigest(summary); err != nil {
+		t.Fatalf("sendDigest failed: %v", err)
+	}
+
+	blocks := received["blocks"].([]interface{})
+	ctxText := blocks[1].(map[string]interface{})["elements"].([]interface{})[0].(map[string]interface{})["text"].(string)
+	if !strings.Contains(ctxText, "https://warden.example.com/incidents?date=2026-03-15") {
+		t.Errorf("context should embed incidents link, got: %s", ctxText)
+	}
+	if !strings.Contains(ctxText, "View full report") {
+		t.Errorf("context should contain link label, got: %s", ctxText)
+	}
+
+	sectionText := blocks[3].(map[string]interface{})["text"].(map[string]interface{})["text"].(string)
+	if !strings.Contains(sectionText, "https://warden.example.com/monitors/mon-abc?date=2026-03-15") {
+		t.Errorf("section should embed monitor link, got: %s", sectionText)
+	}
+	// Pipe must be escaped so it doesn't break Slack's <url|text> markup.
+	if !strings.Contains(sectionText, "&#124;") {
+		t.Errorf("section should escape '|' in monitor name, got: %s", sectionText)
+	}
+	// Without AppURL the legacy `*Name*` markup is used; with AppURL we wrap as a link.
+	if strings.Contains(sectionText, "<https://warden.example.com/monitors/mon-abc?date=2026-03-15|*API &#124; Server*>") == false {
+		t.Errorf("expected Slack link markup wrapping bolded escaped name, got: %s", sectionText)
+	}
+}
+
+// TestSlackDigest_NoAppURL_PreservesLegacyRendering ensures the digest still renders cleanly
+// (plain bold names, no link) when app_url is empty, so existing installs aren't disturbed.
+func TestSlackDigest_NoAppURL_PreservesLegacyRendering(t *testing.T) {
+	var received map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &received)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	notifier := NewSlackNotifier(`{"webhookUrl":"` + srv.URL + `"}`)
+	summary := digestSummary{
+		TotalEvents:  1,
+		MonitorCount: 1,
+		Monitors: []digestMonitor{
+			{ID: "m", Name: "API", URL: "https://x", Events: []digestEventCount{{Type: "down", Count: 1}}, Severity: 0},
+		},
+		Date:   time.Date(2026, 3, 15, 9, 0, 0, 0, time.UTC),
+		AppURL: "",
+	}
+	if err := notifier.sendDigest(summary); err != nil {
+		t.Fatalf("sendDigest failed: %v", err)
+	}
+
+	ctxText := received["blocks"].([]interface{})[1].(map[string]interface{})["elements"].([]interface{})[0].(map[string]interface{})["text"].(string)
+	if strings.Contains(ctxText, "View full report") {
+		t.Errorf("no link expected when AppURL is empty, got: %s", ctxText)
+	}
+	sectionText := received["blocks"].([]interface{})[3].(map[string]interface{})["text"].(map[string]interface{})["text"].(string)
+	if !strings.Contains(sectionText, "*API*") {
+		t.Errorf("expected plain *API* with no AppURL, got: %s", sectionText)
+	}
+	if strings.Contains(sectionText, "<http") {
+		t.Errorf("expected no Slack link markup with empty AppURL, got: %s", sectionText)
+	}
+}
+
 func TestSlackDigest_SSLMessage(t *testing.T) {
 	var received map[string]interface{}
 

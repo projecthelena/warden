@@ -51,17 +51,52 @@ type SSLWarningDTO struct {
 // @Failure      500  {object} object{error=string}
 // @Router       /events [get]
 func (h *EventHandler) GetSystemEvents(w http.ResponseWriter, r *http.Request) {
-	activeOutages, err := h.store.GetActiveOutages()
+	// Optional filters: ?monitorId= / ?groupId= scope the outage lookups; ?date= scopes
+	// History to that UTC day. All combinable. Empty filter = "no constraint", which
+	// preserves the legacy behaviour (all monitors, 7-day rolling history).
+	filter := db.OutageFilter{
+		MonitorID: r.URL.Query().Get("monitorId"),
+		GroupID:   r.URL.Query().Get("groupId"),
+	}
+
+	activeOutages, err := h.store.GetActiveOutagesFiltered(filter)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to fetch active outages")
 		return
 	}
 
-	since := time.Now().Add(-7 * 24 * time.Hour)
-	resolvedOutages, err := h.store.GetResolvedOutages(since)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to fetch history")
+	dayStart, dayEnd, dateErr := parseDateParam(r.URL.Query().Get("date"))
+	if dateErr != nil {
+		writeError(w, http.StatusBadRequest, "invalid date (expected YYYY-MM-DD)")
 		return
+	}
+
+	var (
+		since           time.Time
+		resolvedOutages []db.MonitorOutage
+	)
+	if !dayStart.IsZero() {
+		since = dayStart
+		resolvedOutages, err = h.store.GetResolvedOutagesFiltered(since, filter)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to fetch history")
+			return
+		}
+		// Keep only outages that actually started on this day.
+		filtered := resolvedOutages[:0]
+		for _, o := range resolvedOutages {
+			if !o.StartTime.Before(dayStart) && o.StartTime.Before(dayEnd) {
+				filtered = append(filtered, o)
+			}
+		}
+		resolvedOutages = filtered
+	} else {
+		since = time.Now().Add(-7 * 24 * time.Hour)
+		resolvedOutages, err = h.store.GetResolvedOutagesFiltered(since, filter)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to fetch history")
+			return
+		}
 	}
 
 	var active []IncidentDTO
@@ -108,6 +143,14 @@ func (h *EventHandler) GetSystemEvents(w http.ResponseWriter, r *http.Request) {
 
 	var sslWarnings []SSLWarningDTO
 	for _, w := range sslWarningsDB {
+		// Apply the same monitor/group filter that the outage queries do, so a date-
+		// or monitor-scoped IncidentsView doesn't show certs from unrelated monitors.
+		if filter.MonitorID != "" && w.MonitorID != filter.MonitorID {
+			continue
+		}
+		if filter.GroupID != "" && w.GroupID != filter.GroupID {
+			continue
+		}
 		sslWarnings = append(sslWarnings, SSLWarningDTO{
 			ID:          fmt.Sprintf("%d", w.ID),
 			MonitorID:   w.MonitorID,

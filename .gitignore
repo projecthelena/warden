@@ -61,3 +61,8 @@ coverage/
 junit.xml
 
 dashboard
+# Claude Code internal worktrees + local settings
+.claude/
+
+# Locally-built tooling binary at repo root
+/faketarget
