@@ -3,6 +3,7 @@ package api
 import (
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -77,7 +78,7 @@ func (i *IPRateLimiter) cleanupLoop() {
 
 // extractIP extracts the client IP from a request, handling proxied requests.
 func extractIP(r *http.Request) string {
-	// chi's RealIP middleware sets RemoteAddr to the real IP
+	// RealIPFromProxy sets RemoteAddr to the real IP when we're behind a trusted proxy,
 	// but we need to extract just the IP without the port
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
@@ -85,6 +86,35 @@ func extractIP(r *http.Request) string {
 		return r.RemoteAddr
 	}
 	return ip
+}
+
+// RealIPFromProxy rewrites RemoteAddr from X-Forwarded-For. It replaces chi's
+// middleware.RealIP, which was deprecated as spoofable (GHSA-3fxj-6jh8-hvhx and
+// friends) because it reads the leftmost X-Forwarded-For entry and also honours
+// True-Client-IP / X-Real-IP whether or not the infrastructure sets them.
+//
+// We take the RIGHTMOST entry instead: that one is appended by our own reverse
+// proxy and is the address it actually observed. Everything to its left was sent
+// by the caller and can say anything, so trusting it would let an attacker rotate
+// X-Forwarded-For to defeat the login rate limiter and forge audit log lines.
+//
+// This assumes exactly one trusted proxy in front of Warden, which is what
+// TRUST_PROXY documents; the middleware is only mounted when that flag is set.
+func RealIPFromProxy(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			parts := strings.Split(xff, ",")
+			candidate := strings.TrimSpace(parts[len(parts)-1])
+			if net.ParseIP(candidate) != nil {
+				if _, port, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+					r.RemoteAddr = net.JoinHostPort(candidate, port)
+				} else {
+					r.RemoteAddr = candidate
+				}
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // RateLimitMiddleware returns middleware that rate limits requests by IP.

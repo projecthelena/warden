@@ -3,7 +3,9 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/projecthelena/warden/internal/db"
 	"github.com/projecthelena/warden/internal/uptime"
@@ -116,6 +118,9 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	digestEventTypes, _ := h.store.GetSetting("notification.digest.event_types")
 	if digestEventTypes == "" { digestEventTypes = "degraded,flapping,stabilized,ssl_expiring" }
 
+	// Dashboard base URL (used to build clickable links in Slack/webhook digests).
+	appURL, _ := h.store.GetSetting("app_url")
+
 	writeJSON(w, http.StatusOK, map[string]string{
 		"latency_threshold":                      val,
 		"data_retention_days":                    retention,
@@ -144,6 +149,7 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		"notification.digest.enabled":            digestEnabled,
 		"notification.digest.time":               digestTime,
 		"notification.digest.event_types":        digestEventTypes,
+		"app_url":                                appURL,
 	})
 }
 
@@ -307,6 +313,23 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 				return
 			}
 			notifFatigueChanged = true
+		}
+	}
+
+	// Dashboard base URL — used to build deep-links in Slack/webhook digests.
+	// Validate as an absolute http(s) URL; empty string disables linking.
+	if val, ok := body["app_url"]; ok {
+		trimmed := strings.TrimRight(strings.TrimSpace(val), "/")
+		if trimmed != "" {
+			u, err := url.Parse(trimmed)
+			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+				http.Error(w, "Invalid app_url (must be http(s)://host)", http.StatusBadRequest)
+				return
+			}
+		}
+		if err := h.store.SetSetting("app_url", trimmed); err != nil {
+			http.Error(w, "Failed to save app_url", http.StatusInternalServerError)
+			return
 		}
 	}
 

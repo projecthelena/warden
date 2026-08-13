@@ -6,7 +6,7 @@ import { SidebarProvider, SidebarInset, SidebarTrigger } from "./components/ui/s
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "./components/ui/separator";
 
-import { useMonitorStore, Group, OverviewGroup } from "./lib/store";
+import { useMonitorStore, Group, OverviewGroup, findMonitorWithGroup } from "./lib/store";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { Button } from "./components/ui/button";
 import { Trash2, ChevronRight } from "lucide-react";
@@ -20,6 +20,14 @@ import { StatusPage } from "./components/status-page/StatusPage";
 import { LoginPage } from "./components/auth/LoginPage";
 import { SettingsView } from "./components/settings/SettingsView";
 import { StatusPagesView } from "./components/status-pages/StatusPagesView";
+import { MonitorPage } from "./components/MonitorPage";
+
+// Legacy /digest/:date links from older Slack messages redirect into the canonical
+// /incidents?date=:date view, so we don't have two parallel surfaces.
+const DigestRedirect = () => {
+    const { date } = useParams<{ date: string }>();
+    return <Navigate to={`/incidents?date=${encodeURIComponent(date || "")}`} replace />;
+};
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
@@ -299,6 +307,8 @@ function AdminLayout() {
   const isStatusPages = location.pathname.startsWith('/status-pages');
   const groupId = location.pathname.startsWith('/groups/') ? location.pathname.split('/')[2] : null;
   const activeGroup = groupId ? safeGroups.find(g => g.id === groupId) : null;
+  const monitorRouteId = location.pathname.startsWith('/monitors/') ? location.pathname.split('/')[2] : null;
+  const monitorContext = monitorRouteId ? findMonitorWithGroup(safeGroups as Group[], monitorRouteId) : null;
 
   // Breadcrumbs Generator
   const getBreadcrumbs = () => {
@@ -323,6 +333,17 @@ function AdminLayout() {
     else if (activeGroup) {
       items.push({ title: "Groups", url: "/dashboard", active: false }); // Optional intermediate
       items.push({ title: activeGroup.name, url: `/groups/${activeGroup.id}`, active: true });
+    }
+    else if (monitorRouteId) {
+      // /monitors/:id — Dashboard / GroupName / MonitorName. While groups are still
+      // loading we fall back to "Monitor" so the breadcrumb still renders something
+      // sensible instead of flashing the raw ID.
+      if (monitorContext) {
+        items.push({ title: monitorContext.group.name, url: `/groups/${monitorContext.group.id}`, active: false });
+        items.push({ title: monitorContext.monitor.name, url: location.pathname, active: true });
+      } else {
+        items.push({ title: "Monitor", url: location.pathname, active: true });
+      }
     }
 
     return items;
@@ -381,6 +402,8 @@ function AdminLayout() {
                 <Route path="/groups/:groupId" element={<Dashboard />} />
                 <Route path="/incidents" element={<IncidentsView />} />
                 <Route path="/maintenance" element={<MaintenanceView />} />
+                <Route path="/monitors/:id" element={<MonitorPage />} />
+                <Route path="/digest/:date" element={<DigestRedirect />} />
                 <Route path="/notifications" element={<Navigate to="/settings?tab=notifications" replace />} />
                 <Route path="/settings" element={<SettingsView />} />
                 <Route path="/status-pages" element={<StatusPagesView />} />

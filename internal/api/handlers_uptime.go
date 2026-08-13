@@ -27,12 +27,23 @@ func getEventsForDTO(store *db.Store, monitorID string) []MonitorEvent {
 	}
 	var dtos []MonitorEvent
 	for _, e := range events {
-		dtos = append(dtos, MonitorEvent{
-			ID:        strconv.Itoa(e.ID),
-			Type:      e.Type,
-			Message:   e.Message,
-			Timestamp: e.Timestamp.Format(time.RFC3339),
-		})
+		dto := MonitorEvent{
+			ID:           strconv.Itoa(e.ID),
+			Type:         e.Type,
+			Message:      e.Message,
+			Timestamp:    e.Timestamp.Format(time.RFC3339),
+			StatusCode:   e.StatusCode,
+			Latency:      e.Latency,
+			ErrorMessage: e.ErrorMessage,
+			ResponseBody: e.ResponseBody,
+		}
+		if e.ResponseHeaders != nil && *e.ResponseHeaders != "" {
+			var headers map[string]string
+			if err := json.Unmarshal([]byte(*e.ResponseHeaders), &headers); err == nil {
+				dto.ResponseHeaders = headers
+			}
+		}
+		dtos = append(dtos, dto)
 	}
 	return dtos
 }
@@ -63,10 +74,15 @@ type MonitorDTO struct {
 }
 
 type MonitorEvent struct {
-	ID        string `json:"id"`
-	Type      string `json:"type"`
-	Message   string `json:"message"`
-	Timestamp string `json:"timestamp"`
+	ID              string            `json:"id"`
+	Type            string            `json:"type"`
+	Message         string            `json:"message"`
+	Timestamp       string            `json:"timestamp"`
+	StatusCode      *int              `json:"statusCode,omitempty"`
+	Latency         *int64            `json:"latency,omitempty"`
+	ErrorMessage    *string           `json:"errorMessage,omitempty"`
+	ResponseBody    *string           `json:"responseBody,omitempty"`
+	ResponseHeaders map[string]string `json:"responseHeaders,omitempty"`
 }
 
 type GroupDTO struct {
@@ -285,6 +301,141 @@ func (h *UptimeHandler) GetMonitorLatency(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(points)
+}
+
+// MonitorEventDTO is the enriched event payload returned to the dashboard drill-down view.
+type MonitorEventDTO struct {
+	ID              string             `json:"id"`
+	Type            string             `json:"type"`
+	Message         string             `json:"message"`
+	Timestamp       string             `json:"timestamp"`
+	StatusCode      *int               `json:"statusCode,omitempty"`
+	Latency         *int64             `json:"latency,omitempty"`
+	ErrorMessage    *string            `json:"errorMessage,omitempty"`
+	ResponseBody    *string            `json:"responseBody,omitempty"`
+	ResponseHeaders map[string]string  `json:"responseHeaders,omitempty"`
+}
+
+func toEventDTO(e db.MonitorEvent) MonitorEventDTO {
+	dto := MonitorEventDTO{
+		ID:           strconv.Itoa(e.ID),
+		Type:         e.Type,
+		Message:      e.Message,
+		Timestamp:    e.Timestamp.Format(time.RFC3339),
+		StatusCode:   e.StatusCode,
+		Latency:      e.Latency,
+		ErrorMessage: e.ErrorMessage,
+		ResponseBody: e.ResponseBody,
+	}
+	if e.ResponseHeaders != nil && *e.ResponseHeaders != "" {
+		var headers map[string]string
+		if err := json.Unmarshal([]byte(*e.ResponseHeaders), &headers); err == nil {
+			dto.ResponseHeaders = headers
+		}
+	}
+	return dto
+}
+
+// parseDateParam parses YYYY-MM-DD into a [start, end) day window in UTC. Returns the empty
+// time pair when the input is blank, signaling "no date filter".
+func parseDateParam(s string) (time.Time, time.Time, error) {
+	if s == "" {
+		return time.Time{}, time.Time{}, nil
+	}
+	t, err := time.Parse("2006-01-02", s)
+	if err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+	start := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+	return start, start.Add(24 * time.Hour), nil
+}
+
+// GetMonitorEvents returns enriched events for a single monitor, optionally filtered by date.
+// @Summary      Get enriched events for a monitor
+// @Tags         uptime
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path  string true  "Monitor ID"
+// @Param        date  query string false "Date filter YYYY-MM-DD (UTC). If omitted and from/to are also omitted, returns the most recent N events."
+// @Param        from  query string false "Range start (RFC3339). Used with `to` to drill into an outage window."
+// @Param        to    query string false "Range end (RFC3339). Used with `from`."
+// @Param        limit query int    false "Max events to return (default 100, max 500)"
+// @Success      200   {array} MonitorEventDTO
+// @Router       /monitors/{id}/events [get]
+func (h *UptimeHandler) GetMonitorEvents(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		http.Error(w, "ID required", http.StatusBadRequest)
+		return
+	}
+
+	limit := 100
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			if n > 500 {
+				n = 500
+			}
+			limit = n
+		}
+	}
+
+	// Two complementary time-range shortcuts:
+	//   ?date=YYYY-MM-DD       — whole UTC day (used by the Slack digest deep-link).
+	//   ?from=...&to=...       — explicit RFC3339 range (used by IncidentCard expand
+	//                             to load events that fell inside an outage window).
+	// from+to win over date if both are supplied.
+	fromStr := r.URL.Query().Get("from")
+	toStr := r.URL.Query().Get("to")
+
+	var (
+		start, end time.Time
+		err        error
+	)
+	if fromStr != "" || toStr != "" {
+		if fromStr == "" || toStr == "" {
+			http.Error(w, "from and to must be provided together", http.StatusBadRequest)
+			return
+		}
+		start, err = time.Parse(time.RFC3339, fromStr)
+		if err != nil {
+			http.Error(w, "Invalid from (expected RFC3339)", http.StatusBadRequest)
+			return
+		}
+		end, err = time.Parse(time.RFC3339, toStr)
+		if err != nil {
+			http.Error(w, "Invalid to (expected RFC3339)", http.StatusBadRequest)
+			return
+		}
+		// Inverted ranges silently return [] from the underlying SQL; reject them
+		// explicitly so client-side bugs (e.g. swapped args) fail loudly.
+		if !start.Before(end) {
+			http.Error(w, "from must be before to", http.StatusBadRequest)
+			return
+		}
+	} else {
+		start, end, err = parseDateParam(r.URL.Query().Get("date"))
+		if err != nil {
+			http.Error(w, "Invalid date (expected YYYY-MM-DD)", http.StatusBadRequest)
+			return
+		}
+	}
+
+	var events []db.MonitorEvent
+	if start.IsZero() {
+		events, err = h.store.GetMonitorEvents(id, limit)
+	} else {
+		events, err = h.store.GetMonitorEventsBetween(id, start, end, limit)
+	}
+	if err != nil {
+		http.Error(w, "Failed to fetch events: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	out := make([]MonitorEventDTO, 0, len(events))
+	for _, e := range events {
+		out = append(out, toEventDTO(e))
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // GetOverview returns a high-level status for each group.

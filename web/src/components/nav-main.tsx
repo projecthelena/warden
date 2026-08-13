@@ -17,7 +17,7 @@ import {
   SidebarMenuSubItem,
   useSidebar,
 } from "@/components/ui/sidebar"
-import { Group, OverviewGroup } from "@/lib/store"
+import { Group, OverviewGroup, findMonitorWithGroup } from "@/lib/store"
 import { useLocation, Link } from "react-router-dom"
 
 export function NavMain({
@@ -145,36 +145,50 @@ export function NavMain({
         <SidebarMenu>
           {renderItems(items)}
 
-          <Collapsible key="Groups" asChild defaultOpen={pathname.startsWith("/groups") || pathname === "/dashboard"} className="group/collapsible">
-            <SidebarMenuItem>
-              <CollapsibleTrigger asChild>
-                <SidebarMenuButton tooltip="Groups">
-                  <Folder />
-                  <span>Groups</span>
-                  <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                </SidebarMenuButton>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <SidebarMenuSub>
-                  {groups.map((group) => {
-                    const groupUrl = `/groups/${group.id}`;
-                    // Dashboard (root) often maps to default group, handling that edge case might be nice, but explicit ID check is safer
-                    const isActive = pathname === groupUrl;
+          {(() => {
+            // When viewing /monitors/:id, expand the Groups accordion and highlight the
+            // sub-item that owns that monitor — gives the user a clear "you are here"
+            // anchor without polluting the route table with a /groups/:gid/monitors/:mid
+            // shape.
+            const onMonitorRoute = pathname.startsWith("/monitors/");
+            const monitorId = onMonitorRoute ? pathname.split("/")[2] : "";
+            const owningGroup = onMonitorRoute
+              ? findMonitorWithGroup(groups as Group[], monitorId)?.group
+              : null;
+            const collapsibleOpen =
+              pathname.startsWith("/groups") || pathname === "/dashboard" || onMonitorRoute;
 
-                    return (
-                      <SidebarMenuSubItem key={group.id}>
-                        <SidebarMenuSubButton asChild isActive={isActive}>
-                          <Link to={groupUrl}>
-                            <span>{group.name}</span>
-                          </Link>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                    )
-                  })}
-                </SidebarMenuSub>
-              </CollapsibleContent>
-            </SidebarMenuItem>
-          </Collapsible>
+            return (
+              <Collapsible key="Groups" asChild defaultOpen={collapsibleOpen} className="group/collapsible">
+                <SidebarMenuItem>
+                  <CollapsibleTrigger asChild>
+                    <SidebarMenuButton tooltip="Groups">
+                      <Folder />
+                      <span>Groups</span>
+                      <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                    </SidebarMenuButton>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <SidebarMenuSub>
+                      {groups.map((group) => {
+                        const groupUrl = `/groups/${group.id}`;
+                        const isActive = pathname === groupUrl || owningGroup?.id === group.id;
+                        return (
+                          <SidebarMenuSubItem key={group.id}>
+                            <SidebarMenuSubButton asChild isActive={isActive}>
+                              <Link to={groupUrl}>
+                                <span>{group.name}</span>
+                              </Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        );
+                      })}
+                    </SidebarMenuSub>
+                  </CollapsibleContent>
+                </SidebarMenuItem>
+              </Collapsible>
+            );
+          })()}
 
           {settings && renderItems(settings)}
         </SidebarMenu>

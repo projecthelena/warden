@@ -24,8 +24,7 @@ test.describe('System Features', () => {
         await dashboard.createGroup(groupName);
 
         // 2. Navigate to Maintenance (SPA Nav)
-        // Expand Events menu if needed and click Maintenance link
-        await page.getByRole('button', { name: 'Events' }).click();
+        // Maintenance is a top-level sidebar link since the nav was flattened
         await page.getByRole('link', { name: 'Maintenance' }).click();
 
         // 3. Schedule Maintenance

@@ -26,7 +26,7 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		Username string `json:"username"`
-		Password string `json:"password"`
+		Password string `json:"password"` // #nosec G117 -- input-only DTO, never serialized in responses
 		Role     string `json:"role"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

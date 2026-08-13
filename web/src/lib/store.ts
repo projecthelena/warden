@@ -4,9 +4,14 @@ import { queryClient } from "./queryClient";
 
 export interface MonitorEvent {
     id: string;
-    type: 'up' | 'down' | 'degraded' | 'ssl_expiring' | 'flapping' | 'stabilized';
+    type: 'up' | 'down' | 'degraded' | 'ssl_expiring' | 'flapping' | 'stabilized' | 'recovered';
     timestamp: string;
     message: string;
+    statusCode?: number;
+    latency?: number;
+    errorMessage?: string;
+    responseBody?: string;
+    responseHeaders?: Record<string, string>;
 }
 
 export interface NotificationChannel {
@@ -68,6 +73,19 @@ export interface Group {
     id: string;
     name: string;
     monitors: Monitor[];
+}
+
+// findMonitorWithGroup walks the loaded groups looking for a monitor by id. Returns the
+// owning group alongside the monitor so callers can build a "Group / Monitor" breadcrumb
+// (App.tsx) and highlight the right sidebar entry (nav-main.tsx) without duplicating the
+// search logic. Returns null while groups are still loading.
+export function findMonitorWithGroup(groups: Group[] | undefined, monitorId: string): { group: Group; monitor: Monitor } | null {
+    if (!groups) return null;
+    for (const g of groups) {
+        const m = g.monitors?.find(mm => mm.id === monitorId);
+        if (m) return { group: g, monitor: m };
+    }
+    return null;
 }
 
 export interface IncidentUpdate {
@@ -220,7 +238,7 @@ interface MonitorStore {
     fetchMonitors: (groupId?: string) => Promise<void>;
     setGroups: (groups: Group[]) => void; // For React Query Sync
     setSystemEvents: (events: { active: SystemIncident[], history: SystemIncident[], sslWarnings: SSLWarning[] }) => void;
-    fetchSystemEvents: () => Promise<void>;
+    fetchSystemEvents: (date?: string) => Promise<void>;
     addGroup: (name: string) => Promise<string | undefined>;
     updateGroup: (id: string, name: string) => Promise<void>;
     deleteGroup: (id: string) => Promise<void>;
@@ -339,9 +357,10 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
             return { success: false, error: "Network connection refused or timeout" };
         }
     },
-    fetchSystemEvents: async () => {
+    fetchSystemEvents: async (date?: string) => {
         try {
-            const res = await fetch("/api/events", { credentials: "include" });
+            const qs = date ? `?date=${encodeURIComponent(date)}` : "";
+            const res = await fetch(`/api/events${qs}`, { credentials: "include" });
             if (res.ok) {
                 const data = await res.json();
                 set({

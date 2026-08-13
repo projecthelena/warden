@@ -240,6 +240,7 @@ func SendDirect(channelType, configJSON string, event NotificationEvent) error {
 
 // digestMonitor holds the summary data for one monitor in the digest.
 type digestMonitor struct {
+	ID         string
 	Name       string
 	URL        string
 	Events     []digestEventCount
@@ -259,6 +260,7 @@ type digestSummary struct {
 	MonitorCount int
 	Monitors     []digestMonitor
 	Date         time.Time
+	AppURL       string // optional; when set, links are added to Slack/webhook output
 }
 
 func eventSeverity(eventType string) int {
@@ -329,6 +331,7 @@ func (s *Service) SendDigest(events []db.DigestEvent) {
 	}
 
 	type monitorData struct {
+		id         string
 		name       string
 		url        string
 		counts     map[string]int
@@ -340,7 +343,7 @@ func (s *Service) SendDigest(events []db.DigestEvent) {
 	for _, e := range events {
 		md, ok := byMonitor[e.MonitorID]
 		if !ok {
-			md = &monitorData{name: e.MonitorName, url: e.MonitorURL, counts: make(map[string]int)}
+			md = &monitorData{id: e.MonitorID, name: e.MonitorName, url: e.MonitorURL, counts: make(map[string]int)}
 			byMonitor[e.MonitorID] = md
 			monitorOrder = append(monitorOrder, e.MonitorID)
 		}
@@ -372,6 +375,7 @@ func (s *Service) SendDigest(events []db.DigestEvent) {
 		}
 
 		monitors = append(monitors, digestMonitor{
+			ID:         md.id,
 			Name:       md.name,
 			URL:        md.url,
 			Events:     eventCounts,
@@ -385,11 +389,18 @@ func (s *Service) SendDigest(events []db.DigestEvent) {
 		return monitors[i].Severity < monitors[j].Severity
 	})
 
+	// Resolve the dashboard base URL so digest messages can deep-link back to enriched
+	// per-monitor and per-date views. Stored as the `app_url` setting; if blank or invalid,
+	// we omit links and keep the legacy plain-text rendering.
+	appURL, _ := s.store.GetSetting("app_url")
+	appURL = strings.TrimRight(strings.TrimSpace(appURL), "/")
+
 	summary := digestSummary{
 		TotalEvents:  len(events),
 		MonitorCount: len(monitors),
 		Monitors:     monitors,
 		Date:         time.Now(),
+		AppURL:       appURL,
 	}
 
 	for _, ch := range channels {
@@ -412,6 +423,49 @@ func (s *Service) SendDigest(events []db.DigestEvent) {
 	}
 }
 
+// slackEscapeLinkText escapes the characters Slack reserves inside <url|text> markup so that
+// monitor names containing `|`, `<`, or `>` don't corrupt the link.
+func slackEscapeLinkText(s string) string {
+	r := strings.NewReplacer("|", "&#124;", "<", "&lt;", ">", "&gt;")
+	return r.Replace(s)
+}
+
+// buildDigestURL returns the canonical "what happened on this day" link for the daily digest.
+// It points at the Incidents page filtered by date — there is no separate digest page; the
+// IncidentsView is the single canonical surface for outage/event history.
+//
+// Defense in depth: even though the settings handler validates app_url to http(s) on save,
+// a value persisted before validation existed (or one written via a raw SQL update) could be
+// anything. Re-parse here and drop the link entirely if the scheme isn't http(s) — better to
+// fall back to plain text than to embed `javascript:` or `file://` in Slack output.
+func buildDigestURL(appURL string, date time.Time) string {
+	if !isHTTPURL(appURL) {
+		return ""
+	}
+	return fmt.Sprintf("%s/incidents?date=%s", appURL, date.Format("2006-01-02"))
+}
+
+// buildMonitorURL returns "<appURL>/monitors/{id}?date=YYYY-MM-DD" or "" if appURL is
+// missing/invalid (see buildDigestURL for the rationale on re-validating here).
+func buildMonitorURL(appURL, monitorID string, date time.Time) string {
+	if monitorID == "" || !isHTTPURL(appURL) {
+		return ""
+	}
+	return fmt.Sprintf("%s/monitors/%s?date=%s", appURL, monitorID, date.Format("2006-01-02"))
+}
+
+// isHTTPURL reports whether s parses as an absolute http(s) URL with a non-empty host.
+func isHTTPURL(s string) bool {
+	if s == "" {
+		return false
+	}
+	u, err := url.Parse(s)
+	if err != nil {
+		return false
+	}
+	return (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
+}
+
 func (n *SlackNotifier) sendDigest(summary digestSummary) error {
 	webhookURL, ok := n.config["webhookUrl"].(string)
 	if !ok || webhookURL == "" {
@@ -420,6 +474,9 @@ func (n *SlackNotifier) sendDigest(summary digestSummary) error {
 
 	dateStr := summary.Date.Format("January 2, 2006")
 
+	// Subtitle/fallback differ depending on whether anything happened. Both branches
+	// also get the optional "View full report" deeplink to the IncidentsView at the
+	// bottom of the subtitle when an app_url is configured.
 	var subtitle, fallbackText string
 	if summary.TotalEvents == 0 {
 		subtitle = fmt.Sprintf(":white_check_mark: %s  ·  All systems operational", dateStr)
@@ -429,6 +486,9 @@ func (n *SlackNotifier) sendDigest(summary digestSummary) error {
 			dateStr, summary.TotalEvents, summary.MonitorCount)
 		fallbackText = fmt.Sprintf(":bar_chart: Daily Monitoring Summary — %d events across %d monitors",
 			summary.TotalEvents, summary.MonitorCount)
+	}
+	if digestURL := buildDigestURL(summary.AppURL, summary.Date); digestURL != "" {
+		subtitle += fmt.Sprintf("  ·  <%s|View full report>", digestURL)
 	}
 
 	blocks := []map[string]interface{}{
@@ -480,8 +540,16 @@ func (n *SlackNotifier) sendDigest(summary digestSummary) error {
 				monitorEmoji = eventEmoji(m.Events[0].Type)
 			}
 
-			text := fmt.Sprintf("%s  *%s*\n%s",
-				monitorEmoji, m.Name, strings.Join(eventParts, "  ·  "))
+			// Wrap the monitor name as a Slack link to its dedicated day page when an
+			// app_url is configured. Slack reserves `|`/`<`/`>` inside <url|text>, so
+			// we escape them in the name.
+			nameMarkup := fmt.Sprintf("*%s*", m.Name)
+			if monURL := buildMonitorURL(summary.AppURL, m.ID, summary.Date); monURL != "" {
+				nameMarkup = fmt.Sprintf("<%s|*%s*>", monURL, slackEscapeLinkText(m.Name))
+			}
+
+			text := fmt.Sprintf("%s  %s\n%s",
+				monitorEmoji, nameMarkup, strings.Join(eventParts, "  ·  "))
 
 			blocks = append(blocks, map[string]interface{}{
 				"type": "section",
@@ -514,11 +582,16 @@ func (n *WebhookNotifier) sendDigest(summary digestSummary, events []db.DigestEv
 		for _, ec := range m.Events {
 			eventCounts[ec.Type] = ec.Count
 		}
-		monitorSummaries = append(monitorSummaries, map[string]interface{}{
+		entry := map[string]interface{}{
+			"id":     m.ID,
 			"name":   m.Name,
 			"url":    m.URL,
 			"events": eventCounts,
-		})
+		}
+		if dash := buildMonitorURL(summary.AppURL, m.ID, summary.Date); dash != "" {
+			entry["dashboardUrl"] = dash
+		}
+		monitorSummaries = append(monitorSummaries, entry)
 	}
 
 	var summaryText string
@@ -555,6 +628,9 @@ func (n *WebhookNotifier) sendDigest(summary digestSummary, events []db.DigestEv
 		"monitorCount": summary.MonitorCount,
 		"monitors":     monitorSummaries,
 		"timestamp":    summary.Date.Format(time.RFC3339),
+	}
+	if dash := buildDigestURL(summary.AppURL, summary.Date); dash != "" {
+		payload["dashboardUrl"] = dash
 	}
 
 	return sendJSON(webhookURL, payload)

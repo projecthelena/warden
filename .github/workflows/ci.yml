@@ -8,7 +8,11 @@ on:
 
 env:
   NODE_VERSION: "22"
-  GO_VERSION: "1.25.8"
+  GO_VERSION: "1.25.12"
+  # Pinned: installing these @latest means a new upstream release can add rules and break
+  # CI on code that never changed. Renovate bumps them deliberately instead.
+  GOSEC_VERSION: "v2.28.0"
+  GOVULNCHECK_VERSION: "v1.1.4"
 
 jobs:
   changes:
@@ -87,16 +91,16 @@ jobs:
 
       - name: Security Scan (gosec)
         run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          go install github.com/securego/gosec/v2/cmd/gosec@${{ env.GOSEC_VERSION }}
           gosec -exclude-dir=web ./...
 
       - name: Vulnerability Check (govulncheck)
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@${{ env.GOVULNCHECK_VERSION }}
           govulncheck ./...
 
       - name: Dependency Vulnerability Scan (Trivy)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: 'fs'
           scan-ref: '.'

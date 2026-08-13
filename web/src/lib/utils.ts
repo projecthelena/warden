@@ -164,3 +164,26 @@ export const formatDate = (date: string | Date | number, timezone: string = 'UTC
     return String(date);
   }
 };
+
+// Clock time only. Used where the date is already established by the surrounding context
+// (a day-scoped page, or the other end of a range) and repeating it would be noise.
+export const formatTime = (date: string | Date | number, timezone: string = 'UTC') => {
+  if (!date) return '';
+  const d = new Date(date);
+  if (isNaN(d.getTime())) {
+    return typeof date === 'string' ? date : '';
+  }
+
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+      timeZone: timezone,
+    }).format(d);
+  } catch (error) {
+    console.error("Error formatting time:", error);
+    return String(date);
+  }
+};
