@@ -56,7 +56,7 @@ func TestManager_Sync(t *testing.T) {
 	}
 
 	// Update in DB (change interval)
-	if err := s.UpdateMonitor("m-test-1", "Test Monitor", "http://example.com", 120, nil, nil, nil, nil); err != nil {
+	if err := s.UpdateMonitor("m-test-1", "http", "Test Monitor", "http://example.com", 120, nil, nil, nil, nil); err != nil {
 		t.Fatalf("Failed to update monitor: %v", err)
 	}
 
@@ -900,7 +900,7 @@ func TestManager_ServiceRestart_PausedMonitorStaysPaused(t *testing.T) {
 
 func TestMonitor_DoubleStopNoPanic(t *testing.T) {
 	jobQueue := make(chan Job, 10)
-	mon := NewMonitor("m1", "g1", "Double Stop", "http://example.com", 10*time.Millisecond, jobQueue, time.Now(), nil)
+	mon := NewMonitor("m1", "http", "g1", "Double Stop", "http://example.com", 10*time.Millisecond, jobQueue, time.Now(), nil)
 
 	go mon.Start()
 	time.Sleep(20 * time.Millisecond)
@@ -1046,7 +1046,7 @@ func TestManager_UpdateWhilePaused(t *testing.T) {
 	m.Sync()
 
 	// Update the monitor while paused
-	if err := store.UpdateMonitor("m-update-paused", "Updated Name", "http://updated.com", 120, nil, nil, nil, nil); err != nil {
+	if err := store.UpdateMonitor("m-update-paused", "http", "Updated Name", "http://updated.com", 120, nil, nil, nil, nil); err != nil {
 		t.Fatalf("UpdateMonitor failed: %v", err)
 	}
 	m.Sync()
@@ -1879,7 +1879,7 @@ func TestManager_SyncWithRequestConfig(t *testing.T) {
 	newRC := &db.RequestConfig{
 		Method: "HEAD",
 	}
-	if err := s.UpdateMonitor("m-rc-sync", "RC Sync Test", "http://example.com", 60, nil, nil, nil, newRC); err != nil {
+	if err := s.UpdateMonitor("m-rc-sync", "http", "RC Sync Test", "http://example.com", 60, nil, nil, nil, newRC); err != nil {
 		t.Fatalf("UpdateMonitor failed: %v", err)
 	}
 

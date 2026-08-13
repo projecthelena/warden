@@ -17,16 +17,17 @@ type Status struct {
 }
 
 type Monitor struct {
-	id        string
-	groupID   string
-	name      string
-	url       string
-	interval  time.Duration
-	createdAt time.Time
-	history   []Status
-	mu        sync.RWMutex
-	stopCh    chan struct{}
-	stopOnce  sync.Once
+	id            string
+	monitorType   string
+	groupID       string
+	name          string
+	url           string
+	interval      time.Duration
+	createdAt     time.Time
+	history       []Status
+	mu            sync.RWMutex
+	stopCh        chan struct{}
+	stopOnce      sync.Once
 	jobQueue      chan<- Job
 	requestConfig *db.RequestConfig
 
@@ -94,12 +95,13 @@ type MonitorConfig struct {
 	RecoveryConfirmationChecks int
 }
 
-func NewMonitor(id, groupID, name, url string, interval time.Duration, jobQueue chan<- Job, createdAt time.Time, reqConfig *db.RequestConfig) *Monitor {
+func NewMonitor(id, monitorType, groupID, name, url string, interval time.Duration, jobQueue chan<- Job, createdAt time.Time, reqConfig *db.RequestConfig) *Monitor {
 	if createdAt.IsZero() {
 		createdAt = time.Now()
 	}
 	return &Monitor{
 		id:                    id,
+		monitorType:           db.NormalizeMonitorType(monitorType),
 		groupID:               groupID,
 		name:                  name,
 		url:                   url,
@@ -199,7 +201,7 @@ func (m *Monitor) schedule() {
 	cfg := m.requestConfig
 	m.mu.RUnlock()
 	select {
-	case m.jobQueue <- Job{MonitorID: m.id, URL: m.url, RequestConfig: cfg}:
+	case m.jobQueue <- Job{MonitorID: m.id, Type: m.monitorType, URL: m.url, RequestConfig: cfg}:
 		// Scheduled
 	default:
 		// Queue full, skip this tick to avoid blocking scheduler
@@ -249,6 +251,11 @@ func (m *Monitor) GetName() string {
 
 func (m *Monitor) GetTargetURL() string {
 	return m.url
+}
+
+// GetType returns the check type the monitor runs against its target.
+func (m *Monitor) GetType() string {
+	return m.monitorType
 }
 
 func (m *Monitor) GetGroupID() string {

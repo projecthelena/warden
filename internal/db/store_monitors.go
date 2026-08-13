@@ -8,7 +8,9 @@ import (
 	"time"
 )
 
-// RequestConfig holds per-monitor HTTP request customization.
+// RequestConfig holds per-monitor check customization. TimeoutSeconds and RetryCount
+// apply to every monitor type; the remaining fields are only read by the check type
+// they belong to (HTTP request options, DNS lookup options).
 type RequestConfig struct {
 	Method              string            `json:"method,omitempty"`
 	Headers             map[string]string `json:"headers,omitempty"`
@@ -17,26 +19,60 @@ type RequestConfig struct {
 	FollowRedirects     *bool             `json:"followRedirects,omitempty"`
 	AcceptedStatusCodes string            `json:"acceptedStatusCodes,omitempty"`
 	RetryCount          int               `json:"retryCount,omitempty"`
+
+	// DNS-only options.
+	DNSRecordType string `json:"dnsRecordType,omitempty"` // A, AAAA, CNAME, MX, NS, TXT (default A)
+	DNSResolver   string `json:"dnsResolver,omitempty"`   // resolver to query, host or host:port (default system)
 }
 
 // IsEmpty returns true if all fields are at their zero/default values.
 func (rc *RequestConfig) IsEmpty() bool {
 	return rc.Method == "" && len(rc.Headers) == 0 && rc.Body == "" &&
 		rc.TimeoutSeconds == 0 && rc.FollowRedirects == nil &&
-		rc.AcceptedStatusCodes == "" && rc.RetryCount == 0
+		rc.AcceptedStatusCodes == "" && rc.RetryCount == 0 &&
+		rc.DNSRecordType == "" && rc.DNSResolver == ""
+}
+
+// Check types a monitor can run against its target.
+const (
+	MonitorTypeHTTP = "http" // GET/POST an URL and inspect the status code
+	MonitorTypeTCP  = "tcp"  // open a TCP connection to host:port
+	MonitorTypePing = "ping" // ICMP echo request to a host
+	MonitorTypeDNS  = "dns"  // resolve a name, optionally against a specific resolver
+)
+
+// NormalizeMonitorType fills in the default for monitors stored before check types
+// existed, which read back with an empty type.
+func NormalizeMonitorType(t string) string {
+	if t == "" {
+		return MonitorTypeHTTP
+	}
+	return t
+}
+
+// IsValidMonitorType reports whether t is a check type Warden knows how to run.
+func IsValidMonitorType(t string) bool {
+	switch t {
+	case MonitorTypeHTTP, MonitorTypeTCP, MonitorTypePing, MonitorTypeDNS:
+		return true
+	}
+	return false
 }
 
 // ErrMonitorNotFound is returned when a monitor is not found
 var ErrMonitorNotFound = errors.New("monitor not found")
 
 type Monitor struct {
-	ID                      string    `json:"id"`
-	GroupID                 string    `json:"groupId"`
-	Name                    string    `json:"name"`
-	URL                     string    `json:"url"`
-	Active                  bool      `json:"active"`
-	Interval                int       `json:"interval"` // Seconds
-	CreatedAt               time.Time `json:"createdAt"`
+	ID string `json:"id"`
+	// Type selects the check performed against URL: http, tcp, ping or dns.
+	// Empty means http, so monitors created before check types existed keep working.
+	Type                    string         `json:"type"`
+	GroupID                 string         `json:"groupId"`
+	Name                    string         `json:"name"`
+	URL                     string         `json:"url"`
+	Active                  bool           `json:"active"`
+	Interval                int            `json:"interval"` // Seconds
+	CreatedAt               time.Time      `json:"createdAt"`
 	ConfirmationThreshold   *int           `json:"confirmationThreshold,omitempty"`
 	NotificationCooldownMin *int           `json:"notificationCooldownMinutes,omitempty"`
 	LatencyThreshold        *int           `json:"latencyThreshold,omitempty"`
@@ -111,12 +147,12 @@ func (s *Store) CreateMonitor(m Monitor) error {
 		}
 		reqCfg = sql.NullString{String: string(b), Valid: true}
 	}
-	_, err := s.db.Exec(s.rebind("INSERT INTO monitors (id, group_id, name, url, active, interval_seconds, created_at, confirmation_threshold, notification_cooldown_minutes, latency_threshold, request_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
-		m.ID, m.GroupID, m.Name, m.URL, m.Active, m.Interval, time.Now(), toNullInt64(m.ConfirmationThreshold), toNullInt64(m.NotificationCooldownMin), toNullInt64(m.LatencyThreshold), reqCfg)
+	_, err := s.db.Exec(s.rebind("INSERT INTO monitors (id, type, group_id, name, url, active, interval_seconds, created_at, confirmation_threshold, notification_cooldown_minutes, latency_threshold, request_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
+		m.ID, NormalizeMonitorType(m.Type), m.GroupID, m.Name, m.URL, m.Active, m.Interval, time.Now(), toNullInt64(m.ConfirmationThreshold), toNullInt64(m.NotificationCooldownMin), toNullInt64(m.LatencyThreshold), reqCfg)
 	return err
 }
 
-func (s *Store) UpdateMonitor(id, name, url string, interval int, confirmThreshold *int, cooldownMins *int, latencyThreshold *int, reqConfig *RequestConfig) error {
+func (s *Store) UpdateMonitor(id, monitorType, name, url string, interval int, confirmThreshold *int, cooldownMins *int, latencyThreshold *int, reqConfig *RequestConfig) error {
 	if interval < 1 {
 		interval = 60
 	}
@@ -129,8 +165,8 @@ func (s *Store) UpdateMonitor(id, name, url string, interval int, confirmThresho
 		reqCfg = sql.NullString{String: string(b), Valid: true}
 	}
 	// Don't modify active flag - it's managed separately via SetMonitorActive
-	res, err := s.db.Exec(s.rebind("UPDATE monitors SET name = ?, url = ?, interval_seconds = ?, confirmation_threshold = ?, notification_cooldown_minutes = ?, latency_threshold = ?, request_config = ? WHERE id = ?"),
-		name, url, interval, toNullInt64(confirmThreshold), toNullInt64(cooldownMins), toNullInt64(latencyThreshold), reqCfg, id)
+	res, err := s.db.Exec(s.rebind("UPDATE monitors SET type = ?, name = ?, url = ?, interval_seconds = ?, confirmation_threshold = ?, notification_cooldown_minutes = ?, latency_threshold = ?, request_config = ? WHERE id = ?"),
+		NormalizeMonitorType(monitorType), name, url, interval, toNullInt64(confirmThreshold), toNullInt64(cooldownMins), toNullInt64(latencyThreshold), reqCfg, id)
 	if err != nil {
 		return err
 	}
@@ -166,7 +202,7 @@ func (s *Store) SetMonitorActive(id string, active bool) error {
 
 // GetMonitors returns all monitors
 func (s *Store) GetMonitors() ([]Monitor, error) {
-	rows, err := s.db.Query("SELECT id, group_id, name, url, active, interval_seconds, created_at, confirmation_threshold, notification_cooldown_minutes, latency_threshold, request_config FROM monitors ORDER BY created_at ASC")
+	rows, err := s.db.Query("SELECT id, type, group_id, name, url, active, interval_seconds, created_at, confirmation_threshold, notification_cooldown_minutes, latency_threshold, request_config FROM monitors ORDER BY created_at ASC")
 	if err != nil {
 		return nil, err
 	}
@@ -177,9 +213,10 @@ func (s *Store) GetMonitors() ([]Monitor, error) {
 		var m Monitor
 		var confirmThreshold, cooldownMins, latencyThresh sql.NullInt64
 		var reqCfgStr sql.NullString
-		if err := rows.Scan(&m.ID, &m.GroupID, &m.Name, &m.URL, &m.Active, &m.Interval, &m.CreatedAt, &confirmThreshold, &cooldownMins, &latencyThresh, &reqCfgStr); err != nil {
+		if err := rows.Scan(&m.ID, &m.Type, &m.GroupID, &m.Name, &m.URL, &m.Active, &m.Interval, &m.CreatedAt, &confirmThreshold, &cooldownMins, &latencyThresh, &reqCfgStr); err != nil {
 			return nil, err
 		}
+		m.Type = NormalizeMonitorType(m.Type)
 		if confirmThreshold.Valid {
 			v := int(confirmThreshold.Int64)
 			m.ConfirmationThreshold = &v

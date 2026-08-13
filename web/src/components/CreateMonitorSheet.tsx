@@ -25,7 +25,8 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { Group, RequestConfig } from "@/lib/store";
+import { DNS_RECORD_TYPES, Group, MONITOR_TYPES, MonitorType, RequestConfig } from "@/lib/store";
+import { MONITOR_TYPE_INFO, isValidTarget } from "@/lib/monitorTypes";
 import { useCreateGroupMutation, useCreateMonitorMutation } from "@/hooks/useMonitors";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -36,6 +37,7 @@ interface CreateMonitorSheetProps {
 
 export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetProps) {
     const [name, setName] = useState("");
+    const [monitorType, setMonitorType] = useState<MonitorType>("http");
     const [url, setUrl] = useState("");
     // Removed unused groupName state
 
@@ -69,6 +71,10 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
     const [acceptedCodes, setAcceptedCodes] = useState("");
     const [customHeaders, setCustomHeaders] = useState<{ key: string; value: string }[]>([]);
     const [requestBody, setRequestBody] = useState("");
+    const [dnsRecordType, setDnsRecordType] = useState("A");
+    const [dnsResolver, setDnsResolver] = useState("");
+
+    const typeInfo = MONITOR_TYPE_INFO[monitorType];
 
     const [open, setOpen] = useState(false);
 
@@ -98,12 +104,16 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
 
         try {
             // Client-side Validation
-            // 1. Validate URL
-            try {
-                new URL(url);
-            } catch {
+            // 1. Validate target for the selected check type. Targets get pasted, and a
+            // stray space would only be forgiven by the URL parser, not by the others.
+            const target = url.trim();
+            if (!isValidTarget(monitorType, target)) {
                 setUrlError(true);
-                toast({ title: "Invalid URL", description: "Please enter a valid URL (e.g. https://example.com)", variant: "destructive" });
+                toast({
+                    title: "Invalid Target",
+                    description: `Please enter a valid target (e.g. ${typeInfo.placeholder})`,
+                    variant: "destructive",
+                });
                 return;
             }
 
@@ -140,28 +150,36 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                 }
             }
 
-            // Build request config if any fields are non-default
-            let requestConfig: RequestConfig | undefined;
-            const headers: Record<string, string> = {};
-            for (const h of customHeaders) {
-                if (h.key.trim()) headers[h.key.trim()] = h.value.trim();
+            // Build the check config: the shared options plus whatever the selected
+            // type actually reads. Send nothing when everything is left at defaults.
+            const config: RequestConfig = {};
+            if (requestTimeout) config.timeoutSeconds = parseInt(requestTimeout);
+            if (parseInt(retryCount) > 0) config.retryCount = parseInt(retryCount);
+
+            if (monitorType === "http") {
+                const headers: Record<string, string> = {};
+                for (const h of customHeaders) {
+                    if (h.key.trim()) headers[h.key.trim()] = h.value.trim();
+                }
+                if (httpMethod !== "GET") config.method = httpMethod;
+                if (!followRedirects) config.followRedirects = false;
+                if (acceptedCodes) config.acceptedStatusCodes = acceptedCodes;
+                if (Object.keys(headers).length > 0) config.headers = headers;
+                if (requestBody) config.body = requestBody;
             }
-            const hasConfig = httpMethod !== "GET" || requestTimeout || parseInt(retryCount) > 0 ||
-                !followRedirects || acceptedCodes || Object.keys(headers).length > 0 || requestBody;
-            if (hasConfig) {
-                requestConfig = {};
-                if (httpMethod !== "GET") requestConfig.method = httpMethod;
-                if (requestTimeout) requestConfig.timeoutSeconds = parseInt(requestTimeout);
-                if (parseInt(retryCount) > 0) requestConfig.retryCount = parseInt(retryCount);
-                if (!followRedirects) requestConfig.followRedirects = false;
-                if (acceptedCodes) requestConfig.acceptedStatusCodes = acceptedCodes;
-                if (Object.keys(headers).length > 0) requestConfig.headers = headers;
-                if (requestBody) requestConfig.body = requestBody;
+
+            if (monitorType === "dns") {
+                if (dnsRecordType !== "A") config.dnsRecordType = dnsRecordType;
+                if (dnsResolver) config.dnsResolver = dnsResolver;
             }
+
+            const requestConfig: RequestConfig | undefined =
+                Object.keys(config).length > 0 ? config : undefined;
 
             await createMonitor.mutateAsync({
                 name,
-                url,
+                type: monitorType,
+                url: target,
                 groupId: finalGroupId,
                 interval,
                 confirmationThreshold: confirmThreshold ? parseInt(confirmThreshold) : undefined,
@@ -174,6 +192,7 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
 
             // Reset
             setName("");
+            setMonitorType("http");
             setUrl("");
             setNewGroupName("");
             setSelectedGroupId("");
@@ -190,6 +209,8 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
             setAcceptedCodes("");
             setCustomHeaders([]);
             setRequestBody("");
+            setDnsRecordType("A");
+            setDnsResolver("");
             setOpen(false);
 
             // Redirect to the group page
@@ -241,10 +262,26 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                         />
                     </div>
                     <div className="grid gap-2">
-                        <Label htmlFor="url">Target URL</Label>
+                        <Label htmlFor="type">Check Type</Label>
+                        <Select onValueChange={(v) => setMonitorType(v as MonitorType)} value={monitorType}>
+                            <SelectTrigger data-testid="create-monitor-type-select">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {MONITOR_TYPES.map((t) => (
+                                    <SelectItem key={t} value={t} className="cursor-pointer">
+                                        {MONITOR_TYPE_INFO[t].label}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <p className="text-[0.8rem] text-muted-foreground">{typeInfo.hint}</p>
+                    </div>
+                    <div className="grid gap-2">
+                        <Label htmlFor="url">{typeInfo.targetLabel}</Label>
                         <Input
                             id="url"
-                            placeholder="https://api.example.com/health"
+                            placeholder={typeInfo.placeholder}
                             className={cn("font-mono text-sm", urlError && "border-red-500 focus-visible:ring-red-500")}
                             value={url}
                             onChange={(e) => setUrl(e.target.value)}
@@ -369,21 +406,10 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                                 </div>
 
                                 <div className="border-t border-border pt-3 space-y-3">
-                                    <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Request Configuration</h4>
+                                    <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Check Configuration</h4>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div className="grid gap-1.5">
-                                            <Label className="text-xs">HTTP Method</Label>
-                                            <Select onValueChange={setHttpMethod} value={httpMethod}>
-                                                <SelectTrigger data-testid="request-method-select"><SelectValue /></SelectTrigger>
-                                                <SelectContent>
-                                                    {["GET", "HEAD", "POST", "PUT", "DELETE"].map(m => (
-                                                        <SelectItem key={m} value={m} className="cursor-pointer">{m}</SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                        <div className="grid gap-1.5">
-                                            <Label className="text-xs">Request Timeout (s)</Label>
+                                            <Label className="text-xs">Timeout (s)</Label>
                                             <Input
                                                 type="number"
                                                 min={1}
@@ -402,6 +428,55 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                                                         <SelectItem key={n} value={n.toString()} className="cursor-pointer">
                                                             {n === 0 ? "No retry" : `${n} ${n === 1 ? "retry" : "retries"}`}
                                                         </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {monitorType === "dns" && (
+                                    <div className="border-t border-border pt-3 space-y-3">
+                                        <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">DNS Configuration</h4>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="grid gap-1.5">
+                                                <Label className="text-xs">Record Type</Label>
+                                                <Select onValueChange={setDnsRecordType} value={dnsRecordType}>
+                                                    <SelectTrigger data-testid="dns-record-type-select"><SelectValue /></SelectTrigger>
+                                                    <SelectContent>
+                                                        {DNS_RECORD_TYPES.map(rt => (
+                                                            <SelectItem key={rt} value={rt} className="cursor-pointer">{rt}</SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                            <div className="grid gap-1.5">
+                                                <Label className="text-xs">Resolver</Label>
+                                                <Input
+                                                    placeholder="System default"
+                                                    value={dnsResolver}
+                                                    onChange={(e) => setDnsResolver(e.target.value)}
+                                                    data-testid="dns-resolver-input"
+                                                />
+                                            </div>
+                                        </div>
+                                        <p className="text-xs text-muted-foreground">
+                                            Query a specific nameserver (e.g. 1.1.1.1) to monitor it directly, or leave empty to use the system resolver.
+                                        </p>
+                                    </div>
+                                )}
+
+                                {monitorType === "http" && (
+                                <div className="border-t border-border pt-3 space-y-3">
+                                    <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Request Configuration</h4>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="grid gap-1.5">
+                                            <Label className="text-xs">HTTP Method</Label>
+                                            <Select onValueChange={setHttpMethod} value={httpMethod}>
+                                                <SelectTrigger data-testid="request-method-select"><SelectValue /></SelectTrigger>
+                                                <SelectContent>
+                                                    {["GET", "HEAD", "POST", "PUT", "DELETE"].map(m => (
+                                                        <SelectItem key={m} value={m} className="cursor-pointer">{m}</SelectItem>
                                                     ))}
                                                 </SelectContent>
                                             </Select>
@@ -478,6 +553,7 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                                         </div>
                                     )}
                                 </div>
+                                )}
                             </div>
                         )}
                     </div>

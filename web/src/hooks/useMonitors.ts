@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Group, RequestConfig, useMonitorStore } from "@/lib/store";
+import { Group, MonitorType, RequestConfig, useMonitorStore } from "@/lib/store";
 import { computePollingInterval } from "@/lib/pollingInterval";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
@@ -86,6 +86,7 @@ export function useCreateGroupMutation() {
 // Create Monitor
 interface CreateMonitorPayload {
     name: string;
+    type: MonitorType;
     url: string;
     groupId: string;
     interval: number;

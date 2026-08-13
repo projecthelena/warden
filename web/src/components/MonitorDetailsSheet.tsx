@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { Monitor, RequestConfig, useMonitorStore } from "@/lib/store";
+import { DNS_RECORD_TYPES, MONITOR_TYPES, Monitor, MonitorType, RequestConfig, useMonitorStore } from "@/lib/store";
+import { MONITOR_TYPE_INFO, isValidTarget } from "@/lib/monitorTypes";
 import { formatDate } from "@/lib/utils";
 import {
     Sheet,
@@ -23,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { StatusBadge } from "@/components/ui/monitor-visuals";
 import { useRole } from "@/hooks/useRole";
+import { useToast } from "@/components/ui/use-toast";
 import { Trash2, Save, BarChart, Pause, Play, X, ExternalLink } from "lucide-react";
 import { Link } from "react-router-dom";
 import {
@@ -47,8 +49,10 @@ interface MonitorDetailsSheetProps {
 export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDetailsSheetProps) {
     const { updateMonitor, deleteMonitor, pauseMonitor, resumeMonitor, user } = useMonitorStore();
     const { canEdit } = useRole();
+    const { toast } = useToast();
     const isPaused = monitor.status === 'paused';
     const [name, setName] = useState(monitor.name);
+    const [monitorType, setMonitorType] = useState<MonitorType>(monitor.type ?? "http");
     const [url, setUrl] = useState(monitor.url);
     const [interval, setInterval] = useState(monitor.interval || 60);
     const [confirmThreshold, setConfirmThreshold] = useState<string>(monitor.confirmationThreshold?.toString() ?? "");
@@ -65,6 +69,10 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
         Object.entries(monitor.requestConfig?.headers ?? {}).map(([key, value]) => ({ key, value }))
     );
     const [requestBody, setRequestBody] = useState(monitor.requestConfig?.body ?? "");
+    const [dnsRecordType, setDnsRecordType] = useState(monitor.requestConfig?.dnsRecordType ?? "A");
+    const [dnsResolver, setDnsResolver] = useState(monitor.requestConfig?.dnsResolver ?? "");
+
+    const typeInfo = MONITOR_TYPE_INFO[monitorType];
 
     const [stats, setStats] = useState({ uptime24h: 100, uptime7d: 100, uptime30d: 100 });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -74,6 +82,7 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
     useEffect(() => {
         if (open) {
             setName(monitor.name);
+            setMonitorType(monitor.type ?? "http");
             setUrl(monitor.url);
             setInterval(monitor.interval || 60);
             setConfirmThreshold(monitor.confirmationThreshold?.toString() ?? "");
@@ -88,6 +97,8 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                 Object.entries(monitor.requestConfig?.headers ?? {}).map(([key, value]) => ({ key, value }))
             );
             setRequestBody(monitor.requestConfig?.body ?? "");
+            setDnsRecordType(monitor.requestConfig?.dnsRecordType ?? "A");
+            setDnsResolver(monitor.requestConfig?.dnsResolver ?? "");
         }
     }, [open, monitor]);
 
@@ -232,35 +243,53 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
 
 
     const handleSave = () => {
-        // Build request config
-        const headers: Record<string, string> = {};
-        for (const h of customHeaders) {
-            if (h.key.trim()) headers[h.key.trim()] = h.value.trim();
+        // Switching type leaves the old target behind, which is usually the wrong shape
+        // for the new check. Catch it here: the sheet closes before the PUT answers, so
+        // a rejection from the server would lose the edits with a generic toast.
+        const target = url.trim();
+        if (!isValidTarget(monitorType, target)) {
+            toast({
+                title: "Invalid Target",
+                description: `Please enter a valid target (e.g. ${typeInfo.placeholder})`,
+                variant: "destructive",
+            });
+            return;
         }
-        const hasNonDefaults = httpMethod !== "GET" || requestTimeout || parseInt(retryCount) > 0 ||
-            !followRedirects || acceptedCodes || Object.keys(headers).length > 0 || requestBody;
 
-        // Build requestConfig: if user set non-default values, include them.
-        // If monitor previously had config but user cleared everything back to defaults,
-        // we must still send an empty object so the backend clears the stored config.
+        // Build the check config: the shared options plus whatever the selected type
+        // actually reads, so switching type drops the settings that no longer apply.
+        const config: RequestConfig = {};
+        if (requestTimeout) config.timeoutSeconds = parseInt(requestTimeout);
+        if (parseInt(retryCount) > 0) config.retryCount = parseInt(retryCount);
+
+        if (monitorType === "http") {
+            const headers: Record<string, string> = {};
+            for (const h of customHeaders) {
+                if (h.key.trim()) headers[h.key.trim()] = h.value.trim();
+            }
+            if (httpMethod !== "GET") config.method = httpMethod;
+            if (!followRedirects) config.followRedirects = false;
+            if (acceptedCodes) config.acceptedStatusCodes = acceptedCodes;
+            if (Object.keys(headers).length > 0) config.headers = headers;
+            if (requestBody) config.body = requestBody;
+        }
+
+        if (monitorType === "dns") {
+            if (dnsRecordType !== "A") config.dnsRecordType = dnsRecordType;
+            if (dnsResolver) config.dnsResolver = dnsResolver;
+        }
+
+        // If the monitor had config before but everything is back at its default, send
+        // an empty object anyway so the backend clears what it stored.
         let requestConfig: RequestConfig | undefined;
-        if (hasNonDefaults) {
-            requestConfig = {};
-            if (httpMethod !== "GET") requestConfig.method = httpMethod;
-            if (requestTimeout) requestConfig.timeoutSeconds = parseInt(requestTimeout);
-            if (parseInt(retryCount) > 0) requestConfig.retryCount = parseInt(retryCount);
-            if (!followRedirects) requestConfig.followRedirects = false;
-            if (acceptedCodes) requestConfig.acceptedStatusCodes = acceptedCodes;
-            if (Object.keys(headers).length > 0) requestConfig.headers = headers;
-            if (requestBody) requestConfig.body = requestBody;
+        if (Object.keys(config).length > 0) {
+            requestConfig = config;
         } else if (monitor.requestConfig) {
-            // Monitor had config before but user reset everything to defaults.
-            // Send empty object so backend clears the stored config.
             requestConfig = {};
         }
 
         updateMonitor(monitor.id, {
-            name, url, interval,
+            name, type: monitorType, url: target, interval,
             confirmationThreshold: confirmThreshold ? parseInt(confirmThreshold) : undefined,
             notificationCooldownMinutes: cooldownMins ? parseInt(cooldownMins) : undefined,
             latencyThreshold: latencyThreshold ? parseInt(latencyThreshold) : undefined,
@@ -451,8 +480,23 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                                 <Input value={name} onChange={e => setName(e.target.value)} data-testid="monitor-edit-name-input" />
                             </div>
                             <div className="grid gap-2">
-                                <Label>Target URL</Label>
-                                <Input value={url} onChange={e => setUrl(e.target.value)} className="font-mono text-xs" data-testid="monitor-edit-url-input" />
+                                <Label>Check Type</Label>
+                                <Select onValueChange={(v) => setMonitorType(v as MonitorType)} value={monitorType}>
+                                    <SelectTrigger data-testid="monitor-edit-type-select">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {MONITOR_TYPES.map((t) => (
+                                            <SelectItem key={t} value={t} className="cursor-pointer">
+                                                {MONITOR_TYPE_INFO[t].label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="grid gap-2">
+                                <Label>{typeInfo.targetLabel}</Label>
+                                <Input value={url} onChange={e => setUrl(e.target.value)} placeholder={typeInfo.placeholder} className="font-mono text-xs" data-testid="monitor-edit-url-input" />
                             </div>
                             <div className="grid gap-2">
                                 <Label>Check Frequency</Label>
@@ -513,6 +557,71 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                                 </div>
                             </div>
                             <div className="pt-4 border-t border-border">
+                                <h3 className="text-sm font-medium mb-3">Check Configuration</h3>
+                                <p className="text-xs text-muted-foreground mb-3">
+                                    How long to wait for the target, and how many times to retry before calling it down.
+                                </p>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="grid gap-1.5">
+                                        <Label className="text-xs">Timeout (s)</Label>
+                                        <Input
+                                            type="number"
+                                            min={1}
+                                            max={120}
+                                            placeholder="5"
+                                            value={requestTimeout}
+                                            onChange={(e) => setRequestTimeout(e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="grid gap-1.5">
+                                        <Label className="text-xs">Retry on Failure</Label>
+                                        <Select onValueChange={setRetryCount} value={retryCount}>
+                                            <SelectTrigger data-testid="request-retry-select"><SelectValue /></SelectTrigger>
+                                            <SelectContent>
+                                                {[0, 1, 2, 3, 4, 5].map(n => (
+                                                    <SelectItem key={n} value={n.toString()} className="cursor-pointer">
+                                                        {n === 0 ? "No retry" : `${n} ${n === 1 ? "retry" : "retries"}`}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {monitorType === "dns" && (
+                                <div className="pt-4 border-t border-border">
+                                    <h3 className="text-sm font-medium mb-3">DNS Configuration</h3>
+                                    <p className="text-xs text-muted-foreground mb-3">
+                                        Query a specific nameserver (e.g. 1.1.1.1) to monitor it directly, or leave empty to use the system resolver.
+                                    </p>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="grid gap-1.5">
+                                            <Label className="text-xs">Record Type</Label>
+                                            <Select onValueChange={setDnsRecordType} value={dnsRecordType}>
+                                                <SelectTrigger data-testid="dns-record-type-select"><SelectValue /></SelectTrigger>
+                                                <SelectContent>
+                                                    {DNS_RECORD_TYPES.map(rt => (
+                                                        <SelectItem key={rt} value={rt} className="cursor-pointer">{rt}</SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <div className="grid gap-1.5">
+                                            <Label className="text-xs">Resolver</Label>
+                                            <Input
+                                                placeholder="System default"
+                                                value={dnsResolver}
+                                                onChange={(e) => setDnsResolver(e.target.value)}
+                                                data-testid="dns-resolver-input"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {monitorType === "http" && (
+                            <div className="pt-4 border-t border-border">
                                 <h3 className="text-sm font-medium mb-3">Request Configuration</h3>
                                 <p className="text-xs text-muted-foreground mb-3">
                                     Customize HTTP request settings for this monitor.
@@ -526,30 +635,6 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                                                 <SelectContent>
                                                     {["GET", "HEAD", "POST", "PUT", "DELETE"].map(m => (
                                                         <SelectItem key={m} value={m} className="cursor-pointer">{m}</SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                        <div className="grid gap-1.5">
-                                            <Label className="text-xs">Request Timeout (s)</Label>
-                                            <Input
-                                                type="number"
-                                                min={1}
-                                                max={120}
-                                                placeholder="5"
-                                                value={requestTimeout}
-                                                onChange={(e) => setRequestTimeout(e.target.value)}
-                                            />
-                                        </div>
-                                        <div className="grid gap-1.5">
-                                            <Label className="text-xs">Retry on Failure</Label>
-                                            <Select onValueChange={setRetryCount} value={retryCount}>
-                                                <SelectTrigger data-testid="request-retry-select"><SelectValue /></SelectTrigger>
-                                                <SelectContent>
-                                                    {[0, 1, 2, 3, 4, 5].map(n => (
-                                                        <SelectItem key={n} value={n.toString()} className="cursor-pointer">
-                                                            {n === 0 ? "No retry" : `${n} ${n === 1 ? "retry" : "retries"}`}
-                                                        </SelectItem>
                                                     ))}
                                                 </SelectContent>
                                             </Select>
@@ -627,6 +712,7 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                                     )}
                                 </div>
                             </div>
+                            )}
                             <Button onClick={handleSave} className="w-full" data-testid="monitor-edit-save-btn">
                                 <Save className="w-4 h-4 mr-2" /> Save Changes
                             </Button>

@@ -6,6 +6,7 @@ function makeMonitor(overrides: Partial<Group["monitors"][0]> = {}): Group["moni
   return {
     id: "m-1",
     name: "Test",
+    type: "http",
     url: "https://example.com",
     status: "up",
     active: true,

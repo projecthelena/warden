@@ -50,11 +50,19 @@ export interface RequestConfig {
     followRedirects?: boolean;
     acceptedStatusCodes?: string;
     retryCount?: number;
+    dnsRecordType?: string;
+    dnsResolver?: string;
 }
+
+export const MONITOR_TYPES = ['http', 'tcp', 'ping', 'dns'] as const;
+export type MonitorType = typeof MONITOR_TYPES[number];
+
+export const DNS_RECORD_TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'NS', 'TXT'] as const;
 
 export interface Monitor {
     id: string;
     name: string;
+    type: MonitorType;
     url: string;
     status: 'up' | 'down' | 'degraded' | 'paused';
     active: boolean;

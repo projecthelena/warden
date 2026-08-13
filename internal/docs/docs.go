@@ -386,42 +386,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "type": "object",
-                                "properties": {
-                                    "affectedGroups": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "string"
-                                        }
-                                    },
-                                    "createdAt": {
-                                        "type": "string"
-                                    },
-                                    "description": {
-                                        "type": "string"
-                                    },
-                                    "endTime": {
-                                        "type": "string"
-                                    },
-                                    "id": {
-                                        "type": "string"
-                                    },
-                                    "severity": {
-                                        "type": "string"
-                                    },
-                                    "startTime": {
-                                        "type": "string"
-                                    },
-                                    "status": {
-                                        "type": "string"
-                                    },
-                                    "title": {
-                                        "type": "string"
-                                    },
-                                    "type": {
-                                        "type": "string"
-                                    }
-                                }
+                                "$ref": "#/definitions/internal_api.IncidentResponseDTO"
                             }
                         }
                     },
@@ -492,6 +457,335 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Invalid request body",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/incidents/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "incidents"
+                ],
+                "summary": "Get incident with timeline",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Incident ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IncidentResponseDTO"
+                        }
+                    },
+                    "404": {
+                        "description": "Incident not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "incidents"
+                ],
+                "summary": "Update incident",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Incident ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Incident payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "affectedGroups": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                },
+                                "description": {
+                                    "type": "string"
+                                },
+                                "endTime": {
+                                    "type": "string"
+                                },
+                                "public": {
+                                    "type": "boolean"
+                                },
+                                "severity": {
+                                    "type": "string"
+                                },
+                                "startTime": {
+                                    "type": "string"
+                                },
+                                "status": {
+                                    "type": "string"
+                                },
+                                "title": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IncidentResponseDTO"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Incident not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "incidents"
+                ],
+                "summary": "Delete incident",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Incident ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "500": {
+                        "description": "Failed to delete incident",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/incidents/{id}/updates": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "incidents"
+                ],
+                "summary": "Get incident updates",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Incident ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_projecthelena_warden_internal_db.IncidentUpdate"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Incident not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "incidents"
+                ],
+                "summary": "Add incident update",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Incident ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Update details",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "message": {
+                                    "type": "string"
+                                },
+                                "status": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_projecthelena_warden_internal_db.IncidentUpdate"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Incident not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/incidents/{id}/visibility": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "incidents"
+                ],
+                "summary": "Set incident visibility",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Incident ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Visibility setting",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "public": {
+                                    "type": "boolean"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "message": {
+                                    "type": "string"
+                                },
+                                "public": {
+                                    "type": "boolean"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Incident not found",
                         "schema": {
                             "type": "string"
                         }
@@ -750,7 +1044,7 @@ const docTemplate = `{
                 "summary": "Create monitor",
                 "parameters": [
                     {
-                        "description": "Monitor payload",
+                        "description": "Monitor payload. type is one of http, tcp, ping, dns (default http)",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -764,6 +1058,9 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "name": {
+                                    "type": "string"
+                                },
+                                "type": {
                                     "type": "string"
                                 },
                                 "url": {
@@ -827,7 +1124,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "Fields to update",
+                        "description": "Fields to update. Omit type to keep the stored one",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -838,6 +1135,9 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "name": {
+                                    "type": "string"
+                                },
+                                "type": {
                                     "type": "string"
                                 },
                                 "url": {
@@ -889,6 +1189,66 @@ const docTemplate = `{
                         "description": "ID required",
                         "schema": {
                             "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/monitors/{id}/events": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "uptime"
+                ],
+                "summary": "Get enriched events for a monitor",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Monitor ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Date filter YYYY-MM-DD (UTC). If omitted and from/to are also omitted, returns the most recent N events.",
+                        "name": "date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Range start (RFC3339). Used with ` + "`" + `to` + "`" + ` to drill into an outage window.",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Range end (RFC3339). Used with ` + "`" + `from` + "`" + `.",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Max events to return (default 100, max 500)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api.MonitorEventDTO"
+                            }
                         }
                     }
                 }
@@ -1260,6 +1620,80 @@ const docTemplate = `{
                 }
             }
         },
+        "/outages/{id}/promote": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "incidents"
+                ],
+                "summary": "Promote outage to incident",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Outage ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Incident details",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "affectedGroups": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                },
+                                "description": {
+                                    "type": "string"
+                                },
+                                "severity": {
+                                    "type": "string"
+                                },
+                                "title": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IncidentResponseDTO"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Outage not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/overview": {
             "get": {
                 "security": [
@@ -1360,6 +1794,45 @@ const docTemplate = `{
                                     "type": "string"
                                 }
                             }
+                        }
+                    },
+                    "404": {
+                        "description": "Status page not found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/s/{slug}/rss": {
+            "get": {
+                "produces": [
+                    "application/rss+xml"
+                ],
+                "tags": [
+                    "status-pages"
+                ],
+                "summary": "RSS feed for status page",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Status page slug",
+                        "name": "slug",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "RSS 2.0 XML feed",
+                        "schema": {
+                            "type": "string"
                         }
                     },
                     "404": {
@@ -1680,6 +2153,9 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "role": {
+                    "type": "string"
                 }
             }
         },
@@ -1742,8 +2218,20 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "outageId": {
+                    "description": "nullable FK to monitor_outages",
+                    "type": "integer"
+                },
+                "public": {
+                    "description": "visible on public status page",
+                    "type": "boolean"
+                },
                 "severity": {
                     "description": "minor | major | critical",
+                    "type": "string"
+                },
+                "source": {
+                    "description": "\"auto\" | \"manual\"",
                     "type": "string"
                 },
                 "startTime": {
@@ -1762,11 +2250,34 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_projecthelena_warden_internal_db.IncidentUpdate": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "incidentId": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_projecthelena_warden_internal_db.Monitor": {
             "type": "object",
             "properties": {
                 "active": {
                     "type": "boolean"
+                },
+                "confirmationThreshold": {
+                    "type": "integer"
                 },
                 "createdAt": {
                     "type": "string"
@@ -1781,7 +2292,20 @@ const docTemplate = `{
                     "description": "Seconds",
                     "type": "integer"
                 },
+                "latencyThreshold": {
+                    "type": "integer"
+                },
                 "name": {
+                    "type": "string"
+                },
+                "notificationCooldownMinutes": {
+                    "type": "integer"
+                },
+                "requestConfig": {
+                    "$ref": "#/definitions/github_com_projecthelena_warden_internal_db.RequestConfig"
+                },
+                "type": {
+                    "description": "Type selects the check performed against URL: http, tcp, ping or dns.\nEmpty means http, so monitors created before check types existed keep working.",
                     "type": "string"
                 },
                 "url": {
@@ -1810,6 +2334,43 @@ const docTemplate = `{
                 },
                 "type": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_projecthelena_warden_internal_db.RequestConfig": {
+            "type": "object",
+            "properties": {
+                "acceptedStatusCodes": {
+                    "type": "string"
+                },
+                "body": {
+                    "type": "string"
+                },
+                "dnsRecordType": {
+                    "description": "DNS-only options.",
+                    "type": "string"
+                },
+                "dnsResolver": {
+                    "description": "resolver to query, host or host:port (default system)",
+                    "type": "string"
+                },
+                "followRedirects": {
+                    "type": "boolean"
+                },
+                "headers": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "method": {
+                    "type": "string"
+                },
+                "retryCount": {
+                    "type": "integer"
+                },
+                "timeoutSeconds": {
+                    "type": "integer"
                 }
             }
         },
@@ -1922,6 +2483,59 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.IncidentResponseDTO": {
+            "type": "object",
+            "properties": {
+                "affectedGroups": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "endTime": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "outageId": {
+                    "type": "integer"
+                },
+                "public": {
+                    "type": "boolean"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "startTime": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "updates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_projecthelena_warden_internal_db.IncidentUpdate"
+                    }
+                }
+            }
+        },
         "internal_api.MaintenanceResponse": {
             "type": "object",
             "properties": {
@@ -1966,6 +2580,9 @@ const docTemplate = `{
                 "active": {
                     "type": "boolean"
                 },
+                "confirmationThreshold": {
+                    "type": "integer"
+                },
                 "events": {
                     "type": "array",
                     "items": {
@@ -1990,10 +2607,22 @@ const docTemplate = `{
                 "latency": {
                     "type": "integer"
                 },
+                "latencyThreshold": {
+                    "type": "integer"
+                },
                 "name": {
                     "type": "string"
                 },
+                "notificationCooldownMinutes": {
+                    "type": "integer"
+                },
+                "requestConfig": {
+                    "$ref": "#/definitions/github_com_projecthelena_warden_internal_db.RequestConfig"
+                },
                 "status": {
+                    "type": "string"
+                },
+                "type": {
                     "type": "string"
                 },
                 "url": {
@@ -2004,11 +2633,64 @@ const docTemplate = `{
         "internal_api.MonitorEvent": {
             "type": "object",
             "properties": {
+                "errorMessage": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "string"
                 },
+                "latency": {
+                    "type": "integer"
+                },
                 "message": {
                     "type": "string"
+                },
+                "responseBody": {
+                    "type": "string"
+                },
+                "responseHeaders": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "statusCode": {
+                    "type": "integer"
+                },
+                "timestamp": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.MonitorEventDTO": {
+            "type": "object",
+            "properties": {
+                "errorMessage": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "latency": {
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "responseBody": {
+                    "type": "string"
+                },
+                "responseHeaders": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "statusCode": {
+                    "type": "integer"
                 },
                 "timestamp": {
                     "type": "string"
