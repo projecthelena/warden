@@ -226,7 +226,7 @@ test.describe('RBAC Roles - Viewer, Status Viewer, and Admin Permissions', () =>
         await expect(page.getByText('Wait ...')).toBeHidden({ timeout: 15000 });
     });
 
-    test('Viewer can browse monitors and see Metrics/Events tabs in monitor sheet', async ({ page }) => {
+    test('Viewer can browse monitors and reach the full monitor view', async ({ page }) => {
         await page.goto('/login');
         await expect(page.getByTestId('login-header')).toBeVisible({ timeout: 15000 });
         await page.getByLabel('Username').fill(VIEWER_USER);
@@ -246,13 +246,14 @@ test.describe('RBAC Roles - Viewer, Status Viewer, and Admin Permissions', () =>
         // Wait for sheet to open
         await expect(page.locator('[data-state="open"].fixed.inset-0')).toBeVisible({ timeout: 10000 });
 
-        // Verify Metrics and Events tabs are visible
+        // Metrics is the only tab a viewer gets — Settings is editor-only, and the
+        // activity log moved out of the sheet onto the dedicated monitor page.
         await expect(page.getByRole('tab', { name: 'Metrics' })).toBeVisible({ timeout: 10000 });
-        await expect(page.getByRole('tab', { name: 'Events' })).toBeVisible({ timeout: 10000 });
 
-        // Click Events tab to verify it works
-        await page.getByRole('tab', { name: 'Events' }).click();
-        await expect(page.getByText('Activity Log')).toBeVisible({ timeout: 10000 });
+        // Follow "Open full view" and check the viewer can read the incident rollups there
+        await page.getByTestId('monitor-open-full-view').click();
+        await expect(page).toHaveURL(/.*monitors\//, { timeout: 15000 });
+        await expect(page.getByRole('heading', { name: /Incidents/ })).toBeVisible({ timeout: 15000 });
     });
 
     test('Viewer does NOT see Settings tab in monitor details sheet', async ({ page }) => {
