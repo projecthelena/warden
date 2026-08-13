@@ -19,6 +19,7 @@ type Config struct {
 	CookieSecure bool
 	AdminSecret  string
 	TrustProxy   bool // Trust X-Forwarded-For headers (only enable behind a trusted reverse proxy)
+	MCPEnabled   bool // Serve the Model Context Protocol endpoint at /api/mcp
 }
 
 func Default() Config {
@@ -27,6 +28,7 @@ func Default() Config {
 		DBType:       DBTypeSQLite,
 		DBPath:       "warden.db",
 		CookieSecure: true,
+		MCPEnabled:   true,
 	}
 }
 
@@ -72,6 +74,12 @@ func Load() (*Config, error) {
 	// Leave disabled (default) when exposing the server directly to the internet.
 	if os.Getenv("TRUST_PROXY") == "true" {
 		cfg.TrustProxy = true
+	}
+
+	// MCP_ENABLED: the endpoint sits behind the same auth as the rest of the API, but an
+	// operator who does not want it served at all can say so.
+	if os.Getenv("MCP_ENABLED") == "false" {
+		cfg.MCPEnabled = false
 	}
 
 	return &cfg, nil

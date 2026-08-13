@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/projecthelena/warden/internal/db"
 	"github.com/projecthelena/warden/internal/uptime"
-	"github.com/go-chi/chi/v5"
 )
 
 type CRUDHandler struct {
@@ -225,113 +225,28 @@ func (h *CRUDHandler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 1. Basic Validation
-	if req.Name == "" || req.URL == "" || req.GroupID == "" {
-		http.Error(w, "Name, URL, and GroupID are required", http.StatusBadRequest)
-		return
-	}
-
-	// SECURITY: Validate name length
-	if len(req.Name) > maxNameLength {
-		http.Error(w, "Name too long (max 255 characters)", http.StatusBadRequest)
-		return
-	}
-
-	// 2. Validate type and target
-	if req.Type != "" && !db.IsValidMonitorType(req.Type) {
-		http.Error(w, "type must be one of http, tcp, ping, dns", http.StatusBadRequest)
-		return
-	}
-	if err := validateTarget(req.Type, req.URL); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	// 3. Validate Interval
-	if req.Interval < 10 {
-		http.Error(w, "Interval must be at least 10 seconds", http.StatusBadRequest)
-		return
-	}
-
-	// 4. Validate Group Exists
-	groups, err := h.store.GetGroups()
-	if err != nil {
-		http.Error(w, "System error checking groups", http.StatusInternalServerError)
-		return
-	}
-	groupExists := false
-	for _, g := range groups {
-		if g.ID == req.GroupID {
-			groupExists = true
-			break
-		}
-	}
-	if !groupExists {
-		http.Error(w, "Selected group does not exist", http.StatusNotFound)
-		return
-	}
-
-	// 5. Validate Duplicate Name (Simulate unique constraint)
-	monitors, err := h.store.GetMonitors()
-	if err == nil {
-		for _, m := range monitors {
-			if strings.EqualFold(m.Name, req.Name) {
-				http.Error(w, "A monitor with this name already exists", http.StatusConflict)
-				return
-			}
-		}
-	}
-
-	// 6. Validate per-monitor overrides
-	if req.ConfirmationThreshold != nil && (*req.ConfirmationThreshold < 1 || *req.ConfirmationThreshold > 100) {
-		http.Error(w, "confirmationThreshold must be between 1 and 100", http.StatusBadRequest)
-		return
-	}
-	if req.NotificationCooldownMin != nil && (*req.NotificationCooldownMin < 0 || *req.NotificationCooldownMin > 1440) {
-		http.Error(w, "notificationCooldownMinutes must be between 0 and 1440", http.StatusBadRequest)
-		return
-	}
-	if req.LatencyThreshold != nil && *req.LatencyThreshold < 1 {
-		http.Error(w, "latencyThreshold must be at least 1", http.StatusBadRequest)
-		return
-	}
-
-	// 7. Validate RequestConfig
-	if err := validateRequestConfig(req.RequestConfig); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	id := generateID(req.Name, "m-")
-
-	m := db.Monitor{
-		ID:                      id,
-		Type:                    db.NormalizeMonitorType(req.Type),
-		GroupID:                 req.GroupID,
+	m, err := h.AddMonitor(MonitorInput{
 		Name:                    req.Name,
+		Type:                    req.Type,
 		URL:                     req.URL,
-		Active:                  true,
+		GroupID:                 req.GroupID,
 		Interval:                req.Interval,
 		ConfirmationThreshold:   req.ConfirmationThreshold,
 		NotificationCooldownMin: req.NotificationCooldownMin,
 		LatencyThreshold:        req.LatencyThreshold,
 		RequestConfig:           req.RequestConfig,
-	}
-
-	if err := h.store.CreateMonitor(m); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	})
+	if err != nil {
+		writeMonitorError(w, err)
 		return
 	}
-
-	// Notify Engine to start monitoring this new URL immediately
-	h.manager.Sync()
 
 	// Wait for the first ping results (max 5 seconds) to ensure "Wow effect" in UI
 	// This ensures that when the frontend fetches the list immediately after this returns,
 	// the first check is likely already done.
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		mon := h.manager.GetMonitor(id)
+		mon := h.manager.GetMonitor(m.ID)
 		if mon != nil && len(mon.GetHistory()) > 0 {
 			break
 		}
@@ -341,7 +256,7 @@ func (h *CRUDHandler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
 	// We waited for that first check anyway, so report it when it failed rather than
 	// leaving a monitor to sit red on the dashboard with the reason a few clicks away.
 	warning := ""
-	if mon := h.manager.GetMonitor(id); mon != nil {
+	if mon := h.manager.GetMonitor(m.ID); mon != nil {
 		if history := mon.GetHistory(); len(history) > 0 {
 			if last := history[len(history)-1]; !last.IsUp && last.Error != "" {
 				warning = last.Error
@@ -351,6 +266,21 @@ func (h *CRUDHandler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(CreatedMonitor{Monitor: m, Warning: warning})
+}
+
+// writeMonitorError maps the shared creation errors onto the status codes the API has
+// always returned for them.
+func writeMonitorError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrMonitorInvalid):
+		http.Error(w, strings.TrimPrefix(err.Error(), "invalid monitor: "), http.StatusBadRequest)
+	case errors.Is(err, ErrGroupNotFound):
+		http.Error(w, "Selected group does not exist", http.StatusNotFound)
+	case errors.Is(err, ErrMonitorNameTaken):
+		http.Error(w, "A monitor with this name already exists", http.StatusConflict)
+	default:
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func (h *CRUDHandler) GetGroups(w http.ResponseWriter, r *http.Request) {

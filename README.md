@@ -45,6 +45,7 @@ See the [`docs/`](docs/) folder for detailed guides:
 
 - [Monitor Types](docs/monitor-types.md) — HTTP, TCP, ping and DNS checks, and the permissions ICMP needs
 - [API](docs/api.md) — REST API and Swagger docs
+- [MCP Server](docs/mcp.md) — connect Claude to your monitoring data
 - [Database](docs/database.md) — SQLite vs PostgreSQL configuration
 - [Load Testing](docs/load-testing.md) *(coming soon)*
 
