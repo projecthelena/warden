@@ -1074,7 +1074,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/github_com_projecthelena_warden_internal_db.Monitor"
+                            "$ref": "#/definitions/internal_api.CreatedMonitor"
                         }
                     },
                     "400": {
@@ -2394,6 +2394,52 @@ const docTemplate = `{
                 },
                 "totalMonitors": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api.CreatedMonitor": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "confirmationThreshold": {
+                    "type": "integer"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "groupId": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "interval": {
+                    "description": "Seconds",
+                    "type": "integer"
+                },
+                "latencyThreshold": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "notificationCooldownMinutes": {
+                    "type": "integer"
+                },
+                "requestConfig": {
+                    "$ref": "#/definitions/github_com_projecthelena_warden_internal_db.RequestConfig"
+                },
+                "type": {
+                    "description": "Type selects the check performed against URL: http, tcp, ping or dns.\nEmpty means http, so monitors created before check types existed keep working.",
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                },
+                "warning": {
+                    "type": "string"
                 }
             }
         },

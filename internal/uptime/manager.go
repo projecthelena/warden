@@ -23,14 +23,19 @@ type Job struct {
 }
 
 type CheckResult struct {
-	MonitorID       string
-	URL             string
-	Status          bool
-	Latency         int64
-	Timestamp       time.Time
-	StatusCode      int
-	Error           string
-	IsDegraded      bool
+	MonitorID  string
+	URL        string
+	Status     bool
+	Latency    int64
+	Timestamp  time.Time
+	StatusCode int
+	Error      string
+	IsDegraded bool
+	// NotRun marks a check that never reached the target: an address Warden cannot use,
+	// or a permission it lacks. Still down, but reporting it as "down" sends the
+	// operator hunting a network problem that isn't there, so the reason replaces the
+	// usual message.
+	NotRun          bool
 	CertExpiry      *time.Time // SSL certificate NotAfter (nil if not HTTPS or unavailable)
 	ResponseBody    string     // Truncated to ResponseBodyMaxBytes; only populated on failed/degraded checks
 	ResponseHeaders string     // JSON-encoded filtered headers; only populated on failed/degraded checks
@@ -363,7 +368,9 @@ func (m *Manager) resultProcessor() {
 				wasDegraded := active && lastDegraded
 
 				message := "Monitor is down"
-				if res.StatusCode > 0 {
+				if res.NotRun && res.Error != "" {
+					message = res.Error
+				} else if res.StatusCode > 0 {
 					message += " (Status: " + strconv.Itoa(res.StatusCode) + ")"
 				}
 

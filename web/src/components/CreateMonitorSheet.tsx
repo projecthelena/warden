@@ -176,7 +176,7 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
             const requestConfig: RequestConfig | undefined =
                 Object.keys(config).length > 0 ? config : undefined;
 
-            await createMonitor.mutateAsync({
+            const created = await createMonitor.mutateAsync({
                 name,
                 type: monitorType,
                 url: target,
@@ -188,7 +188,15 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                 requestConfig,
             });
 
-            toast({ title: "Monitor Created", description: `Monitor "${name}" active and checking.` });
+            // The server waited for the first check, so it can hand back the reason it
+            // failed. Not a destructive toast: the monitor was created, and monitoring
+            // something that is currently down is the usual reason to add it.
+            toast({
+                title: "Monitor Created",
+                description: created?.warning
+                    ? `Monitor "${name}" active and checking. First check failed: ${created.warning}`
+                    : `Monitor "${name}" active and checking.`,
+            });
 
             // Reset
             setName("");

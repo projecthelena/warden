@@ -186,6 +186,13 @@ func (h *CRUDHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(req)
 }
 
+// CreatedMonitor is the create response: the stored monitor, plus the reason when its
+// first check failed.
+type CreatedMonitor struct {
+	db.Monitor
+	Warning string `json:"warning,omitempty"`
+}
+
 // CreateMonitor creates a new monitor of the requested check type.
 // @Summary      Create monitor
 // @Tags         monitors
@@ -193,7 +200,7 @@ func (h *CRUDHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        body body object{name=string,type=string,url=string,groupId=string,interval=int} true "Monitor payload. type is one of http, tcp, ping, dns (default http)"
-// @Success      201  {object} db.Monitor
+// @Success      201  {object} CreatedMonitor
 // @Failure      400  {string} string "Validation error"
 // @Failure      404  {string} string "Group not found"
 // @Failure      409  {string} string "Monitor name already exists"
@@ -331,8 +338,19 @@ func (h *CRUDHandler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
+	// We waited for that first check anyway, so report it when it failed rather than
+	// leaving a monitor to sit red on the dashboard with the reason a few clicks away.
+	warning := ""
+	if mon := h.manager.GetMonitor(id); mon != nil {
+		if history := mon.GetHistory(); len(history) > 0 {
+			if last := history[len(history)-1]; !last.IsUp && last.Error != "" {
+				warning = last.Error
+			}
+		}
+	}
+
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(m)
+	_ = json.NewEncoder(w).Encode(CreatedMonitor{Monitor: m, Warning: warning})
 }
 
 func (h *CRUDHandler) GetGroups(w http.ResponseWriter, r *http.Request) {

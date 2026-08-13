@@ -52,18 +52,36 @@ The target must be `host:port`. IPv6 literals are bracketed: `[2001:db8::1]:5432
 Sends one ICMP echo request and waits for the matching reply. The target is a bare
 hostname or IP — no scheme, no port.
 
-**ICMP needs permission that ordinary sockets don't.** Warden asks for an unprivileged
-ICMP datagram socket first and falls back to a raw socket. If neither is available the
-monitor reports `icmp socket unavailable` instead of pretending the host is down.
+## Ping permissions
 
-| Environment       | What you need                                                       |
-| ----------------- | ------------------------------------------------------------------- |
-| Docker            | Works out of the box — Docker sets `net.ipv4.ping_group_range` to allow unprivileged ICMP. |
-| Kubernetes        | Allow the sysctl on the pod, or grant `CAP_NET_RAW`. See below.      |
-| Bare metal, root  | Works — the raw socket fallback applies.                             |
-| Bare metal, non-root | Set `net.ipv4.ping_group_range` to cover the service user's group, or grant the binary `CAP_NET_RAW`. |
+If a ping monitor says Warden is not allowed to send ICMP packets, this section is the
+fix. Sending a ping is not something an ordinary program is allowed to do; the operating
+system has to be told to permit it. Nothing here is specific to Warden, it is the same
+permission the `ping` command itself needs.
 
-For Kubernetes, the sysctl route keeps the container unprivileged:
+Find the line that matches how you run Warden.
+
+**Docker**
+
+Usually this already works, because Docker permits pings by default. If it does not,
+your daemon or your compose file has turned it off. Turn it back on for the container:
+
+```bash
+docker run --sysctl net.ipv4.ping_group_range="0 2147483647" ...
+```
+
+In `docker-compose.yml`:
+
+```yaml
+services:
+  warden:
+    sysctls:
+      - net.ipv4.ping_group_range=0 2147483647
+```
+
+**Kubernetes**
+
+Kubernetes does not permit pings by default. Add the sysctl to the pod:
 
 ```yaml
 spec:
@@ -73,9 +91,9 @@ spec:
         value: "0 2147483647"
 ```
 
-`net.ipv4.ping_group_range` is a namespaced but unsafe sysctl, so the kubelet must be
-started with `--allowed-unsafe-sysctls=net.ipv4.ping_group_range`. If that isn't an
-option, grant the capability instead:
+Kubernetes treats this sysctl as unsafe, so the kubelet has to be started with
+`--allowed-unsafe-sysctls=net.ipv4.ping_group_range`. If you cannot change the kubelet,
+grant the capability instead:
 
 ```yaml
 spec:
@@ -86,17 +104,39 @@ spec:
           add: ["NET_RAW"]
 ```
 
-On a bare-metal host, the sysctl equivalent is:
+**Running the binary directly, as root**
+
+Already works, nothing to do.
+
+**Running the binary directly, as a normal user**
+
+Either permit pings for every user on the host:
 
 ```bash
-sysctl -w net.ipv4.ping_group_range="0 2147483647"   # or the group Warden runs as
+sysctl -w net.ipv4.ping_group_range="0 2147483647"
 ```
 
-Or, to grant the binary the capability once:
+Or grant the permission to the Warden binary alone, which is narrower:
 
 ```bash
 setcap cap_net_raw+ep /usr/local/bin/warden
 ```
+
+To make the sysctl survive a reboot, put it in `/etc/sysctl.d/`.
+
+**macOS**
+
+Already works, nothing to do.
+
+### Why it needs this
+
+Warden asks the system for an unprivileged ICMP socket first, which needs no special
+privileges but does need `net.ipv4.ping_group_range` to cover the group it runs as. If
+that is refused it falls back to a raw socket, which needs root or `CAP_NET_RAW`. When
+both are refused it says so, rather than reporting the target as down. A monitor that
+cannot run its check has not learned anything about the target.
+
+Only ping is affected. HTTP, TCP and DNS monitors need no special permissions.
 
 ## DNS
 

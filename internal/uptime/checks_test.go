@@ -494,3 +494,94 @@ func TestProbePingConcurrent(t *testing.T) {
 		}
 	}
 }
+
+func TestRunCheckMarksUnrunnableChecks(t *testing.T) {
+	res := runCheck(Job{MonitorID: "m1", Type: db.MonitorTypeTCP, URL: "not-a-host-port"}, &http.Transport{})
+	if !res.NotRun {
+		t.Error("expected a target Warden cannot address to be marked as not run")
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	// A target that answered badly did run. Only the reason differs.
+	res = runCheck(Job{MonitorID: "m1", URL: srv.URL}, &http.Transport{})
+	if res.Status {
+		t.Fatal("expected a 500 to report down")
+	}
+	if res.NotRun {
+		t.Error("a check that reached the target and got 500 did run")
+	}
+}
+
+// The ICMP permission error is the one an operator is most likely to hit, and the only
+// one they cannot solve from inside Warden. It has to say what to do in plain words.
+func TestPingPermissionErrorIsActionable(t *testing.T) {
+	out := probePing("127.0.0.1", 2*time.Second)
+	if !out.fatal {
+		t.Skip("ICMP is permitted here, so the permission error cannot be produced")
+	}
+
+	if !strings.Contains(out.err, pingPermissionsDoc) {
+		t.Errorf("expected the error to link to the docs, got %q", out.err)
+	}
+	if !strings.Contains(out.err, "not allowed to send ping") {
+		t.Errorf("expected the error to say what happened in plain words, got %q", out.err)
+	}
+}
+
+func TestPingPermissionsDocIsAFullURL(t *testing.T) {
+	// A repo-relative path is useless to someone reading a dashboard or a Slack alert.
+	if !strings.HasPrefix(pingPermissionsDoc, "https://") {
+		t.Errorf("expected a followable URL, got %q", pingPermissionsDoc)
+	}
+	if !strings.Contains(pingPermissionsDoc, "#") {
+		t.Errorf("expected a link to the section, not the whole page: %q", pingPermissionsDoc)
+	}
+}
+
+// A check that never ran must not be reported as "Monitor is down": that sends the
+// operator looking for a network problem instead of the permission they are missing.
+func TestUnrunnableCheckReportsTheReasonNotJustDown(t *testing.T) {
+	n := testDBCounter.Add(1)
+	store, err := db.NewStore(db.NewTestConfigWithPath(fmt.Sprintf("file:notrun_%d?mode=memory&cache=shared", n)))
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	setIntegrationTestDefaults(store)
+
+	m := NewManager(store)
+	m.Start()
+	defer m.Stop()
+
+	if err := store.CreateMonitor(db.Monitor{
+		ID:       "m-notrun",
+		Type:     db.MonitorTypeTCP,
+		GroupID:  "g-default",
+		Name:     "Unreachable Config",
+		URL:      "missing-the-port",
+		Active:   true,
+		Interval: 1,
+	}); err != nil {
+		t.Fatalf("failed to create monitor: %v", err)
+	}
+	m.Sync()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		events, err := store.GetMonitorEvents("m-notrun", 5)
+		if err == nil && len(events) > 0 {
+			if events[0].Message == "Monitor is down" {
+				t.Fatalf("expected the reason to replace the generic message, got %q", events[0].Message)
+			}
+			if !strings.Contains(events[0].Message, "expected host:port") {
+				t.Fatalf("expected the message to carry the reason, got %q", events[0].Message)
+			}
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for the down event")
+}

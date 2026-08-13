@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/projecthelena/warden/internal/db"
+	"github.com/projecthelena/warden/internal/uptime"
 )
 
 func TestValidateTarget(t *testing.T) {
@@ -218,4 +219,83 @@ func TestUpdateMonitorCanChangeType(t *testing.T) {
 	if monitors[0].URL != "example.com:443" {
 		t.Errorf("expected the target to change with the type, got %q", monitors[0].URL)
 	}
+}
+
+// The create flow already waits for the first check, so a monitor that cannot work
+// should say so in its response rather than just turning red on the dashboard.
+func TestCreateMonitorWarnsWhenTheFirstCheckFails(t *testing.T) {
+	crudH := crudHandlerWithRunningManager(t)
+
+	payload := map[string]any{
+		"name":     "Unreachable",
+		"type":     "tcp",
+		"url":      "127.0.0.1:1",
+		"groupId":  "g-default",
+		"interval": 10,
+	}
+	body, _ := json.Marshal(payload)
+	req := withAdminRole(httptest.NewRequest("POST", "/api/monitors", bytes.NewBuffer(body)))
+	w := httptest.NewRecorder()
+	crudH.CreateMonitor(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d. Body: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Type    string `json:"type"`
+		Warning string `json:"warning"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Type != db.MonitorTypeTCP {
+		t.Errorf("expected the monitor fields to survive alongside the warning, got type %q", resp.Type)
+	}
+	if resp.Warning == "" {
+		t.Error("expected a warning explaining why the first check failed")
+	}
+}
+
+func TestCreateMonitorHasNoWarningWhenTheFirstCheckPasses(t *testing.T) {
+	crudH := crudHandlerWithRunningManager(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	payload := map[string]any{
+		"name":     "Healthy",
+		"url":      srv.URL,
+		"groupId":  "g-default",
+		"interval": 10,
+	}
+	body, _ := json.Marshal(payload)
+	req := withAdminRole(httptest.NewRequest("POST", "/api/monitors", bytes.NewBuffer(body)))
+	w := httptest.NewRecorder()
+	crudH.CreateMonitor(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d. Body: %s", w.Code, w.Body.String())
+	}
+	if bytes.Contains(w.Body.Bytes(), []byte("warning")) {
+		t.Errorf("a healthy monitor must not carry a warning: %s", w.Body.String())
+	}
+}
+
+// The warning depends on a check actually running, which the shared setupTest manager
+// never does because it is created but not started.
+func crudHandlerWithRunningManager(t *testing.T) *CRUDHandler {
+	t.Helper()
+
+	store, err := db.NewStore(db.NewTestConfig())
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	manager := uptime.NewManager(store)
+	manager.Start()
+	t.Cleanup(manager.Stop)
+
+	return NewCRUDHandler(store, manager)
 }

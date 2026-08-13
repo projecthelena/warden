@@ -87,7 +87,7 @@ export function EventDetailCard({ event }: EventDetailCardProps) {
                     {event.errorMessage && (
                         <Section title="Error">
                             <pre className="text-xs font-mono whitespace-pre-wrap break-words text-rose-500/90 bg-rose-500/5 border border-rose-500/20 rounded p-2">
-                                {event.errorMessage}
+                                {linkify(event.errorMessage)}
                             </pre>
                         </Section>
                     )}
@@ -116,6 +116,26 @@ export function EventDetailCard({ event }: EventDetailCardProps) {
                     )}
             </CollapsibleContent>
         </Collapsible>
+    );
+}
+
+// Some check errors carry a link to the page that explains the fix. A link the reader has
+// to select and copy out of a <pre> is a link nobody follows.
+function linkify(text: string) {
+    return text.split(/(https?:\/\/[^\s)]+)/g).map((part, i) =>
+        part.startsWith("http") ? (
+            <a
+                key={i}
+                href={part}
+                target="_blank"
+                rel="noreferrer"
+                className="underline underline-offset-2 hover:text-rose-400"
+            >
+                {part}
+            </a>
+        ) : (
+            part
+        )
     );
 }
 

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Group, MonitorType, RequestConfig, useMonitorStore } from "@/lib/store";
+import { Group, Monitor, MonitorType, RequestConfig, useMonitorStore } from "@/lib/store";
 import { computePollingInterval } from "@/lib/pollingInterval";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
@@ -96,7 +96,13 @@ interface CreateMonitorPayload {
     requestConfig?: RequestConfig;
 }
 
-async function createMonitorReq(payload: CreateMonitorPayload) {
+// warning carries the reason when the monitor's first check failed, which the server
+// already waited for before answering.
+interface CreatedMonitor extends Monitor {
+    warning?: string;
+}
+
+async function createMonitorReq(payload: CreateMonitorPayload): Promise<CreatedMonitor> {
     const res = await fetch(`${API_URL}/api/monitors`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

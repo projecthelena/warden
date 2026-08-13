@@ -21,6 +21,9 @@ import (
 const (
 	defaultCheckTimeout = 5 * time.Second
 	retryBackoff        = 1 * time.Second
+
+	// Shown to operators, so it has to be a link they can follow, not a repo path.
+	pingPermissionsDoc = "https://github.com/projecthelena/warden/blob/main/docs/monitor-types.md#ping-permissions"
 )
 
 // checkOutcome is what a single probe attempt reports back. Only probeHTTP fills
@@ -81,6 +84,7 @@ func runCheck(job Job, transport *http.Transport) CheckResult {
 		Timestamp:       start,
 		StatusCode:      out.statusCode,
 		Error:           out.err,
+		NotRun:          out.fatal,
 		CertExpiry:      out.certExpiry,
 		ResponseBody:    out.respBody,
 		ResponseHeaders: out.respHeaders,
@@ -317,8 +321,10 @@ func probePing(target string, timeout time.Duration) checkOutcome {
 	if err != nil {
 		conn, err = icmp.ListenPacket(p.rawNetwork, p.listenAddr)
 		if err != nil {
+			// This lands in the UI and in Slack, so it leads with what to do. The
+			// system error goes last, for whoever is debugging rather than fixing.
 			return checkOutcome{
-				err:   fmt.Sprintf("icmp socket unavailable: %v (see docs/monitor-types.md)", err),
+				err:   fmt.Sprintf("Warden is not allowed to send ping (ICMP) packets on this host. How to fix: %s (%v)", pingPermissionsDoc, err),
 				fatal: true,
 			}
 		}
