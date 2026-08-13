@@ -8,6 +8,8 @@ import { formatDate } from "@/lib/utils";
 import { useMonitorStore } from "@/lib/store";
 import { useIncidentEvents } from "@/hooks/useMonitorEvents";
 import { EventDetailCard } from "@/components/EventDetailCard";
+import { EventGroupCard } from "@/components/EventGroupCard";
+import { groupConsecutiveEvents } from "@/lib/eventGroups";
 
 // IncidentCard renders one "what went wrong, for how long" rollup row. The same component
 // drives /incidents (with monitor + group meta and a link through to the monitor) and
@@ -147,8 +149,10 @@ export function IncidentCard({
                     )}
                     {eventsQ.data && eventsQ.data.length > 0 && (
                         <div className="space-y-2">
-                            {eventsQ.data.map(ev => (
-                                <EventDetailCard key={ev.id} event={ev} />
+                            {groupConsecutiveEvents(eventsQ.data).map(group => (
+                                group.events.length === 1
+                                    ? <EventDetailCard key={group.key} event={group.first} />
+                                    : <EventGroupCard key={group.key} group={group} />
                             ))}
                         </div>
                     )}

@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight, AlertTriangle, ArrowDown, ArrowUp, Tornado, 
 import { formatDate } from "@/lib/utils";
 import { useMonitorStore } from "@/lib/store";
 import { EnrichedMonitorEvent } from "@/hooks/useMonitorEvents";
+import { cameFromCheck, formatLatency } from "@/lib/eventGroups";
 
 interface EventDetailCardProps {
     event: EnrichedMonitorEvent;
@@ -27,6 +28,9 @@ export function EventDetailCard({ event }: EventDetailCardProps) {
     const Icon = meta.Icon;
 
     const hasDetails = !!(event.errorMessage || event.responseBody || (event.responseHeaders && Object.keys(event.responseHeaders).length > 0));
+    // A check that answered in under a millisecond stores no latency, which used to render
+    // as an empty gap that read like missing data. Say "<1ms" instead.
+    const latency = formatLatency(event.latency, cameFromCheck(event));
 
     // The header row content is identical whether the event is expandable or not — extracted
     // so non-expandable events render as a plain (non-clickable) div instead of a button that
@@ -49,10 +53,14 @@ export function EventDetailCard({ event }: EventDetailCardProps) {
             </div>
             <div className="flex items-center gap-3 text-xs text-muted-foreground flex-shrink-0">
                 {typeof event.statusCode === "number" && event.statusCode > 0 && (
-                    <span className="font-mono">{event.statusCode}</span>
+                    <span className="font-mono" title="HTTP status code returned by the check">
+                        HTTP {event.statusCode}
+                    </span>
                 )}
-                {typeof event.latency === "number" && event.latency > 0 && (
-                    <span className="font-mono">{event.latency}ms</span>
+                {latency && (
+                    <span className="font-mono" title="Response time measured by the check">
+                        {latency}
+                    </span>
                 )}
                 <span className="flex items-center gap-1">
                     <Clock className="w-3 h-3" />
