@@ -8,7 +8,7 @@ on:
 
 env:
   NODE_VERSION: "22"
-  GO_VERSION: "1.25.12"
+  GO_VERSION: "1.25.13"
   # Pinned: installing these @latest means a new upstream release can add rules and break
   # CI on code that never changed. Renovate bumps them deliberately instead.
   GOSEC_VERSION: "v2.28.0"
