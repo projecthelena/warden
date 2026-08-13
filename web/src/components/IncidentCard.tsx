@@ -8,7 +8,7 @@ import { formatDate } from "@/lib/utils";
 import { useMonitorStore } from "@/lib/store";
 import { useIncidentEvents } from "@/hooks/useMonitorEvents";
 import { EventDetailCard } from "@/components/EventDetailCard";
-import { EventGroupCard } from "@/components/EventGroupCard";
+import { EventGroupCard, EventGroupBody, RunMeta, RunChips } from "@/components/EventGroupCard";
 import { groupConsecutiveEvents } from "@/lib/eventGroups";
 
 // IncidentCard renders one "what went wrong, for how long" rollup row. The same component
@@ -72,6 +72,14 @@ export function IncidentCard({
     // render (which would churn the query key and cause an infinite refetch loop).
     const eventsQ = useIncidentEvents(monitorId, startedAt, endedAt, open && expandable);
 
+    // A single run of repeated checks is rendered flat: its summary goes on the drawer's
+    // header line and the samples hang directly off it. Wrapping the only run in its own
+    // collapsible card would be a box around the entire contents of the drawer, repeating
+    // the message a third time for nothing. More than one run keeps the cards, because
+    // then the boundaries between them are the point.
+    const groups = eventsQ.data ? groupConsecutiveEvents(eventsQ.data) : [];
+    const singleRun = groups.length === 1 && groups[0].events.length > 1 ? groups[0] : null;
+
     return (
         <Collapsible open={open} onOpenChange={expandable ? setOpen : undefined} className="border border-border rounded-lg bg-card overflow-hidden">
             <CollapsibleTrigger
@@ -121,12 +129,23 @@ export function IncidentCard({
             {expandable && (
                 <CollapsibleContent className="border-t border-border bg-muted/20 px-3 py-3 space-y-2">
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Activity className="w-3.5 h-3.5" />
-                        Events during this incident
+                        <Activity className="w-3.5 h-3.5 flex-shrink-0" />
+                        {/* One run means the whole incident was the same failure repeating, so its
+                            summary IS the description of the events — no point saying both. */}
+                        {singleRun ? (
+                            <>
+                                <RunMeta group={singleRun} />
+                                <span className="ml-auto flex items-center gap-3 flex-shrink-0">
+                                    <RunChips group={singleRun} />
+                                </span>
+                            </>
+                        ) : (
+                            "Events during this incident"
+                        )}
                         {!onMonitorPage && (
                             <Link
                                 to={`/monitors/${monitorId}?date=${startedAt.slice(0, 10)}`}
-                                className="ml-auto text-primary hover:underline"
+                                className={`text-primary hover:underline flex-shrink-0 ${singleRun ? "" : "ml-auto"}`}
                                 onClick={(e) => e.stopPropagation()}
                             >
                                 Open monitor page →
@@ -149,11 +168,15 @@ export function IncidentCard({
                     )}
                     {eventsQ.data && eventsQ.data.length > 0 && (
                         <div className="space-y-2">
-                            {groupConsecutiveEvents(eventsQ.data).map(group => (
-                                group.events.length === 1
-                                    ? <EventDetailCard key={group.key} event={group.first} />
-                                    : <EventGroupCard key={group.key} group={group} />
-                            ))}
+                            {singleRun ? (
+                                <EventGroupBody group={singleRun} />
+                            ) : (
+                                groups.map(group => (
+                                    group.events.length === 1
+                                        ? <EventDetailCard key={group.key} event={group.first} />
+                                        : <EventGroupCard key={group.key} group={group} />
+                                ))
+                            )}
                         </div>
                     )}
                 </CollapsibleContent>
