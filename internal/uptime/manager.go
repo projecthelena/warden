@@ -292,7 +292,7 @@ func (m *Manager) worker() {
 			}
 
 			start = time.Now().UTC()
-			resp, err := client.Do(req)
+			resp, err := client.Do(req) // #nosec G704 -- probing an operator-configured target URL is the product
 			latency = time.Since(start).Milliseconds()
 
 			isUp = true

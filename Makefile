@@ -64,12 +64,17 @@ lint-backend:
 
 lint: lint-frontend lint-backend
 
+# Keep these in sync with .github/workflows/ci.yml — running a different version locally
+# than CI does is how "green on my machine" turns into a red pipeline.
+GOSEC_VERSION ?= v2.28.0
+GOVULNCHECK_VERSION ?= v1.1.4
+
 security:
-	@command -v gosec >/dev/null 2>&1 || { echo "Installing gosec..."; go install github.com/securego/gosec/v2/cmd/gosec@latest; }
-	gosec -exclude-dir=web ./...
+	@go install github.com/securego/gosec/v2/cmd/gosec@$(GOSEC_VERSION)
+	gosec -exclude-dir=web -exclude-dir=.claude ./...
 
 govuln:
-	@command -v govulncheck >/dev/null 2>&1 || go install golang.org/x/vuln/cmd/govulncheck@latest
+	@go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
 	govulncheck ./...
 
 vuln:

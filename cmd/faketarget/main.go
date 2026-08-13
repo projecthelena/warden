@@ -22,6 +22,7 @@
 package main
 
 import (
+	crand "crypto/rand"
 	"flag"
 	"fmt"
 	"log"
@@ -32,6 +33,24 @@ import (
 	"time"
 )
 
+// safeLog strips control characters from request-derived strings before they reach the log,
+// so a crafted path can't forge log lines. Mirrors internal/api.sanitizeLog.
+func safeLog(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if r < 0x20 || r == 0x7F {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	s = b.String()
+	if len(s) > 128 {
+		s = s[:128] + "..."
+	}
+	return s
+}
+
 func main() {
 	listen := flag.String("listen", ":8888", "address to listen on")
 	latencyMs := flag.Int("slow-latency-ms", 1500, "latency for /slow")
@@ -40,14 +59,14 @@ func main() {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthy", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("→ %s %s", r.Method, r.URL.Path)
+		log.Printf("→ %s %s", safeLog(r.Method), safeLog(r.URL.Path))
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-Faketarget", "healthy")
 		_, _ = fmt.Fprintln(w, `{"ok":true,"service":"faketarget"}`)
 	})
 
 	mux.HandleFunc("/down", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("→ %s %s [503]", r.Method, r.URL.Path)
+		log.Printf("→ %s %s [503]", safeLog(r.Method), safeLog(r.URL.Path))
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Server", "faketarget/1.0")
 		w.Header().Set("X-Request-Id", randomID())
@@ -56,7 +75,7 @@ func main() {
 	})
 
 	mux.HandleFunc("/error", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("→ %s %s [500]", r.Method, r.URL.Path)
+		log.Printf("→ %s %s [500]", safeLog(r.Method), safeLog(r.URL.Path))
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-Request-Id", randomID())
 		w.WriteHeader(http.StatusInternalServerError)
@@ -64,7 +83,7 @@ func main() {
 	})
 
 	mux.HandleFunc("/slow", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("→ %s %s [slow %dms]", r.Method, r.URL.Path, *latencyMs)
+		log.Printf("→ %s %s [slow %dms]", safeLog(r.Method), safeLog(r.URL.Path), *latencyMs)
 		time.Sleep(time.Duration(*latencyMs) * time.Millisecond)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprintln(w, `{"ok":true,"slowedBy":"`+strconv.Itoa(*latencyMs)+`ms"}`)
@@ -77,19 +96,19 @@ func main() {
 				failPct = n
 			}
 		}
-		if rand.Intn(100) < failPct {
-			log.Printf("→ %s %s [flaky FAIL]", r.Method, r.URL.Path)
+		if rand.Intn(100) < failPct { // #nosec G404 -- simulating flakiness, not a security decision
+			log.Printf("→ %s %s [flaky FAIL]", safeLog(r.Method), safeLog(r.URL.Path))
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadGateway)
 			_, _ = fmt.Fprintln(w, `{"error":"bad_gateway","message":"upstream timed out","upstream":"api-backend"}`)
 			return
 		}
-		log.Printf("→ %s %s [flaky ok]", r.Method, r.URL.Path)
+		log.Printf("→ %s %s [flaky ok]", safeLog(r.Method), safeLog(r.URL.Path))
 		_, _ = fmt.Fprintln(w, `{"ok":true}`)
 	})
 
 	mux.HandleFunc("/timeout", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("→ %s %s [sleeping 30s]", r.Method, r.URL.Path)
+		log.Printf("→ %s %s [sleeping 30s]", safeLog(r.Method), safeLog(r.URL.Path))
 		time.Sleep(30 * time.Second)
 		_, _ = fmt.Fprintln(w, "late response")
 	})
@@ -101,11 +120,13 @@ func main() {
 			http.Error(w, "invalid status code", http.StatusBadRequest)
 			return
 		}
-		log.Printf("→ %s %s [%d]", r.Method, r.URL.Path, code)
+		log.Printf("→ %s %s [%d]", safeLog(r.Method), safeLog(r.URL.Path), code)
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-Request-Id", randomID())
 		w.WriteHeader(code)
-		_, _ = fmt.Fprintf(w, `{"status":%d,"path":"%s","ts":"%s"}`+"\n", code, r.URL.Path, time.Now().UTC().Format(time.RFC3339))
+		// Echo back only the parsed code, never the raw path — reflecting request input
+		// into the response body is what makes a test server a stored-XSS foot-gun.
+		_, _ = fmt.Fprintf(w, `{"status":%d,"ts":"%s"}`+"\n", code, time.Now().UTC().Format(time.RFC3339))
 	})
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -114,7 +135,13 @@ func main() {
 	})
 
 	log.Printf("faketarget listening on %s (slow latency=%dms)", *listen, *latencyMs)
-	if err := http.ListenAndServe(*listen, mux); err != nil {
+	// No WriteTimeout on purpose: /timeout sleeps 30s and needs to hold the connection open.
+	srv := &http.Server{
+		Addr:              *listen,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	if err := srv.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -122,8 +149,11 @@ func main() {
 func randomID() string {
 	const chars = "abcdef0123456789"
 	b := make([]byte, 16)
+	if _, err := crand.Read(b); err != nil {
+		return "0000000000000000"
+	}
 	for i := range b {
-		b[i] = chars[rand.Intn(len(chars))]
+		b[i] = chars[int(b[i])%len(chars)]
 	}
 	return string(b)
 }
