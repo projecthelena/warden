@@ -10,16 +10,21 @@ import { useIncidentEvents } from "@/hooks/useMonitorEvents";
 import { EventDetailCard } from "@/components/EventDetailCard";
 
 // IncidentCard renders one "what went wrong, for how long" rollup row. The same component
-// drives /incidents (with monitor + group meta visible) and /monitors/:id (where the meta
-// is redundant with the breadcrumb and gets hidden). Click → expand → lazy-fetch the
-// enriched events that fell inside the outage window.
+// drives /incidents (with monitor + group meta and a link through to the monitor) and
+// /monitors/:id, where both of those would point at the page you are already on and are
+// dropped via onMonitorPage. Click → expand → lazy-fetch the enriched events that fell
+// inside the outage window.
 
 export interface IncidentCardProps {
     monitorId: string;
     monitorName: string;
     groupName?: string;
-    /** Hide the monitor/group meta line — set true when the page chrome already names it. */
-    hideMonitorName?: boolean;
+    /**
+     * True when the card is already rendered on that monitor's own page. Drops the bits that
+     * would just point at the current page: the monitor/group meta line (the breadcrumb
+     * already says it) and the "Open monitor page" link (it would link to itself).
+     */
+    onMonitorPage?: boolean;
     type: "down" | "degraded" | "ssl_expiring";
     summary: string;
     startedAt: string;
@@ -41,7 +46,7 @@ export function IncidentCard({
     monitorId,
     monitorName,
     groupName,
-    hideMonitorName,
+    onMonitorPage,
     type,
     summary,
     startedAt,
@@ -84,7 +89,7 @@ export function IncidentCard({
                 </Badge>
                 <div className="flex-1 min-w-0">
                     <p className="text-sm text-foreground truncate">{summary}</p>
-                    {!hideMonitorName && (
+                    {!onMonitorPage && (
                         <p className="text-xs text-muted-foreground truncate mt-0.5">
                             <Link
                                 to={`/monitors/${monitorId}`}
@@ -116,13 +121,15 @@ export function IncidentCard({
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                         <Activity className="w-3.5 h-3.5" />
                         Events during this incident
-                        <Link
-                            to={`/monitors/${monitorId}?date=${startedAt.slice(0, 10)}`}
-                            className="ml-auto text-primary hover:underline"
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            Open monitor page →
-                        </Link>
+                        {!onMonitorPage && (
+                            <Link
+                                to={`/monitors/${monitorId}?date=${startedAt.slice(0, 10)}`}
+                                className="ml-auto text-primary hover:underline"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                Open monitor page →
+                            </Link>
+                        )}
                     </div>
                     {eventsQ.isLoading && (
                         <div className="space-y-2">

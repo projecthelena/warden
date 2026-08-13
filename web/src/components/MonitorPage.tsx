@@ -130,7 +130,7 @@ export function MonitorPage() {
                                 monitorId={inc.monitorId}
                                 monitorName={inc.monitorName}
                                 groupName={inc.groupName}
-                                hideMonitorName
+                                onMonitorPage
                                 type={inc.type as "down" | "degraded"}
                                 summary={inc.message}
                                 startedAt={inc.startedAt}
@@ -144,7 +144,7 @@ export function MonitorPage() {
                                 monitorId={w.monitorId}
                                 monitorName={w.monitorName}
                                 groupName={w.groupName}
-                                hideMonitorName
+                                onMonitorPage
                                 type="ssl_expiring"
                                 summary={w.message}
                                 startedAt={w.timestamp}
