@@ -65,7 +65,7 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 	// If TrustProxy is false (default), we use the direct connection IP to prevent
 	// attackers from spoofing their IP address and bypassing rate limiting.
 	if cfg.TrustProxy {
-		r.Use(middleware.RealIP)
+		r.Use(RealIPFromProxy)
 	}
 
 	r.Use(SecureHeadersWithConfig(cfg.CookieSecure))
