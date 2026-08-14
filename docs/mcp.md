@@ -60,7 +60,9 @@ Deleting is deliberately not offered. Removing monitors takes their history with
 
 > Create monitors for example.com, example.org and example.net in a group called Clients
 
-Only `url` is required per entry. The name defaults to the url, the group defaults to `Default`, and the interval to 60 seconds.
+Only `url` is required per entry. The name defaults to the url, the type to `http`, the group to `Default`, and the interval to 60 seconds.
+
+Pass `type` to create a tcp, ping or dns monitor. The target format follows the type, the same as it does in the dashboard: `host:port` for tcp, a hostname for ping and dns. See [Monitor Types](monitor-types.md).
 
 A bad entry does not sink the batch. Each one comes back with its own result, so a list with one typo in it creates everything else and tells you what to fix:
 
