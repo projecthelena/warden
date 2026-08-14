@@ -1,9 +1,15 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/projecthelena/warden/internal/db"
 )
 
 // A webhook URL is a credential: whoever holds it can post into the channel. A viewer
@@ -46,5 +52,45 @@ func TestMaskSecretsDropsConfigItCannotRead(t *testing.T) {
 	}
 	if got := maskSecrets(""); got != "" {
 		t.Errorf("expected an empty config to stay empty, got %q", got)
+	}
+}
+
+// The unit tests above cover the masking. This covers the boundary: that the handler
+// applies it by role. Without this, deleting the role check leaves every test passing.
+func TestGetChannelsMasksForViewersOnly(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewNotificationChannelsHandler(store)
+
+	if err := store.CreateNotificationChannel(db.NotificationChannel{
+		ID:        "nc1",
+		Type:      "slack",
+		Name:      "Alerts",
+		Config:    `{"webhookUrl":"https://hooks.slack.com/services/T000/B000/SECRET"}`,
+		Enabled:   true,
+		CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("failed to create channel: %v", err)
+	}
+
+	read := func(role string) string {
+		req := httptest.NewRequest("GET", "/api/notifications/channels", nil)
+		req = req.WithContext(context.WithValue(req.Context(), contextKeyUserRole, role))
+		rr := httptest.NewRecorder()
+		handler.GetChannels(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("%s: expected 200, got %d", role, rr.Code)
+		}
+		return rr.Body.String()
+	}
+
+	for _, role := range []string{RoleViewer, RoleStatusViewer} {
+		if strings.Contains(read(role), "SECRET") {
+			t.Errorf("%s must not be able to read the webhook", role)
+		}
+	}
+	for _, role := range []string{RoleEditor, RoleAdmin} {
+		if !strings.Contains(read(role), "SECRET") {
+			t.Errorf("%s edits and tests channels, so it still needs the webhook", role)
+		}
 	}
 }

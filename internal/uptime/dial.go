@@ -1,20 +1,16 @@
 package uptime
 
-// Checks refuse to connect to link-local addresses.
+// Checks refuse to connect to link-local addresses, where AWS, GCP, Azure and Hetzner
+// all serve instance credentials at 169.254.169.254.
 //
-// 169.254.169.254 is where AWS, GCP, Azure, Hetzner and others serve instance metadata,
-// including credentials. Nothing worth monitoring lives in that range, and reaching it
-// is a way to read secrets out of Warden: a failed check stores up to
-// ResponseBodyMaxBytes of whatever the target answered, and setting acceptedStatusCodes
-// to something the target never returns makes every response count as failed. Whoever
-// can create a monitor could then read the host's credentials from the incident.
+// Reaching that range reads secrets out of Warden: a failed check stores what the target
+// answered, and acceptedStatusCodes can make any response count as failed, so whoever
+// creates a monitor could read the host's credentials from the incident.
 //
-// Private ranges stay reachable. Monitoring an internal network is the product.
-//
-// The check runs in the dialer, on the resolved address, which is the only point where
-// the real destination is known. Validating the target string instead would miss a
-// hostname that resolves there, a name that changes after it was validated, and a
-// redirect the target itself returns.
+// Private ranges stay reachable, because monitoring an internal network is the product.
+// The check runs in the dialer on the resolved address, which also covers a hostname
+// that points there, a name that changes after validation, and a redirect from the
+// target itself.
 
 import (
 	"context"

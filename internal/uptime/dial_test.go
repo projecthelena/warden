@@ -148,3 +148,15 @@ func TestCheckTransportDoesNotCapTheMonitorsTimeout(t *testing.T) {
 		t.Errorf("expected the monitor's own 3s timeout to govern, took %s", elapsed)
 	}
 }
+
+// A TCP monitor leaks no body, but it would still make Warden a port scanner of the
+// metadata service, and the block should not depend on which check type is used.
+func TestProbeTCPCannotReachLinkLocal(t *testing.T) {
+	out := probeTCP("169.254.169.254:80", 2*time.Second)
+	if out.up {
+		t.Fatal("expected the check to fail")
+	}
+	if !strings.Contains(out.err, "link-local") {
+		t.Errorf("expected the link-local refusal, got %q", out.err)
+	}
+}
