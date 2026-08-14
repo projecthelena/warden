@@ -41,9 +41,9 @@ type Monitor struct {
 	confirmedDown        bool // threshold met for down
 	confirmedDegraded    bool // threshold met for degraded
 
-	lastNotifiedAt map[string]time.Time // per-event-type cooldown tracking
-	isFlapping     bool                 // current flap state
-	flapStabilizedAt time.Time          // when flapping last stopped (grace period)
+	lastNotifiedAt   map[string]time.Time // per-event-type cooldown tracking
+	isFlapping       bool                 // current flap state
+	flapStabilizedAt time.Time            // when flapping last stopped (grace period)
 
 	// Flap detection settings
 	flapDetectionEnabled bool
@@ -57,11 +57,11 @@ type Monitor struct {
 
 // NotificationEventFilter holds per-event-type notification toggle state.
 type NotificationEventFilter struct {
-	DownEnabled       bool
-	UpEnabled         bool
-	DegradedEnabled   bool
-	FlappingEnabled   bool
-	StabilizedEnabled bool
+	DownEnabled        bool
+	UpEnabled          bool
+	DegradedEnabled    bool
+	FlappingEnabled    bool
+	StabilizedEnabled  bool
 	SSLExpiringEnabled bool
 }
 
@@ -100,20 +100,20 @@ func NewMonitor(id, monitorType, groupID, name, url string, interval time.Durati
 		createdAt = time.Now()
 	}
 	return &Monitor{
-		id:                    id,
-		monitorType:           db.NormalizeMonitorType(monitorType),
-		groupID:               groupID,
-		name:                  name,
-		url:                   url,
-		interval:              interval,
-		createdAt:             createdAt,
-		history:               make([]Status, 0, 50), // Keep last 50 in memory
-		stopCh:                make(chan struct{}),
-		jobQueue:              jobQueue,
-		requestConfig:         reqConfig,
-		confirmationThreshold: 3,  // default
-		cooldownMinutes:       30, // default
-		lastNotifiedAt:        make(map[string]time.Time),
+		id:                         id,
+		monitorType:                db.NormalizeMonitorType(monitorType),
+		groupID:                    groupID,
+		name:                       name,
+		url:                        url,
+		interval:                   interval,
+		createdAt:                  createdAt,
+		history:                    make([]Status, 0, 50), // Keep last 50 in memory
+		stopCh:                     make(chan struct{}),
+		jobQueue:                   jobQueue,
+		requestConfig:              reqConfig,
+		confirmationThreshold:      3,  // default
+		cooldownMinutes:            30, // default
+		lastNotifiedAt:             make(map[string]time.Time),
 		flapDetectionEnabled:       true,
 		flapWindowChecks:           21,
 		flapThresholdPercent:       25,

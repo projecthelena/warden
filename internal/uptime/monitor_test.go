@@ -439,11 +439,11 @@ func TestMonitor_HydrateConfirmationState(t *testing.T) {
 	t.Run("down_priority_over_degraded", func(t *testing.T) {
 		m := newTestMonitorWithConfig(MonitorConfig{ConfirmationThreshold: 3, CooldownMinutes: 30, FlapDetectionEnabled: true, FlapWindowChecks: 21, FlapThresholdPercent: 25})
 		now := time.Now()
-		m.RecordResult(true, 5000, now.Add(-5*time.Minute), 200, "", true)  // degraded
-		m.RecordResult(true, 5000, now.Add(-4*time.Minute), 200, "", true)  // degraded
-		m.RecordResult(false, 0, now.Add(-3*time.Minute), 0, "err", false)  // down
-		m.RecordResult(false, 0, now.Add(-2*time.Minute), 0, "err", false)  // down
-		m.RecordResult(false, 0, now.Add(-1*time.Minute), 0, "err", false)  // down
+		m.RecordResult(true, 5000, now.Add(-5*time.Minute), 200, "", true) // degraded
+		m.RecordResult(true, 5000, now.Add(-4*time.Minute), 200, "", true) // degraded
+		m.RecordResult(false, 0, now.Add(-3*time.Minute), 0, "err", false) // down
+		m.RecordResult(false, 0, now.Add(-2*time.Minute), 0, "err", false) // down
+		m.RecordResult(false, 0, now.Add(-1*time.Minute), 0, "err", false) // down
 		m.HydrateConfirmationState()
 		if !m.IsConfirmedDown() {
 			t.Error("Expected IsConfirmedDown=true (3 consecutive down)")

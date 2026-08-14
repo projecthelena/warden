@@ -1,3 +1,4 @@
+import { API_BASE } from '../apiBase';
 import { test } from '@playwright/test';
 import { LoginPage } from '../pages/LoginPage';
 import { DashboardPage } from '../pages/DashboardPage';
@@ -69,7 +70,7 @@ test.describe('Monitor Pause/Resume', () => {
         await dashboard.createGroup(groupName);
 
         console.log(`Creating Monitor: ${monitorName}`);
-        await dashboard.createMonitor(monitorName, 'http://localhost:9096/healthz');
+        await dashboard.createMonitor(monitorName, `${API_BASE}/healthz`);
 
         // Wait for monitor to show as operational
         await dashboard.verifyMonitorStatus('Operational');
@@ -114,7 +115,7 @@ test.describe('Monitor Pause/Resume', () => {
         await dashboard.createGroup(groupName);
 
         console.log(`Creating Monitor: ${monitorName}`);
-        await dashboard.createMonitor(monitorName, 'http://localhost:9096/healthz');
+        await dashboard.createMonitor(monitorName, `${API_BASE}/healthz`);
 
         // Wait for monitor to show as operational
         await dashboard.verifyMonitorStatus('Operational');
@@ -165,7 +166,7 @@ test.describe('Monitor Pause/Resume', () => {
         await dashboard.createGroup(groupName);
 
         console.log(`Creating Monitor: ${monitorName}`);
-        await dashboard.createMonitor(monitorName, 'http://localhost:9096/healthz');
+        await dashboard.createMonitor(monitorName, `${API_BASE}/healthz`);
 
         // Wait for monitor to show as operational
         await dashboard.verifyMonitorStatus('Operational');

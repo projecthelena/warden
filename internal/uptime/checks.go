@@ -174,7 +174,7 @@ func probeTCP(target string, timeout time.Duration) checkOutcome {
 		return checkOutcome{err: fmt.Sprintf("invalid tcp target %q: expected host:port", target), fatal: true}
 	}
 
-	conn, err := net.DialTimeout("tcp", target, timeout)
+	conn, err := safeDialer(timeout).Dial("tcp", target)
 	if err != nil {
 		return checkOutcome{err: err.Error()}
 	}
@@ -220,8 +220,7 @@ func probeDNS(target string, cfg *db.RequestConfig, timeout time.Duration) check
 		resolver = &net.Resolver{
 			PreferGo: true,
 			Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
-				d := net.Dialer{Timeout: timeout}
-				return d.DialContext(ctx, network, addr)
+				return safeDialer(timeout).DialContext(ctx, network, addr)
 			},
 		}
 	}
