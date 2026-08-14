@@ -3,7 +3,6 @@ import { test, expect } from '@playwright/test';
 import { LoginPage } from '../pages/LoginPage';
 import { DashboardPage } from '../pages/DashboardPage';
 
-const API_BASE = API_BASE;
 const ADMIN_SECRET = 'warden-e2e-magic-key';
 const ADMIN_USER = 'admin';
 const ADMIN_PASS = 'password123!';
