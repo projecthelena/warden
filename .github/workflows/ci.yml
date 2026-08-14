@@ -113,6 +113,14 @@ jobs:
         # instead of running, leaving the feature uncovered. Same knob operators set.
         run: sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
 
+      - name: Ping tests with ICMP allowed
+        # Asserted rather than trusted: the main suite runs without -v, so a ping test
+        # that quietly went back to skipping would leave no trace.
+        run: |
+          set -o pipefail
+          go test ./internal/uptime -run 'TestProbePing' -v | tee icmp-allowed.log
+          grep -q -- '--- PASS: TestProbePingLoopback' icmp-allowed.log
+
       - name: Unit Tests
         run: |
           go clean -testcache
