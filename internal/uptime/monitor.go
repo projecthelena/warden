@@ -41,6 +41,7 @@ type Monitor struct {
 	confirmedDown        bool // threshold met for down
 	confirmedDegraded    bool // threshold met for degraded
 
+	lastEventKey     string               // last event written, so an unchanged one is not repeated
 	lastNotifiedAt   map[string]time.Time // per-event-type cooldown tracking
 	isFlapping       bool                 // current flap state
 	flapStabilizedAt time.Time            // when flapping last stopped (grace period)
@@ -212,6 +213,29 @@ func (m *Monitor) schedule() {
 	default:
 		// Queue full, skip this tick to avoid blocking scheduler
 	}
+}
+
+// ShouldRecordEvent reports whether an event says something the previous one did not,
+// and remembers it when it does.
+//
+// A monitor that stays down produces a failed check every interval, and each one used to
+// write a row carrying its own copy of the same response body. One row per change keeps
+// what the drill-down is for, the moment a failure started and any moment it changed,
+// without the hundreds of identical rows in between.
+//
+// The key resets itself: a recovery is an event too, so the next failure after one is
+// always recorded even if it reads the same as the last.
+func (m *Monitor) ShouldRecordEvent(eventType, message, errText string) bool {
+	key := eventType + "\x00" + message + "\x00" + errText
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.lastEventKey == key {
+		return false
+	}
+	m.lastEventKey = key
+	return true
 }
 
 // GetRequestConfig returns the monitor's request configuration.

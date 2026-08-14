@@ -175,7 +175,7 @@ function GeneralSettings() {
                 <div className="grid gap-2">
                     <Label htmlFor="retention">Data Retention (Days)</Label>
                     <div className="text-sm text-muted-foreground mb-2">
-                        Monitor checks older than this will be automatically deleted.
+                        Monitor checks and events older than this will be automatically deleted. Incident history is kept.
                     </div>
                     <Input
                         id="retention"

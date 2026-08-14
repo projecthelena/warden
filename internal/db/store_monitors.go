@@ -458,6 +458,26 @@ func (s *Store) GetMonitorChecks(monitorID string, limit int) ([]CheckResult, er
 	return checks, nil
 }
 
+// PruneMonitorEvents drops monitor events past the retention window.
+//
+// Events were the one table retention never covered, so a setting the UI calls "data
+// retention" left them growing forever, and since each failed check can carry a couple
+// of kilobytes of captured response body they grow fastest of all. Outages live in their
+// own table, so incident history outlives the events behind it.
+func (s *Store) PruneMonitorEvents(days int) error {
+	if days < 1 || days > 3650 {
+		return fmt.Errorf("invalid retention days: must be between 1 and 3650")
+	}
+
+	var err error
+	if s.IsPostgres() {
+		_, err = s.db.Exec("DELETE FROM monitor_events WHERE timestamp < NOW() - MAKE_INTERVAL(days => $1)", days)
+	} else {
+		_, err = s.db.Exec("DELETE FROM monitor_events WHERE timestamp < datetime('now', '-' || ? || ' days')", days)
+	}
+	return err
+}
+
 func (s *Store) PruneMonitorChecks(days int) error {
 	// SECURITY: Validate input to prevent any potential issues
 	if days < 1 || days > 3650 { // Max 10 years
