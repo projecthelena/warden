@@ -29,8 +29,15 @@ type MonitorInput struct {
 	Interval int
 }
 
-// defaultInterval matches what the dashboard offers when creating a monitor.
-const defaultInterval = 60
+const (
+	// defaultInterval matches what the dashboard offers when creating a monitor.
+	defaultInterval = 60
+
+	// maxBatch bounds one call. Comfortably more than anyone pastes by hand, and it
+	// stops a single instruction, including one arriving inside a monitored target's
+	// error body, from filling the install with monitors.
+	maxBatch = 100
+)
 
 func (s *Server) addWriteTools(srv *mcp.Server) {
 	mcp.AddTool(srv, &mcp.Tool{
@@ -93,6 +100,9 @@ type CreateMonitorsOutput struct {
 func (s *Server) createMonitors(ctx context.Context, _ *mcp.CallToolRequest, in CreateMonitorsInput) (*mcp.CallToolResult, CreateMonitorsOutput, error) {
 	if len(in.Monitors) == 0 {
 		return nil, CreateMonitorsOutput{}, fmt.Errorf("monitors is required: pass at least one entry")
+	}
+	if len(in.Monitors) > maxBatch {
+		return nil, CreateMonitorsOutput{}, fmt.Errorf("too many monitors in one call: %d, maximum is %d. Split the list", len(in.Monitors), maxBatch)
 	}
 
 	out := CreateMonitorsOutput{Results: make([]CreateResult, 0, len(in.Monitors))}

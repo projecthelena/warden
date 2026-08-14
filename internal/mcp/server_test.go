@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -573,5 +574,92 @@ func TestCreateMonitorsPassesTheTypeThrough(t *testing.T) {
 	}
 	if got["API"] != db.MonitorTypeHTTP {
 		t.Errorf("expected an omitted type to default to http, got %q", got["API"])
+	}
+}
+
+// A session used to freeze the tool set at the privileges of whoever created it, so a
+// viewer key presenting an editor's session id got the write tools. The server is
+// stateless now; this proves each request is judged on its own credentials.
+func TestPrivilegesFollowTheRequestNotTheSession(t *testing.T) {
+	s, _ := newTestServer(t)
+	// Stand in for the role check: the header decides, per request.
+	s.canWrite = func(r *http.Request) bool { return r.Header.Get("X-Role") == "editor" }
+
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_group","arguments":{"name":"Escalated"}}}`
+
+	call := func(role string) string {
+		req, err := http.NewRequest("POST", srv.URL, strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("failed to build request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		req.Header.Set("X-Role", role)
+
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("request failed: %v", err)
+		}
+		defer func() { _ = res.Body.Close() }()
+		if id := res.Header.Get("Mcp-Session-Id"); id != "" {
+			t.Errorf("expected no session to hand out, got %q", id)
+		}
+		out, _ := io.ReadAll(res.Body)
+		return string(out)
+	}
+
+	if got := call("editor"); strings.Contains(got, "unknown tool") {
+		t.Fatalf("an editor should be able to create a group: %s", got)
+	}
+	if got := call("viewer"); !strings.Contains(got, "unknown tool") {
+		t.Errorf("a viewer must not reach the write tools: %s", got)
+	}
+}
+
+// An instruction to create thousands of monitors could arrive inside a monitored
+// target's error body, so one call has to be bounded.
+func TestCreateMonitorsRejectsAnOversizedBatch(t *testing.T) {
+	s, _ := newTestServer(t)
+
+	monitors := make([]NewMonitor, maxBatch+1)
+	for i := range monitors {
+		monitors[i] = NewMonitor{Target: "https://example.com"}
+	}
+
+	_, _, err := s.createMonitors(context.Background(), nil, CreateMonitorsInput{Monitors: monitors})
+	if err == nil {
+		t.Fatal("expected a batch over the limit to be refused")
+	}
+	if !strings.Contains(err.Error(), "Split the list") {
+		t.Errorf("expected the error to say what to do, got %q", err)
+	}
+}
+
+// A quiet cut would be read as a quiet period, so say when the window held more.
+func TestListIncidentsSaysWhenItTruncated(t *testing.T) {
+	s, store := newTestServer(t)
+	seedMonitor(t, store, "m-1", "Noisy", "https://one.example.com")
+
+	for i := 0; i < maxIncidents+10; i++ {
+		if err := store.CreateOutage("m-1", "down", "Monitor is down"); err != nil {
+			t.Fatalf("failed to seed outage: %v", err)
+		}
+		if err := store.CloseOutage("m-1"); err != nil {
+			t.Fatalf("failed to close outage: %v", err)
+		}
+	}
+
+	_, out, err := s.listIncidents(context.Background(), nil, ListIncidentsInput{SinceHours: 24})
+	if err != nil {
+		t.Fatalf("list_incidents failed: %v", err)
+	}
+	if len(out.Incidents) != maxIncidents {
+		t.Fatalf("expected the list to stop at %d, got %d", maxIncidents, len(out.Incidents))
+	}
+	if !out.Truncated {
+		t.Error("expected the result to admit it was cut short")
 	}
 }

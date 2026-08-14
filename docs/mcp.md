@@ -82,7 +82,9 @@ The rules are the same ones the dashboard enforces, because both go through the 
 
 Anywhere a tool takes a monitor, it accepts the name or the id. "Production API" works as well as `m-production-api-a1b2c3`.
 
-`get_monitor_events` returns at most 200 events per call, so a broad question cannot drag the whole events table into the conversation.
+Calls are bounded so a broad question cannot drag the whole database into the conversation: 200 events, 100 outages (the result says when it was cut), and 100 monitors created per call.
+
+Each request is judged on its own credentials. The endpoint is stateless, so there is no session whose privileges a later request could inherit.
 
 ## What leaves your server
 

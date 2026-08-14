@@ -24,6 +24,10 @@ import (
 // cannot drag the whole events table through the context window.
 const maxEvents = 200
 
+// maxIncidents bounds a broad question. A noisy month can hold thousands of outages, and
+// all of them would land in the model's context.
+const maxIncidents = 100
+
 // Server wires Warden's store and live monitor state into MCP tools.
 type Server struct {
 	store   *db.Store
@@ -44,9 +48,15 @@ func NewServer(store *db.Store, manager *uptime.Manager, version string, writer 
 // Handler returns the HTTP handler for the MCP endpoint. Mount it behind the same auth
 // as the rest of the API.
 func (s *Server) Handler() http.Handler {
+	// Stateless on purpose. With sessions, the tool set is decided once when the session
+	// is created and every later request inherits it, so a viewer key that presented an
+	// editor's session id got the write tools. Building the server per request from that
+	// request's own role removes the state the escalation needed rather than checking
+	// the role twice. Nothing here needs a session: no sampling, no elicitation, no
+	// server-initiated messages.
 	return mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		return s.newMCPServer(s.writer != nil && s.canWrite != nil && s.canWrite(r))
-	}, nil)
+	}, &mcp.StreamableHTTPOptions{Stateless: true})
 }
 
 func (s *Server) newMCPServer(writable bool) *mcp.Server {
@@ -235,6 +245,9 @@ type IncidentSummary struct {
 type ListIncidentsOutput struct {
 	Incidents []IncidentSummary `json:"incidents"`
 	Ongoing   int               `json:"ongoingCount"`
+	// Truncated says the window held more than came back, so a quiet cut is not read as
+	// a quiet period.
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 func (s *Server) listIncidents(ctx context.Context, _ *mcp.CallToolRequest, in ListIncidentsInput) (*mcp.CallToolResult, ListIncidentsOutput, error) {
@@ -255,6 +268,10 @@ func (s *Server) listIncidents(ctx context.Context, _ *mcp.CallToolRequest, in L
 
 	out := ListIncidentsOutput{Incidents: []IncidentSummary{}, Ongoing: len(active)}
 	for _, o := range append(active, resolved...) {
+		if len(out.Incidents) == maxIncidents {
+			out.Truncated = true
+			break
+		}
 		out.Incidents = append(out.Incidents, incidentSummary(o))
 	}
 
