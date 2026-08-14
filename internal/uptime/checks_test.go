@@ -99,7 +99,7 @@ func TestProbeDNSRejectsUnknownRecordType(t *testing.T) {
 }
 
 func TestValidDNSRecordType(t *testing.T) {
-	for _, rt := range []string{"A", "AAAA", "CNAME", "MX", "NS", "TXT"} {
+	for _, rt := range []string{"A", "AAAA", "MX", "NS", "TXT"} {
 		if !ValidDNSRecordType(rt) {
 			t.Errorf("expected %q to be a valid record type", rt)
 		}
@@ -388,7 +388,7 @@ func emptyAnswerDNS(t *testing.T) string {
 func TestProbeDNSEmptyAnswerIsDownForEveryRecordType(t *testing.T) {
 	resolver := emptyAnswerDNS(t)
 
-	for _, recordType := range []string{"A", "AAAA", "CNAME", "MX", "NS", "TXT"} {
+	for _, recordType := range []string{"A", "AAAA", "MX", "NS", "TXT"} {
 		cfg := &db.RequestConfig{DNSRecordType: recordType, DNSResolver: resolver}
 
 		out := probeDNS("example.com", cfg, 3*time.Second)

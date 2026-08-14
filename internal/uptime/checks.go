@@ -184,9 +184,15 @@ func probeTCP(target string, timeout time.Duration) checkOutcome {
 }
 
 // ValidDNSRecordType reports whether t is a record type a DNS monitor can query.
+//
+// CNAME is deliberately absent. net.Resolver.LookupCNAME reaches DNS record parsing that
+// panics on a malformed SVCB or HTTPS record (CVE-2026-46600, fixed in Go 1.26.6), and a
+// panic in a check worker takes the whole process with it: a hostile resolver could stop
+// the monitoring. It was also the weakest check of the set, since a name with no CNAME
+// resolves to itself and reports up. Restore it if the toolchain moves to 1.26.6.
 func ValidDNSRecordType(t string) bool {
 	switch t {
-	case "A", "AAAA", "CNAME", "MX", "NS", "TXT":
+	case "A", "AAAA", "MX", "NS", "TXT":
 		return true
 	}
 	return false
@@ -242,12 +248,6 @@ func countDNSRecords(ctx context.Context, r *net.Resolver, recordType, target st
 	case "AAAA":
 		addrs, err := r.LookupIP(ctx, "ip6", target)
 		return len(addrs), err
-	case "CNAME":
-		name, err := r.LookupCNAME(ctx, target)
-		if err != nil || name == "" {
-			return 0, err
-		}
-		return 1, nil
 	case "MX":
 		records, err := r.LookupMX(ctx, target)
 		return len(records), err

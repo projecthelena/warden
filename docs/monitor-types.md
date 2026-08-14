@@ -150,7 +150,13 @@ Warden rejects it rather than hand you a check that cannot fail.
 
 Two options live under **DNS Configuration**:
 
-- **Record type** — `A` (default), `AAAA`, `CNAME`, `MX`, `NS` or `TXT`.
+- **Record type** — `A` (default), `AAAA`, `MX`, `NS` or `TXT`.
+
+  CNAME is not offered. Looking one up reaches DNS parsing that panics on a malformed
+  SVCB or HTTPS record ([CVE-2026-46600](https://pkg.go.dev/vuln/GO-2026-5942), fixed in
+  Go 1.26.6), and a panic in a check worker stops the whole process, so a hostile
+  resolver could take your monitoring down. It also barely checked anything: a name with
+  no CNAME resolves to itself and reports up.
 - **Resolver** — the nameserver to query, as `host` or `host:port` (port 53 is assumed).
   Leave it empty to use the system resolver. Pointing this at your own nameserver is how
   you monitor the nameserver itself rather than whoever happens to answer.

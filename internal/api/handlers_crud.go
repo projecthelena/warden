@@ -565,7 +565,7 @@ func validateRequestConfig(cfg *db.RequestConfig) error {
 		return fmt.Errorf("retryCount must be between 0 and 5")
 	}
 	if cfg.DNSRecordType != "" && !uptime.ValidDNSRecordType(strings.ToUpper(cfg.DNSRecordType)) {
-		return fmt.Errorf("dnsRecordType must be one of A, AAAA, CNAME, MX, NS, TXT")
+		return fmt.Errorf("dnsRecordType must be one of A, AAAA, MX, NS, TXT")
 	}
 	if cfg.DNSResolver != "" && !isValidResolver(cfg.DNSResolver) {
 		return fmt.Errorf("dnsResolver must be a host or host:port")

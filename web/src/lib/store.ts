@@ -57,7 +57,7 @@ export interface RequestConfig {
 export const MONITOR_TYPES = ['http', 'tcp', 'ping', 'dns'] as const;
 export type MonitorType = typeof MONITOR_TYPES[number];
 
-export const DNS_RECORD_TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'NS', 'TXT'] as const;
+export const DNS_RECORD_TYPES = ['A', 'AAAA', 'MX', 'NS', 'TXT'] as const;
 
 export interface Monitor {
     id: string;

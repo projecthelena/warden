@@ -21,7 +21,7 @@ type RequestConfig struct {
 	RetryCount          int               `json:"retryCount,omitempty"`
 
 	// DNS-only options.
-	DNSRecordType string `json:"dnsRecordType,omitempty"` // A, AAAA, CNAME, MX, NS, TXT (default A)
+	DNSRecordType string `json:"dnsRecordType,omitempty"` // A, AAAA, MX, NS, TXT (default A)
 	DNSResolver   string `json:"dnsResolver,omitempty"`   // resolver to query, host or host:port (default system)
 }
 
