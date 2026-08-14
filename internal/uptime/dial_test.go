@@ -3,9 +3,12 @@ package uptime
 import (
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/projecthelena/warden/internal/db"
 )
 
 func TestBlockedAddress(t *testing.T) {
@@ -60,7 +63,7 @@ func TestDialAllowsOrdinaryTargets(t *testing.T) {
 func TestProbeHTTPCannotReachMetadata(t *testing.T) {
 	job := Job{MonitorID: "m1", URL: "http://169.254.169.254/latest/meta-data/"}
 
-	res := runCheck(job, newTestTransport())
+	res := runCheck(job, checkTransport())
 	if res.Status {
 		t.Fatal("expected the check to fail")
 	}
@@ -72,6 +75,76 @@ func TestProbeHTTPCannotReachMetadata(t *testing.T) {
 	}
 }
 
-func newTestTransport() *http.Transport {
-	return &http.Transport{DialContext: dialContext}
+// A target Warden was pointed at can answer with a redirect, and the client follows it.
+// The block has to survive that, which it does by living in the dialer rather than in
+// target validation: the redirect makes a second connection through the same transport.
+func TestRedirectToMetadataIsRefused(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://169.254.169.254/latest/meta-data/", http.StatusFound)
+	}))
+	defer srv.Close()
+
+	res := runCheck(Job{MonitorID: "m1", URL: srv.URL}, checkTransport())
+	if res.Status {
+		t.Fatal("expected a redirect into link-local to fail the check")
+	}
+	if res.ResponseBody != "" {
+		t.Errorf("expected nothing to be captured, got %q", res.ResponseBody)
+	}
+	if !strings.Contains(res.Error, "link-local") {
+		t.Errorf("expected the link-local refusal, got %q", res.Error)
+	}
+}
+
+// The resolver a DNS monitor is pointed at is dialed too, so it cannot be used to reach
+// the same place.
+func TestDNSResolverCannotBeLinkLocal(t *testing.T) {
+	out := probeDNS("example.com", &db.RequestConfig{DNSResolver: "169.254.169.254"}, 2*time.Second)
+	if out.up {
+		t.Fatal("expected the lookup to fail")
+	}
+	if !strings.Contains(out.err, "link-local") {
+		t.Errorf("expected the link-local refusal, got %q", out.err)
+	}
+}
+
+// The per-monitor timeout lives on the http.Client. A timeout on the transport's dialer
+// as well would quietly cap a monitor configured to wait longer, so the shared transport
+// must not carry one.
+func TestCheckTransportDoesNotCapTheMonitorsTimeout(t *testing.T) {
+	// A listener that accepts and then says nothing: the check has to be cut short by
+	// its own timeout, not by something shorter hidden in the transport.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to open listener: %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			// Hold it open without answering.
+			go func() { time.Sleep(10 * time.Second); _ = conn.Close() }()
+		}
+	}()
+
+	job := Job{
+		MonitorID:     "m1",
+		URL:           "http://" + ln.Addr().String(),
+		RequestConfig: &db.RequestConfig{TimeoutSeconds: 3},
+	}
+
+	start := time.Now()
+	res := runCheck(job, checkTransport())
+	elapsed := time.Since(start)
+
+	if res.Status {
+		t.Fatal("expected the check to time out")
+	}
+	// Would land near 5s if the transport carried defaultCheckTimeout instead.
+	if elapsed < 2500*time.Millisecond || elapsed > 4500*time.Millisecond {
+		t.Errorf("expected the monitor's own 3s timeout to govern, took %s", elapsed)
+	}
 }

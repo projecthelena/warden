@@ -561,8 +561,8 @@ func TestAdminEditorPermissionMatrix(t *testing.T) {
 		// ── Editor-level endpoints (editor=allow, admin=allow) ──
 		{
 			name: "create group", method: "POST", path: "/api/groups",
-			handler: crudH.CreateGroup,
-			bodyFn:  func(role string) any { return map[string]string{"name": "Mx " + role + " Group"} },
+			handler:    crudH.CreateGroup,
+			bodyFn:     func(role string) any { return map[string]string{"name": "Mx " + role + " Group"} },
 			editorWant: http.StatusCreated, adminWant: http.StatusCreated,
 		},
 		{

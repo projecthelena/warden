@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/projecthelena/warden/internal/db"
 	"github.com/projecthelena/warden/internal/uptime"
-	"github.com/go-chi/chi/v5"
 )
 
 type UptimeHandler struct {
@@ -262,6 +262,7 @@ func (h *UptimeHandler) GetMonitorUptime(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
+
 // GetMonitorLatency returns latency datapoints over a time range.
 // @Summary      Get monitor latency history
 // @Tags         uptime
@@ -307,15 +308,15 @@ func (h *UptimeHandler) GetMonitorLatency(w http.ResponseWriter, r *http.Request
 
 // MonitorEventDTO is the enriched event payload returned to the dashboard drill-down view.
 type MonitorEventDTO struct {
-	ID              string             `json:"id"`
-	Type            string             `json:"type"`
-	Message         string             `json:"message"`
-	Timestamp       string             `json:"timestamp"`
-	StatusCode      *int               `json:"statusCode,omitempty"`
-	Latency         *int64             `json:"latency,omitempty"`
-	ErrorMessage    *string            `json:"errorMessage,omitempty"`
-	ResponseBody    *string            `json:"responseBody,omitempty"`
-	ResponseHeaders map[string]string  `json:"responseHeaders,omitempty"`
+	ID              string            `json:"id"`
+	Type            string            `json:"type"`
+	Message         string            `json:"message"`
+	Timestamp       string            `json:"timestamp"`
+	StatusCode      *int              `json:"statusCode,omitempty"`
+	Latency         *int64            `json:"latency,omitempty"`
+	ErrorMessage    *string           `json:"errorMessage,omitempty"`
+	ResponseBody    *string           `json:"responseBody,omitempty"`
+	ResponseHeaders map[string]string `json:"responseHeaders,omitempty"`
 }
 
 func toEventDTO(e db.MonitorEvent) MonitorEventDTO {

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/projecthelena/warden/internal/db"
 	"github.com/projecthelena/warden/internal/uptime"
-	"github.com/go-chi/chi/v5"
 )
 
 var hexColorRegex = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
@@ -513,15 +513,15 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 
 	// 5. Construct Response (Reusing Logic from UptimeHandler)
 	type MonitorDTO struct {
-		ID             string              `json:"id"`
-		Name           string              `json:"name"`
-		URL            string              `json:"url"`
-		Status         string              `json:"status"`
-		Latency        int64               `json:"latency"`
-		History        []HistoryPoint      `json:"history"`
-		LastCheck      string              `json:"lastCheck"`
-		UptimeDays     []db.DailyUptimeStat `json:"uptimeDays"`
-		OverallUptime  float64             `json:"overallUptime"`
+		ID            string               `json:"id"`
+		Name          string               `json:"name"`
+		URL           string               `json:"url"`
+		Status        string               `json:"status"`
+		Latency       int64                `json:"latency"`
+		History       []HistoryPoint       `json:"history"`
+		LastCheck     string               `json:"lastCheck"`
+		UptimeDays    []db.DailyUptimeStat `json:"uptimeDays"`
+		OverallUptime float64              `json:"overallUptime"`
 	}
 
 	type GroupDTO struct {
@@ -840,9 +840,9 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 		"showUptimePercentage": page.ShowUptimePercentage,
 		"showIncidentHistory":  page.ShowIncidentHistory,
 		"uptimeDaysRange":      uptimeDaysRange,
-		"headerContent":       page.HeaderContent,
-		"headerAlignment":     page.HeaderAlignment,
-		"headerArrangement":   page.HeaderArrangement,
+		"headerContent":        page.HeaderContent,
+		"headerAlignment":      page.HeaderAlignment,
+		"headerArrangement":    page.HeaderArrangement,
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{

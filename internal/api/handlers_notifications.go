@@ -47,12 +47,12 @@ func (h *NotificationChannelsHandler) GetChannels(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusOK, map[string]interface{}{"channels": channels})
 }
 
-// secretConfigKeys are the channel config fields that are credentials rather than
-// settings, and must not travel to a caller that cannot already change them.
-var secretConfigKeys = []string{"webhookUrl", "url", "token", "apiKey", "password"}
-
-// maskSecrets replaces credential values in a channel's JSON config, keeping enough of
-// the shape that the UI can still show which channel is which.
+// maskSecrets blanks every value in a channel's JSON config, keeping the keys so the UI
+// can still tell one channel from another.
+//
+// Everything is masked rather than a list of known credential names: a channel type
+// added later would store its secret under a name that list does not have, and this
+// would leak it. Masking everything fails closed instead.
 func maskSecrets(config string) string {
 	if config == "" {
 		return config
@@ -63,8 +63,8 @@ func maskSecrets(config string) string {
 		return "{}"
 	}
 
-	for _, key := range secretConfigKeys {
-		if v, ok := fields[key].(string); ok && v != "" {
+	for key, value := range fields {
+		if v, ok := value.(string); ok && v != "" {
 			fields[key] = "***"
 		}
 	}

@@ -14,10 +14,6 @@ func TestMaskSecretsHidesCredentials(t *testing.T) {
 	if strings.Contains(masked, "hooks.slack.com") {
 		t.Errorf("expected the webhook to be hidden, got %s", masked)
 	}
-	// The rest of the config still describes the channel, so the UI can show it.
-	if !strings.Contains(masked, "#status") {
-		t.Errorf("expected non-secret fields to survive, got %s", masked)
-	}
 
 	var fields map[string]any
 	if err := json.Unmarshal([]byte(masked), &fields); err != nil {
@@ -28,12 +24,18 @@ func TestMaskSecretsHidesCredentials(t *testing.T) {
 	}
 }
 
-func TestMaskSecretsCoversEveryCredentialField(t *testing.T) {
-	masked := maskSecrets(`{"url":"https://example.com/hook","token":"t","apiKey":"k","password":"p"}`)
-	for _, secret := range []string{"example.com", `"t"`, `"k"`, `"p"`} {
+// A channel type added later will store its secret under a name nobody listed here, so
+// masking has to cover whatever it finds rather than a set of known names.
+func TestMaskSecretsCoversFieldsNobodyAnticipated(t *testing.T) {
+	masked := maskSecrets(`{"webhookUrl":"https://example.com/hook","botToken":"xoxb-secret","somethingNew":"also secret"}`)
+	for _, secret := range []string{"example.com", "xoxb-secret", "also secret"} {
 		if strings.Contains(masked, secret) {
 			t.Errorf("expected %s to be hidden, got %s", secret, masked)
 		}
+	}
+	// The keys stay, so the UI can still show which channel is which.
+	if !strings.Contains(masked, "webhookUrl") {
+		t.Errorf("expected the keys to survive, got %s", masked)
 	}
 }
 

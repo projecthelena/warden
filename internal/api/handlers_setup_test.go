@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/projecthelena/warden/internal/config"
 	"github.com/projecthelena/warden/internal/db"
 	"github.com/projecthelena/warden/internal/uptime"
-	"github.com/go-chi/chi/v5"
 )
 
 const testAdminSecret = "test-admin-secret-12345"

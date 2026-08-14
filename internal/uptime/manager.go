@@ -210,12 +210,7 @@ func (m *Manager) Reset() {
 func (m *Manager) worker() {
 	defer m.wg.Done()
 
-	transport := &http.Transport{
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 10,
-		IdleConnTimeout:     30 * time.Second,
-		DialContext:         dialContext,
-	}
+	transport := checkTransport()
 
 	for job := range m.jobQueue {
 		m.resultQueue <- runCheck(job, transport)

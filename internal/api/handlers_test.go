@@ -9,10 +9,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/projecthelena/warden/internal/config"
 	"github.com/projecthelena/warden/internal/db"
 	"github.com/projecthelena/warden/internal/uptime"
-	"github.com/go-chi/chi/v5"
 )
 
 // withAdminRole adds the admin role to a request's context for testing.

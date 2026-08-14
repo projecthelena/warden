@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/projecthelena/warden/internal/config"
 	"github.com/projecthelena/warden/internal/db"
 	"github.com/projecthelena/warden/internal/uptime"
-	"github.com/go-chi/chi/v5"
 )
 
 // newStatusPageTestEnv creates a fresh test environment for status page tests.

@@ -94,62 +94,87 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 
 	// Event Type Toggles
 	eventDown, _ := h.store.GetSetting("notification.event.down.enabled")
-	if eventDown == "" { eventDown = "true" }
+	if eventDown == "" {
+		eventDown = "true"
+	}
 	eventUp, _ := h.store.GetSetting("notification.event.up.enabled")
-	if eventUp == "" { eventUp = "true" }
+	if eventUp == "" {
+		eventUp = "true"
+	}
 	eventDegraded, _ := h.store.GetSetting("notification.event.degraded.enabled")
-	if eventDegraded == "" { eventDegraded = "true" }
+	if eventDegraded == "" {
+		eventDegraded = "true"
+	}
 	eventFlapping, _ := h.store.GetSetting("notification.event.flapping.enabled")
-	if eventFlapping == "" { eventFlapping = "true" }
+	if eventFlapping == "" {
+		eventFlapping = "true"
+	}
 	eventStabilized, _ := h.store.GetSetting("notification.event.stabilized.enabled")
-	if eventStabilized == "" { eventStabilized = "true" }
+	if eventStabilized == "" {
+		eventStabilized = "true"
+	}
 	eventSSL, _ := h.store.GetSetting("notification.event.ssl_expiring.enabled")
-	if eventSSL == "" { eventSSL = "true" }
+	if eventSSL == "" {
+		eventSSL = "true"
+	}
 
 	// Recovery Confirmation
 	recoveryChecks, _ := h.store.GetSetting("notification.recovery_confirmation_checks")
-	if recoveryChecks == "" { recoveryChecks = "1" }
+	if recoveryChecks == "" {
+		recoveryChecks = "1"
+	}
 
 	// Digest Settings
 	digestEnabled, _ := h.store.GetSetting("notification.digest.enabled")
-	if digestEnabled == "" { digestEnabled = "false" }
+	if digestEnabled == "" {
+		digestEnabled = "false"
+	}
 	digestTime, _ := h.store.GetSetting("notification.digest.time")
-	if digestTime == "" { digestTime = "09:00" }
+	if digestTime == "" {
+		digestTime = "09:00"
+	}
 	digestEventTypes, _ := h.store.GetSetting("notification.digest.event_types")
-	if digestEventTypes == "" { digestEventTypes = "degraded,flapping,stabilized,ssl_expiring" }
+	if digestEventTypes == "" {
+		digestEventTypes = "degraded,flapping,stabilized,ssl_expiring"
+	}
 
 	// Dashboard base URL (used to build clickable links in Slack/webhook digests).
 	appURL, _ := h.store.GetSetting("app_url")
 
 	writeJSON(w, http.StatusOK, map[string]string{
-		"latency_threshold":                      val,
-		"data_retention_days":                    retention,
-		"notifications.slack.enabled":            slackEnabled,
-		"notifications.slack.webhook_url":        slackWebhookMasked, // SECURITY: Masked for display
-		"notifications.slack.webhook_configured": func() string { if slackWebhook != "" { return "true" }; return "false" }(),
-		"notifications.slack.notify_on":          slackNotifyOn,
-		"sso.google.enabled":                     ssoGoogleEnabled,
-		"sso.google.client_id":                   ssoGoogleClientID,
-		"sso.google.secret_configured":           secretConfigured,
-		"sso.google.redirect_url":                ssoGoogleRedirectURL,
-		"sso.google.allowed_domains":             ssoGoogleAllowedDomains,
-		"sso.google.auto_provision":              ssoGoogleAutoProvision,
-		"notification.confirmation_threshold":    confirmThreshold,
-		"notification.cooldown_minutes":          cooldownMins,
-		"notification.flap_detection_enabled":    flapEnabled,
-		"notification.flap_window_checks":        flapWindow,
-		"notification.flap_threshold_percent":    flapThreshold,
-		"notification.event.down.enabled":        eventDown,
-		"notification.event.up.enabled":          eventUp,
-		"notification.event.degraded.enabled":    eventDegraded,
-		"notification.event.flapping.enabled":    eventFlapping,
-		"notification.event.stabilized.enabled":  eventStabilized,
-		"notification.event.ssl_expiring.enabled": eventSSL,
+		"latency_threshold":               val,
+		"data_retention_days":             retention,
+		"notifications.slack.enabled":     slackEnabled,
+		"notifications.slack.webhook_url": slackWebhookMasked, // SECURITY: Masked for display
+		"notifications.slack.webhook_configured": func() string {
+			if slackWebhook != "" {
+				return "true"
+			}
+			return "false"
+		}(),
+		"notifications.slack.notify_on":             slackNotifyOn,
+		"sso.google.enabled":                        ssoGoogleEnabled,
+		"sso.google.client_id":                      ssoGoogleClientID,
+		"sso.google.secret_configured":              secretConfigured,
+		"sso.google.redirect_url":                   ssoGoogleRedirectURL,
+		"sso.google.allowed_domains":                ssoGoogleAllowedDomains,
+		"sso.google.auto_provision":                 ssoGoogleAutoProvision,
+		"notification.confirmation_threshold":       confirmThreshold,
+		"notification.cooldown_minutes":             cooldownMins,
+		"notification.flap_detection_enabled":       flapEnabled,
+		"notification.flap_window_checks":           flapWindow,
+		"notification.flap_threshold_percent":       flapThreshold,
+		"notification.event.down.enabled":           eventDown,
+		"notification.event.up.enabled":             eventUp,
+		"notification.event.degraded.enabled":       eventDegraded,
+		"notification.event.flapping.enabled":       eventFlapping,
+		"notification.event.stabilized.enabled":     eventStabilized,
+		"notification.event.ssl_expiring.enabled":   eventSSL,
 		"notification.recovery_confirmation_checks": recoveryChecks,
-		"notification.digest.enabled":            digestEnabled,
-		"notification.digest.time":               digestTime,
-		"notification.digest.event_types":        digestEventTypes,
-		"app_url":                                appURL,
+		"notification.digest.enabled":               digestEnabled,
+		"notification.digest.time":                  digestTime,
+		"notification.digest.event_types":           digestEventTypes,
+		"app_url":                                   appURL,
 	})
 }
 
@@ -253,9 +278,9 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 	// Notification Fatigue Settings
 	notifFatigueChanged := false
 	notifFatigueIntKeys := map[string]struct{ min, max int }{
-		"notification.confirmation_threshold":      {1, 100},
-		"notification.cooldown_minutes":            {0, 1440},
-		"notification.flap_window_checks":          {3, 100},
+		"notification.confirmation_threshold":       {1, 100},
+		"notification.cooldown_minutes":             {0, 1440},
+		"notification.flap_window_checks":           {3, 100},
 		"notification.flap_threshold_percent":       {1, 100},
 		"notification.recovery_confirmation_checks": {1, 20},
 	}

@@ -216,7 +216,7 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 }
 
 type UpdateUserRequest struct {
-	Password        string `json:"password,omitempty"`        // #nosec G117 -- input-only DTO, never serialized in responses
+	Password        string `json:"password,omitempty"` // #nosec G117 -- input-only DTO, never serialized in responses
 	CurrentPassword string `json:"currentPassword,omitempty"`
 	Timezone        string `json:"timezone,omitempty"`
 }
