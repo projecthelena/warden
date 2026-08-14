@@ -108,10 +108,27 @@ jobs:
           exit-code: '1'
           ignore-unfixed: true
 
+      - name: Allow unprivileged ICMP
+        # Ping monitors need this, and without it the tests that prove ping works skip
+        # instead of running, leaving the feature uncovered. Same knob operators set.
+        run: sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
+
       - name: Unit Tests
         run: |
           go clean -testcache
           go test ./...
+
+      - name: Ping tests without ICMP permission
+        # The other half: with ICMP denied, the checks must report the missing
+        # permission rather than claiming the host is down. This is what a default
+        # Kubernetes pod looks like.
+        run: |
+          set -o pipefail
+          sudo sysctl -w net.ipv4.ping_group_range="1 0"
+          go test ./internal/uptime -run 'TestProbePing|TestPingPermission' -v | tee icmp-denied.log
+          # A skipped test passes, so assert the one that matters actually ran. This
+          # step would otherwise stay green while covering nothing.
+          grep -q -- '--- PASS: TestPingPermissionErrorIsActionable' icmp-denied.log
 
   e2e:
     needs: changes
