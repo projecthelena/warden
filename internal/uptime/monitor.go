@@ -190,6 +190,12 @@ func (m *Monitor) Stop() {
 	})
 }
 
+// ScheduleNow queues a check outside the monitor's normal interval, for when someone
+// wants to know the answer right now rather than at the next tick.
+func (m *Monitor) ScheduleNow() {
+	m.schedule()
+}
+
 func (m *Monitor) schedule() {
 	defer func() {
 		if r := recover(); r != nil {

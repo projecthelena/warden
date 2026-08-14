@@ -20,11 +20,13 @@ Login via `POST /api/auth/login` with email and password. The server sets a sess
 
 ### API Keys
 
-Create API keys from the dashboard under **Settings > API Keys**. Pass the key in the `X-API-Key` header:
+Create API keys from the dashboard under **Settings > API Keys**. Pass the key as a bearer token:
 
 ```bash
-curl -H "X-API-Key: sk_live_..." http://localhost:9090/api/monitors
+curl -H "Authorization: Bearer sk_live_..." http://localhost:9090/api/monitors
 ```
+
+Keys carry a role. Use `viewer` for anything that only needs to read.
 
 ## Monitors
 
@@ -34,11 +36,15 @@ so do the options in `requestConfig`. See [Monitor Types](monitor-types.md).
 
 ```bash
 curl -X POST http://localhost:9090/api/monitors \
-  -H "X-API-Key: sk_live_..." -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer sk_live_..." -H 'Content-Type: application/json' \
   -d '{"name":"Postgres","type":"tcp","url":"db.internal:5432","groupId":"g-default","interval":60}'
 ```
 
 Omitting `type` on a `PUT` keeps the type the monitor already has.
+
+## MCP
+
+Warden also speaks the Model Context Protocol at `/api/mcp`, so an assistant can answer questions about your monitoring. See [MCP Server](mcp.md).
 
 ## Public Endpoints
 

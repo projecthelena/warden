@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/projecthelena/warden/internal/config"
 	"github.com/projecthelena/warden/internal/db"
 	_ "github.com/projecthelena/warden/internal/docs"
+	wardenmcp "github.com/projecthelena/warden/internal/mcp"
 	"github.com/projecthelena/warden/internal/static"
 	"github.com/projecthelena/warden/internal/uptime"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 	"golang.org/x/time/rate"
 )
@@ -164,80 +165,90 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 			protected.Group(func(dashboard chi.Router) {
 				dashboard.Use(RequireViewerMiddleware)
 
-			// Dashboard Overview
-			dashboard.Get("/overview", uptimeH.GetOverview)
+				// Model Context Protocol. The tool set follows the API key's role: a
+				// viewer key only ever sees the read tools, an editor key also gets the
+				// ones that create and change things.
+				if cfg.MCPEnabled {
+					mcpServer := wardenmcp.NewServer(store, manager, Version, mcpWriter{crudH}, func(r *http.Request) bool {
+						return hasPermission(getUserRole(r), RoleEditor)
+					})
+					dashboard.Mount("/mcp", requireSameOrigin(mcpServer.Handler()))
+				}
 
-			// Groups
-			dashboard.Post("/groups", crudH.CreateGroup)
-			dashboard.Put("/groups/{id}", crudH.UpdateGroup)
-			dashboard.Delete("/groups/{id}", crudH.DeleteGroup)
+				// Dashboard Overview
+				dashboard.Get("/overview", uptimeH.GetOverview)
 
-			// Monitors
-			dashboard.Get("/uptime", uptimeH.GetHistory)
-			dashboard.Post("/monitors", crudH.CreateMonitor)
-			dashboard.Put("/monitors/{id}", crudH.UpdateMonitor)
-			dashboard.Delete("/monitors/{id}", crudH.DeleteMonitor)
-			dashboard.Post("/monitors/{id}/pause", crudH.PauseMonitor)
-			dashboard.Post("/monitors/{id}/resume", crudH.ResumeMonitor)
-			dashboard.Get("/monitors/{id}/uptime", uptimeH.GetMonitorUptime)
-			dashboard.Get("/monitors/{id}/latency", uptimeH.GetMonitorLatency)
-			dashboard.Get("/monitors/{id}/events", uptimeH.GetMonitorEvents)
+				// Groups
+				dashboard.Post("/groups", crudH.CreateGroup)
+				dashboard.Put("/groups/{id}", crudH.UpdateGroup)
+				dashboard.Delete("/groups/{id}", crudH.DeleteGroup)
 
-			// Incidents
-			dashboard.Get("/incidents", incidentH.GetIncidents)
-			dashboard.Post("/incidents", incidentH.CreateIncident)
-			dashboard.Get("/incidents/{id}", incidentH.GetIncident)
-			dashboard.Put("/incidents/{id}", incidentH.UpdateIncident)
-			dashboard.Delete("/incidents/{id}", incidentH.DeleteIncident)
-			dashboard.Patch("/incidents/{id}/visibility", incidentH.SetVisibility)
-			dashboard.Get("/incidents/{id}/updates", incidentH.GetUpdates)
-			dashboard.Post("/incidents/{id}/updates", incidentH.AddUpdate)
+				// Monitors
+				dashboard.Get("/uptime", uptimeH.GetHistory)
+				dashboard.Post("/monitors", crudH.CreateMonitor)
+				dashboard.Put("/monitors/{id}", crudH.UpdateMonitor)
+				dashboard.Delete("/monitors/{id}", crudH.DeleteMonitor)
+				dashboard.Post("/monitors/{id}/pause", crudH.PauseMonitor)
+				dashboard.Post("/monitors/{id}/resume", crudH.ResumeMonitor)
+				dashboard.Get("/monitors/{id}/uptime", uptimeH.GetMonitorUptime)
+				dashboard.Get("/monitors/{id}/latency", uptimeH.GetMonitorLatency)
+				dashboard.Get("/monitors/{id}/events", uptimeH.GetMonitorEvents)
 
-			// Outages (promote to incident)
-			dashboard.Post("/outages/{id}/promote", incidentH.PromoteOutage)
+				// Incidents
+				dashboard.Get("/incidents", incidentH.GetIncidents)
+				dashboard.Post("/incidents", incidentH.CreateIncident)
+				dashboard.Get("/incidents/{id}", incidentH.GetIncident)
+				dashboard.Put("/incidents/{id}", incidentH.UpdateIncident)
+				dashboard.Delete("/incidents/{id}", incidentH.DeleteIncident)
+				dashboard.Patch("/incidents/{id}/visibility", incidentH.SetVisibility)
+				dashboard.Get("/incidents/{id}/updates", incidentH.GetUpdates)
+				dashboard.Post("/incidents/{id}/updates", incidentH.AddUpdate)
 
-			// Maintenance
-			dashboard.Post("/maintenance", maintH.CreateMaintenance)
-			dashboard.Get("/maintenance", maintH.GetMaintenance)
-			dashboard.Put("/maintenance/{id}", maintH.UpdateMaintenance)
-			dashboard.Delete("/maintenance/{id}", maintH.DeleteMaintenance)
+				// Outages (promote to incident)
+				dashboard.Post("/outages/{id}/promote", incidentH.PromoteOutage)
 
-			// Settings
-			dashboard.Get("/settings", settingsH.GetSettings)
-			dashboard.Patch("/settings", settingsH.UpdateSettings)
+				// Maintenance
+				dashboard.Post("/maintenance", maintH.CreateMaintenance)
+				dashboard.Get("/maintenance", maintH.GetMaintenance)
+				dashboard.Put("/maintenance/{id}", maintH.UpdateMaintenance)
+				dashboard.Delete("/maintenance/{id}", maintH.DeleteMaintenance)
 
-			// SSO Settings (admin only)
-			dashboard.Post("/settings/sso/test", ssoH.TestSSOConfig)
+				// Settings
+				dashboard.Get("/settings", settingsH.GetSettings)
+				dashboard.Patch("/settings", settingsH.UpdateSettings)
 
-			// API Keys
-			dashboard.Get("/api-keys", apiKeyH.ListKeys)
-			dashboard.Post("/api-keys", apiKeyH.CreateKey)
-			dashboard.Delete("/api-keys/{id}", apiKeyH.DeleteKey)
+				// SSO Settings (admin only)
+				dashboard.Post("/settings/sso/test", ssoH.TestSSOConfig)
 
-			// Stats
-			dashboard.Get("/stats", statsH.GetStats)
+				// API Keys
+				dashboard.Get("/api-keys", apiKeyH.ListKeys)
+				dashboard.Post("/api-keys", apiKeyH.CreateKey)
+				dashboard.Delete("/api-keys/{id}", apiKeyH.DeleteKey)
 
-			// Notifications
-			dashboard.Get("/notifications/channels", notifH.GetChannels)
-			dashboard.Post("/notifications/channels", notifH.CreateChannel)
-			dashboard.Post("/notifications/channels/test", notifH.TestChannel)
-			dashboard.Put("/notifications/channels/{id}", notifH.UpdateChannel)
-			dashboard.Delete("/notifications/channels/{id}", notifH.DeleteChannel)
+				// Stats
+				dashboard.Get("/stats", statsH.GetStats)
 
-			// Events (for history)
-			dashboard.Get("/events", eventH.GetSystemEvents)
+				// Notifications
+				dashboard.Get("/notifications/channels", notifH.GetChannels)
+				dashboard.Post("/notifications/channels", notifH.CreateChannel)
+				dashboard.Post("/notifications/channels/test", notifH.TestChannel)
+				dashboard.Put("/notifications/channels/{id}", notifH.UpdateChannel)
+				dashboard.Delete("/notifications/channels/{id}", notifH.DeleteChannel)
 
-			// Users (admin only)
-			dashboard.Post("/users", userH.CreateUser)
-			dashboard.Get("/users", userH.ListUsers)
-			dashboard.Patch("/users/{id}/role", userH.UpdateUserRole)
-			dashboard.Delete("/users/{id}", userH.DeleteUser)
-			dashboard.Get("/users/{id}/status-pages", userH.GetUserStatusPages)
-			dashboard.Put("/users/{id}/status-pages", userH.SetUserStatusPages)
+				// Events (for history)
+				dashboard.Get("/events", eventH.GetSystemEvents)
 
-			// Status Pages Management
-			dashboard.Get("/status-pages", statusPageH.GetAll)
-			dashboard.Patch("/status-pages/{slug}", statusPageH.Toggle)
+				// Users (admin only)
+				dashboard.Post("/users", userH.CreateUser)
+				dashboard.Get("/users", userH.ListUsers)
+				dashboard.Patch("/users/{id}/role", userH.UpdateUserRole)
+				dashboard.Delete("/users/{id}", userH.DeleteUser)
+				dashboard.Get("/users/{id}/status-pages", userH.GetUserStatusPages)
+				dashboard.Put("/users/{id}/status-pages", userH.SetUserStatusPages)
+
+				// Status Pages Management
+				dashboard.Get("/status-pages", statusPageH.GetAll)
+				dashboard.Patch("/status-pages/{slug}", statusPageH.Toggle)
 			})
 		})
 	})

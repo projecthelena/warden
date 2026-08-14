@@ -1028,6 +1028,28 @@ func (m *Manager) GetMonitor(id string) *Monitor {
 
 // RemoveMonitor explicitly stops and removes a monitor.
 // This is useful for immediate cleanup after deletion.
+// CheckNow runs a monitor's check immediately and waits briefly for the result, so a
+// caller can verify a fix instead of waiting out the interval. Reports whether a fresh
+// result arrived within the timeout.
+func (m *Manager) CheckNow(id string, wait time.Duration) bool {
+	mon := m.GetMonitor(id)
+	if mon == nil {
+		return false
+	}
+
+	before := len(mon.GetHistory())
+	mon.ScheduleNow()
+
+	deadline := time.Now().Add(wait)
+	for time.Now().Before(deadline) {
+		if len(mon.GetHistory()) > before {
+			return true
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return false
+}
+
 func (m *Manager) RemoveMonitor(id string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
