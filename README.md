@@ -4,7 +4,7 @@
 [![Docker](https://github.com/projecthelena/warden/actions/workflows/docker.yml/badge.svg)](https://github.com/projecthelena/warden/actions/workflows/docker.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 
-Self-hosted uptime monitoring by [Project Helena](https://projecthelena.com). Single binary, no external dependencies.
+Self-hosted uptime monitoring by [Project Helena](https://projecthelena.com). Single binary, no external dependencies. Monitors HTTP endpoints, TCP ports, ICMP hosts and DNS records.
 
 <div align="center">
   <img src="assets/dashboard-overview.png" alt="Dashboard Preview" width="100%" />
@@ -43,6 +43,7 @@ Ready-to-use compose files in [`deploy/`](deploy/):
 
 See the [`docs/`](docs/) folder for detailed guides:
 
+- [Monitor Types](docs/monitor-types.md) — HTTP, TCP, ping and DNS checks, and the permissions ICMP needs
 - [API](docs/api.md) — REST API and Swagger docs
 - [Database](docs/database.md) — SQLite vs PostgreSQL configuration
 - [Load Testing](docs/load-testing.md) *(coming soon)*

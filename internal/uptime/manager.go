@@ -17,19 +17,25 @@ import (
 
 type Job struct {
 	MonitorID     string
+	Type          string // check type; empty means http
 	URL           string
 	RequestConfig *db.RequestConfig
 }
 
 type CheckResult struct {
-	MonitorID       string
-	URL             string
-	Status          bool
-	Latency         int64
-	Timestamp       time.Time
-	StatusCode      int
-	Error           string
-	IsDegraded      bool
+	MonitorID  string
+	URL        string
+	Status     bool
+	Latency    int64
+	Timestamp  time.Time
+	StatusCode int
+	Error      string
+	IsDegraded bool
+	// NotRun marks a check that never reached the target: an address Warden cannot use,
+	// or a permission it lacks. Still down, but reporting it as "down" sends the
+	// operator hunting a network problem that isn't there, so the reason replaces the
+	// usual message.
+	NotRun          bool
 	CertExpiry      *time.Time // SSL certificate NotAfter (nil if not HTTPS or unavailable)
 	ResponseBody    string     // Truncated to ResponseBodyMaxBytes; only populated on failed/degraded checks
 	ResponseHeaders string     // JSON-encoded filtered headers; only populated on failed/degraded checks
@@ -211,144 +217,7 @@ func (m *Manager) worker() {
 	}
 
 	for job := range m.jobQueue {
-		cfg := job.RequestConfig
-
-		// Resolve method
-		method := "GET"
-		if cfg != nil && cfg.Method != "" {
-			method = cfg.Method
-		}
-
-		// Resolve timeout
-		timeout := 5 * time.Second
-		if cfg != nil && cfg.TimeoutSeconds > 0 {
-			timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
-		}
-
-		// Build per-job client wrapping the shared transport
-		client := &http.Client{
-			Timeout:   timeout,
-			Transport: transport,
-		}
-
-		// Redirect policy
-		if cfg != nil && cfg.FollowRedirects != nil && !*cfg.FollowRedirects {
-			client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-				return http.ErrUseLastResponse
-			}
-		}
-
-		// Resolve retry count
-		retryCount := 0
-		if cfg != nil && cfg.RetryCount > 0 {
-			retryCount = cfg.RetryCount
-		}
-
-		// Resolve request body
-		var bodyStr string
-		if cfg != nil {
-			bodyStr = cfg.Body
-		}
-
-		var (
-			isUp          bool
-			errMsg        string
-			statusCode    int
-			certExpiry    *time.Time
-			latency       int64
-			start         time.Time
-			respBody      string
-			respHeaders   string
-		)
-
-		for attempt := 0; attempt <= retryCount; attempt++ {
-			if attempt > 0 {
-				time.Sleep(1 * time.Second)
-			}
-
-			// Build request
-			var bodyReader *strings.Reader
-			if bodyStr != "" {
-				bodyReader = strings.NewReader(bodyStr)
-			}
-			var req *http.Request
-			var reqErr error
-			if bodyReader != nil {
-				req, reqErr = http.NewRequest(method, job.URL, bodyReader)
-			} else {
-				req, reqErr = http.NewRequest(method, job.URL, nil)
-			}
-			if reqErr != nil {
-				isUp = false
-				errMsg = reqErr.Error()
-				break // Don't retry on request build errors
-			}
-
-			// Apply custom headers
-			if cfg != nil {
-				for k, v := range cfg.Headers {
-					req.Header.Set(k, v)
-				}
-			}
-
-			start = time.Now().UTC()
-			resp, err := client.Do(req) // #nosec G704 -- probing an operator-configured target URL is the product
-			latency = time.Since(start).Milliseconds()
-
-			isUp = true
-			errMsg = ""
-			statusCode = 0
-			certExpiry = nil
-			respBody = ""
-			respHeaders = ""
-
-			if err != nil {
-				isUp = false
-				errMsg = err.Error()
-			} else {
-				statusCode = resp.StatusCode
-
-				// Determine if status code is accepted
-				if cfg != nil && cfg.AcceptedStatusCodes != "" {
-					isUp = isAcceptedStatus(resp.StatusCode, cfg.AcceptedStatusCodes)
-				} else {
-					if resp.StatusCode >= 400 {
-						isUp = false
-					}
-				}
-
-				// Capture diagnostics on failed checks so the daily digest drill-down
-				// can show what the server actually returned.
-				if !isUp {
-					respBody = readLimitedBody(resp.Body)
-					respHeaders = encodeAllowedHeaders(resp.Header)
-				}
-				_ = resp.Body.Close()
-
-				// Extract SSL certificate expiry for HTTPS URLs
-				if resp.TLS != nil && len(resp.TLS.PeerCertificates) > 0 {
-					notAfter := resp.TLS.PeerCertificates[0].NotAfter
-					certExpiry = &notAfter
-				}
-			}
-
-			if isUp {
-				break // Success, no need to retry
-			}
-		}
-
-		m.resultQueue <- CheckResult{
-			MonitorID:       job.MonitorID,
-			URL:             job.URL,
-			Status:          isUp,
-			Latency:         latency,
-			Timestamp:       start,
-			StatusCode:      statusCode,
-			Error:           errMsg,
-			CertExpiry:      certExpiry,
-			ResponseBody:    respBody,
-			ResponseHeaders: respHeaders,
-		}
+		m.resultQueue <- runCheck(job, transport)
 	}
 }
 
@@ -499,7 +368,9 @@ func (m *Manager) resultProcessor() {
 				wasDegraded := active && lastDegraded
 
 				message := "Monitor is down"
-				if res.StatusCode > 0 {
+				if res.NotRun && res.Error != "" {
+					message = res.Error
+				} else if res.StatusCode > 0 {
 					message += " (Status: " + strconv.Itoa(res.StatusCode) + ")"
 				}
 
@@ -939,8 +810,10 @@ func (m *Manager) Sync() {
 			existing.ApplyConfig(cfg)
 			existing.SetLatencyThreshold(monLatencyThresh)
 
-			// Check for changes (URL, Interval, or RequestConfig)
-			needRestart := existing.GetTargetURL() != dbM.URL || existing.GetInterval() != interval
+			// Check for changes (URL, Type, Interval, or RequestConfig)
+			needRestart := existing.GetTargetURL() != dbM.URL ||
+				existing.GetType() != db.NormalizeMonitorType(dbM.Type) ||
+				existing.GetInterval() != interval
 			if !needRestart && requestConfigChanged(existing.GetRequestConfig(), dbM.RequestConfig) {
 				needRestart = true
 			}
@@ -953,7 +826,7 @@ func (m *Manager) Sync() {
 
 		if _, exists := m.monitors[dbM.ID]; !exists {
 			// Start new monitor
-			mon := NewMonitor(dbM.ID, dbM.GroupID, dbM.Name, dbM.URL, interval, m.jobQueue, dbM.CreatedAt, dbM.RequestConfig)
+			mon := NewMonitor(dbM.ID, dbM.Type, dbM.GroupID, dbM.Name, dbM.URL, interval, m.jobQueue, dbM.CreatedAt, dbM.RequestConfig)
 			mon.ApplyConfig(cfg)
 			mon.SetLatencyThreshold(monLatencyThresh)
 

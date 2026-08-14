@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -184,14 +186,21 @@ func (h *CRUDHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(req)
 }
 
-// CreateMonitor creates a new HTTP monitor.
+// CreatedMonitor is the create response: the stored monitor, plus the reason when its
+// first check failed.
+type CreatedMonitor struct {
+	db.Monitor
+	Warning string `json:"warning,omitempty"`
+}
+
+// CreateMonitor creates a new monitor of the requested check type.
 // @Summary      Create monitor
 // @Tags         monitors
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        body body object{name=string,url=string,groupId=string,interval=int} true "Monitor payload"
-// @Success      201  {object} db.Monitor
+// @Param        body body object{name=string,type=string,url=string,groupId=string,interval=int} true "Monitor payload. type is one of http, tcp, ping, dns (default http)"
+// @Success      201  {object} CreatedMonitor
 // @Failure      400  {string} string "Validation error"
 // @Failure      404  {string} string "Group not found"
 // @Failure      409  {string} string "Monitor name already exists"
@@ -202,6 +211,7 @@ func (h *CRUDHandler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		Name                    string            `json:"name"`
+		Type                    string            `json:"type"`
 		URL                     string            `json:"url"`
 		GroupID                 string            `json:"groupId"`
 		Interval                int               `json:"interval"`
@@ -227,22 +237,13 @@ func (h *CRUDHandler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Validate URL
-	parsedURL, err := url.ParseRequestURI(req.URL)
-	if err != nil {
-		http.Error(w, "Invalid URL format", http.StatusBadRequest)
+	// 2. Validate type and target
+	if req.Type != "" && !db.IsValidMonitorType(req.Type) {
+		http.Error(w, "type must be one of http, tcp, ping, dns", http.StatusBadRequest)
 		return
 	}
-
-	// SECURITY: Only allow http and https protocols to prevent SSRF
-	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		http.Error(w, "Only HTTP and HTTPS URLs are allowed", http.StatusBadRequest)
-		return
-	}
-
-	// SECURITY: Validate URL length
-	if len(req.URL) > 2048 {
-		http.Error(w, "URL too long (max 2048 characters)", http.StatusBadRequest)
+	if err := validateTarget(req.Type, req.URL); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -305,6 +306,7 @@ func (h *CRUDHandler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
 
 	m := db.Monitor{
 		ID:                      id,
+		Type:                    db.NormalizeMonitorType(req.Type),
 		GroupID:                 req.GroupID,
 		Name:                    req.Name,
 		URL:                     req.URL,
@@ -336,8 +338,19 @@ func (h *CRUDHandler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
+	// We waited for that first check anyway, so report it when it failed rather than
+	// leaving a monitor to sit red on the dashboard with the reason a few clicks away.
+	warning := ""
+	if mon := h.manager.GetMonitor(id); mon != nil {
+		if history := mon.GetHistory(); len(history) > 0 {
+			if last := history[len(history)-1]; !last.IsUp && last.Error != "" {
+				warning = last.Error
+			}
+		}
+	}
+
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(m)
+	_ = json.NewEncoder(w).Encode(CreatedMonitor{Monitor: m, Warning: warning})
 }
 
 func (h *CRUDHandler) GetGroups(w http.ResponseWriter, r *http.Request) {
@@ -349,14 +362,14 @@ func (h *CRUDHandler) GetGroups(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(groups)
 }
 
-// UpdateMonitor updates a monitor's name, URL, or interval.
+// UpdateMonitor updates a monitor's name, type, target or interval.
 // @Summary      Update monitor
 // @Tags         monitors
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id   path string true "Monitor ID"
-// @Param        body body object{name=string,url=string,interval=int} true "Fields to update"
+// @Param        body body object{name=string,type=string,url=string,interval=int} true "Fields to update. Omit type to keep the stored one"
 // @Success      200  "OK"
 // @Failure      400  {string} string "ID required"
 // @Router       /monitors/{id} [put]
@@ -372,6 +385,7 @@ func (h *CRUDHandler) UpdateMonitor(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		Name                    string            `json:"name"`
+		Type                    string            `json:"type"`
 		URL                     string            `json:"url"`
 		Interval                int               `json:"interval"`
 		ConfirmationThreshold   *int              `json:"confirmationThreshold,omitempty"`
@@ -380,6 +394,21 @@ func (h *CRUDHandler) UpdateMonitor(w http.ResponseWriter, r *http.Request) {
 		RequestConfig           *db.RequestConfig `json:"requestConfig,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// An update that doesn't mention the type keeps the stored one, so an API client
+	// that only changes the name can't silently turn a ping monitor into an HTTP one.
+	monitorType := req.Type
+	if monitorType == "" {
+		monitorType = h.storedMonitorType(id)
+	}
+	if !db.IsValidMonitorType(monitorType) {
+		http.Error(w, "type must be one of http, tcp, ping, dns", http.StatusBadRequest)
+		return
+	}
+	if err := validateTarget(monitorType, req.URL); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -403,7 +432,7 @@ func (h *CRUDHandler) UpdateMonitor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.store.UpdateMonitor(id, req.Name, req.URL, req.Interval, req.ConfirmationThreshold, req.NotificationCooldownMin, req.LatencyThreshold, req.RequestConfig); err != nil {
+	if err := h.store.UpdateMonitor(id, monitorType, req.Name, req.URL, req.Interval, req.ConfirmationThreshold, req.NotificationCooldownMin, req.LatencyThreshold, req.RequestConfig); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -535,5 +564,122 @@ func validateRequestConfig(cfg *db.RequestConfig) error {
 	if cfg.RetryCount < 0 || cfg.RetryCount > 5 {
 		return fmt.Errorf("retryCount must be between 0 and 5")
 	}
+	if cfg.DNSRecordType != "" && !uptime.ValidDNSRecordType(strings.ToUpper(cfg.DNSRecordType)) {
+		return fmt.Errorf("dnsRecordType must be one of A, AAAA, MX, NS, TXT")
+	}
+	if cfg.DNSResolver != "" && !isValidResolver(cfg.DNSResolver) {
+		return fmt.Errorf("dnsResolver must be a host or host:port")
+	}
 	return nil
+}
+
+// storedMonitorType returns the check type currently stored for a monitor. An unknown
+// monitor falls back to http; the update that follows fails on its own with "monitor
+// not found".
+func (h *CRUDHandler) storedMonitorType(id string) string {
+	monitors, err := h.store.GetMonitors()
+	if err != nil {
+		return db.MonitorTypeHTTP
+	}
+	for _, m := range monitors {
+		if m.ID == id {
+			return db.NormalizeMonitorType(m.Type)
+		}
+	}
+	return db.MonitorTypeHTTP
+}
+
+const maxTargetLength = 2048
+
+// validateTarget checks the target against the addressing rules of the check that will
+// probe it. Each type reads the same `url` column but expects a different shape there.
+func validateTarget(monitorType, target string) error {
+	if len(target) > maxTargetLength {
+		return fmt.Errorf("target too long (max %d characters)", maxTargetLength)
+	}
+
+	switch db.NormalizeMonitorType(monitorType) {
+	case db.MonitorTypeHTTP:
+		parsed, err := url.ParseRequestURI(target)
+		if err != nil {
+			return fmt.Errorf("invalid URL format")
+		}
+		// SECURITY: Only allow http and https protocols to prevent SSRF
+		if parsed.Scheme != "http" && parsed.Scheme != "https" {
+			return fmt.Errorf("only HTTP and HTTPS URLs are allowed")
+		}
+		if parsed.Host == "" {
+			return fmt.Errorf("invalid URL format")
+		}
+	case db.MonitorTypeTCP:
+		if !isValidHostPort(target) {
+			return fmt.Errorf("tcp target must be host:port (e.g. db.example.com:5432)")
+		}
+	case db.MonitorTypePing:
+		if !isValidHost(target) {
+			return fmt.Errorf("ping target must be a hostname or IP address, without scheme or port")
+		}
+	case db.MonitorTypeDNS:
+		if !isValidHost(target) {
+			return fmt.Errorf("dns target must be a hostname, without scheme or port")
+		}
+		// Resolving an IP literal short-circuits before any query leaves the process,
+		// so such a monitor would report up forever. Require a name to look up.
+		if net.ParseIP(target) != nil {
+			return fmt.Errorf("dns target must be a hostname, not an IP address")
+		}
+	default:
+		return fmt.Errorf("type must be one of http, tcp, ping, dns")
+	}
+
+	return nil
+}
+
+// isValidHostPort accepts host:port where the port is a real port number.
+func isValidHostPort(target string) bool {
+	host, port, err := net.SplitHostPort(target)
+	if err != nil {
+		return false
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 {
+		return false
+	}
+	return isValidHost(host)
+}
+
+// isValidHost accepts an IP literal or a hostname, and nothing that smuggles in a
+// scheme, a port, a path or credentials.
+func isValidHost(host string) bool {
+	if host == "" || len(host) > 253 {
+		return false
+	}
+	if net.ParseIP(host) != nil {
+		return true
+	}
+	if strings.ContainsAny(host, ":/@?# ") {
+		return false
+	}
+	for _, label := range strings.Split(strings.TrimSuffix(host, "."), ".") {
+		if label == "" || len(label) > 63 {
+			return false
+		}
+		if !hostLabelRe.MatchString(label) {
+			return false
+		}
+	}
+	return true
+}
+
+// Underscores are not legal in a strict reading of DNS, but Docker's embedded resolver
+// serves compose service names that contain them, and Warden ships as a container that
+// people point at exactly those names.
+var hostLabelRe = regexp.MustCompile(`^[a-zA-Z0-9_]([a-zA-Z0-9_-]*[a-zA-Z0-9_])?$`)
+
+// isValidResolver accepts a DNS resolver address with or without an explicit port.
+func isValidResolver(addr string) bool {
+	if _, _, err := net.SplitHostPort(addr); err == nil {
+		return isValidHostPort(addr)
+	}
+	return isValidHost(addr)
 }

@@ -52,7 +52,14 @@ export function MonitorCard({ monitor, groupId }: { monitor: Monitor, groupId: s
                     <div className="flex items-center gap-2.5">
                         <span className="font-medium text-sm group-hover:text-primary transition-colors truncate block" title={monitor.name}>{monitor.name}</span>
                     </div>
-                    <div className="text-xs text-muted-foreground font-mono truncate block opacity-60" title={monitor.url}>{monitor.url}</div>
+                    <div className="flex items-center gap-2 min-w-0">
+                        {monitor.type && monitor.type !== 'http' && (
+                            <span className="text-[10px] uppercase tracking-wider text-muted-foreground border border-border rounded px-1.5 py-0.5 shrink-0">
+                                {monitor.type}
+                            </span>
+                        )}
+                        <span className="text-xs text-muted-foreground font-mono truncate opacity-60" title={monitor.url}>{monitor.url}</span>
+                    </div>
                 </div>
 
                 <div className="flex-none hidden sm:block">

@@ -34,7 +34,7 @@ func TestMonitorCRUD(t *testing.T) {
 	}
 
 	// Update
-	if err := s.UpdateMonitor("m1", "Updated M1", "http://new.com", 120, nil, nil, nil, nil); err != nil {
+	if err := s.UpdateMonitor("m1", "http", "Updated M1", "http://new.com", 120, nil, nil, nil, nil); err != nil {
 		t.Fatalf("UpdateMonitor failed: %v", err)
 	}
 
@@ -1135,7 +1135,7 @@ func TestMonitor_PerMonitorOverrides(t *testing.T) {
 		}
 
 		// Update to add overrides
-		if err := s.UpdateMonitor("m-ov3", "Add Override", "http://example.com", 60, intPtr(7), intPtr(15), nil, nil); err != nil {
+		if err := s.UpdateMonitor("m-ov3", "http", "Add Override", "http://example.com", 60, intPtr(7), intPtr(15), nil, nil); err != nil {
 			t.Fatalf("UpdateMonitor failed: %v", err)
 		}
 
@@ -1175,7 +1175,7 @@ func TestMonitor_PerMonitorOverrides(t *testing.T) {
 		}
 
 		// Update to clear overrides
-		if err := s.UpdateMonitor("m-ov4", "Clear Override", "http://example.com", 60, nil, nil, nil, nil); err != nil {
+		if err := s.UpdateMonitor("m-ov4", "http", "Clear Override", "http://example.com", 60, nil, nil, nil, nil); err != nil {
 			t.Fatalf("UpdateMonitor failed: %v", err)
 		}
 
@@ -1215,7 +1215,7 @@ func TestMonitor_PerMonitorOverrides(t *testing.T) {
 		}
 
 		// Update only threshold, clear cooldown
-		if err := s.UpdateMonitor("m-ov5", "Partial Override", "http://example.com", 60, intPtr(8), nil, nil, nil); err != nil {
+		if err := s.UpdateMonitor("m-ov5", "http", "Partial Override", "http://example.com", 60, intPtr(8), nil, nil, nil); err != nil {
 			t.Fatalf("UpdateMonitor failed: %v", err)
 		}
 
@@ -1313,7 +1313,7 @@ func TestMonitor_LatencyThresholdRoundtrip(t *testing.T) {
 			t.Fatalf("CreateMonitor failed: %v", err)
 		}
 
-		if err := s.UpdateMonitor("m-lt3", "Update LT", "http://example.com", 60, nil, nil, intPtr(500), nil); err != nil {
+		if err := s.UpdateMonitor("m-lt3", "http", "Update LT", "http://example.com", 60, nil, nil, intPtr(500), nil); err != nil {
 			t.Fatalf("UpdateMonitor failed: %v", err)
 		}
 
@@ -1347,7 +1347,7 @@ func TestMonitor_LatencyThresholdRoundtrip(t *testing.T) {
 			t.Fatalf("CreateMonitor failed: %v", err)
 		}
 
-		if err := s.UpdateMonitor("m-lt4", "Clear LT", "http://example.com", 60, nil, nil, nil, nil); err != nil {
+		if err := s.UpdateMonitor("m-lt4", "http", "Clear LT", "http://example.com", 60, nil, nil, nil, nil); err != nil {
 			t.Fatalf("UpdateMonitor failed: %v", err)
 		}
 
@@ -1449,7 +1449,7 @@ func TestMonitorCRUD_RequestConfig(t *testing.T) {
 	newRC := &RequestConfig{
 		Method: "HEAD",
 	}
-	if err := s.UpdateMonitor("m-rc1", "ReqConfig Monitor", "http://example.com", 60, nil, nil, nil, newRC); err != nil {
+	if err := s.UpdateMonitor("m-rc1", "http", "ReqConfig Monitor", "http://example.com", 60, nil, nil, nil, newRC); err != nil {
 		t.Fatalf("UpdateMonitor with new RequestConfig failed: %v", err)
 	}
 
@@ -1478,7 +1478,7 @@ func TestMonitorCRUD_RequestConfig(t *testing.T) {
 	}
 
 	// 5. Update with nil RequestConfig
-	if err := s.UpdateMonitor("m-rc1", "ReqConfig Monitor", "http://example.com", 60, nil, nil, nil, nil); err != nil {
+	if err := s.UpdateMonitor("m-rc1", "http", "ReqConfig Monitor", "http://example.com", 60, nil, nil, nil, nil); err != nil {
 		t.Fatalf("UpdateMonitor with nil RequestConfig failed: %v", err)
 	}
 

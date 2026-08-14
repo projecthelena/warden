@@ -12,6 +12,8 @@ definitions:
         type: string
       name:
         type: string
+      role:
+        type: string
     type: object
   github_com_projecthelena_warden_internal_db.CheckResult:
     properties:
@@ -52,8 +54,17 @@ definitions:
         type: string
       id:
         type: string
+      outageId:
+        description: nullable FK to monitor_outages
+        type: integer
+      public:
+        description: visible on public status page
+        type: boolean
       severity:
         description: minor | major | critical
+        type: string
+      source:
+        description: '"auto" | "manual"'
         type: string
       startTime:
         type: string
@@ -67,10 +78,25 @@ definitions:
         description: incident | maintenance
         type: string
     type: object
+  github_com_projecthelena_warden_internal_db.IncidentUpdate:
+    properties:
+      createdAt:
+        type: string
+      id:
+        type: integer
+      incidentId:
+        type: string
+      message:
+        type: string
+      status:
+        type: string
+    type: object
   github_com_projecthelena_warden_internal_db.Monitor:
     properties:
       active:
         type: boolean
+      confirmationThreshold:
+        type: integer
       createdAt:
         type: string
       groupId:
@@ -80,7 +106,18 @@ definitions:
       interval:
         description: Seconds
         type: integer
+      latencyThreshold:
+        type: integer
       name:
+        type: string
+      notificationCooldownMinutes:
+        type: integer
+      requestConfig:
+        $ref: '#/definitions/github_com_projecthelena_warden_internal_db.RequestConfig'
+      type:
+        description: |-
+          Type selects the check performed against URL: http, tcp, ping or dns.
+          Empty means http, so monitors created before check types existed keep working.
         type: string
       url:
         type: string
@@ -101,6 +138,31 @@ definitions:
       type:
         type: string
     type: object
+  github_com_projecthelena_warden_internal_db.RequestConfig:
+    properties:
+      acceptedStatusCodes:
+        type: string
+      body:
+        type: string
+      dnsRecordType:
+        description: DNS-only options.
+        type: string
+      dnsResolver:
+        description: resolver to query, host or host:port (default system)
+        type: string
+      followRedirects:
+        type: boolean
+      headers:
+        additionalProperties:
+          type: string
+        type: object
+      method:
+        type: string
+      retryCount:
+        type: integer
+      timeoutSeconds:
+        type: integer
+    type: object
   github_com_projecthelena_warden_internal_db.SystemStats:
     properties:
       activeMonitors:
@@ -115,6 +177,39 @@ definitions:
         type: integer
       totalMonitors:
         type: integer
+    type: object
+  internal_api.CreatedMonitor:
+    properties:
+      active:
+        type: boolean
+      confirmationThreshold:
+        type: integer
+      createdAt:
+        type: string
+      groupId:
+        type: string
+      id:
+        type: string
+      interval:
+        description: Seconds
+        type: integer
+      latencyThreshold:
+        type: integer
+      name:
+        type: string
+      notificationCooldownMinutes:
+        type: integer
+      requestConfig:
+        $ref: '#/definitions/github_com_projecthelena_warden_internal_db.RequestConfig'
+      type:
+        description: |-
+          Type selects the check performed against URL: http, tcp, ping or dns.
+          Empty means http, so monitors created before check types existed keep working.
+        type: string
+      url:
+        type: string
+      warning:
+        type: string
     type: object
   internal_api.GroupDTO:
     properties:
@@ -173,6 +268,41 @@ definitions:
         description: down, degraded, ssl_expiring
         type: string
     type: object
+  internal_api.IncidentResponseDTO:
+    properties:
+      affectedGroups:
+        items:
+          type: string
+        type: array
+      createdAt:
+        type: string
+      description:
+        type: string
+      endTime:
+        type: string
+      id:
+        type: string
+      outageId:
+        type: integer
+      public:
+        type: boolean
+      severity:
+        type: string
+      source:
+        type: string
+      startTime:
+        type: string
+      status:
+        type: string
+      title:
+        type: string
+      type:
+        type: string
+      updates:
+        items:
+          $ref: '#/definitions/github_com_projecthelena_warden_internal_db.IncidentUpdate'
+        type: array
+    type: object
   internal_api.MaintenanceResponse:
     properties:
       affectedGroups:
@@ -202,6 +332,8 @@ definitions:
     properties:
       active:
         type: boolean
+      confirmationThreshold:
+        type: integer
       events:
         items:
           $ref: '#/definitions/internal_api.MonitorEvent'
@@ -218,19 +350,62 @@ definitions:
         type: string
       latency:
         type: integer
+      latencyThreshold:
+        type: integer
       name:
         type: string
+      notificationCooldownMinutes:
+        type: integer
+      requestConfig:
+        $ref: '#/definitions/github_com_projecthelena_warden_internal_db.RequestConfig'
       status:
+        type: string
+      type:
         type: string
       url:
         type: string
     type: object
   internal_api.MonitorEvent:
     properties:
+      errorMessage:
+        type: string
       id:
         type: string
+      latency:
+        type: integer
       message:
         type: string
+      responseBody:
+        type: string
+      responseHeaders:
+        additionalProperties:
+          type: string
+        type: object
+      statusCode:
+        type: integer
+      timestamp:
+        type: string
+      type:
+        type: string
+    type: object
+  internal_api.MonitorEventDTO:
+    properties:
+      errorMessage:
+        type: string
+      id:
+        type: string
+      latency:
+        type: integer
+      message:
+        type: string
+      responseBody:
+        type: string
+      responseHeaders:
+        additionalProperties:
+          type: string
+        type: object
+      statusCode:
+        type: integer
       timestamp:
         type: string
       type:
@@ -501,30 +676,7 @@ paths:
           description: OK
           schema:
             items:
-              properties:
-                affectedGroups:
-                  items:
-                    type: string
-                  type: array
-                createdAt:
-                  type: string
-                description:
-                  type: string
-                endTime:
-                  type: string
-                id:
-                  type: string
-                severity:
-                  type: string
-                startTime:
-                  type: string
-                status:
-                  type: string
-                title:
-                  type: string
-                type:
-                  type: string
-              type: object
+              $ref: '#/definitions/internal_api.IncidentResponseDTO'
             type: array
         "500":
           description: Failed to fetch incidents
@@ -574,6 +726,213 @@ paths:
       security:
       - BearerAuth: []
       summary: Create incident
+      tags:
+      - incidents
+  /incidents/{id}:
+    delete:
+      parameters:
+      - description: Incident ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "500":
+          description: Failed to delete incident
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Delete incident
+      tags:
+      - incidents
+    get:
+      parameters:
+      - description: Incident ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IncidentResponseDTO'
+        "404":
+          description: Incident not found
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Get incident with timeline
+      tags:
+      - incidents
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Incident ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Incident payload
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            affectedGroups:
+              items:
+                type: string
+              type: array
+            description:
+              type: string
+            endTime:
+              type: string
+            public:
+              type: boolean
+            severity:
+              type: string
+            startTime:
+              type: string
+            status:
+              type: string
+            title:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IncidentResponseDTO'
+        "400":
+          description: Invalid request body
+          schema:
+            type: string
+        "404":
+          description: Incident not found
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Update incident
+      tags:
+      - incidents
+  /incidents/{id}/updates:
+    get:
+      parameters:
+      - description: Incident ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_projecthelena_warden_internal_db.IncidentUpdate'
+            type: array
+        "404":
+          description: Incident not found
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Get incident updates
+      tags:
+      - incidents
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Incident ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Update details
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            message:
+              type: string
+            status:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_projecthelena_warden_internal_db.IncidentUpdate'
+        "400":
+          description: Invalid request body
+          schema:
+            type: string
+        "404":
+          description: Incident not found
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Add incident update
+      tags:
+      - incidents
+  /incidents/{id}/visibility:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Incident ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Visibility setting
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            public:
+              type: boolean
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              message:
+                type: string
+              public:
+                type: boolean
+            type: object
+        "400":
+          description: Invalid request body
+          schema:
+            type: string
+        "404":
+          description: Incident not found
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Set incident visibility
       tags:
       - incidents
   /maintenance:
@@ -727,7 +1086,8 @@ paths:
       consumes:
       - application/json
       parameters:
-      - description: Monitor payload
+      - description: Monitor payload. type is one of http, tcp, ping, dns (default
+          http)
         in: body
         name: body
         required: true
@@ -739,6 +1099,8 @@ paths:
               type: integer
             name:
               type: string
+            type:
+              type: string
             url:
               type: string
           type: object
@@ -748,7 +1110,7 @@ paths:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/github_com_projecthelena_warden_internal_db.Monitor'
+            $ref: '#/definitions/internal_api.CreatedMonitor'
         "400":
           description: Validation error
           schema:
@@ -797,7 +1159,7 @@ paths:
         name: id
         required: true
         type: string
-      - description: Fields to update
+      - description: Fields to update. Omit type to keep the stored one
         in: body
         name: body
         required: true
@@ -806,6 +1168,8 @@ paths:
             interval:
               type: integer
             name:
+              type: string
+            type:
               type: string
             url:
               type: string
@@ -824,6 +1188,46 @@ paths:
       summary: Update monitor
       tags:
       - monitors
+  /monitors/{id}/events:
+    get:
+      parameters:
+      - description: Monitor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Date filter YYYY-MM-DD (UTC). If omitted and from/to are also
+          omitted, returns the most recent N events.
+        in: query
+        name: date
+        type: string
+      - description: Range start (RFC3339). Used with `to` to drill into an outage
+          window.
+        in: query
+        name: from
+        type: string
+      - description: Range end (RFC3339). Used with `from`.
+        in: query
+        name: to
+        type: string
+      - description: Max events to return (default 100, max 500)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api.MonitorEventDTO'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: Get enriched events for a monitor
+      tags:
+      - uptime
   /monitors/{id}/latency:
     get:
       parameters:
@@ -1051,6 +1455,53 @@ paths:
       summary: Delete notification channel
       tags:
       - notifications
+  /outages/{id}/promote:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Outage ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Incident details
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            affectedGroups:
+              items:
+                type: string
+              type: array
+            description:
+              type: string
+            severity:
+              type: string
+            title:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.IncidentResponseDTO'
+        "400":
+          description: Invalid request body
+          schema:
+            type: string
+        "404":
+          description: Outage not found
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Promote outage to incident
+      tags:
+      - incidents
   /overview:
     get:
       produces:
@@ -1122,6 +1573,31 @@ paths:
                 type: string
             type: object
       summary: Public status page
+      tags:
+      - status-pages
+  /s/{slug}/rss:
+    get:
+      parameters:
+      - description: Status page slug
+        in: path
+        name: slug
+        required: true
+        type: string
+      produces:
+      - application/rss+xml
+      responses:
+        "200":
+          description: RSS 2.0 XML feed
+          schema:
+            type: string
+        "404":
+          description: Status page not found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      summary: RSS feed for status page
       tags:
       - status-pages
   /settings:

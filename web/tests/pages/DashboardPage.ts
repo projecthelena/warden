@@ -152,7 +152,7 @@ export class DashboardPage {
         await this.createMonitorSubmit.click();
 
         // Expect Error Toast - targeted by testid
-        const errorToast = this.page.getByTestId('toast-title').filter({ hasText: 'Invalid URL' });
+        const errorToast = this.page.getByTestId('toast-title').filter({ hasText: 'Invalid Target' });
         await expect(errorToast).toBeVisible();
 
         // Close sheet

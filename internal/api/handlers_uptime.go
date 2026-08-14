@@ -59,6 +59,7 @@ type HistoryPoint struct {
 type MonitorDTO struct {
 	ID                      string            `json:"id"`
 	Name                    string            `json:"name"`
+	Type                    string            `json:"type"`
 	URL                     string            `json:"url"`
 	Status                  string            `json:"status"`
 	Active                  bool              `json:"active"`
@@ -198,6 +199,7 @@ func (h *UptimeHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 			monitorDTOs = append(monitorDTOs, MonitorDTO{
 				ID:                      meta.ID,
 				Name:                    meta.Name,
+				Type:                    db.NormalizeMonitorType(meta.Type),
 				URL:                     meta.URL,
 				Status:                  statusStr,
 				Active:                  meta.Active,
