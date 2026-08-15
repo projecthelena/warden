@@ -20,12 +20,8 @@ func NewUptimeHandler(manager *uptime.Manager, store *db.Store) *UptimeHandler {
 	return &UptimeHandler{manager: manager, store: store}
 }
 
-func getEventsForDTO(store *db.Store, monitorID string) []MonitorEvent {
-	events, err := store.GetMonitorEvents(monitorID, 10) // Get last 10 events
-	if err != nil {
-		return []MonitorEvent{}
-	}
-	var dtos []MonitorEvent
+func eventsToDTO(events []db.MonitorEvent) []MonitorEvent {
+	dtos := []MonitorEvent{}
 	for _, e := range events {
 		dto := MonitorEvent{
 			ID:           strconv.Itoa(e.ID),
@@ -139,6 +135,23 @@ func (h *UptimeHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 	var groupDTOs []GroupDTO
 	filterGroupID := r.URL.Query().Get("group_id")
 
+	// Fetch recent events for every monitor on the board in one query, rather than one
+	// query per monitor on every poll.
+	var eventMonitorIDs []string
+	for _, g := range groups {
+		if filterGroupID != "" && g.ID != filterGroupID {
+			continue
+		}
+		for _, meta := range groupMap[g.ID] {
+			eventMonitorIDs = append(eventMonitorIDs, meta.ID)
+		}
+	}
+	eventsByMonitor, err := h.store.GetRecentEventsForMonitors(eventMonitorIDs, 10)
+	if err != nil {
+		http.Error(w, "Failed to load events", http.StatusInternalServerError)
+		return
+	}
+
 	for _, g := range groups {
 		if filterGroupID != "" && g.ID != filterGroupID {
 			continue
@@ -207,7 +220,7 @@ func (h *UptimeHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 				Interval:                meta.Interval,
 				History:                 historyPoints,
 				LastCheck:               lastCheck,
-				Events:                  getEventsForDTO(h.store, meta.ID),
+				Events:                  eventsToDTO(eventsByMonitor[meta.ID]),
 				ConfirmationThreshold:   meta.ConfirmationThreshold,
 				NotificationCooldownMin: meta.NotificationCooldownMin,
 				LatencyThreshold:        meta.LatencyThreshold,
