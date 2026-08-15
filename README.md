@@ -47,6 +47,7 @@ See the [`docs/`](docs/) folder for detailed guides:
 - [API](docs/api.md) — REST API and Swagger docs
 - [MCP Server](docs/mcp.md) — connect Claude to your monitoring data
 - [Database](docs/database.md) — SQLite vs PostgreSQL configuration
+- [Password Recovery](docs/recovery.md) — reset a password or get back in after a lockout
 - [Load Testing](docs/load-testing.md) *(coming soon)*
 
 ## License

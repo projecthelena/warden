@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -24,6 +25,11 @@ import (
 // @name            Authorization
 // @description     Enter "Bearer sk_live_..." — create keys in Settings > API Keys
 func main() {
+	// Subcommands run against the same database and exit without starting the server.
+	if len(os.Args) > 1 && os.Args[1] == "reset-password" {
+		os.Exit(runResetPassword(os.Args[2:]))
+	}
+
 	logger := logging.New("warden")
 
 	cfg, err := config.Load()

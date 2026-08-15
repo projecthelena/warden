@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -164,6 +165,44 @@ func (h *UserHandler) UpdateUserRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "role updated"})
+}
+
+// ResetUserPassword sets a new password for another user (admin only). Used when a user
+// is locked out and an admin exists; the total-lockout case is handled by the
+// `warden reset-password` CLI instead. Existing sessions of the target are revoked.
+func (h *UserHandler) ResetUserPassword(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleAdmin) {
+		return
+	}
+
+	targetID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid user ID")
+		return
+	}
+
+	var req struct {
+		Password string `json:"password"` // #nosec G117 -- input-only DTO, never serialized in responses
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if err := db.ValidatePassword(req.Password); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if err := h.store.SetUserPassword(targetID, req.Password); err != nil {
+		if errors.Is(err, db.ErrUserNotFound) {
+			writeError(w, http.StatusNotFound, "user not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to reset password")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"message": "password reset"})
 }
 
 // DeleteUser removes a user (admin only).

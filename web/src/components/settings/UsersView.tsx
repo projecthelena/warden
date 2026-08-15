@@ -2,7 +2,9 @@ import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
-import { MoreHorizontal, Trash2, Users, FileText } from "lucide-react";
+import { MoreHorizontal, Trash2, Users, FileText, KeyRound } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -71,6 +73,9 @@ export function UsersView() {
     const currentUser = useMonitorStore((s) => s.user);
     const [users, setUsers] = useState<UserDTO[]>([]);
     const [deleteId, setDeleteId] = useState<number | null>(null);
+    const [resetUser, setResetUser] = useState<UserDTO | null>(null);
+    const [newPassword, setNewPassword] = useState("");
+    const [resetting, setResetting] = useState(false);
     const [managePagesUser, setManagePagesUser] = useState<UserDTO | null>(null);
     const [allStatusPages, setAllStatusPages] = useState<StatusPageOption[]>([]);
     const [selectedPageIds, setSelectedPageIds] = useState<Set<number>>(new Set());
@@ -154,6 +159,30 @@ export function UsersView() {
             toast({ title: "Error", description: "Failed to delete user.", variant: "destructive" });
         }
         setDeleteId(null);
+    };
+
+    const handleResetPassword = async () => {
+        if (!resetUser) return;
+        setResetting(true);
+        try {
+            const res = await fetch(`/api/users/${resetUser.id}/password`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ password: newPassword }),
+                credentials: "include",
+            });
+            if (res.ok) {
+                toast({ title: "Password Reset", description: `New password set for ${resetUser.displayName || resetUser.username}. Their sessions were signed out.` });
+                setResetUser(null);
+                setNewPassword("");
+            } else {
+                const data = await res.json().catch(() => ({ error: "Failed to reset password" }));
+                toast({ title: "Error", description: data.error, variant: "destructive" });
+            }
+        } catch {
+            toast({ title: "Error", description: "Failed to reset password.", variant: "destructive" });
+        }
+        setResetting(false);
     };
 
     const openManagePages = async (user: UserDTO) => {
@@ -294,6 +323,13 @@ export function UsersView() {
                                                             </DropdownMenuItem>
                                                         )}
                                                         <DropdownMenuItem
+                                                            data-testid={`reset-password-${u.username}`}
+                                                            onClick={() => { setResetUser(u); setNewPassword(""); }}
+                                                        >
+                                                            <KeyRound className="h-4 w-4 mr-2" />
+                                                            Reset Password
+                                                        </DropdownMenuItem>
+                                                        <DropdownMenuItem
                                                             className="text-destructive focus:text-destructive"
                                                             onClick={() => setDeleteId(u.id)}
                                                         >
@@ -356,6 +392,34 @@ export function UsersView() {
                         <Button variant="outline" onClick={() => setManagePagesUser(null)}>Cancel</Button>
                         <Button onClick={handleSavePages} disabled={savingPages}>
                             {savingPages ? "Saving..." : "Save"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={resetUser !== null} onOpenChange={(open) => { if (!open) { setResetUser(null); setNewPassword(""); } }}>
+                <DialogContent className="sm:max-w-[425px]">
+                    <DialogHeader>
+                        <DialogTitle>Reset Password</DialogTitle>
+                        <DialogDescription>
+                            Set a new password for {resetUser?.displayName || resetUser?.username}. This signs them out of all sessions.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="py-4 space-y-2">
+                        <Label htmlFor="new-password">New password</Label>
+                        <Input
+                            id="new-password"
+                            data-testid="reset-password-input"
+                            type="password"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            placeholder="At least 8 chars, a number and a symbol"
+                        />
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => { setResetUser(null); setNewPassword(""); }}>Cancel</Button>
+                        <Button data-testid="reset-password-submit" onClick={handleResetPassword} disabled={resetting || newPassword.length < 8}>
+                            {resetting ? "Resetting..." : "Reset Password"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
