@@ -377,8 +377,10 @@ func (m *Manager) resultProcessor() {
 					if !res.Status {
 						mon.ResetRecovery()
 						// Record the event in DB immediately
-						eventDetails := eventDetailsFromResult(res)
-						go func() { _ = m.store.CreateEventWithDetails(res.MonitorID, "down", message, eventDetails) }()
+						if mon.ShouldRecordEvent("down", message, res.Error) {
+							eventDetails := eventDetailsFromResult(res)
+							go func() { _ = m.store.CreateEventWithDetails(res.MonitorID, "down", message, eventDetails) }()
+						}
 
 						confirmed := mon.IncrementDown()
 						if confirmed {
@@ -400,8 +402,10 @@ func (m *Manager) resultProcessor() {
 							log.Printf("Monitor %s is DOWN (confirmed)", res.MonitorID)
 						}
 					} else if isDegraded {
-						degDetails := eventDetailsFromResult(res)
-						go func() { _ = m.store.CreateEventWithDetails(res.MonitorID, "degraded", degradedMsg, degDetails) }()
+						if mon.ShouldRecordEvent("degraded", degradedMsg, res.Error) {
+							degDetails := eventDetailsFromResult(res)
+							go func() { _ = m.store.CreateEventWithDetails(res.MonitorID, "degraded", degradedMsg, degDetails) }()
+						}
 
 						confirmed := mon.IncrementDegraded()
 						if confirmed {
@@ -428,8 +432,10 @@ func (m *Manager) resultProcessor() {
 						// Check is DOWN — increment counter
 						mon.ResetDegraded() // can't be degraded if down
 						mon.ResetRecovery() // reset recovery confirmation
-						downDetails := eventDetailsFromResult(res)
-						go func() { _ = m.store.CreateEventWithDetails(res.MonitorID, "down", message, downDetails) }()
+						if mon.ShouldRecordEvent("down", message, res.Error) {
+							downDetails := eventDetailsFromResult(res)
+							go func() { _ = m.store.CreateEventWithDetails(res.MonitorID, "down", message, downDetails) }()
+						}
 
 						confirmed := mon.IncrementDown()
 						if confirmed {
@@ -460,10 +466,12 @@ func (m *Manager) resultProcessor() {
 								mon.ResetDown()
 								mon.ResetRecovery()
 								go func() { _ = m.store.CloseOutage(res.MonitorID) }()
-								recDetails := eventDetailsFromResult(res)
-								go func() {
-									_ = m.store.CreateEventWithDetails(res.MonitorID, "recovered", "Monitor recovered", recDetails)
-								}()
+								if mon.ShouldRecordEvent("recovered", "Monitor recovered", res.Error) {
+									recDetails := eventDetailsFromResult(res)
+									go func() {
+										_ = m.store.CreateEventWithDetails(res.MonitorID, "recovered", "Monitor recovered", recDetails)
+									}()
+								}
 								// Recovery notifications always send immediately (no cooldown)
 								if !isMaint && !mon.IsFlapping() && eventFilter.IsEnabled("up") {
 									m.enqueueOrDigest(notifications.NotificationEvent{
@@ -485,8 +493,10 @@ func (m *Manager) resultProcessor() {
 						// Handle Degradation (only if not still waiting for recovery confirmation)
 						if !mon.IsConfirmedDown() {
 							if isDegraded {
-								degDetails := eventDetailsFromResult(res)
-								go func() { _ = m.store.CreateEventWithDetails(res.MonitorID, "degraded", degradedMsg, degDetails) }()
+								if mon.ShouldRecordEvent("degraded", degradedMsg, res.Error) {
+									degDetails := eventDetailsFromResult(res)
+									go func() { _ = m.store.CreateEventWithDetails(res.MonitorID, "degraded", degradedMsg, degDetails) }()
+								}
 
 								confirmed := mon.IncrementDegraded()
 								if confirmed {
@@ -511,10 +521,12 @@ func (m *Manager) resultProcessor() {
 								wasConfirmedDeg := mon.ResetDegraded()
 								if wasConfirmedDeg {
 									go func() { _ = m.store.CloseOutage(res.MonitorID) }()
-									recDetails := eventDetailsFromResult(res)
-									go func() {
-										_ = m.store.CreateEventWithDetails(res.MonitorID, "recovered", "Latency normalized", recDetails)
-									}()
+									if mon.ShouldRecordEvent("recovered", "Latency normalized", res.Error) {
+										recDetails := eventDetailsFromResult(res)
+										go func() {
+											_ = m.store.CreateEventWithDetails(res.MonitorID, "recovered", "Latency normalized", recDetails)
+										}()
+									}
 									// Recovery notifications always send immediately (no cooldown)
 									if !isMaint && !mon.IsFlapping() && eventFilter.IsEnabled("up") {
 										m.enqueueOrDigest(notifications.NotificationEvent{
@@ -1189,6 +1201,9 @@ func (m *Manager) retentionWorker() {
 		}
 		if err := m.store.PruneMonitorChecks(days); err != nil {
 			log.Printf("Retention error: %v", err)
+		}
+		if err := m.store.PruneMonitorEvents(days); err != nil {
+			log.Printf("Retention: failed to prune monitor events: %v", err)
 		}
 		if err := m.store.PruneDigestEvents(days); err != nil {
 			log.Printf("Retention: failed to prune digest events: %v", err)
