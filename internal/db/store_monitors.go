@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -799,7 +800,7 @@ func (s *Store) GetDailyUptimeStats(monitorID string, days int) ([]DailyUptimeSt
 	now := time.Now().UTC()
 	result := make([]DailyUptimeStat, days)
 	for i := 0; i < days; i++ {
-		d := now.AddDate(0, 0, -(days-1-i))
+		d := now.AddDate(0, 0, -(days - 1 - i))
 		dateStr := d.Format("2006-01-02")
 		if stat, ok := dayMap[dateStr]; ok {
 			result[i] = stat
@@ -809,6 +810,93 @@ func (s *Store) GetDailyUptimeStats(monitorID string, days int) ([]DailyUptimeSt
 	}
 
 	return result, nil
+}
+
+// GetDailyUptimeStatsForMonitors is the batched form of GetDailyUptimeStats: one query for
+// all monitors instead of one per monitor, so the public status page doesn't fan out on
+// every load. Each id gets a filled slice, one entry per day, gaps marked -1.
+func (s *Store) GetDailyUptimeStatsForMonitors(ids []string, days int) (map[string][]DailyUptimeStat, error) {
+	if days < 1 || days > 365 {
+		return nil, fmt.Errorf("invalid days: must be between 1 and 365")
+	}
+	if len(ids) == 0 {
+		return map[string][]DailyUptimeStat{}, nil
+	}
+
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, 0, len(ids)+1)
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+	args = append(args, days)
+	inClause := strings.Join(placeholders, ", ")
+
+	var query string
+	if s.IsPostgres() {
+		query = fmt.Sprintf(`
+			SELECT monitor_id, TO_CHAR(timestamp, 'YYYY-MM-DD') as day,
+				COUNT(*) as total,
+				SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END) as up_count
+			FROM monitor_checks
+			WHERE monitor_id IN (%s)
+			AND timestamp >= NOW() - MAKE_INTERVAL(days => ?)
+			GROUP BY monitor_id, day`, inClause)
+	} else {
+		query = fmt.Sprintf(`
+			SELECT monitor_id, DATE(timestamp) as day,
+				COUNT(*) as total,
+				SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END) as up_count
+			FROM monitor_checks
+			WHERE monitor_id IN (%s)
+			AND timestamp >= datetime('now', '-' || ? || ' days')
+			GROUP BY monitor_id, day`, inClause)
+	}
+
+	rows, err := s.db.Query(s.rebind(query), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	// monitor id -> date -> stat
+	byMonitor := make(map[string]map[string]DailyUptimeStat, len(ids))
+	for rows.Next() {
+		var monitorID string
+		var stat DailyUptimeStat
+		if err := rows.Scan(&monitorID, &stat.Date, &stat.Total, &stat.Up); err != nil {
+			return nil, err
+		}
+		if stat.Total > 0 {
+			stat.UptimePercent = (float64(stat.Up) / float64(stat.Total)) * 100.0
+		}
+		if byMonitor[monitorID] == nil {
+			byMonitor[monitorID] = make(map[string]DailyUptimeStat)
+		}
+		byMonitor[monitorID][stat.Date] = stat
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Every requested id gets an entry, even one with no checks in the window.
+	now := time.Now().UTC()
+	out := make(map[string][]DailyUptimeStat, len(ids))
+	for _, id := range ids {
+		dayMap := byMonitor[id]
+		filled := make([]DailyUptimeStat, days)
+		for i := 0; i < days; i++ {
+			d := now.AddDate(0, 0, -(days - 1 - i))
+			dateStr := d.Format("2006-01-02")
+			if stat, ok := dayMap[dateStr]; ok {
+				filled[i] = stat
+			} else {
+				filled[i] = DailyUptimeStat{Date: dateStr, Total: 0, UptimePercent: -1}
+			}
+		}
+		out[id] = filled
+	}
+	return out, nil
 }
 
 // toNullInt64 converts an *int to sql.NullInt64 for nullable column storage.

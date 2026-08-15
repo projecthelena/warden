@@ -981,6 +981,76 @@ func TestGetDailyUptimeStats_MultipleMonitors(t *testing.T) {
 	}
 }
 
+func TestGetDailyUptimeStatsForMonitors_MatchesPerMonitor(t *testing.T) {
+	RunTestWithBothDBs(t, "batched daily stats", func(t *testing.T, s *Store) {
+		_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+		_ = s.CreateMonitor(Monitor{ID: "m1", GroupID: "g1", Name: "M1", Interval: 60})
+		_ = s.CreateMonitor(Monitor{ID: "m2", GroupID: "g1", Name: "M2", Interval: 60})
+
+		now := time.Now().UTC()
+		today := time.Date(now.Year(), now.Month(), now.Day(), 12, 0, 0, 0, time.UTC)
+		checks := []CheckResult{
+			{MonitorID: "m1", Status: "up", Latency: 50, Timestamp: today, StatusCode: 200},
+			{MonitorID: "m1", Status: "down", Latency: 0, Timestamp: today.Add(time.Minute), StatusCode: 0},
+			{MonitorID: "m2", Status: "up", Latency: 30, Timestamp: today, StatusCode: 200},
+		}
+		if err := s.BatchInsertChecks(checks); err != nil {
+			t.Fatalf("BatchInsertChecks: %v", err)
+		}
+
+		batched, err := s.GetDailyUptimeStatsForMonitors([]string{"m1", "m2"}, 7)
+		if err != nil {
+			t.Fatalf("batched: %v", err)
+		}
+		// The batched form must return exactly what a per-monitor call would.
+		for _, id := range []string{"m1", "m2"} {
+			want, err := s.GetDailyUptimeStats(id, 7)
+			if err != nil {
+				t.Fatalf("per-monitor %s: %v", id, err)
+			}
+			got := batched[id]
+			if len(got) != len(want) {
+				t.Fatalf("%s: len batched=%d per-monitor=%d", id, len(got), len(want))
+			}
+			for i := range want {
+				if got[i] != want[i] {
+					t.Errorf("%s day %d: batched=%+v per-monitor=%+v", id, i, got[i], want[i])
+				}
+			}
+		}
+	})
+}
+
+func TestGetDailyUptimeStatsForMonitors_Edges(t *testing.T) {
+	s := newTestStore(t)
+
+	// empty ids -> empty map, no error, no invalid "IN ()" SQL
+	m, err := s.GetDailyUptimeStatsForMonitors(nil, 30)
+	if err != nil {
+		t.Fatalf("empty ids: %v", err)
+	}
+	if len(m) != 0 {
+		t.Errorf("expected empty map, got %d entries", len(m))
+	}
+
+	// invalid window rejected, same as the single-monitor form
+	if _, err := s.GetDailyUptimeStatsForMonitors([]string{"m1"}, 0); err == nil {
+		t.Error("expected error for 0 days")
+	}
+	if _, err := s.GetDailyUptimeStatsForMonitors([]string{"m1"}, 366); err == nil {
+		t.Error("expected error for 366 days")
+	}
+
+	// a requested monitor with no checks still gets a filled slice
+	filled, err := s.GetDailyUptimeStatsForMonitors([]string{"ghost"}, 5)
+	if err != nil {
+		t.Fatalf("ghost: %v", err)
+	}
+	if len(filled["ghost"]) != 5 {
+		t.Errorf("expected 5 filled days for a monitor with no checks, got %d", len(filled["ghost"]))
+	}
+}
+
 func TestGetDailyUptimeStats_InvalidDays(t *testing.T) {
 	s := newTestStore(t)
 
@@ -1239,7 +1309,6 @@ func TestMonitor_PerMonitorOverrides(t *testing.T) {
 		}
 	})
 }
-
 
 func TestMonitor_LatencyThresholdRoundtrip(t *testing.T) {
 	t.Run("create_with_threshold", func(t *testing.T) {

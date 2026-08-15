@@ -247,6 +247,50 @@ func TestGetPublicStatus_ResponseIncludesGroups(t *testing.T) {
 	_ = incidents // Just verify it's present and is an array
 }
 
+func TestGetPublicStatus_DoesNotLeakMonitorURL(t *testing.T) {
+	store, spH := newStatusPageTestEnv(t)
+
+	seedGroup(t, store, "g-leak", "Leak Group")
+	// A URL with a secret in the query string: exactly what must never reach an
+	// unauthenticated caller through the public page.
+	const secretURL = "https://internal.corp.local:8443/admin?token=SUPERSECRET"
+	if err := store.CreateMonitor(db.Monitor{ID: "m-leak", GroupID: "g-leak", Name: "Internal API", URL: secretURL, Active: true}); err != nil {
+		t.Fatalf("create monitor: %v", err)
+	}
+	seedPage(t, store, "leak-test", "Leak Test", nil, true, true)
+
+	w := httptest.NewRecorder()
+	spH.GetPublicStatus(w, makeRequest("GET", "/api/s/leak-test", "leak-test", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d", w.Code)
+	}
+
+	raw := w.Body.String()
+	if strings.Contains(raw, "SUPERSECRET") || strings.Contains(raw, "internal.corp.local") {
+		t.Fatalf("public status page leaked the monitor URL: %s", raw)
+	}
+
+	// The monitor is still present (by name), just without its URL.
+	body := decodeJSON(t, w)
+	found := false
+	for _, gi := range body["groups"].([]interface{}) {
+		g := gi.(map[string]interface{})
+		mons, _ := g["monitors"].([]interface{})
+		for _, mi := range mons {
+			m := mi.(map[string]interface{})
+			if m["name"] == "Internal API" {
+				found = true
+				if _, ok := m["url"]; ok {
+					t.Error("monitor object still carries a 'url' field")
+				}
+			}
+		}
+	}
+	if !found {
+		t.Error("expected the monitor to appear in the public payload")
+	}
+}
+
 func TestGetPublicStatus_GroupSpecificPage(t *testing.T) {
 	store, spH := newStatusPageTestEnv(t)
 
@@ -1352,6 +1396,30 @@ func TestPhase3_InvalidLogoURLRejected(t *testing.T) {
 // ============================================================
 // PHASE 4 TESTS: RSS Feed
 // ============================================================
+
+// The RSS feed is the other unauthenticated public surface. It is incident-based and never
+// includes monitor URLs today; this locks that in so a future change can't start leaking them.
+func TestGetRSSFeed_DoesNotLeakMonitorURL(t *testing.T) {
+	store, spH := newStatusPageTestEnv(t)
+
+	seedGroup(t, store, "g-rss-leak", "RSS Leak Group")
+	const secretURL = "https://internal.corp.local:8443/admin?token=SUPERSECRET"
+	if err := store.CreateMonitor(db.Monitor{ID: "m-rss-leak", GroupID: "g-rss-leak", Name: "Internal API", URL: secretURL, Active: true}); err != nil {
+		t.Fatalf("create monitor: %v", err)
+	}
+	seedPage(t, store, "rss-leak", "RSS Leak", nil, true, true)
+	seedIncident(t, store, "inc-rss-leak", "Something broke", "incident", "major", "investigating", true, nil, 0)
+
+	w := httptest.NewRecorder()
+	spH.GetRSSFeed(w, makeRequest("GET", "/api/s/rss-leak/rss", "rss-leak", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d", w.Code)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "SUPERSECRET") || strings.Contains(body, "internal.corp.local") {
+		t.Fatalf("RSS feed leaked a monitor URL: %s", body)
+	}
+}
 
 func TestPhase4_RSSFeedBasic(t *testing.T) {
 	store, spH := newStatusPageTestEnv(t)
