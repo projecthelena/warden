@@ -493,7 +493,13 @@ function NotificationIntelligence() {
                                                     />
                                                 </div>
                                                 <div className="grid gap-2">
-                                                    <Label>Batched Events</Label>
+                                                    <Label>
+                                                        Batched Events
+                                                        <HelpTip text="A checked event is sent only in the daily digest, not as an immediate alert. Leave it unchecked to keep getting notified the moment it happens. Checking Down here means outages are summarized once a day instead of alerting right away." />
+                                                    </Label>
+                                                    <div className="text-sm text-muted-foreground -mt-1">
+                                                        Checked events move into the daily digest and stop sending immediate alerts.
+                                                    </div>
                                                     <div className="grid grid-cols-2 gap-2">
                                                         {DIGEST_EVENT_OPTIONS.map(({ value, label }) => (
                                                             <div key={value} className="flex items-center gap-2">
