@@ -242,6 +242,7 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 				dashboard.Post("/users", userH.CreateUser)
 				dashboard.Get("/users", userH.ListUsers)
 				dashboard.Patch("/users/{id}/role", userH.UpdateUserRole)
+				dashboard.Post("/users/{id}/password", userH.ResetUserPassword)
 				dashboard.Delete("/users/{id}", userH.DeleteUser)
 				dashboard.Get("/users/{id}/status-pages", userH.GetUserStatusPages)
 				dashboard.Put("/users/{id}/status-pages", userH.SetUserStatusPages)

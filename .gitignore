@@ -60,7 +60,7 @@ coverage/
 *.lcov
 junit.xml
 
-dashboard
+/dashboard
 # Claude Code internal worktrees + local settings
 .claude/
 

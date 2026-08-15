@@ -143,6 +143,72 @@ func (s *Store) UpdateUser(id int64, password, timezone string) error {
 	return err
 }
 
+// ValidatePassword enforces the login password policy: at least 8 characters, one digit
+// and one special character. Setup, create-user and the password-reset paths all share it
+// so a reset can never set a password the login form would later reject.
+func ValidatePassword(password string) error {
+	if len(password) < 8 {
+		return errors.New("password must be at least 8 characters")
+	}
+	hasNumber, hasSpecial := false, false
+	for _, c := range password {
+		switch {
+		case c >= '0' && c <= '9':
+			hasNumber = true
+		case (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9'):
+			hasSpecial = true
+		}
+	}
+	if !hasNumber {
+		return errors.New("password must contain at least one number")
+	}
+	if !hasSpecial {
+		return errors.New("password must contain at least one special character")
+	}
+	return nil
+}
+
+// SetUserPassword replaces a user's password (admin reset or CLI recovery) and revokes
+// their existing sessions, so a reset actually locks out whoever knew the old one.
+// Returns ErrUserNotFound if no user has that id.
+func (s *Store) SetUserPassword(id int64, password string) error {
+	if err := ValidatePassword(password); err != nil {
+		return err
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	res, err := s.db.Exec(s.rebind("UPDATE users SET password_hash = ? WHERE id = ?"), string(hash), id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrUserNotFound
+	}
+	// Revoke every session so the old password stops working immediately.
+	return s.DeleteUserSessions(id, "")
+}
+
+// ResetPasswordByUsername is the CLI recovery path: resolve the username and reset it.
+// Returns ErrUserNotFound if the username doesn't exist.
+func (s *Store) ResetPasswordByUsername(username, password string) error {
+	username = strings.ToLower(strings.TrimSpace(username))
+	var id int64
+	err := s.db.QueryRow(s.rebind("SELECT id FROM users WHERE username = ?"), username).Scan(&id)
+	if err == sql.ErrNoRows {
+		return ErrUserNotFound
+	}
+	if err != nil {
+		return err
+	}
+	return s.SetUserPassword(id, password)
+}
+
 func (s *Store) VerifyPassword(userID int64, password string) error {
 	var hash string
 	err := s.db.QueryRow(s.rebind("SELECT password_hash FROM users WHERE id = ?"), userID).Scan(&hash)
