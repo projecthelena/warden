@@ -512,10 +512,12 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 	}
 
 	// 5. Construct Response (Reusing Logic from UptimeHandler)
+	// The monitor's target URL is deliberately not exposed here: this is an unauthenticated
+	// endpoint and the URL can carry internal hostnames, ports, paths, or credentials in the
+	// query string. The public page never renders it.
 	type MonitorDTO struct {
 		ID            string               `json:"id"`
 		Name          string               `json:"name"`
-		URL           string               `json:"url"`
 		Status        string               `json:"status"`
 		Latency       int64                `json:"latency"`
 		History       []HistoryPoint       `json:"history"`
@@ -528,6 +530,24 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 		ID       string       `json:"id"`
 		Name     string       `json:"name"`
 		Monitors []MonitorDTO `json:"monitors"`
+	}
+
+	daysRange := page.UptimeDaysRange
+	if daysRange == 0 {
+		daysRange = 90
+	}
+
+	// One query for every monitor on the page instead of one per monitor.
+	var monitorIDs []string
+	for _, g := range targetGroups {
+		for _, meta := range groupMap[g.ID] {
+			monitorIDs = append(monitorIDs, meta.ID)
+		}
+	}
+	uptimeByMonitor, err := h.store.GetDailyUptimeStatsForMonitors(monitorIDs, daysRange)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load uptime stats")
+		return
 	}
 
 	groupDTOs := []GroupDTO{}
@@ -582,12 +602,7 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 				}
 			}
 
-			// Fetch daily uptime stats from DB (configurable range)
-			daysRange := page.UptimeDaysRange
-			if daysRange == 0 {
-				daysRange = 90
-			}
-			uptimeDays, _ := h.store.GetDailyUptimeStats(meta.ID, daysRange)
+			uptimeDays := uptimeByMonitor[meta.ID]
 			if uptimeDays == nil {
 				uptimeDays = []db.DailyUptimeStat{}
 			}
@@ -606,7 +621,6 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 			monitorDTOs = append(monitorDTOs, MonitorDTO{
 				ID:            meta.ID,
 				Name:          meta.Name,
-				URL:           meta.URL,
 				Status:        statusStr,
 				Latency:       latency,
 				History:       historyPoints,
