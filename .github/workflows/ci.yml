@@ -32,17 +32,20 @@ jobs:
           filters: |
             frontend:
               - 'web/**'
+              - '.github/workflows/ci.yml'
             backend:
               - 'cmd/**'
               - 'internal/**'
               - 'go.mod'
               - 'go.sum'
+              - '.github/workflows/ci.yml'
             app:
               - 'web/**'
               - 'cmd/**'
               - 'internal/**'
               - 'go.mod'
               - 'go.sum'
+              - '.github/workflows/ci.yml'
 
   frontend:
     needs: changes
@@ -75,6 +78,23 @@ jobs:
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
+    # Postgres runs the dual-DB tests against a real server. Without it those tests only
+    # exercise SQLite, so a migration or query that is invalid for Postgres merges green
+    # and only breaks when someone starts the app against Postgres.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: warden
+          POSTGRES_PASSWORD: warden
+          POSTGRES_DB: warden
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -122,6 +142,8 @@ jobs:
           grep -q -- '--- PASS: TestProbePingLoopback' icmp-allowed.log
 
       - name: Unit Tests
+        env:
+          TEST_POSTGRES_URL: postgres://warden:warden@localhost:5432/warden?sslmode=disable
         run: |
           go clean -testcache
           go test ./...
