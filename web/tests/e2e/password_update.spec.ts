@@ -1,3 +1,4 @@
+import { API_BASE } from '../apiBase';
 import { test, expect } from '@playwright/test';
 import { LoginPage } from '../pages/LoginPage';
 
@@ -11,13 +12,13 @@ test.describe('Password Update Flow', () => {
     const NEW_PASS = 'NewSecure2@'; // Strong password: 8+ chars, number, special char
 
     test.beforeAll(async ({ request }) => {
-        const resetRes = await request.post('http://localhost:9096/api/admin/reset', {
+        const resetRes = await request.post(`${API_BASE}/api/admin/reset`, {
             headers: { 'X-Admin-Secret': 'warden-e2e-magic-key' }
         });
         expect(resetRes.ok()).toBeTruthy();
 
         // 2. Perform Setup
-        const setupRes = await request.post('http://localhost:9096/api/setup', {
+        const setupRes = await request.post(`${API_BASE}/api/setup`, {
             headers: { 'X-Admin-Secret': 'warden-e2e-magic-key' },
             data: {
                 username: TEST_USER,
@@ -67,12 +68,12 @@ test.describe('Password Update Flow', () => {
 
     test.afterAll(async ({ request }) => {
         // Restore Admin user for subsequent tests
-        const resetRes = await request.post('http://localhost:9096/api/admin/reset', {
+        const resetRes = await request.post(`${API_BASE}/api/admin/reset`, {
             headers: { 'X-Admin-Secret': 'warden-e2e-magic-key' }
         });
         expect(resetRes.ok()).toBeTruthy();
 
-        const setupRes = await request.post('http://localhost:9096/api/setup', {
+        const setupRes = await request.post(`${API_BASE}/api/setup`, {
             headers: { 'X-Admin-Secret': 'warden-e2e-magic-key' },
             data: {
                 username: 'admin',

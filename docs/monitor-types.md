@@ -138,6 +138,14 @@ cannot run its check has not learned anything about the target.
 
 Only ping is affected. HTTP, TCP and DNS monitors need no special permissions.
 
+## Targets Warden refuses
+
+Checks cannot connect to link-local addresses (`169.254.0.0/16`, `fe80::/10`). That range is where cloud providers serve instance metadata, including credentials, and a monitor is not a reason to read it.
+
+It matters because a failed check stores what the target answered, and anyone who can read the incident can read that. Without the block, an operator who can create monitors could point one at the metadata service, set `acceptedStatusCodes` to something it never returns so every response counts as a failure, and read the host's cloud credentials out of the drill-down.
+
+Private ranges stay reachable: monitoring an internal network is the point. The check runs on the resolved address, so a hostname pointing at the metadata service is refused too.
+
 ## DNS
 
 Resolves the target name and reports it up when the lookup returns at least one record.

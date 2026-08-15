@@ -36,10 +36,44 @@ func (h *NotificationChannelsHandler) GetChannels(w http.ResponseWriter, r *http
 		http.Error(w, "Failed to fetch channels", http.StatusInternalServerError)
 		return
 	}
-	// Return as array directly to match frontend expectation or map?
-	// Frontend expects { channels: [] } ? Actually frontend likely expects array or wrapper.
-	// Store previously returned map for settings. Let's stick to wrapper.
+	// A webhook URL is a credential: anyone holding it can post into the channel. Only
+	// the roles that can change it get to read it back.
+	if !hasPermission(getUserRole(r), RoleEditor) {
+		for i := range channels {
+			channels[i].Config = maskSecrets(channels[i].Config)
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{"channels": channels})
+}
+
+// maskSecrets blanks every value in a channel's JSON config, keeping the keys so the UI
+// can still tell one channel from another.
+//
+// Everything is masked rather than a list of known credential names: a channel type
+// added later would store its secret under a name that list does not have, and this
+// would leak it. Masking everything fails closed instead.
+func maskSecrets(config string) string {
+	if config == "" {
+		return config
+	}
+	var fields map[string]any
+	if err := json.Unmarshal([]byte(config), &fields); err != nil {
+		// Unparseable config could hold anything; say nothing rather than guess.
+		return "{}"
+	}
+
+	for key, value := range fields {
+		if v, ok := value.(string); ok && v != "" {
+			fields[key] = "***"
+		}
+	}
+
+	masked, err := json.Marshal(fields)
+	if err != nil {
+		return "{}"
+	}
+	return string(masked)
 }
 
 // CreateChannel adds a new notification channel (e.g. Slack webhook).

@@ -47,20 +47,20 @@ const ResponseBodyMaxBytes = 2048
 // captureHeaderAllowlist lists response headers worth storing for diagnostics.
 // Sensitive headers (set-cookie, authorization, etc.) are deliberately excluded.
 var captureHeaderAllowlist = map[string]bool{
-	"content-type":      true,
-	"content-length":    true,
-	"content-encoding":  true,
-	"cache-control":     true,
-	"server":            true,
-	"date":              true,
-	"location":          true,
-	"retry-after":       true,
-	"x-request-id":      true,
-	"x-correlation-id":  true,
-	"x-trace-id":        true,
-	"x-served-by":       true,
-	"cf-ray":            true,
-	"via":               true,
+	"content-type":     true,
+	"content-length":   true,
+	"content-encoding": true,
+	"cache-control":    true,
+	"server":           true,
+	"date":             true,
+	"location":         true,
+	"retry-after":      true,
+	"x-request-id":     true,
+	"x-correlation-id": true,
+	"x-trace-id":       true,
+	"x-served-by":      true,
+	"cf-ray":           true,
+	"via":              true,
 }
 
 // SSL notification thresholds in days
@@ -210,11 +210,7 @@ func (m *Manager) Reset() {
 func (m *Manager) worker() {
 	defer m.wg.Done()
 
-	transport := &http.Transport{
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 10,
-		IdleConnTimeout:     30 * time.Second,
-	}
+	transport := checkTransport()
 
 	for job := range m.jobQueue {
 		m.resultQueue <- runCheck(job, transport)
@@ -465,7 +461,9 @@ func (m *Manager) resultProcessor() {
 								mon.ResetRecovery()
 								go func() { _ = m.store.CloseOutage(res.MonitorID) }()
 								recDetails := eventDetailsFromResult(res)
-								go func() { _ = m.store.CreateEventWithDetails(res.MonitorID, "recovered", "Monitor recovered", recDetails) }()
+								go func() {
+									_ = m.store.CreateEventWithDetails(res.MonitorID, "recovered", "Monitor recovered", recDetails)
+								}()
 								// Recovery notifications always send immediately (no cooldown)
 								if !isMaint && !mon.IsFlapping() && eventFilter.IsEnabled("up") {
 									m.enqueueOrDigest(notifications.NotificationEvent{
@@ -514,7 +512,9 @@ func (m *Manager) resultProcessor() {
 								if wasConfirmedDeg {
 									go func() { _ = m.store.CloseOutage(res.MonitorID) }()
 									recDetails := eventDetailsFromResult(res)
-									go func() { _ = m.store.CreateEventWithDetails(res.MonitorID, "recovered", "Latency normalized", recDetails) }()
+									go func() {
+										_ = m.store.CreateEventWithDetails(res.MonitorID, "recovered", "Latency normalized", recDetails)
+									}()
 									// Recovery notifications always send immediately (no cooldown)
 									if !isMaint && !mon.IsFlapping() && eventFilter.IsEnabled("up") {
 										m.enqueueOrDigest(notifications.NotificationEvent{

@@ -1,3 +1,4 @@
+import { API_BASE } from '../apiBase';
 import { test, expect } from '@playwright/test';
 import { LoginPage } from '../pages/LoginPage';
 import { DashboardPage } from '../pages/DashboardPage';
@@ -26,7 +27,7 @@ test.describe('Per-Monitor Latency Threshold', () => {
         // 4. Fill in basic fields
         const monitorName = `LT Monitor ${Date.now()}`;
         await dashboard.createMonitorName.fill(monitorName);
-        await dashboard.createMonitorUrl.fill('http://localhost:9096/healthz');
+        await dashboard.createMonitorUrl.fill(`${API_BASE}/healthz`);
 
         // Select the group
         const groupSelect = page.getByTestId('create-monitor-group-select');

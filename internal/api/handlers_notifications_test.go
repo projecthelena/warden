@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/projecthelena/warden/internal/db"
 	"github.com/go-chi/chi/v5"
+	"github.com/projecthelena/warden/internal/db"
 )
 
 func newTestStore(t *testing.T) *db.Store {

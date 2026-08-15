@@ -1,3 +1,4 @@
+import { API_BASE } from '../apiBase';
 import { test, expect } from '@playwright/test';
 import { SetupPage } from '../pages/SetupPage';
 
@@ -11,7 +12,7 @@ test.describe('Custom Username Setup', () => {
         console.log(">> [TEARDOWN] Ensuring clean state (Admin Reset via Test Key)...");
 
         // 1. Reset DB via Admin Secret (Bypassing Auth)
-        const resetRes = await request.post('http://localhost:9096/api/admin/reset', {
+        const resetRes = await request.post(`${API_BASE}/api/admin/reset`, {
             headers: { 'X-Admin-Secret': 'warden-e2e-magic-key' }
         });
 
@@ -20,7 +21,7 @@ test.describe('Custom Username Setup', () => {
         }
 
         // 2. Restore Admin user
-        const setupRes = await request.post('http://localhost:9096/api/setup', {
+        const setupRes = await request.post(`${API_BASE}/api/setup`, {
             headers: { 'X-Admin-Secret': 'warden-e2e-magic-key' },
             data: {
                 username: 'admin',
@@ -38,7 +39,7 @@ test.describe('Custom Username Setup', () => {
         page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
 
         // 1. Reset DB via Admin Secret (Bypassing Auth)
-        const resetRes = await request.post('http://localhost:9096/api/admin/reset', {
+        const resetRes = await request.post(`${API_BASE}/api/admin/reset`, {
             headers: { 'X-Admin-Secret': 'warden-e2e-magic-key' }
         });
         expect(resetRes.ok()).toBeTruthy();

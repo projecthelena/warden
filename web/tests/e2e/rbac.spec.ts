@@ -1,9 +1,9 @@
+import { API_BASE } from '../apiBase';
 import { test, expect } from '@playwright/test';
 import { LoginPage } from '../pages/LoginPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { SetupPage } from '../pages/SetupPage';
 
-const API_BASE = 'http://localhost:9096';
 const ADMIN_SECRET = 'warden-e2e-magic-key';
 const ADMIN_USER = 'admin';
 const ADMIN_PASS = 'password123!';

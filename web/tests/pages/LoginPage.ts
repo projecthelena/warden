@@ -25,8 +25,18 @@ export class LoginPage {
     }
 
     async login(username = 'admin', password = 'password123!') {
-        // Wait for login page to be ready (longer timeout for CI where SPA redirect is slow)
-        await expect(this.header).toBeVisible({ timeout: 15000 });
+        // The app may still be deciding where to send us: to the login form, or straight
+        // to the dashboard when a session already exists. Reading the URL at one instant
+        // gets it wrong in both directions, so wait for whichever of the two settles.
+        await expect(async () => {
+            if (this.page.url().includes('/dashboard')) return;
+            await expect(this.header).toBeVisible({ timeout: 1000 });
+        }).toPass({ timeout: 20000 });
+
+        // Already signed in; there is no form to fill.
+        if (this.page.url().includes('/dashboard')) {
+            return;
+        }
 
         // Fill credentials
         await this.usernameInput.fill(username);

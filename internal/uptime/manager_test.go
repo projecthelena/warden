@@ -1843,12 +1843,12 @@ func TestManager_SyncWithRequestConfig(t *testing.T) {
 	}
 	if err := s.CreateMonitor(db.Monitor{
 		ID:            "m-rc-sync",
-		GroupID:        "g-default",
-		Name:           "RC Sync Test",
-		URL:            "http://example.com",
-		Active:         true,
-		Interval:       60,
-		RequestConfig:  rc,
+		GroupID:       "g-default",
+		Name:          "RC Sync Test",
+		URL:           "http://example.com",
+		Active:        true,
+		Interval:      60,
+		RequestConfig: rc,
 	}); err != nil {
 		t.Fatalf("CreateMonitor failed: %v", err)
 	}
@@ -1937,12 +1937,12 @@ func TestWorker_WithRequestConfig(t *testing.T) {
 	}
 	if err := store.CreateMonitor(db.Monitor{
 		ID:            "m-worker-rc",
-		GroupID:        "g-default",
-		Name:           "Worker RC Test",
-		URL:            ts.URL,
-		Active:         true,
-		Interval:       1,
-		RequestConfig:  rc,
+		GroupID:       "g-default",
+		Name:          "Worker RC Test",
+		URL:           ts.URL,
+		Active:        true,
+		Interval:      1,
+		RequestConfig: rc,
 	}); err != nil {
 		t.Fatalf("CreateMonitor failed: %v", err)
 	}
@@ -2009,12 +2009,12 @@ func TestWorker_RetryConfig(t *testing.T) {
 	}
 	if err := store.CreateMonitor(db.Monitor{
 		ID:            "m-retry",
-		GroupID:        "g-default",
-		Name:           "Retry Test",
-		URL:            ts.URL,
-		Active:         true,
-		Interval:       1,
-		RequestConfig:  rc,
+		GroupID:       "g-default",
+		Name:          "Retry Test",
+		URL:           ts.URL,
+		Active:        true,
+		Interval:      1,
+		RequestConfig: rc,
 	}); err != nil {
 		t.Fatalf("CreateMonitor failed: %v", err)
 	}

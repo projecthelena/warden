@@ -1,3 +1,4 @@
+import { API_BASE } from './apiBase';
 import { test, expect } from '@playwright/test';
 import { LoginPage } from './pages/LoginPage';
 import { SetupPage } from './pages/SetupPage';
@@ -64,7 +65,7 @@ test.describe('Warden Smoke Tests', () => {
         // Let's close it first to be safe and use component's clean state.
         await page.getByRole('button', { name: 'Cancel' }).click();
 
-        await dashboardPage.createMonitor(monitorName, 'http://localhost:9096/healthz');
+        await dashboardPage.createMonitor(monitorName, `${API_BASE}/healthz`);
 
         // 8. Verify Status
         console.log('>> Verifying Status...');

@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/projecthelena/warden/internal/db"
 	"github.com/go-chi/chi/v5"
+	"github.com/projecthelena/warden/internal/db"
 )
 
 type APIKeyHandler struct {
