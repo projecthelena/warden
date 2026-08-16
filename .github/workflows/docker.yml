@@ -50,7 +50,7 @@ jobs:
           images: ${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=${{ inputs.version }}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ !contains(inputs.version, '-') }}
           flavor: |
             suffix=-${{ matrix.arch }}
 
@@ -94,7 +94,7 @@ jobs:
           images: ${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=${{ inputs.version }}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ !contains(inputs.version, '-') }}
 
       - name: Create multi-arch manifests
         run: |
