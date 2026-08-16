@@ -108,6 +108,9 @@ const (
 	WorkerCount = 50
 	BatchSize   = 50
 	BatchTime   = 2 * time.Second
+	// How often the daily uptime rollup for recent days is refreshed. Today's bar on the
+	// status page can trail reality by up to this interval, which is fine for a status page.
+	rollupInterval = 5 * time.Minute
 )
 
 func NewManager(store *db.Store) *Manager {
@@ -155,6 +158,9 @@ func (m *Manager) Start() {
 
 	// Start Retention Worker
 	go m.retentionWorker()
+
+	// Start Uptime Rollup Worker
+	go m.rollupWorker()
 
 	// Start Digest Worker
 	go m.digestWorker()
@@ -1208,6 +1214,9 @@ func (m *Manager) retentionWorker() {
 		if err := m.store.PruneDigestEvents(days); err != nil {
 			log.Printf("Retention: failed to prune digest events: %v", err)
 		}
+		if err := m.store.PruneDailyRollups(days); err != nil {
+			log.Printf("Retention: failed to prune daily rollups: %v", err)
+		}
 	}
 
 	// Run immediately
@@ -1222,6 +1231,45 @@ func (m *Manager) retentionWorker() {
 			return
 		case <-ticker.C:
 			prune()
+		}
+	}
+}
+
+// rollupWorker keeps the daily uptime rollup current. On start it backfills the whole
+// retention window from existing checks; then every few minutes it recomputes just the
+// trailing days, which is cheap and catches checks that landed after the previous run or
+// across the UTC midnight boundary. Older days are left frozen.
+func (m *Manager) rollupWorker() {
+	m.wg.Add(1)
+	defer m.wg.Done()
+
+	retentionDays := func() int {
+		days := 365
+		if val, err := m.store.GetSetting("data_retention_days"); err == nil {
+			if i, err := strconv.Atoi(val); err == nil && i > 0 {
+				days = i
+			}
+		}
+		return days
+	}
+
+	// Backfill the full window once so the status page has history right after a deploy.
+	if err := m.store.RollupDailyUptime(retentionDays()); err != nil {
+		log.Printf("Rollup backfill error: %v", err)
+	}
+
+	ticker := time.NewTicker(rollupInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-m.stopCh:
+			return
+		case <-ticker.C:
+			// Recompute today and yesterday only; the rest is already frozen.
+			if err := m.store.RollupDailyUptime(2); err != nil {
+				log.Printf("Rollup error: %v", err)
+			}
 		}
 	}
 }
