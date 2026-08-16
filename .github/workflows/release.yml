@@ -33,8 +33,9 @@ jobs:
       - name: Determine Next Version
         id: version
         run: |
-          # Get the latest tag by version sort, default to v0.0.0 if none
-          LATEST_TAG=$(git tag --sort=-v:refname | head -n 1)
+          # Bump from the last stable tag, ignoring pre-releases: a v0.4.0-rc.1 left around
+          # would otherwise mis-parse as the base (patch "0-rc.1") and produce a wrong bump.
+          LATEST_TAG=$(git tag --sort=-v:refname | grep -vF -e '-' | head -n 1)
           LATEST_TAG=${LATEST_TAG:-v0.0.0}
           echo "Current version: $LATEST_TAG"
 
@@ -68,6 +69,20 @@ jobs:
             NEW_TAG="v$major.$minor.$patch"
           fi
 
+          # Reject a malformed custom_version before it becomes a tag. Without this a typo
+          # like "0.4.0rc1" would tag verbatim and, having no hyphen, ship as a stable
+          # release that moves :latest.
+          if ! echo "$NEW_TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+            echo "::error::Invalid version '$NEW_TAG'. Use vMAJOR.MINOR.PATCH, optionally -prerelease (e.g. v0.4.0 or v0.4.0-rc.1)."
+            exit 1
+          fi
+
+          # Fail early and clearly if the tag already exists, instead of a cryptic git push error.
+          if git rev-parse "$NEW_TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $NEW_TAG already exists. Pick a new version (e.g. bump the rc number)."
+            exit 1
+          fi
+
           echo "New version: $NEW_TAG"
           echo "tag=$NEW_TAG" >> $GITHUB_OUTPUT
 
@@ -81,7 +96,9 @@ jobs:
       - name: Build Changelog
         id: build_changelog
         run: |
-          LATEST_TAG=$(git tag --sort=-v:refname | grep -v "^${{ steps.version.outputs.tag }}$" | head -n 1)
+          # Diff against the last stable tag, skipping pre-releases, so a stable release cut
+          # after an rc lists everything since the previous stable, not just since the rc.
+          LATEST_TAG=$(git tag --sort=-v:refname | grep -v "^${{ steps.version.outputs.tag }}$" | grep -vF -e '-' | head -n 1)
           if [ -z "$LATEST_TAG" ]; then
             RAW=$(git log --pretty=format:"COMMIT_START%nSUBJECT:%s%nBODY:%b%nCOMMIT_END" --no-merges)
           else
@@ -179,7 +196,9 @@ jobs:
           name: Release ${{ steps.version.outputs.tag }}
           body_path: ${{ steps.build_changelog.outputs.changelog_file }}
           draft: false
-          prerelease: false
+          # A tag with a hyphen is a pre-release (e.g. v0.4.0-rc.1): it gets the pre-release
+          # badge and never shows as the latest stable release.
+          prerelease: ${{ contains(steps.version.outputs.tag, '-') }}
 
   trigger-docker:
     needs: release
