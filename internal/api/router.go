@@ -59,7 +59,7 @@ func SecureHeadersWithConfig(cookieSecure bool) func(http.Handler) http.Handler 
 // NewRouter builds the HTTP router serving both JSON APIs and static assets.
 func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) http.Handler {
 	r := chi.NewRouter()
-	r.Use(middleware.Logger)
+	r.Use(requestLogger)
 	r.Use(middleware.Recoverer)
 
 	// SECURITY: Only trust X-Forwarded-For headers when behind a trusted reverse proxy.
