@@ -34,6 +34,8 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
+          # security-extended runs more security queries than the default suite.
+          queries: security-extended
 
       - if: matrix.build-mode == 'manual'
         name: Build Go
