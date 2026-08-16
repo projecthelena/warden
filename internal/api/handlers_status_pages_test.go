@@ -1397,6 +1397,36 @@ func TestPhase3_InvalidLogoURLRejected(t *testing.T) {
 // PHASE 4 TESTS: RSS Feed
 // ============================================================
 
+// A status page whose stored range is out of bounds (e.g. a legacy value) must not 500 the
+// whole public page: the handler clamps the range instead.
+func TestGetPublicStatus_ClampsBadUptimeRange(t *testing.T) {
+	store, spH := newStatusPageTestEnv(t)
+
+	seedGroup(t, store, "g-clamp", "Clamp Group")
+	seedMonitor(t, store, "m-clamp", "g-clamp", "Clamp Monitor")
+	// 400 > 365, which GetDailyUptimeStatsForMonitors rejects. Set it directly, past validation.
+	if err := store.UpsertStatusPageFull(db.StatusPageInput{
+		Slug: "clamp", Title: "Clamp", Public: true, Enabled: true, UptimeDaysRange: 400,
+	}); err != nil {
+		t.Fatalf("UpsertStatusPageFull: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	spH.GetPublicStatus(w, makeRequest("GET", "/api/s/clamp", "clamp", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 (clamped), got %d: %s", w.Code, w.Body.String())
+	}
+	body := decodeJSON(t, w)
+	for _, gi := range body["groups"].([]interface{}) {
+		for _, mi := range gi.(map[string]interface{})["monitors"].([]interface{}) {
+			days, _ := mi.(map[string]interface{})["uptimeDays"].([]interface{})
+			if len(days) != 365 {
+				t.Errorf("expected 365 uptime days after clamp, got %d", len(days))
+			}
+		}
+	}
+}
+
 // The RSS feed is the other unauthenticated public surface. It is incident-based and never
 // includes monitor URLs today; this locks that in so a future change can't start leaking them.
 func TestGetRSSFeed_DoesNotLeakMonitorURL(t *testing.T) {

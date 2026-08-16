@@ -532,9 +532,14 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 		Monitors []MonitorDTO `json:"monitors"`
 	}
 
+	// Clamp to the range the stats query accepts, so a bad stored value can never turn the
+	// whole public page into a 500.
 	daysRange := page.UptimeDaysRange
-	if daysRange == 0 {
+	if daysRange <= 0 {
 		daysRange = 90
+	}
+	if daysRange > 365 {
+		daysRange = 365
 	}
 
 	// One query for every monitor on the page instead of one per monitor.

@@ -865,9 +865,12 @@ func (s *Store) GetDailyUptimeStats(monitorID string, days int) ([]DailyUptimeSt
 	return result, nil
 }
 
-// GetDailyUptimeStatsForMonitors is the batched form of GetDailyUptimeStats: one query for
-// all monitors instead of one per monitor, so the public status page doesn't fan out on
-// every load. Each id gets a filled slice, one entry per day, gaps marked -1.
+// GetDailyUptimeStatsForMonitors returns per-day uptime for each monitor, read from the
+// precomputed rollup table in one query. The public status page calls this on every load,
+// so it reads the rollup instead of aggregating raw checks. Each id gets a filled slice,
+// one entry per day oldest to newest; a day with no rollup row (no checks that day) is
+// marked -1. Today's row is refreshed by the rollup worker, so it can trail by that
+// worker's interval.
 func (s *Store) GetDailyUptimeStatsForMonitors(ids []string, days int) (map[string][]DailyUptimeStat, error) {
 	if days < 1 || days > 365 {
 		return nil, fmt.Errorf("invalid days: must be between 1 and 365")
@@ -876,35 +879,20 @@ func (s *Store) GetDailyUptimeStatsForMonitors(ids []string, days int) (map[stri
 		return map[string][]DailyUptimeStat{}, nil
 	}
 
+	now := time.Now().UTC()
+	oldest := now.AddDate(0, 0, -(days - 1)).Format("2006-01-02")
+
 	placeholders := make([]string, len(ids))
 	args := make([]interface{}, 0, len(ids)+1)
 	for i, id := range ids {
 		placeholders[i] = "?"
 		args = append(args, id)
 	}
-	args = append(args, days)
-	inClause := strings.Join(placeholders, ", ")
+	args = append(args, oldest)
 
-	var query string
-	if s.IsPostgres() {
-		query = fmt.Sprintf(`
-			SELECT monitor_id, TO_CHAR(timestamp, 'YYYY-MM-DD') as day,
-				COUNT(*) as total,
-				SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END) as up_count
-			FROM monitor_checks
-			WHERE monitor_id IN (%s)
-			AND timestamp >= NOW() - MAKE_INTERVAL(days => ?)
-			GROUP BY monitor_id, day`, inClause)
-	} else {
-		query = fmt.Sprintf(`
-			SELECT monitor_id, DATE(timestamp) as day,
-				COUNT(*) as total,
-				SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END) as up_count
-			FROM monitor_checks
-			WHERE monitor_id IN (%s)
-			AND timestamp >= datetime('now', '-' || ? || ' days')
-			GROUP BY monitor_id, day`, inClause)
-	}
+	// day is 'YYYY-MM-DD', so a lexical >= is a date range.
+	query := fmt.Sprintf(`SELECT monitor_id, day, total, up_count FROM monitor_uptime_daily
+		WHERE monitor_id IN (%s) AND day >= ?`, strings.Join(placeholders, ", "))
 
 	rows, err := s.db.Query(s.rebind(query), args...)
 	if err != nil {
@@ -912,7 +900,6 @@ func (s *Store) GetDailyUptimeStatsForMonitors(ids []string, days int) (map[stri
 	}
 	defer func() { _ = rows.Close() }()
 
-	// monitor id -> date -> stat
 	byMonitor := make(map[string]map[string]DailyUptimeStat, len(ids))
 	for rows.Next() {
 		var monitorID string
@@ -932,8 +919,7 @@ func (s *Store) GetDailyUptimeStatsForMonitors(ids []string, days int) (map[stri
 		return nil, err
 	}
 
-	// Every requested id gets an entry, even one with no checks in the window.
-	now := time.Now().UTC()
+	// Every requested id gets an entry, even one with no rollup rows in the window.
 	out := make(map[string][]DailyUptimeStat, len(ids))
 	for _, id := range ids {
 		dayMap := byMonitor[id]
@@ -950,6 +936,91 @@ func (s *Store) GetDailyUptimeStatsForMonitors(ids []string, days int) (map[stri
 		out[id] = filled
 	}
 	return out, nil
+}
+
+// RollupDailyUptime recomputes the daily uptime rollup for every monitor over the last
+// `days` calendar days from raw checks, and upserts it. It uses the same aggregation as
+// GetDailyUptimeStats, so a rollup row equals what a live query would return for that day.
+// Idempotent: recomputing a day overwrites its row. A day with no checks produces no row,
+// so the read path renders it as no-data (-1). The worker calls it with a small window to
+// refresh recent days and, once at startup, with the retention window to backfill.
+func (s *Store) RollupDailyUptime(days int) error {
+	if days < 1 {
+		return nil
+	}
+
+	var query string
+	if s.IsPostgres() {
+		query = `SELECT monitor_id, TO_CHAR(timestamp, 'YYYY-MM-DD') as day,
+				COUNT(*), SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END)
+			FROM monitor_checks
+			WHERE timestamp >= NOW() - MAKE_INTERVAL(days => ?)
+			GROUP BY monitor_id, day`
+	} else {
+		query = `SELECT monitor_id, DATE(timestamp) as day,
+				COUNT(*), SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END)
+			FROM monitor_checks
+			WHERE timestamp >= datetime('now', '-' || ? || ' days')
+			GROUP BY monitor_id, day`
+	}
+
+	rows, err := s.db.Query(s.rebind(query), days)
+	if err != nil {
+		return err
+	}
+	type rollup struct {
+		monitorID, day string
+		total, up      int
+	}
+	var rollups []rollup
+	for rows.Next() {
+		var r rollup
+		if err := rows.Scan(&r.monitorID, &r.day, &r.total, &r.up); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		rollups = append(rollups, r)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	// Close before writing: SQLite won't let us upsert while a read is still open.
+	_ = rows.Close()
+
+	if len(rollups) == 0 {
+		return nil
+	}
+
+	// One transaction for all upserts: on the startup backfill this can be hundreds of rows,
+	// and on SQLite a row-per-transaction would be that many fsyncs while holding the single
+	// connection.
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	upsert := s.rebind(`INSERT INTO monitor_uptime_daily (monitor_id, day, total, up_count)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(monitor_id, day) DO UPDATE SET total = excluded.total, up_count = excluded.up_count`)
+	for _, r := range rollups {
+		if _, err := tx.Exec(upsert, r.monitorID, r.day, r.total, r.up); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// PruneDailyRollups drops rollup rows older than the retention window. Historical rollups
+// are otherwise frozen (the worker only recomputes recent days), so pruning raw checks
+// never corrupts an older bar.
+func (s *Store) PruneDailyRollups(days int) error {
+	if days < 1 || days > 3650 {
+		return fmt.Errorf("invalid retention days: must be between 1 and 3650")
+	}
+	cutoff := time.Now().UTC().AddDate(0, 0, -days).Format("2006-01-02")
+	_, err := s.db.Exec(s.rebind("DELETE FROM monitor_uptime_daily WHERE day < ?"), cutoff)
+	return err
 }
 
 // toNullInt64 converts an *int to sql.NullInt64 for nullable column storage.

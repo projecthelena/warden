@@ -997,12 +997,16 @@ func TestGetDailyUptimeStatsForMonitors_MatchesPerMonitor(t *testing.T) {
 		if err := s.BatchInsertChecks(checks); err != nil {
 			t.Fatalf("BatchInsertChecks: %v", err)
 		}
+		// The batched read serves the precomputed rollup, so populate it first.
+		if err := s.RollupDailyUptime(7); err != nil {
+			t.Fatalf("RollupDailyUptime: %v", err)
+		}
 
 		batched, err := s.GetDailyUptimeStatsForMonitors([]string{"m1", "m2"}, 7)
 		if err != nil {
 			t.Fatalf("batched: %v", err)
 		}
-		// The batched form must return exactly what a per-monitor call would.
+		// The rollup read must return exactly what a live per-monitor call would.
 		for _, id := range []string{"m1", "m2"} {
 			want, err := s.GetDailyUptimeStats(id, 7)
 			if err != nil {
