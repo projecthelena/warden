@@ -554,6 +554,59 @@ func (s *Store) GetMonitorEvents(monitorID string, limit int) ([]MonitorEvent, e
 	return scanEnrichedEvents(rows)
 }
 
+// GetRecentEventsForMonitors is the batched form of GetMonitorEvents: the most recent
+// perMonitor events for every id in one query, keyed by monitor id. The dashboard polls
+// the whole board every few seconds, so a query per monitor per poll adds up.
+func (s *Store) GetRecentEventsForMonitors(ids []string, perMonitor int) (map[string][]MonitorEvent, error) {
+	if perMonitor < 1 {
+		perMonitor = 10
+	}
+	if len(ids) == 0 {
+		return map[string][]MonitorEvent{}, nil
+	}
+
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, 0, len(ids)+1)
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+	args = append(args, perMonitor)
+
+	query := s.rebind(fmt.Sprintf(`
+		SELECT id, monitor_id, type, message, timestamp,
+		       status_code, latency, error_message, response_body, response_headers
+		FROM (
+			SELECT id, monitor_id, type, message, timestamp,
+			       status_code, latency, error_message, response_body, response_headers,
+			       ROW_NUMBER() OVER (PARTITION BY monitor_id ORDER BY timestamp DESC, id DESC) AS rn
+			FROM monitor_events
+			WHERE monitor_id IN (%s)
+		) ranked
+		WHERE rn <= ?
+		ORDER BY monitor_id, timestamp DESC, id DESC`, strings.Join(placeholders, ", ")))
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	events, err := scanEnrichedEvents(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	out := make(map[string][]MonitorEvent, len(ids))
+	for _, e := range events {
+		out[e.MonitorID] = append(out[e.MonitorID], e)
+	}
+	return out, nil
+}
+
 // GetMonitorEventsBetween returns enriched events for a monitor between two timestamps (inclusive
 // of start, exclusive of end), most recent first. Used to power the per-monitor day drill-down
 // from the daily digest.
