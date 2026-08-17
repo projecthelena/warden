@@ -34,6 +34,17 @@ func (s *Server) addDiagnosticTools(srv *mcp.Server, readOnly *mcp.ToolAnnotatio
 	}, s.getNotificationConfig)
 
 	mcp.AddTool(srv, &mcp.Tool{
+		Name:  "list_insights",
+		Title: "List detected patterns",
+		Description: "Patterns Warden has found in monitor history: latency that climbs and then " +
+			"resets, trouble that clusters at one time of day, monitors that always fail together, " +
+			"and week-over-week slowdowns that never crossed a threshold. Use this to answer what " +
+			"is quietly wrong rather than what is broken right now. Recomputed daily over the last " +
+			"14 days; an empty result means nothing stood out.",
+		Annotations: readOnly,
+	}, s.listInsights)
+
+	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "list_ssl_warnings",
 		Title:       "List certificates about to expire",
 		Description: "Monitors whose TLS certificate is close to expiring, across all groups.",
@@ -322,4 +333,63 @@ func splitList(v string) []string {
 		parts[i] = strings.TrimSpace(parts[i])
 	}
 	return parts
+}
+
+type ListInsightsInput struct {
+	Monitor string `json:"monitor,omitempty" jsonschema:"limit to one monitor, by name or id"`
+	Kind    string `json:"kind,omitempty" jsonschema:"limit to one pattern: latency_sawtooth, periodic_reset, time_of_day, co_failure or latency_drift"`
+}
+
+type InsightSummary struct {
+	Monitor    string         `json:"monitor"`
+	Kind       string         `json:"kind"`
+	Summary    string         `json:"summary"`
+	Detail     map[string]any `json:"detail,omitempty"`
+	Confidence string         `json:"confidence"`
+	DetectedAt string         `json:"detectedAt"`
+}
+
+type ListInsightsOutput struct {
+	Insights []InsightSummary `json:"insights"`
+	Count    int              `json:"count"`
+	Note     string           `json:"note"`
+}
+
+func (s *Server) listInsights(ctx context.Context, _ *mcp.CallToolRequest, in ListInsightsInput) (*mcp.CallToolResult, ListInsightsOutput, error) {
+	monitorID := ""
+	if in.Monitor != "" {
+		m, err := s.resolveMonitor(in.Monitor)
+		if err != nil {
+			return nil, ListInsightsOutput{}, err
+		}
+		monitorID = m.ID
+	}
+
+	findings, err := s.store.GetMonitorInsights(monitorID)
+	if err != nil {
+		return nil, ListInsightsOutput{}, fmt.Errorf("failed to load insights: %w", err)
+	}
+
+	out := ListInsightsOutput{
+		Insights: make([]InsightSummary, 0, len(findings)),
+		Note: "Patterns, not incidents: these describe the shape of how a monitor misbehaves " +
+			"over two weeks. Warden reports the shape and its numbers; what causes it is still " +
+			"a human's call.",
+	}
+	for _, f := range findings {
+		if in.Kind != "" && f.Kind != in.Kind {
+			continue
+		}
+		out.Insights = append(out.Insights, InsightSummary{
+			Monitor:    f.MonitorName,
+			Kind:       f.Kind,
+			Summary:    f.Summary,
+			Detail:     f.Detail,
+			Confidence: f.Confidence,
+			DetectedAt: f.DetectedAt.UTC().Format(time.RFC3339),
+		})
+	}
+	out.Count = len(out.Insights)
+
+	return nil, out, nil
 }

@@ -160,6 +160,20 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		baselineFloor = "100"
 	}
 
+	// Weekly pattern summary
+	weeklyInsights, _ := h.store.GetSetting("notification.insights.weekly_enabled")
+	if weeklyInsights == "" {
+		weeklyInsights = "false"
+	}
+	weeklyInsightsDay, _ := h.store.GetSetting("notification.insights.weekly_day")
+	if weeklyInsightsDay == "" {
+		weeklyInsightsDay = "1"
+	}
+	weeklyInsightsTime, _ := h.store.GetSetting("notification.insights.weekly_time")
+	if weeklyInsightsTime == "" {
+		weeklyInsightsTime = "09:00"
+	}
+
 	// Correlation and repeat-offender damping
 	corrWindow, _ := h.store.GetSetting("notification.correlation.window_seconds")
 	if corrWindow == "" {
@@ -236,6 +250,9 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		"notification.alert.sustained_seconds":       alertSustained,
 		"notification.alert.reminder_minutes":        alertReminder,
 		"notification.alert.repeat_reminder_minutes": alertRepeat,
+		"notification.insights.weekly_enabled":       weeklyInsights,
+		"notification.insights.weekly_day":           weeklyInsightsDay,
+		"notification.insights.weekly_time":          weeklyInsightsTime,
 		"notification.latency.adaptive_enabled":      adaptiveEnabled,
 		"notification.latency.baseline_days":         baselineDays,
 		"notification.latency.min_samples":           baselineMinSamples,
@@ -369,6 +386,7 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 		"notification.latency.min_samples":           {1, 1000000},
 		"notification.latency.factor_percent":        {100, 10000},
 		"notification.latency.floor_ms":              {0, 60000},
+		"notification.insights.weekly_day":           {0, 6},
 		"notification.flap_window_checks":            {3, 100},
 		"notification.flap_threshold_percent":        {1, 100},
 		"notification.recovery_confirmation_checks":  {1, 20},
@@ -393,6 +411,7 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 	notifBoolKeys := []string{
 		"notification.flap_detection_enabled",
 		"notification.latency.adaptive_enabled",
+		"notification.insights.weekly_enabled",
 		"notification.event.down.enabled",
 		"notification.event.up.enabled",
 		"notification.event.degraded.enabled",
@@ -419,6 +438,7 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 	// Digest string settings
 	digestStringKeys := []string{
 		"notification.digest.time",
+		"notification.insights.weekly_time",
 		"notification.digest.event_types",
 	}
 	for _, key := range digestStringKeys {

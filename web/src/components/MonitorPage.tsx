@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/ui/monitor-visuals";
 import { Skeleton } from "@/components/ui/skeleton";
 import { IncidentCard } from "@/components/IncidentCard";
+import { InsightsCard } from "@/components/InsightsCard";
 import { Activity, Calendar, ExternalLink } from "lucide-react";
 
 const fmtDateInput = (d: Date) => d.toISOString().slice(0, 10);
@@ -103,6 +104,8 @@ export function MonitorPage() {
                     All incidents for this monitor
                 </Button>
             </div>
+
+            <InsightsCard monitorId={id} />
 
             <section>
                 <h2 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">

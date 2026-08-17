@@ -107,6 +107,9 @@ type Manager struct {
 	// How each monitor's own latency baseline becomes its degraded threshold (see baseline.go)
 	baselinePolicy baselinePolicy
 
+	// When the weekly pattern summary goes out (see insights_weekly.go)
+	weeklyInsights weeklyInsightsConfig
+
 	// Active Maintenance Windows
 	maintenanceWindows []db.Incident
 
@@ -146,6 +149,7 @@ func NewManager(store *db.Store) *Manager {
 		alertPolicy:           defaultAlertPolicy(),
 		correlationPolicy:     defaultCorrelationPolicy(),
 		baselinePolicy:        defaultBaselinePolicy(),
+		weeklyInsights:        defaultWeeklyInsightsConfig(),
 		eventFilter: NotificationEventFilter{
 			DownEnabled:        true,
 			UpEnabled:          true,
@@ -191,6 +195,10 @@ func (m *Manager) Start() {
 
 	// Start the latency baseline worker
 	go m.baselineWorker()
+
+	// Start the pattern detector and its weekly summary
+	go m.insightsWorker()
+	go m.weeklyInsightsWorker()
 
 	// Start Notification Service
 	m.notifier.Start()
@@ -769,6 +777,7 @@ func (m *Manager) Sync() {
 	policy := m.loadAlertPolicy()
 	corrPolicy := m.loadCorrelationPolicy()
 	basePolicy := m.loadBaselinePolicy()
+	weekly := m.loadWeeklyInsightsConfig()
 
 	// Loaded before the lock: resolving each monitor's degraded threshold needs its own
 	// baseline, and a failure here only means everyone falls back to the global default.
@@ -790,6 +799,7 @@ func (m *Manager) Sync() {
 	m.alertPolicy = policy
 	m.correlationPolicy = corrPolicy
 	m.baselinePolicy = basePolicy
+	m.weeklyInsights = weekly
 
 	// Update maintenance windows
 	m.maintenanceWindows = activeWindows
