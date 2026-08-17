@@ -1,8 +1,27 @@
 # Notification Fatigue Prevention
 
-Warden prevents alert fatigue with three mechanisms that work together. A notification only fires when a problem is **confirmed, not flapping, and not in cooldown**.
+Warden prevents alert fatigue with four mechanisms that work together. A notification only fires when a problem is **confirmed, sustained, not flapping, and not in cooldown**.
 
 ## How It Works
+
+### Sustained Outages
+
+Confirming a monitor is down and telling you about it are two different moments. When a monitor is confirmed down Warden opens an outage and says nothing; the outage is announced only if it is **still** down after the sustained window. A blip that resolves inside that window is recorded in the history and the daily digest, and never interrupts anyone.
+
+```
+00:00  check fails, threshold met  → outage opens, silent
+00:02  still down                  → still silent
+00:03  still down                  → ALERT: "Monitor is down (Status: 503) — down for 3m"
+00:33  still down                  → reminder: "Still down after 33m"
+01:33  still down                  → reminder: "Still down after 1h33m"
+01:40  recovers                    → recovery sent, because the outage had been announced
+```
+
+The same ladder applies to degraded (high latency) outages.
+
+A recovery is announced **only if the outage itself was**. Under the default policy most short outages are never announced, so telling you they recovered would be pure noise.
+
+Default: announce after **180 seconds**, first reminder after **30 minutes**, then every **60 minutes**. Set the sustained window to 0 to alert the moment an outage opens, or the reminder interval to 0 to turn reminders off.
 
 ### Confirmation Checks
 
@@ -40,6 +59,9 @@ All settings live in **Settings** on the dashboard. Changes apply immediately to
 | Setting | Default | Range |
 |---------|---------|-------|
 | Confirmation threshold | 3 | 1-100 |
+| Announce after (seconds) | 180 | 0-86400 |
+| First reminder (minutes) | 30 | 0-10080 |
+| Repeat reminder (minutes) | 60 | 0-10080 |
 | Cooldown minutes | 30 | 0-1440 |
 | Flap detection enabled | true | true/false |
 | Flap window (checks) | 21 | 3-100 |
@@ -50,3 +72,14 @@ All settings live in **Settings** on the dashboard. Changes apply immediately to
 **Confirmation threshold** and **cooldown** can be overridden on individual monitors (in the monitor's Advanced Settings). This lets you set threshold=1 on critical monitors while keeping threshold=5 on less important ones. When not set, the global default is used.
 
 Flap detection settings are global only.
+
+## The digest does not silence anything
+
+Selecting an event under **Daily Digest → Include in the digest** controls what the daily summary covers. It used to *divert* the event, so choosing "Down" there silenced outage alerts entirely — an easy way to end up with no notifications at all without realising it.
+
+Those are now two independent decisions:
+
+- **What the digest covers** — Daily Digest → Include in the digest.
+- **What reaches you immediately** — the per-event toggles under Event Types.
+
+An event can be in both. To stop an immediate alert, turn the event off; putting it in the digest no longer does that.

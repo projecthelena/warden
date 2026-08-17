@@ -238,6 +238,9 @@ function NotificationIntelligence() {
 
     const [confirmThreshold, setConfirmThreshold] = useState(settings?.["notification.confirmation_threshold"] || "3");
     const [cooldownMins, setCooldownMins] = useState(settings?.["notification.cooldown_minutes"] || "30");
+    const [alertSustained, setAlertSustained] = useState(settings?.["notification.alert.sustained_seconds"] || "180");
+    const [alertReminder, setAlertReminder] = useState(settings?.["notification.alert.reminder_minutes"] || "30");
+    const [alertRepeat, setAlertRepeat] = useState(settings?.["notification.alert.repeat_reminder_minutes"] || "60");
     const [flapEnabled, setFlapEnabled] = useState(settings?.["notification.flap_detection_enabled"] !== "false");
     const [flapWindow, setFlapWindow] = useState(settings?.["notification.flap_window_checks"] || "21");
     const [flapThreshold, setFlapThreshold] = useState(settings?.["notification.flap_threshold_percent"] || "25");
@@ -269,6 +272,9 @@ function NotificationIntelligence() {
         if (settings) {
             setConfirmThreshold(settings["notification.confirmation_threshold"] || "3");
             setCooldownMins(settings["notification.cooldown_minutes"] || "30");
+            setAlertSustained(settings["notification.alert.sustained_seconds"] || "180");
+            setAlertReminder(settings["notification.alert.reminder_minutes"] || "30");
+            setAlertRepeat(settings["notification.alert.repeat_reminder_minutes"] || "60");
             setFlapEnabled(settings["notification.flap_detection_enabled"] !== "false");
             setFlapWindow(settings["notification.flap_window_checks"] || "21");
             setFlapThreshold(settings["notification.flap_threshold_percent"] || "25");
@@ -292,6 +298,9 @@ function NotificationIntelligence() {
         const updates: Record<string, string> = {
             "notification.confirmation_threshold": confirmThreshold,
             "notification.cooldown_minutes": cooldownMins,
+            "notification.alert.sustained_seconds": alertSustained,
+            "notification.alert.reminder_minutes": alertReminder,
+            "notification.alert.repeat_reminder_minutes": alertRepeat,
             "notification.flap_detection_enabled": flapEnabled ? "true" : "false",
             "notification.flap_window_checks": flapWindow,
             "notification.flap_threshold_percent": flapThreshold,
@@ -366,6 +375,58 @@ function NotificationIntelligence() {
                                     Alerting Thresholds
                                 </AccordionTrigger>
                                 <AccordionContent>
+                                    <div className="space-y-2 pt-2 pb-4">
+                                        <div className="text-sm font-medium">When an outage is announced</div>
+                                        <div className="text-sm text-muted-foreground">
+                                            A monitor that goes down opens an outage silently. It is announced only if it is still
+                                            down after the delay below, so short blips are recorded without interrupting you.
+                                        </div>
+                                        <div className="grid grid-cols-3 gap-4 pt-2">
+                                            <div className="grid gap-2">
+                                                <Label htmlFor="alert-sustained">
+                                                    Announce after (sec)
+                                                    <HelpTip text="How long a monitor must stay down or degraded before the alert goes out. 0 sends it the moment the outage opens." />
+                                                </Label>
+                                                <Input
+                                                    id="alert-sustained"
+                                                    data-testid="alert-sustained"
+                                                    type="number"
+                                                    min={0}
+                                                    max={86400}
+                                                    value={alertSustained}
+                                                    onChange={(e) => setAlertSustained(e.target.value)}
+                                                />
+                                            </div>
+                                            <div className="grid gap-2">
+                                                <Label htmlFor="alert-reminder">
+                                                    First reminder (min)
+                                                    <HelpTip text="Minutes after the alert before the first reminder that it is still down. 0 turns reminders off." />
+                                                </Label>
+                                                <Input
+                                                    id="alert-reminder"
+                                                    type="number"
+                                                    min={0}
+                                                    max={10080}
+                                                    value={alertReminder}
+                                                    onChange={(e) => setAlertReminder(e.target.value)}
+                                                />
+                                            </div>
+                                            <div className="grid gap-2">
+                                                <Label htmlFor="alert-repeat">
+                                                    Then every (min)
+                                                    <HelpTip text="Cadence of the reminders that follow the first one, for as long as the outage lasts. 0 sends only one reminder." />
+                                                </Label>
+                                                <Input
+                                                    id="alert-repeat"
+                                                    type="number"
+                                                    min={0}
+                                                    max={10080}
+                                                    value={alertRepeat}
+                                                    onChange={(e) => setAlertRepeat(e.target.value)}
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
                                     <div className="grid grid-cols-3 gap-4 pt-2">
                                         <div className="grid gap-2">
                                             <Label htmlFor="confirm-threshold">
@@ -494,11 +555,11 @@ function NotificationIntelligence() {
                                                 </div>
                                                 <div className="grid gap-2">
                                                     <Label>
-                                                        Batched Events
-                                                        <HelpTip text="A checked event is sent only in the daily digest, not as an immediate alert. Leave it unchecked to keep getting notified the moment it happens. Checking Down here means outages are summarized once a day instead of alerting right away." />
+                                                        Include in the digest
+                                                        <HelpTip text="What the daily summary covers. This no longer affects immediate alerts: an event can appear in the digest and still reach you the moment it happens. To stop an immediate alert, turn that event off under Event Types." />
                                                     </Label>
                                                     <div className="text-sm text-muted-foreground -mt-1">
-                                                        Checked events move into the daily digest and stop sending immediate alerts.
+                                                        What the daily summary covers. Immediate alerts are controlled separately, under Event Types.
                                                     </div>
                                                     <div className="grid grid-cols-2 gap-2">
                                                         {DIGEST_EVENT_OPTIONS.map(({ value, label }) => (

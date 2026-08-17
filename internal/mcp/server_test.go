@@ -440,9 +440,10 @@ func TestEventSummaryCarriesTheServerResponse(t *testing.T) {
 	}
 }
 
-// An event that is enabled but batched is not immediate. Reporting it in both lists
-// would repeat exactly the confusion this tool exists to clear up.
-func TestNotificationConfigDoesNotCallBatchedEventsImmediate(t *testing.T) {
+// Appearing in the digest no longer silences the immediate alert — the two are separate
+// decisions. This is the regression test for the footgun that left an operator weeks
+// without notifications after selecting "down" as a digest event.
+func TestNotificationConfigDigestDoesNotSilenceImmediate(t *testing.T) {
 	s, store := newTestServer(t)
 	for k, v := range map[string]string{
 		"notification.digest.enabled":     "true",
@@ -458,36 +459,68 @@ func TestNotificationConfigDoesNotCallBatchedEventsImmediate(t *testing.T) {
 		t.Fatalf("get_notification_config failed: %v", err)
 	}
 
-	for _, e := range out.ImmediateEvents {
-		if e == "down" || e == "flapping" {
-			t.Errorf("%q is batched, so it must not be listed as immediate: %v", e, out.ImmediateEvents)
+	for _, want := range []string{"down", "flapping"} {
+		if !contains(out.ImmediateEvents, want) {
+			t.Errorf("%q is in the digest but must still alert immediately: %v", want, out.ImmediateEvents)
 		}
-	}
-	if len(out.ImmediateEvents) == 0 {
-		t.Error("expected the events that are not batched to still be listed as immediate")
+		if !contains(out.DigestEvents, want) {
+			t.Errorf("%q should still be reported as a digest event: %v", want, out.DigestEvents)
+		}
 	}
 }
 
-// With the digest off, nothing is diverted, so every enabled event is immediate again.
-func TestNotificationConfigWithDigestOff(t *testing.T) {
+// Turning an event type off is the only thing that stops its immediate alert.
+func TestNotificationConfigRespectsEventToggles(t *testing.T) {
 	s, store := newTestServer(t)
-	if err := store.SetSetting("notification.digest.event_types", "down"); err != nil {
-		t.Fatalf("failed to set digest types: %v", err)
+	if err := store.SetSetting("notification.event.down.enabled", "false"); err != nil {
+		t.Fatalf("failed to set toggle: %v", err)
 	}
 
 	_, out, err := s.getNotificationConfig(context.Background(), nil, struct{}{})
 	if err != nil {
 		t.Fatalf("get_notification_config failed: %v", err)
 	}
-	found := false
-	for _, e := range out.ImmediateEvents {
-		if e == "down" {
-			found = true
+	if contains(out.ImmediateEvents, "down") {
+		t.Errorf("down is disabled but reported as immediate: %v", out.ImmediateEvents)
+	}
+	if !contains(out.ImmediateEvents, "degraded") {
+		t.Errorf("degraded is still enabled and should be immediate: %v", out.ImmediateEvents)
+	}
+}
+
+// The silent window is the first thing to check when asking "why was I not told", so the
+// tool has to report it rather than leave the caller guessing at the default.
+func TestNotificationConfigReportsAlertLadder(t *testing.T) {
+	s, store := newTestServer(t)
+
+	_, out, err := s.getNotificationConfig(context.Background(), nil, struct{}{})
+	if err != nil {
+		t.Fatalf("get_notification_config failed: %v", err)
+	}
+	if out.AlertAfterSeconds != 180 || out.ReminderMinutes != 30 || out.RepeatReminderMinutes != 60 {
+		t.Errorf("defaults wrong: after=%d reminder=%d repeat=%d",
+			out.AlertAfterSeconds, out.ReminderMinutes, out.RepeatReminderMinutes)
+	}
+
+	if err := store.SetSetting("notification.alert.sustained_seconds", "300"); err != nil {
+		t.Fatalf("failed to set sustained: %v", err)
+	}
+	_, out, err = s.getNotificationConfig(context.Background(), nil, struct{}{})
+	if err != nil {
+		t.Fatalf("get_notification_config failed: %v", err)
+	}
+	if out.AlertAfterSeconds != 300 {
+		t.Errorf("alertAfterSeconds = %d, want 300", out.AlertAfterSeconds)
+	}
+}
+
+func contains(list []string, want string) bool {
+	for _, v := range list {
+		if v == want {
+			return true
 		}
 	}
-	if !found {
-		t.Errorf("with the digest disabled, down should be immediate: %v", out.ImmediateEvents)
-	}
+	return false
 }
 
 // Monitors carry a check type now, so the tools have to say which check each one runs.

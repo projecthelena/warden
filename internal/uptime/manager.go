@@ -98,10 +98,22 @@ type Manager struct {
 	digestTime       string // HH:MM
 	digestEventTypes map[string]bool
 
+	// Duration ladder for down/degraded alerts (see alerts.go)
+	alertPolicy alertPolicy
+
 	// Active Maintenance Windows
 	maintenanceWindows []db.Incident
 
-	notifier *notifications.Service
+	notifier notifierService
+}
+
+// notifierService is the slice of notifications.Service the manager depends on. It is an
+// interface so a test can watch what would have gone out without standing up a webhook —
+// the interesting assertions here are about what is *not* sent.
+type notifierService interface {
+	Start()
+	Enqueue(notifications.NotificationEvent)
+	SendDigest([]db.DigestEvent)
 }
 
 const (
@@ -125,6 +137,7 @@ func NewManager(store *db.Store) *Manager {
 		sslNotifiedThresholds: make(map[string]*sslThresholdState),
 		notificationTimezone:  time.UTC, // Default to UTC
 		notifier:              notifications.NewService(store),
+		alertPolicy:           defaultAlertPolicy(),
 		eventFilter: NotificationEventFilter{
 			DownEnabled:        true,
 			UpEnabled:          true,
@@ -164,6 +177,9 @@ func (m *Manager) Start() {
 
 	// Start Digest Worker
 	go m.digestWorker()
+
+	// Start the alert evaluator — the only thing that turns an open outage into a message
+	go m.alertEvaluator()
 
 	// Start Notification Service
 	m.notifier.Start()
@@ -394,17 +410,14 @@ func (m *Manager) resultProcessor() {
 								_ = m.store.CloseOutage(res.MonitorID)
 								_ = m.store.CreateOutage(res.MonitorID, "down", message)
 							}()
-							if !isMaint && !mon.IsFlapping() && mon.ShouldNotify("down") && eventFilter.IsEnabled("down") {
-								m.enqueueOrDigest(notifications.NotificationEvent{
-									MonitorID:   res.MonitorID,
-									MonitorName: mon.GetName(),
-									MonitorURL:  mon.GetTargetURL(),
-									Type:        notifications.EventDown,
-									Message:     message,
-									Time:        res.Timestamp,
-								})
-								mon.MarkNotified("down")
-							}
+							m.archiveForDigest(notifications.NotificationEvent{
+								MonitorID:   res.MonitorID,
+								MonitorName: mon.GetName(),
+								MonitorURL:  mon.GetTargetURL(),
+								Type:        notifications.EventDown,
+								Message:     message,
+								Time:        res.Timestamp,
+							})
 							log.Printf("Monitor %s is DOWN (confirmed)", res.MonitorID)
 						}
 					} else if isDegraded {
@@ -419,17 +432,14 @@ func (m *Manager) resultProcessor() {
 								_ = m.store.CloseOutage(res.MonitorID)
 								_ = m.store.CreateOutage(res.MonitorID, "degraded", degradedMsg)
 							}()
-							if !isMaint && !mon.IsFlapping() && mon.ShouldNotify("degraded") && eventFilter.IsEnabled("degraded") {
-								m.enqueueOrDigest(notifications.NotificationEvent{
-									MonitorID:   res.MonitorID,
-									MonitorName: mon.GetName(),
-									MonitorURL:  mon.GetTargetURL(),
-									Type:        notifications.EventDegraded,
-									Message:     degradedMsg,
-									Time:        res.Timestamp,
-								})
-								mon.MarkNotified("degraded")
-							}
+							m.archiveForDigest(notifications.NotificationEvent{
+								MonitorID:   res.MonitorID,
+								MonitorName: mon.GetName(),
+								MonitorURL:  mon.GetTargetURL(),
+								Type:        notifications.EventDegraded,
+								Message:     degradedMsg,
+								Time:        res.Timestamp,
+							})
 						}
 					}
 				} else {
@@ -450,17 +460,14 @@ func (m *Manager) resultProcessor() {
 								_ = m.store.CloseOutage(res.MonitorID)
 								_ = m.store.CreateOutage(res.MonitorID, "down", message)
 							}()
-							if !isMaint && !mon.IsFlapping() && mon.ShouldNotify("down") && eventFilter.IsEnabled("down") {
-								m.enqueueOrDigest(notifications.NotificationEvent{
-									MonitorID:   res.MonitorID,
-									MonitorName: mon.GetName(),
-									MonitorURL:  mon.GetTargetURL(),
-									Type:        notifications.EventDown,
-									Message:     message,
-									Time:        res.Timestamp,
-								})
-								mon.MarkNotified("down")
-							}
+							m.archiveForDigest(notifications.NotificationEvent{
+								MonitorID:   res.MonitorID,
+								MonitorName: mon.GetName(),
+								MonitorURL:  mon.GetTargetURL(),
+								Type:        notifications.EventDown,
+								Message:     message,
+								Time:        res.Timestamp,
+							})
 							log.Printf("Monitor %s is DOWN (confirmed): %s", res.MonitorID, message)
 						}
 					} else {
@@ -471,24 +478,20 @@ func (m *Manager) resultProcessor() {
 							if recoveryConfirmed {
 								mon.ResetDown()
 								mon.ResetRecovery()
-								go func() { _ = m.store.CloseOutage(res.MonitorID) }()
 								if mon.ShouldRecordEvent("recovered", "Monitor recovered", res.Error) {
 									recDetails := eventDetailsFromResult(res)
 									go func() {
 										_ = m.store.CreateEventWithDetails(res.MonitorID, "recovered", "Monitor recovered", recDetails)
 									}()
 								}
-								// Recovery notifications always send immediately (no cooldown)
-								if !isMaint && !mon.IsFlapping() && eventFilter.IsEnabled("up") {
-									m.enqueueOrDigest(notifications.NotificationEvent{
-										MonitorID:   res.MonitorID,
-										MonitorName: mon.GetName(),
-										MonitorURL:  mon.GetTargetURL(),
-										Type:        notifications.EventUp,
-										Message:     "Monitor Recovered",
-										Time:        res.Timestamp,
-									})
-								}
+								m.closeOutageAndAnnounce(res.MonitorID, notifications.NotificationEvent{
+									MonitorID:   res.MonitorID,
+									MonitorName: mon.GetName(),
+									MonitorURL:  mon.GetTargetURL(),
+									Type:        notifications.EventUp,
+									Message:     "Monitor Recovered",
+									Time:        res.Timestamp,
+								}, !isMaint && !mon.IsFlapping() && eventFilter.IsEnabled("up"))
 								log.Printf("Monitor %s RECOVERED", res.MonitorID)
 							}
 						} else {
@@ -510,40 +513,33 @@ func (m *Manager) resultProcessor() {
 										_ = m.store.CloseOutage(res.MonitorID)
 										_ = m.store.CreateOutage(res.MonitorID, "degraded", degradedMsg)
 									}()
-									if !isMaint && !mon.IsFlapping() && mon.ShouldNotify("degraded") && eventFilter.IsEnabled("degraded") {
-										m.enqueueOrDigest(notifications.NotificationEvent{
-											MonitorID:   res.MonitorID,
-											MonitorName: mon.GetName(),
-											MonitorURL:  mon.GetTargetURL(),
-											Type:        notifications.EventDegraded,
-											Message:     degradedMsg,
-											Time:        res.Timestamp,
-										})
-										mon.MarkNotified("degraded")
-									}
+									m.archiveForDigest(notifications.NotificationEvent{
+										MonitorID:   res.MonitorID,
+										MonitorName: mon.GetName(),
+										MonitorURL:  mon.GetTargetURL(),
+										Type:        notifications.EventDegraded,
+										Message:     degradedMsg,
+										Time:        res.Timestamp,
+									})
 								}
 							} else if wasDegraded {
 								// Degraded -> Normal
 								wasConfirmedDeg := mon.ResetDegraded()
 								if wasConfirmedDeg {
-									go func() { _ = m.store.CloseOutage(res.MonitorID) }()
 									if mon.ShouldRecordEvent("recovered", "Latency normalized", res.Error) {
 										recDetails := eventDetailsFromResult(res)
 										go func() {
 											_ = m.store.CreateEventWithDetails(res.MonitorID, "recovered", "Latency normalized", recDetails)
 										}()
 									}
-									// Recovery notifications always send immediately (no cooldown)
-									if !isMaint && !mon.IsFlapping() && eventFilter.IsEnabled("up") {
-										m.enqueueOrDigest(notifications.NotificationEvent{
-											MonitorID:   res.MonitorID,
-											MonitorName: mon.GetName(),
-											MonitorURL:  mon.GetTargetURL(),
-											Type:        notifications.EventUp,
-											Message:     "Latency normalized",
-											Time:        res.Timestamp,
-										})
-									}
+									m.closeOutageAndAnnounce(res.MonitorID, notifications.NotificationEvent{
+										MonitorID:   res.MonitorID,
+										MonitorName: mon.GetName(),
+										MonitorURL:  mon.GetTargetURL(),
+										Type:        notifications.EventUp,
+										Message:     "Latency normalized",
+										Time:        res.Timestamp,
+									}, !isMaint && !mon.IsFlapping() && eventFilter.IsEnabled("up"))
 									log.Printf("Monitor %s RECOVERED from degraded", res.MonitorID)
 								}
 							} else {
@@ -575,29 +571,31 @@ func (m *Manager) resultProcessor() {
 					if changed && !isMaint {
 						if isFlapping {
 							go func() { _ = m.store.CreateEvent(res.MonitorID, "flapping", "Monitor is flapping between states") }()
-							if mon.ShouldNotify("flapping") && eventFilter.IsEnabled("flapping") {
-								m.enqueueOrDigest(notifications.NotificationEvent{
-									MonitorID:   res.MonitorID,
-									MonitorName: mon.GetName(),
-									MonitorURL:  mon.GetTargetURL(),
-									Type:        notifications.EventFlapping,
-									Message:     "Monitor is flapping between states",
-									Time:        res.Timestamp,
-								})
+							notify := mon.ShouldNotify("flapping") && eventFilter.IsEnabled("flapping")
+							m.recordEvent(notifications.NotificationEvent{
+								MonitorID:   res.MonitorID,
+								MonitorName: mon.GetName(),
+								MonitorURL:  mon.GetTargetURL(),
+								Type:        notifications.EventFlapping,
+								Message:     "Monitor is flapping between states",
+								Time:        res.Timestamp,
+							}, notify)
+							if notify {
 								mon.MarkNotified("flapping")
 							}
 							log.Printf("Monitor %s is FLAPPING", res.MonitorID)
 						} else {
 							go func() { _ = m.store.CreateEvent(res.MonitorID, "stabilized", "Monitor has stabilized") }()
-							if mon.ShouldNotify("stabilized") && eventFilter.IsEnabled("stabilized") {
-								m.enqueueOrDigest(notifications.NotificationEvent{
-									MonitorID:   res.MonitorID,
-									MonitorName: mon.GetName(),
-									MonitorURL:  mon.GetTargetURL(),
-									Type:        notifications.EventStabilized,
-									Message:     "Monitor has stabilized",
-									Time:        res.Timestamp,
-								})
+							notify := mon.ShouldNotify("stabilized") && eventFilter.IsEnabled("stabilized")
+							m.recordEvent(notifications.NotificationEvent{
+								MonitorID:   res.MonitorID,
+								MonitorName: mon.GetName(),
+								MonitorURL:  mon.GetTargetURL(),
+								Type:        notifications.EventStabilized,
+								Message:     "Monitor has stabilized",
+								Time:        res.Timestamp,
+							}, notify)
+							if notify {
 								mon.MarkNotified("stabilized")
 							}
 							log.Printf("Monitor %s STABILIZED", res.MonitorID)
@@ -712,16 +710,14 @@ func (m *Manager) processSSLCheck(res CheckResult, mon *Monitor, isMaint bool) {
 		filter := m.eventFilter
 		m.mu.RUnlock()
 
-		if !isMaint && filter.IsEnabled("ssl_expiring") {
-			m.enqueueOrDigest(notifications.NotificationEvent{
-				MonitorID:   res.MonitorID,
-				MonitorName: mon.GetName(),
-				MonitorURL:  mon.GetTargetURL(),
-				Type:        notifications.EventSSLExpiring,
-				Message:     msg,
-				Time:        res.Timestamp,
-			})
-		}
+		m.recordEvent(notifications.NotificationEvent{
+			MonitorID:   res.MonitorID,
+			MonitorName: mon.GetName(),
+			MonitorURL:  mon.GetTargetURL(),
+			Type:        notifications.EventSSLExpiring,
+			Message:     msg,
+			Time:        res.Timestamp,
+		}, !isMaint && filter.IsEnabled("ssl_expiring"))
 		log.Printf("Monitor %s: SSL certificate expiring in %d days (threshold: %d)", res.MonitorID, daysUntilExpiry, matchedThreshold)
 	}
 }
@@ -771,6 +767,7 @@ func (m *Manager) Sync() {
 	// Load event filter and digest config
 	eventFilter := m.loadEventFilter()
 	digestEnabled, digestTime, digestEventTypes := m.loadDigestConfig()
+	policy := m.loadAlertPolicy()
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -781,6 +778,7 @@ func (m *Manager) Sync() {
 	m.digestEnabled = digestEnabled
 	m.digestTime = digestTime
 	m.digestEventTypes = digestEventTypes
+	m.alertPolicy = policy
 
 	// Update maintenance windows
 	m.maintenanceWindows = activeWindows
@@ -1016,7 +1014,7 @@ func (m *Manager) loadDigestConfig() (bool, string, map[string]bool) {
 	return enabled, digestTime, eventTypes
 }
 
-// shouldDigest checks if an event type should be routed to the digest queue.
+// shouldDigest checks if an event type should appear in the daily digest.
 func (m *Manager) shouldDigest(eventType string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -1026,15 +1024,55 @@ func (m *Manager) shouldDigest(eventType string) bool {
 	return m.digestEventTypes[eventType]
 }
 
-// enqueueOrDigest either sends a notification immediately or queues it for digest.
-func (m *Manager) enqueueOrDigest(event notifications.NotificationEvent) {
-	if m.shouldDigest(string(event.Type)) {
-		if err := m.store.InsertDigestEvent(event.MonitorID, event.MonitorName, event.MonitorURL, string(event.Type), event.Message, event.Time); err != nil {
-			log.Printf("Failed to queue digest event: %v", err)
-		}
+// archiveForDigest files an event under the day's summary. This is now independent of
+// whether the same event also goes out immediately: appearing in the digest used to
+// *replace* the immediate alert, which is how selecting "down" here silenced down alerts
+// altogether. Archiving and speaking are two different questions and they get asked
+// separately.
+func (m *Manager) archiveForDigest(event notifications.NotificationEvent) {
+	if !m.shouldDigest(string(event.Type)) {
 		return
 	}
+	if err := m.store.InsertDigestEvent(event.MonitorID, event.MonitorName, event.MonitorURL,
+		string(event.Type), event.Message, event.Time); err != nil {
+		log.Printf("Failed to queue digest event: %v", err)
+	}
+}
+
+// notifyNow puts an event on the wire immediately.
+func (m *Manager) notifyNow(event notifications.NotificationEvent) {
 	m.notifier.Enqueue(event)
+}
+
+// closeOutageAndAnnounce ends the open outage and announces the recovery only if that
+// outage had produced an alert. A "recovered" for something nobody was told about is
+// noise, and under the sustained-alert policy most short outages are never announced —
+// which is the whole point.
+//
+// The recovery is always archived for the digest: the day's summary should still show
+// that the monitor blipped, even when the moment didn't deserve a message.
+func (m *Manager) closeOutageAndAnnounce(monitorID string, recovery notifications.NotificationEvent, allowed bool) {
+	m.archiveForDigest(recovery)
+	go func() {
+		alerted, err := m.store.CloseOutageReport(monitorID)
+		if err != nil {
+			log.Printf("Failed to close outage for %s: %v", monitorID, err)
+			return
+		}
+		if alerted && allowed {
+			m.notifyNow(recovery)
+		}
+	}()
+}
+
+// recordEvent archives an event and, independently, sends it now if its type is enabled.
+// Used by the events that are inherently one-shot — flapping, stabilized, SSL expiry.
+// Down and degraded do not come through here: their timing is the alert evaluator's call.
+func (m *Manager) recordEvent(event notifications.NotificationEvent, notify bool) {
+	m.archiveForDigest(event)
+	if notify {
+		m.notifyNow(event)
+	}
 }
 
 // GetMonitor returns a specific monitor instance
