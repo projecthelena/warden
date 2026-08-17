@@ -46,6 +46,11 @@ type Monitor struct {
 	isFlapping       bool                 // current flap state
 	flapStabilizedAt time.Time            // when flapping last stopped (grace period)
 
+	// alertsMuted mirrors the monitor's per-monitor mute. Held here so every notification
+	// path can honour it, not just the outage evaluator: the UI promises a muted monitor
+	// "never interrupts you", which has to include flapping, stabilized and SSL expiry.
+	alertsMuted bool
+
 	// Flap detection settings
 	flapDetectionEnabled bool
 	flapWindowChecks     int
@@ -515,6 +520,20 @@ func (m *Monitor) SetLatencyThreshold(v int64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.latencyThreshold = v
+}
+
+// SetAlertsMuted records whether this monitor may interrupt anyone.
+func (m *Monitor) SetAlertsMuted(v bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.alertsMuted = v
+}
+
+// AlertsMuted reports whether notifications for this monitor are suppressed.
+func (m *Monitor) AlertsMuted() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.alertsMuted
 }
 
 // IncrementRecovery increments the consecutive up counter during recovery confirmation.

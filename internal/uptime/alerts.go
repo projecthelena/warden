@@ -210,6 +210,13 @@ func (m *Manager) announceProbeFailure(pending []db.OpenOutage, now time.Time, p
 	if distinctGroups(down) < 2 {
 		return pending, false
 	}
+
+	// The oldest member decides whether the situation has lasted long enough to speak
+	// about. Every member is then stamped, including one that failed seconds ago: the
+	// message names them as a set, so each of them *was* announced and each of their
+	// recoveries is worth reporting. Stamping only the ones individually past the window
+	// would leave the rest to fire their own alerts a tick later, which is exactly the
+	// pile-up correlation exists to prevent.
 	if decideAlertAction(down[0], now, policy) != alertFire {
 		return pending, false
 	}
@@ -235,7 +242,19 @@ func (m *Manager) announceProbeFailure(pending []db.OpenOutage, now time.Time, p
 	})
 	log.Printf("Alerting: probe-wide failure, %d of %d monitors down", affected, totalMonitors)
 
-	return nil, true
+	// Degraded outages were never part of this message, so they carry on to the ordinary
+	// path rather than being silently dropped for the tick.
+	stamped := make(map[int64]struct{}, len(down))
+	for _, o := range down {
+		stamped[o.ID] = struct{}{}
+	}
+	var leftover []db.OpenOutage
+	for _, o := range pending {
+		if _, done := stamped[o.ID]; !done {
+			leftover = append(leftover, o)
+		}
+	}
+	return leftover, true
 }
 
 // announceGroupFailures turns "eleven monitors in NodeSource returned 404 within two
@@ -326,7 +345,11 @@ func (m *Manager) announceSingle(o db.OpenOutage, now time.Time, policy alertPol
 			MonitorID:   o.MonitorID,
 			MonitorName: o.MonitorName,
 			MonitorURL:  o.MonitorURL,
-			Type:        notifications.EventFlapping,
+			// Deliberately the outage's own type rather than "flapping": this replaces the
+			// down alert that outage would have sent, and partitionOutages already checked
+			// that the user wants down alerts at all. Typing it as flapping would deliver
+			// it to someone who had turned flapping notifications off.
+			Type: outageEventType(o.Type),
 			Message: fmt.Sprintf(
 				"%s has alerted %d times in the last %s and is down again. Muting its individual alerts until it settles — it stays in the daily digest and on the dashboard.",
 				o.MonitorName, corr.ChronicLimit, formatAlertDuration(corr.ChronicWindow)),
@@ -367,12 +390,19 @@ func (m *Manager) sendReminders(eligible []db.OpenOutage, now time.Time, policy 
 			continue
 		}
 
-		ids := outageIDs(members)
-		for _, id := range ids {
+		// Stamp first, and only speak if every member took the stamp. A half-stamped
+		// incident that still sent its reminder would repeat it on the next tick for the
+		// members that failed; staying quiet costs one cycle of delay instead. A failure
+		// here skips this incident, not the rest of them.
+		failed := false
+		for _, id := range outageIDs(members) {
 			if err := m.store.MarkOutageReminded(id, now); err != nil {
 				log.Printf("Alerting: failed to stamp outage %d as reminded: %v", id, err)
-				return
+				failed = true
 			}
+		}
+		if failed {
+			continue
 		}
 
 		if len(members) == 1 {
@@ -390,11 +420,19 @@ func (m *Manager) sendReminders(eligible []db.OpenOutage, now time.Time, policy 
 	}
 }
 
+// outageEventType maps an outage kind to the notification type that carries it, so the
+// per-event toggles the user set actually govern what they receive.
+func outageEventType(outageType string) notifications.EventType {
+	if outageType == "degraded" {
+		return notifications.EventDegraded
+	}
+	return notifications.EventDown
+}
+
 func (m *Manager) outageEvent(o db.OpenOutage, now time.Time, reminder bool) notifications.NotificationEvent {
-	kind := notifications.EventDown
+	kind := outageEventType(o.Type)
 	state := "down"
 	if o.Type == "degraded" {
-		kind = notifications.EventDegraded
 		state = "degraded"
 	}
 

@@ -564,7 +564,7 @@ func (m *Manager) resultProcessor() {
 						if isFlapping {
 							go func() { _ = m.store.CreateEvent(res.MonitorID, "flapping", "Monitor is flapping between states") }()
 							notify := mon.ShouldNotify("flapping") && eventFilter.IsEnabled("flapping")
-							m.recordEvent(notifications.NotificationEvent{
+							m.recordEvent(mon, notifications.NotificationEvent{
 								MonitorID:   res.MonitorID,
 								MonitorName: mon.GetName(),
 								MonitorURL:  mon.GetTargetURL(),
@@ -579,7 +579,7 @@ func (m *Manager) resultProcessor() {
 						} else {
 							go func() { _ = m.store.CreateEvent(res.MonitorID, "stabilized", "Monitor has stabilized") }()
 							notify := mon.ShouldNotify("stabilized") && eventFilter.IsEnabled("stabilized")
-							m.recordEvent(notifications.NotificationEvent{
+							m.recordEvent(mon, notifications.NotificationEvent{
 								MonitorID:   res.MonitorID,
 								MonitorName: mon.GetName(),
 								MonitorURL:  mon.GetTargetURL(),
@@ -702,7 +702,7 @@ func (m *Manager) processSSLCheck(res CheckResult, mon *Monitor, isMaint bool) {
 		filter := m.eventFilter
 		m.mu.RUnlock()
 
-		m.recordEvent(notifications.NotificationEvent{
+		m.recordEvent(mon, notifications.NotificationEvent{
 			MonitorID:   res.MonitorID,
 			MonitorName: mon.GetName(),
 			MonitorURL:  mon.GetTargetURL(),
@@ -819,6 +819,7 @@ func (m *Manager) Sync() {
 			// Always apply latest config to existing monitors
 			existing.ApplyConfig(cfg)
 			existing.SetLatencyThreshold(monLatencyThresh)
+			existing.SetAlertsMuted(dbM.AlertsMuted)
 
 			// Check for changes (URL, Type, Interval, or RequestConfig)
 			needRestart := existing.GetTargetURL() != dbM.URL ||
@@ -839,6 +840,7 @@ func (m *Manager) Sync() {
 			mon := NewMonitor(dbM.ID, dbM.Type, dbM.GroupID, dbM.Name, dbM.URL, interval, m.jobQueue, dbM.CreatedAt, dbM.RequestConfig)
 			mon.ApplyConfig(cfg)
 			mon.SetLatencyThreshold(monLatencyThresh)
+			mon.SetAlertsMuted(dbM.AlertsMuted)
 
 			// Hydrate history from DB
 			checks, err := m.store.GetMonitorChecks(dbM.ID, 50)
@@ -1075,12 +1077,13 @@ func (m *Manager) closeOutageAndAnnounce(monitorID string, recovery notification
 	}()
 }
 
-// recordEvent archives an event and, independently, sends it now if its type is enabled.
-// Used by the events that are inherently one-shot — flapping, stabilized, SSL expiry.
-// Down and degraded do not come through here: their timing is the alert evaluator's call.
-func (m *Manager) recordEvent(event notifications.NotificationEvent, notify bool) {
+// recordEvent archives an event and, independently, sends it now if its type is enabled
+// and the monitor is allowed to interrupt anyone. Used by the events that are inherently
+// one-shot — flapping, stabilized, SSL expiry. Down and degraded do not come through here:
+// their timing is the alert evaluator's call.
+func (m *Manager) recordEvent(mon *Monitor, event notifications.NotificationEvent, notify bool) {
 	m.archiveForDigest(event)
-	if notify {
+	if notify && !mon.AlertsMuted() {
 		m.notifyNow(event)
 	}
 }

@@ -89,6 +89,7 @@ func TestArchiveForDigest_NoOpWhenDigestIsOff(t *testing.T) {
 // separate decisions rather than one choosing between them.
 func TestRecordEvent_ArchivesAndNotifiesIndependently(t *testing.T) {
 	m, store, spy := digestRoutingManager(t, "flapping")
+	mon := m.monitors["m1"]
 
 	flap := notifications.NotificationEvent{
 		MonitorID: "m1", MonitorName: "Jellyfin",
@@ -98,7 +99,7 @@ func TestRecordEvent_ArchivesAndNotifiesIndependently(t *testing.T) {
 
 	// In the digest *and* enabled: both happen. Under the old routing the immediate send
 	// would have been skipped entirely.
-	m.recordEvent(flap, true)
+	m.recordEvent(mon, flap, true)
 	if got := digestEventTypes(t, store); len(got) != 1 {
 		t.Errorf("expected 1 archived event, got %v", got)
 	}
@@ -108,7 +109,7 @@ func TestRecordEvent_ArchivesAndNotifiesIndependently(t *testing.T) {
 
 	// Turning the immediate side off leaves the archive untouched: the summary still knows
 	// it happened.
-	m.recordEvent(flap, false)
+	m.recordEvent(mon, flap, false)
 	if got := digestEventTypes(t, store); len(got) != 2 {
 		t.Errorf("expected the second event to still be archived, got %v", got)
 	}

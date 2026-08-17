@@ -169,7 +169,9 @@ func openOutagesFor(t *testing.T, store *db.Store, ids []string, summary string)
 	if err != nil || len(open) == 0 {
 		t.Fatalf("GetOpenOutages: %v", err)
 	}
-	return open[0].StartTime
+	// The newest one: outages opened microseconds apart become due microseconds apart, so
+	// anchoring on the oldest would leave the rest a hair short of the window.
+	return open[len(open)-1].StartTime
 }
 
 // The 12-Aug case: eleven of twelve monitors returned 404 inside two minutes. That is one
@@ -312,15 +314,12 @@ func TestEvaluateAlerts_ChronicOffenderIsDamped(t *testing.T) {
 	start := openOutagesFor(t, store, []string{"m00"}, "Monitor is down")
 	m.evaluateAlerts(start.Add(3 * time.Minute))
 
-	notices := spy.byType(notifications.EventFlapping)
+	notices := spy.byType(notifications.EventDown)
 	if len(notices) != 1 {
 		t.Fatalf("expected 1 'unstable' notice, got %d: %+v", len(notices), notices)
 	}
 	if !strings.Contains(notices[0].Message, "Muting its individual alerts") {
 		t.Errorf("the notice should say what it is about to do: %q", notices[0].Message)
-	}
-	if got := spy.byType(notifications.EventDown); len(got) != 0 {
-		t.Errorf("the crossing episode should not also send a normal alert: %+v", got)
 	}
 	if err := store.CloseOutage("m00"); err != nil {
 		t.Fatalf("CloseOutage: %v", err)
@@ -331,11 +330,8 @@ func TestEvaluateAlerts_ChronicOffenderIsDamped(t *testing.T) {
 	start = openOutagesFor(t, store, []string{"m00"}, "Monitor is down")
 	m.evaluateAlerts(start.Add(3 * time.Minute))
 
-	if got := spy.byType(notifications.EventDown); len(got) != 0 {
-		t.Errorf("a damped monitor still alerted: %+v", got)
-	}
-	if got := spy.byType(notifications.EventFlapping); len(got) != 1 {
-		t.Errorf("the 'unstable' notice repeated: %d", len(got))
+	if got := spy.byType(notifications.EventDown); len(got) != 1 {
+		t.Errorf("a damped monitor alerted again — expected only the original notice, got %d", len(got))
 	}
 	open, _ := store.GetOpenOutages()
 	if open[0].NotifiedAt != nil {
@@ -440,7 +436,132 @@ func TestEvaluateAlerts_ChronicLimitZeroDisablesDamping(t *testing.T) {
 	if got := spy.byType(notifications.EventDown); len(got) != 4 {
 		t.Errorf("with damping off all 4 episodes should alert, got %d", len(got))
 	}
+	for _, e := range spy.byType(notifications.EventDown) {
+		if strings.Contains(e.Message, "Muting its individual alerts") {
+			t.Errorf("with damping off there should be no 'unstable' notice: %q", e.Message)
+		}
+	}
+}
+
+// The details sheet promises a muted monitor "never interrupts you" and the MCP says
+// "mutedMonitors never alert at all". That has to hold for every event type, not just the
+// outage evaluator's — a muted staging target was still emitting flapping, stabilized and
+// SSL expiry notifications.
+func TestRecordEvent_RespectsTheMute(t *testing.T) {
+	m, _, spy := newCorrelationTestManager(t, "g-ns", 2)
+	mon := m.monitors["m00"]
+
+	ev := notifications.NotificationEvent{
+		MonitorID: "m00", MonitorName: "monitor-m00",
+		Type: notifications.EventFlapping, Message: "Monitor is flapping between states",
+	}
+
+	m.recordEvent(mon, ev, true)
+	if got := spy.byType(notifications.EventFlapping); len(got) != 1 {
+		t.Fatalf("an unmuted monitor should notify, got %d", len(got))
+	}
+
+	mon.SetAlertsMuted(true)
+	m.recordEvent(mon, ev, true)
+	if got := spy.byType(notifications.EventFlapping); len(got) != 1 {
+		t.Errorf("a muted monitor sent a flapping notification: %+v", got)
+	}
+}
+
+// The chronic notice replaces a down alert, so it has to travel as one. Typed as flapping
+// it reached users who had turned flapping notifications off.
+func TestEvaluateAlerts_ChronicNoticeKeepsTheOutageType(t *testing.T) {
+	m, store, spy := newCorrelationTestManager(t, "g-ns", 12)
+	base := time.Now().UTC().Add(-2 * time.Hour)
+
+	for i := 0; i < 2; i++ {
+		if err := store.CreateOutage("m00", "down", "Monitor is down"); err != nil {
+			t.Fatalf("CreateOutage: %v", err)
+		}
+		open, _ := store.GetOpenOutages()
+		if _, err := store.MarkOutageNotified(open[0].ID, base.Add(time.Duration(i)*time.Minute)); err != nil {
+			t.Fatalf("MarkOutageNotified: %v", err)
+		}
+		if err := store.CloseOutage("m00"); err != nil {
+			t.Fatalf("CloseOutage: %v", err)
+		}
+	}
+
+	start := openOutagesFor(t, store, []string{"m00"}, "Monitor is down")
+	m.evaluateAlerts(start.Add(3 * time.Minute))
+
 	if got := spy.byType(notifications.EventFlapping); len(got) != 0 {
-		t.Errorf("with damping off there should be no 'unstable' notice: %+v", got)
+		t.Errorf("the chronic notice went out as a flapping event: %+v", got)
+	}
+	notices := spy.byType(notifications.EventDown)
+	if len(notices) != 1 {
+		t.Fatalf("expected the notice to travel as a down event, got %d", len(notices))
+	}
+	if !strings.Contains(notices[0].Message, "Muting its individual alerts") {
+		t.Errorf("wrong message: %q", notices[0].Message)
+	}
+}
+
+// The probe message names every monitor that is down as one set, so all of them are
+// announced by it and all of them are stamped — including one that failed seconds before.
+// Stamping only the ones individually past the window would leave the rest to fire their
+// own alerts a tick later, which is the pile-up correlation exists to prevent.
+func TestEvaluateAlerts_ProbeFailureStampsEveryMemberItNames(t *testing.T) {
+	m, store, spy := newCorrelationTestManager(t, "g-ns", 6)
+	addGroupWithMonitors(t, m, store, "g-other", "Homelab", 4)
+
+	var ids []string
+	for i := 0; i < 6; i++ {
+		ids = append(ids, fmt.Sprintf("m%02d", i))
+	}
+	for i := 0; i < 3; i++ {
+		ids = append(ids, fmt.Sprintf("g-other%02d", i))
+	}
+	start := openOutagesFor(t, store, ids, "Monitor is down")
+
+	m.evaluateAlerts(start.Add(3 * time.Minute))
+
+	if got := spy.byType(notifications.EventDown); len(got) != 1 {
+		t.Fatalf("expected 1 probe-wide alert, got %d: %+v", len(got), messages(got))
+	}
+
+	open, _ := store.GetOpenOutages()
+	for _, o := range open {
+		if o.NotifiedAt == nil {
+			t.Errorf("%s was named in the probe alert but left un-stamped — it will alert again on its own", o.MonitorID)
+		}
+	}
+}
+
+// The genuine half of the same problem: a degraded outage is never part of a probe-wide
+// message, so it must carry on to the ordinary path rather than being dropped for the tick.
+func TestEvaluateAlerts_ProbeFailureDoesNotSwallowDegraded(t *testing.T) {
+	m, store, spy := newCorrelationTestManager(t, "g-ns", 6)
+	addGroupWithMonitors(t, m, store, "g-other", "Homelab", 4)
+
+	var ids []string
+	for i := 0; i < 6; i++ {
+		ids = append(ids, fmt.Sprintf("m%02d", i))
+	}
+	for i := 0; i < 3; i++ {
+		ids = append(ids, fmt.Sprintf("g-other%02d", i))
+	}
+	openOutagesFor(t, store, ids, "Monitor is down")
+
+	// One monitor is slow rather than down, at the same moment.
+	if err := store.CreateOutage("g-other03", "degraded", "High latency detected (>1000ms)"); err != nil {
+		t.Fatalf("CreateOutage: %v", err)
+	}
+	open, _ := store.GetOpenOutages()
+	start := open[len(open)-1].StartTime
+
+	m.evaluateAlerts(start.Add(3 * time.Minute))
+
+	if got := spy.byType(notifications.EventDown); len(got) != 1 {
+		t.Fatalf("expected 1 probe-wide alert, got %d", len(got))
+	}
+	deg := spy.byType(notifications.EventDegraded)
+	if len(deg) != 1 {
+		t.Errorf("the degraded outage was swallowed by the probe verdict: got %d degraded alerts", len(deg))
 	}
 }
