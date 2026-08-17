@@ -58,12 +58,19 @@ func (s *Store) GetOpenOutages() ([]OpenOutage, error) {
 	return out, rows.Err()
 }
 
-// MarkOutageNotified stamps the moment an outage was first announced. The WHERE clause
-// keeps the stamp idempotent: two evaluator ticks racing on the same outage produce one
-// alert, because the second update matches no rows.
+// MarkOutageNotified stamps the moment an outage was first announced, and reports whether
+// this call is the one that claimed it.
+//
+// Both conditions in the WHERE clause matter. `notified_at IS NULL` keeps the stamp
+// idempotent, so two evaluator ticks racing on the same outage produce one alert.
+// `end_time IS NULL` keeps it honest: the evaluator works from a snapshot, and the monitor
+// can recover between reading that snapshot and acting on it. Without this guard the
+// evaluator would stamp a row the result processor had already closed and announce a
+// monitor that is back up — and because the recovery path checked `notified_at` before the
+// stamp landed, no "recovered" would ever follow it.
 func (s *Store) MarkOutageNotified(id int64, at time.Time) (bool, error) {
 	res, err := s.db.Exec(s.rebind(
-		"UPDATE monitor_outages SET notified_at = ? WHERE id = ? AND notified_at IS NULL"),
+		"UPDATE monitor_outages SET notified_at = ? WHERE id = ? AND notified_at IS NULL AND end_time IS NULL"),
 		at.UTC(), id)
 	if err != nil {
 		return false, err
@@ -76,9 +83,11 @@ func (s *Store) MarkOutageNotified(id int64, at time.Time) (bool, error) {
 }
 
 // MarkOutageReminded records that a reminder went out for an outage that is still open.
+// Same race as MarkOutageNotified: an outage that closed since the snapshot was read has
+// nothing left to remind anyone about.
 func (s *Store) MarkOutageReminded(id int64, at time.Time) error {
 	_, err := s.db.Exec(s.rebind(
-		"UPDATE monitor_outages SET last_reminder_at = ? WHERE id = ?"), at.UTC(), id)
+		"UPDATE monitor_outages SET last_reminder_at = ? WHERE id = ? AND end_time IS NULL"), at.UTC(), id)
 	return err
 }
 

@@ -284,15 +284,20 @@ func (s *Store) CreateEventWithDetails(monitorID, eventType, message string, d *
 	return err
 }
 
+// CreateOutage opens an outage, stamping the start time from Go rather than leaving it to
+// the column default. The default is CURRENT_TIMESTAMP, which on Postgres resolves in the
+// session's timezone; SQLite's is UTC. That inconsistency was harmless while start_time
+// only fed a display, but the alerting ladder now measures against it, and on a non-UTC
+// Postgres session the difference is the offset — enough to hold back every alert.
 func (s *Store) CreateOutage(monitorID, eventType, summary string) error {
-	_, err := s.db.Exec(s.rebind("INSERT INTO monitor_outages (monitor_id, type, summary) VALUES (?, ?, ?)"),
-		monitorID, eventType, summary)
+	_, err := s.db.Exec(s.rebind("INSERT INTO monitor_outages (monitor_id, type, summary, start_time) VALUES (?, ?, ?, ?)"),
+		monitorID, eventType, summary, time.Now().UTC())
 	return err
 }
 
 func (s *Store) CloseOutage(monitorID string) error {
 	// Close any active outages for this monitor
-	_, err := s.db.Exec(s.rebind("UPDATE monitor_outages SET end_time = CURRENT_TIMESTAMP WHERE monitor_id = ? AND end_time IS NULL"), monitorID)
+	_, err := s.db.Exec(s.rebind("UPDATE monitor_outages SET end_time = ? WHERE monitor_id = ? AND end_time IS NULL"), time.Now().UTC(), monitorID)
 	return err
 }
 

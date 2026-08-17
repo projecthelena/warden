@@ -167,3 +167,95 @@ func TestCloseOutageReport_NoOpenOutage(t *testing.T) {
 		}
 	})
 }
+
+// The evaluator works from a snapshot, so a monitor can recover between the read and the
+// stamp. Stamping a closed outage announces a monitor that is already back up, and no
+// "recovered" ever follows because the recovery path read notified_at before the stamp
+// landed.
+func TestMarkOutageNotified_RefusesAClosedOutage(t *testing.T) {
+	RunTestWithBothDBs(t, "closed outage guard", func(t *testing.T, s *Store) {
+		seedOutageFixture(t, s)
+		if err := s.CreateOutage("m1", "down", "Monitor is down"); err != nil {
+			t.Fatalf("CreateOutage: %v", err)
+		}
+		open, _ := s.GetOpenOutages()
+		id := open[0].ID
+
+		// The monitor recovers first — this is the CloseOutageReport the result processor
+		// runs, which decides no recovery is worth announcing.
+		alerted, err := s.CloseOutageReport("m1")
+		if err != nil {
+			t.Fatalf("CloseOutageReport: %v", err)
+		}
+		if alerted {
+			t.Fatal("a silent outage must not report as announced")
+		}
+
+		// Now the evaluator, holding its stale snapshot, tries to announce it.
+		claimed, err := s.MarkOutageNotified(id, time.Now().UTC())
+		if err != nil {
+			t.Fatalf("MarkOutageNotified: %v", err)
+		}
+		if claimed {
+			t.Error("a closed outage was claimed for an alert — that alert would never get a recovery")
+		}
+	})
+}
+
+func TestMarkOutageReminded_RefusesAClosedOutage(t *testing.T) {
+	RunTestWithBothDBs(t, "closed reminder guard", func(t *testing.T, s *Store) {
+		seedOutageFixture(t, s)
+		if err := s.CreateOutage("m1", "down", "Monitor is down"); err != nil {
+			t.Fatalf("CreateOutage: %v", err)
+		}
+		open, _ := s.GetOpenOutages()
+		id := open[0].ID
+		if _, err := s.MarkOutageNotified(id, time.Now().UTC()); err != nil {
+			t.Fatalf("MarkOutageNotified: %v", err)
+		}
+		if err := s.CloseOutage("m1"); err != nil {
+			t.Fatalf("CloseOutage: %v", err)
+		}
+
+		if err := s.MarkOutageReminded(id, time.Now().UTC()); err != nil {
+			t.Fatalf("MarkOutageReminded: %v", err)
+		}
+
+		var reminded interface{}
+		if err := s.db.QueryRow(s.rebind("SELECT last_reminder_at FROM monitor_outages WHERE id = ?"), id).Scan(&reminded); err != nil {
+			t.Fatalf("readback: %v", err)
+		}
+		if reminded != nil {
+			t.Error("a closed outage was stamped as reminded")
+		}
+	})
+}
+
+// start_time is load-bearing now: the sustained ladder measures against it. Leaving it to
+// CURRENT_TIMESTAMP means SQLite writes UTC and Postgres writes the session's local time,
+// so on a non-UTC server the elapsed time would be wrong by the offset.
+func TestCreateOutage_StampsStartTimeInUTC(t *testing.T) {
+	RunTestWithBothDBs(t, "outage clock", func(t *testing.T, s *Store) {
+		seedOutageFixture(t, s)
+
+		before := time.Now().UTC().Add(-2 * time.Second)
+		if err := s.CreateOutage("m1", "down", "Monitor is down"); err != nil {
+			t.Fatalf("CreateOutage: %v", err)
+		}
+		after := time.Now().UTC().Add(2 * time.Second)
+
+		open, err := s.GetOpenOutages()
+		if err != nil || len(open) != 1 {
+			t.Fatalf("GetOpenOutages: %v", err)
+		}
+		got := open[0].StartTime.UTC()
+		if got.Before(before) || got.After(after) {
+			t.Errorf("start_time = %v, expected it to sit between %v and %v — the clocks disagree", got, before, after)
+		}
+
+		// And the elapsed time the alerting ladder computes has to be non-negative.
+		if elapsed := time.Now().UTC().Sub(got); elapsed < 0 {
+			t.Errorf("elapsed since the outage opened is negative (%v): alerts would never fire", elapsed)
+		}
+	})
+}
