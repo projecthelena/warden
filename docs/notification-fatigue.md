@@ -52,6 +52,31 @@ It works by measuring the percentage of state transitions in a sliding window. U
 
 Default: **enabled**, 25% threshold over last 21 checks.
 
+### Adaptive Latency Thresholds
+
+"Slow" is not a single number. A health check that answers in 254ms and a homepage that answers in 427ms are not degraded at the same point, and a fixed global threshold gets both wrong: too high for the fast one, too low for the slow one.
+
+Warden learns each monitor's own p50 and p95 from its recent successful checks and marks it degraded above `max(p95 x 1.5, p95 + 100ms)`. The multiplier governs for normal services; the 100ms floor takes over for very fast targets, so a service whose p95 is 8ms is not called degraded at 12ms.
+
+```
+service normally at 254ms, p95 420ms  → degraded above 630ms
+service normally at 5ms,   p95   8ms  → degraded above 108ms
+```
+
+The alert message says what normal is, because a bare ">630ms" gives the reader no way to judge it:
+
+```
+High latency detected (>630ms, normally ~254ms)
+```
+
+Only successful checks feed the baseline — a failed check's latency is how long it took to fail, which would inflate "normal" exactly when the monitor is in trouble. Baselines are recomputed hourly over a 7-day window and persisted, so a restart does not spend an hour with no idea what normal looks like.
+
+**Precedence.** A per-monitor latency threshold set by hand always wins: it is a deliberate statement about that service, usually an SLA, and nothing learned may quietly overrule it. Failing that, the monitor's own baseline. Failing that — a new monitor, or one with under 200 successful checks — the fixed global threshold.
+
+**Repointing a monitor** at a different target does not reset its baseline. Warden keeps a monitor's history across edits rather than discarding it, so the old target's checks remain in the window and the baseline re-learns gradually as the window rolls past the change. If the new target is fast or slow enough that the old numbers matter in the meantime, set the per-monitor threshold, which outranks the baseline.
+
+Set **High Latency → Learn what is normal for each monitor** to off to go back to a single fixed threshold for everything.
+
 ### Correlated Incidents
 
 Monitors that fail together are usually one thing failing. When enough of a group opens an outage inside the correlation window, Warden sends **one** message naming the group and the affected monitors instead of one per monitor.
@@ -105,15 +130,22 @@ All settings live in **Settings** on the dashboard. Changes apply immediately to
 | Probe-wide share (%) | 80 | 1-100 |
 | Repeat-offender limit | 3 | 0-1000 |
 | Repeat-offender window (minutes) | 1440 | 1-43200 |
+| Adaptive latency thresholds | true | true/false |
+| Latency baseline window (days) | 7 | 1-90 |
+| Latency baseline minimum samples | 200 | 1-1000000 |
+| Degraded at (% of p95) | 150 | 100-10000 |
+| Degraded floor above p95 (ms) | 100 | 0-60000 |
 | Flap detection enabled | true | true/false |
 | Flap window (checks) | 21 | 3-100 |
 | Flap threshold (%) | 25 | 1-100 |
 
 ### Per-Monitor Overrides
 
-**Confirmation threshold** and **cooldown** can be overridden on individual monitors (in the monitor's Advanced Settings). This lets you set threshold=1 on critical monitors while keeping threshold=5 on less important ones. When not set, the global default is used.
+**Confirmation threshold**, **cooldown** and **latency threshold** can be overridden on individual monitors (in the monitor's Advanced Settings). This lets you set threshold=1 on critical monitors while keeping threshold=5 on less important ones. When not set, the global default is used — except for latency, where an unset value means the monitor's own learned baseline is used instead.
 
-Flap detection settings are global only.
+**Alerts muted** is also per-monitor, from the monitor's details panel.
+
+Flap detection, correlation and repeat-offender settings are global only.
 
 ## The digest does not silence anything
 

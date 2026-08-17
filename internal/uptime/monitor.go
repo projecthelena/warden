@@ -1,6 +1,7 @@
 package uptime
 
 import (
+	"strconv"
 	"sync"
 	"time"
 
@@ -59,6 +60,10 @@ type Monitor struct {
 	// Recovery confirmation
 	recoveryConfirmationChecks int
 	consecutiveUpCount         int
+
+	// baselineP50 is this monitor's own median latency, used only to phrase the degraded
+	// message. Zero means no baseline yet, and the message falls back to the bare threshold.
+	baselineP50 int64
 }
 
 // NotificationEventFilter holds per-event-type notification toggle state.
@@ -534,6 +539,26 @@ func (m *Monitor) AlertsMuted() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.alertsMuted
+}
+
+// SetBaselineP50 records the monitor's median latency for use in messages.
+func (m *Monitor) SetBaselineP50(v int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.baselineP50 = v
+}
+
+// DegradedMessage phrases the high-latency event. With a baseline it names what normal
+// looks like, because an adaptive threshold like ">630ms" is otherwise a number with no
+// story: the reader cannot tell whether that is twice this service's normal or a tenth.
+func (m *Monitor) DegradedMessage() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.baselineP50 > 0 {
+		return "High latency detected (>" + strconv.FormatInt(m.latencyThreshold, 10) +
+			"ms, normally ~" + strconv.FormatInt(m.baselineP50, 10) + "ms)"
+	}
+	return "High latency detected (>" + strconv.FormatInt(m.latencyThreshold, 10) + "ms)"
 }
 
 // IncrementRecovery increments the consecutive up counter during recovery confirmation.

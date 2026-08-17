@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/projecthelena/warden/internal/db"
 )
 
 // checkNowWait is how long a forced check gets to come back before we admit we do not
@@ -65,6 +66,14 @@ type GetMonitorLatencyOutput struct {
 	AverageMs int64           `json:"averageMs"`
 	SlowestMs int64           `json:"slowestMs"`
 	Failures  int             `json:"failures"`
+	// What this monitor normally does, from its own recent history. Without it a raw
+	// number of milliseconds cannot be judged: 650ms is fine for one target and a
+	// two-and-a-half-times regression for another.
+	BaselineP50Ms   int64  `json:"baselineP50Ms,omitempty"`
+	BaselineP95Ms   int64  `json:"baselineP95Ms,omitempty"`
+	BaselineSamples int    `json:"baselineSamples,omitempty"`
+	DegradedAboveMs int64  `json:"degradedAboveMs,omitempty"`
+	BaselineNote    string `json:"baselineNote,omitempty"`
 }
 
 func (s *Server) getMonitorLatency(ctx context.Context, _ *mcp.CallToolRequest, in GetMonitorLatencyInput) (*mcp.CallToolResult, GetMonitorLatencyOutput, error) {
@@ -107,7 +116,27 @@ func (s *Server) getMonitorLatency(ctx context.Context, _ *mcp.CallToolRequest, 
 		out.AverageMs = total / counted
 	}
 
+	if b, ok, err := s.store.GetLatencyBaseline(m.ID); err == nil && ok {
+		out.BaselineP50Ms = b.P50
+		out.BaselineP95Ms = b.P95
+		out.BaselineSamples = b.Samples
+		out.DegradedAboveMs = degradedAbove(b, s.settingInt("notification.latency.factor_percent", 150),
+			int64(s.settingInt("notification.latency.floor_ms", 100)))
+		out.BaselineNote = "p50/p95 over this monitor's own recent successful checks; degradedAboveMs is the line it must cross to count as slow."
+	}
+
 	return nil, out, nil
+}
+
+// degradedAbove mirrors the manager's adaptive threshold so the tool reports the same line
+// the alerting layer actually uses.
+func degradedAbove(b db.LatencyBaseline, factorPercent int, floorMs int64) int64 {
+	byFactor := b.P95 * int64(factorPercent) / 100
+	byFloor := b.P95 + floorMs
+	if byFactor > byFloor {
+		return byFactor
+	}
+	return byFloor
 }
 
 type ChannelSummary struct {

@@ -241,6 +241,9 @@ function NotificationIntelligence() {
     const [alertSustained, setAlertSustained] = useState(settings?.["notification.alert.sustained_seconds"] || "180");
     const [alertReminder, setAlertReminder] = useState(settings?.["notification.alert.reminder_minutes"] || "30");
     const [alertRepeat, setAlertRepeat] = useState(settings?.["notification.alert.repeat_reminder_minutes"] || "60");
+    const [adaptiveLatency, setAdaptiveLatency] = useState(settings?.["notification.latency.adaptive_enabled"] !== "false");
+    const [latencyFactor, setLatencyFactor] = useState(settings?.["notification.latency.factor_percent"] || "150");
+    const [latencyBaselineDays, setLatencyBaselineDays] = useState(settings?.["notification.latency.baseline_days"] || "7");
     const [flapEnabled, setFlapEnabled] = useState(settings?.["notification.flap_detection_enabled"] !== "false");
     const [flapWindow, setFlapWindow] = useState(settings?.["notification.flap_window_checks"] || "21");
     const [flapThreshold, setFlapThreshold] = useState(settings?.["notification.flap_threshold_percent"] || "25");
@@ -275,6 +278,9 @@ function NotificationIntelligence() {
             setAlertSustained(settings["notification.alert.sustained_seconds"] || "180");
             setAlertReminder(settings["notification.alert.reminder_minutes"] || "30");
             setAlertRepeat(settings["notification.alert.repeat_reminder_minutes"] || "60");
+            setAdaptiveLatency(settings["notification.latency.adaptive_enabled"] !== "false");
+            setLatencyFactor(settings["notification.latency.factor_percent"] || "150");
+            setLatencyBaselineDays(settings["notification.latency.baseline_days"] || "7");
             setFlapEnabled(settings["notification.flap_detection_enabled"] !== "false");
             setFlapWindow(settings["notification.flap_window_checks"] || "21");
             setFlapThreshold(settings["notification.flap_threshold_percent"] || "25");
@@ -301,6 +307,9 @@ function NotificationIntelligence() {
             "notification.alert.sustained_seconds": alertSustained,
             "notification.alert.reminder_minutes": alertReminder,
             "notification.alert.repeat_reminder_minutes": alertRepeat,
+            "notification.latency.adaptive_enabled": String(adaptiveLatency),
+            "notification.latency.factor_percent": latencyFactor,
+            "notification.latency.baseline_days": latencyBaselineDays,
             "notification.flap_detection_enabled": flapEnabled ? "true" : "false",
             "notification.flap_window_checks": flapWindow,
             "notification.flap_threshold_percent": flapThreshold,
@@ -522,6 +531,69 @@ function NotificationIntelligence() {
                                                 </div>
                                             </div>
                                         )}
+                                    </div>
+                                </AccordionContent>
+                            </AccordionItem>
+
+                            {/* Latency baseline */}
+                            <AccordionItem value="latency-baseline" className="border-none">
+                                <AccordionTrigger className="hover:no-underline text-sm font-semibold text-muted-foreground uppercase tracking-wider py-2">
+                                    High Latency
+                                </AccordionTrigger>
+                                <AccordionContent>
+                                    <div className="space-y-4 pt-2">
+                                        <div className="flex items-center justify-between">
+                                            <div className="pr-4">
+                                                <Label>Learn what is normal for each monitor</Label>
+                                                <div className="text-sm text-muted-foreground mt-1">
+                                                    Judges each monitor against its own recent latency instead of one number
+                                                    for everything. A health check that answers in 250ms and a homepage that
+                                                    answers in 430ms are not slow at the same point.
+                                                </div>
+                                            </div>
+                                            <Switch
+                                                checked={adaptiveLatency}
+                                                onCheckedChange={setAdaptiveLatency}
+                                                data-testid="adaptive-latency-switch"
+                                            />
+                                        </div>
+                                        {adaptiveLatency && (
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="grid gap-2">
+                                                    <Label htmlFor="latency-factor">
+                                                        Slow at (% of p95)
+                                                        <HelpTip text="A monitor counts as degraded above this multiple of its own 95th-percentile latency. 150 means 1.5x. The threshold never sits closer than 100ms above p95, so very fast targets do not alert on noise." />
+                                                    </Label>
+                                                    <Input
+                                                        id="latency-factor"
+                                                        type="number"
+                                                        min={100}
+                                                        max={10000}
+                                                        value={latencyFactor}
+                                                        onChange={(e) => setLatencyFactor(e.target.value)}
+                                                    />
+                                                </div>
+                                                <div className="grid gap-2">
+                                                    <Label htmlFor="latency-baseline-days">
+                                                        Learn from (days)
+                                                        <HelpTip text="How far back the baseline looks. Shorter adapts faster to a service that genuinely changed; longer is steadier." />
+                                                    </Label>
+                                                    <Input
+                                                        id="latency-baseline-days"
+                                                        type="number"
+                                                        min={1}
+                                                        max={90}
+                                                        value={latencyBaselineDays}
+                                                        onChange={(e) => setLatencyBaselineDays(e.target.value)}
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                        <div className="text-sm text-muted-foreground">
+                                            {adaptiveLatency
+                                                ? "Monitors without enough history yet, and monitors with their own latency threshold set, keep using that fixed number."
+                                                : "Every monitor is judged against the fixed latency threshold above."}
+                                        </div>
                                     </div>
                                 </AccordionContent>
                             </AccordionItem>

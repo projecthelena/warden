@@ -138,6 +138,28 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		alertRepeat = "60"
 	}
 
+	// Adaptive latency baseline
+	adaptiveEnabled, _ := h.store.GetSetting("notification.latency.adaptive_enabled")
+	if adaptiveEnabled == "" {
+		adaptiveEnabled = "true"
+	}
+	baselineDays, _ := h.store.GetSetting("notification.latency.baseline_days")
+	if baselineDays == "" {
+		baselineDays = "7"
+	}
+	baselineMinSamples, _ := h.store.GetSetting("notification.latency.min_samples")
+	if baselineMinSamples == "" {
+		baselineMinSamples = "200"
+	}
+	baselineFactor, _ := h.store.GetSetting("notification.latency.factor_percent")
+	if baselineFactor == "" {
+		baselineFactor = "150"
+	}
+	baselineFloor, _ := h.store.GetSetting("notification.latency.floor_ms")
+	if baselineFloor == "" {
+		baselineFloor = "100"
+	}
+
 	// Correlation and repeat-offender damping
 	corrWindow, _ := h.store.GetSetting("notification.correlation.window_seconds")
 	if corrWindow == "" {
@@ -214,6 +236,11 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		"notification.alert.sustained_seconds":       alertSustained,
 		"notification.alert.reminder_minutes":        alertReminder,
 		"notification.alert.repeat_reminder_minutes": alertRepeat,
+		"notification.latency.adaptive_enabled":      adaptiveEnabled,
+		"notification.latency.baseline_days":         baselineDays,
+		"notification.latency.min_samples":           baselineMinSamples,
+		"notification.latency.factor_percent":        baselineFactor,
+		"notification.latency.floor_ms":              baselineFloor,
 		"notification.correlation.window_seconds":    corrWindow,
 		"notification.correlation.min_monitors":      corrMin,
 		"notification.correlation.group_percent":     corrGroupPct,
@@ -338,6 +365,10 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 		"notification.correlation.probe_percent":     {1, 100},
 		"notification.chronic.limit":                 {0, 1000},
 		"notification.chronic.window_minutes":        {1, 43200},
+		"notification.latency.baseline_days":         {1, 90},
+		"notification.latency.min_samples":           {1, 1000000},
+		"notification.latency.factor_percent":        {100, 10000},
+		"notification.latency.floor_ms":              {0, 60000},
 		"notification.flap_window_checks":            {3, 100},
 		"notification.flap_threshold_percent":        {1, 100},
 		"notification.recovery_confirmation_checks":  {1, 20},
@@ -361,6 +392,7 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 	// Boolean notification settings
 	notifBoolKeys := []string{
 		"notification.flap_detection_enabled",
+		"notification.latency.adaptive_enabled",
 		"notification.event.down.enabled",
 		"notification.event.up.enabled",
 		"notification.event.degraded.enabled",
