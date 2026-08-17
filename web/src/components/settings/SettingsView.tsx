@@ -445,7 +445,7 @@ function NotificationIntelligence() {
                                         <div className="grid gap-2">
                                             <Label htmlFor="cooldown-mins">
                                                 Cooldown (min)
-                                                <HelpTip text="Minutes to suppress duplicate alerts. Recovery always sends. 0 = disabled." />
+                                                <HelpTip text="Minutes to suppress repeat flapping and stabilized alerts. Down and degraded no longer use this — the reminder interval above governs how often an ongoing outage repeats. 0 = disabled." />
                                             </Label>
                                             <Input
                                                 id="cooldown-mins"

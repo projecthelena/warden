@@ -38,9 +38,9 @@ Default: **3 consecutive failures**. Set to 1 for immediate alerts.
 
 ### Notification Cooldown
 
-After an alert fires, repeat notifications for the same event type are suppressed for a cooldown period. This prevents getting an alert every check interval while a monitor stays down.
+After a flapping or stabilized alert fires, repeats of the same event type are suppressed for a cooldown period.
 
-Recovery notifications ("Monitor Recovered") bypass cooldown — you always want to know when things come back.
+Down and degraded no longer use the cooldown: how often an ongoing outage repeats is governed by the reminder interval in the sustained ladder above, which knows how long the outage has actually lasted. The cooldown only ever knew how long ago the last message was.
 
 Default: **30 minutes**. Set to 0 to disable.
 
