@@ -136,7 +136,7 @@ func weeklyInsightsEvent(findings []db.MonitorInsight, at time.Time) notificatio
 
 	return notifications.NotificationEvent{
 		MonitorName: "Weekly patterns",
-		Type:        notifications.EventStabilized,
+		Type:        notifications.EventInsights,
 		Message:     header + "\n" + strings.Join(lines, "\n"),
 		Time:        at,
 	}

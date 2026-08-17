@@ -24,6 +24,10 @@ const (
 	EventSSLExpiring EventType = "ssl_expiring"
 	EventFlapping    EventType = "flapping"
 	EventStabilized  EventType = "stabilized"
+	// EventInsights is the weekly pattern summary. Not a monitor state at all, which is
+	// why it needs its own type: sending it as "stabilized" would title it "Monitor
+	// Stabilized" and read as nonsense.
+	EventInsights EventType = "insights"
 )
 
 // NotificationEvent represents the data needed to send a notification
@@ -130,6 +134,8 @@ func (n *SlackNotifier) Send(event NotificationEvent) error {
 		color = "#9b59b6" // Purple
 	case EventStabilized:
 		color = "#3498db" // Blue
+	case EventInsights:
+		color = "#6c757d" // Grey — informational, not a state change
 	}
 
 	emoji := ":white_check_mark:"
@@ -144,6 +150,8 @@ func (n *SlackNotifier) Send(event NotificationEvent) error {
 		emoji = ":cyclone:"
 	case EventStabilized:
 		emoji = ":large_blue_circle:"
+	case EventInsights:
+		emoji = ":mag:"
 	}
 
 	title := "Monitor Recovered"
@@ -158,6 +166,8 @@ func (n *SlackNotifier) Send(event NotificationEvent) error {
 		title = "Monitor Flapping"
 	case EventStabilized:
 		title = "Monitor Stabilized"
+	case EventInsights:
+		title = "Weekly Patterns"
 	}
 
 	payload := map[string]interface{}{

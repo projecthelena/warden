@@ -133,8 +133,10 @@ func TestWeeklyInsightsEvent_PutsConfidentFindingsFirst(t *testing.T) {
 
 	ev := weeklyInsightsEvent(findings, mondayAt(9, 0))
 
-	if ev.Type != notifications.EventStabilized {
-		t.Errorf("type = %v", ev.Type)
+	// Its own type, not "stabilized": a pattern summary is not a monitor state change, and
+	// borrowing one would title the message "Monitor Stabilized".
+	if ev.Type != notifications.EventInsights {
+		t.Errorf("type = %v, want the dedicated insights type", ev.Type)
 	}
 	if !strings.Contains(ev.Message, "2 pattern(s) across 2 monitor(s)") {
 		t.Errorf("header does not count the findings: %q", ev.Message)
