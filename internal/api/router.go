@@ -241,6 +241,9 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 				// Events (for history)
 				dashboard.Get("/events", eventH.GetSystemEvents)
 
+				// Pattern findings across every monitor
+				dashboard.Get("/insights", insightH.GetInsights)
+
 				// Users (admin only)
 				dashboard.Post("/users", userH.CreateUser)
 				dashboard.Get("/users", userH.ListUsers)

@@ -185,7 +185,7 @@ func TestDetectTimeOfDay(t *testing.T) {
 
 func TestTimeOfDayFinding_TranslatesToLocalTime(t *testing.T) {
 	bogota := time.FixedZone("-05", -5*3600)
-	f := TimeOfDayFinding("prod-3", 18, 8, 0.78, 32, bogota)
+	f := TimeOfDayFinding("prod-3", 18, 8, 0.78, 32, bogota, time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC))
 
 	if f.Kind != KindTimeOfDay {
 		t.Errorf("kind = %q", f.Kind)
@@ -277,5 +277,27 @@ func TestDetectDrift(t *testing.T) {
 
 	if _, _, _, found := DetectDrift(nil, mk(250, 168), 25, 20); found {
 		t.Error("empty input produced a finding")
+	}
+}
+
+// A zone that observes daylight saving has two different offsets, so the band has to be
+// translated at the time it was detected rather than at a fixed date.
+func TestTimeOfDayFinding_UsesTheOffsetInEffect(t *testing.T) {
+	madrid, err := time.LoadLocation("Europe/Madrid")
+	if err != nil {
+		t.Skip("tzdata unavailable")
+	}
+
+	winter := TimeOfDayFinding("api", 18, 8, 0.8, 20, madrid, time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC))
+	summer := TimeOfDayFinding("api", 18, 8, 0.8, 20, madrid, time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC))
+
+	if !contains(winter.Summary, "19:00–03:00 your time") {
+		t.Errorf("winter band: %q", winter.Summary)
+	}
+	if !contains(summer.Summary, "20:00–04:00 your time") {
+		t.Errorf("summer band: %q", summer.Summary)
+	}
+	if winter.Summary == summer.Summary {
+		t.Error("the same band rendered identically in winter and summer — the offset is not being sampled")
 	}
 }

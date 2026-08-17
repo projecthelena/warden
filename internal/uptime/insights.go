@@ -64,10 +64,29 @@ func (m *Manager) refreshInsights(now time.Time) {
 	loc := m.notificationTimezone
 	m.mu.RUnlock()
 
-	for id, mon := range m.GetAll() {
+	running := m.GetAll()
+	for id, mon := range running {
 		findings := m.detectForMonitor(id, mon.GetName(), since, now, intervals, loc)
 		if err := m.store.ReplaceMonitorInsights(id, findings, now); err != nil {
 			log.Printf("Insights: failed to store findings for %s: %v", id, err)
+		}
+	}
+
+	// A paused monitor is not in the running set, so its findings would otherwise sit
+	// there forever — still on its page, still counted in the weekly summary, describing
+	// a fortnight that keeps receding. Nothing is being measured, so there is nothing to
+	// report.
+	monitors, err := m.store.GetMonitors()
+	if err != nil {
+		log.Printf("Insights: failed to load monitors: %v", err)
+		return
+	}
+	for _, dbM := range monitors {
+		if _, isRunning := running[dbM.ID]; isRunning {
+			continue
+		}
+		if err := m.store.ReplaceMonitorInsights(dbM.ID, nil, now); err != nil {
+			log.Printf("Insights: failed to clear findings for %s: %v", dbM.ID, err)
 		}
 	}
 }
@@ -85,7 +104,7 @@ func (m *Manager) detectForMonitor(id, name string, since, now time.Time, interv
 
 	samples := make([]insights.Sample, 0, len(points))
 	for _, p := range points {
-		samples = append(samples, insights.Sample{Hour: p.Timestamp, LatencyMs: p.Latency, HadFailure: p.Failed})
+		samples = append(samples, insights.Sample{Hour: p.Timestamp, LatencyMs: p.Latency})
 	}
 
 	if len(samples) >= insightsMinHours {
@@ -116,15 +135,20 @@ func (m *Manager) detectForMonitor(id, name string, since, now time.Time, interv
 		// looks like the one before it.
 		half := len(samples) / 2
 		if pct, recent, prev, found := insights.DetectDrift(samples[half:], samples[:half], 25, 20); found {
-			direction := "slower"
+			kind := insights.KindLatencyDrift
+			summary := fmt.Sprintf(
+				"%s is %.0f%% slower than it was a week ago: a typical response went from %dms to %dms. Nothing alerted, because no single check was slow enough to.",
+				name, pct, prev, recent)
 			if pct < 0 {
-				direction = "faster"
+				// Worth saying out loud: it is how you find out a fix landed.
+				kind = insights.KindLatencyImproved
+				summary = fmt.Sprintf(
+					"%s is %.0f%% faster than it was a week ago: a typical response went from %dms to %dms.",
+					name, abs(pct), prev, recent)
 			}
 			out = append(out, toStored(id, insights.Finding{
-				Kind: insights.KindLatencyDrift,
-				Summary: fmt.Sprintf(
-					"%s is %.0f%% %s than it was a week ago: a typical response went from %dms to %dms. Nothing alerted, because no single check was slow enough to.",
-					name, abs(pct), direction, prev, recent),
+				Kind:    kind,
+				Summary: summary,
 				Detail: map[string]any{
 					"changePercent":    int(pct),
 					"recentMedianMs":   recent,
@@ -140,7 +164,7 @@ func (m *Manager) detectForMonitor(id, name string, since, now time.Time, interv
 	if err != nil {
 		log.Printf("Insights: failed to load event times for %s: %v", id, err)
 	} else if start, width, share, found := insights.DetectTimeOfDay(times, 8, 8, 0.6); found {
-		out = append(out, toStored(id, insights.TimeOfDayFinding(name, start, width, share, len(times), loc)))
+		out = append(out, toStored(id, insights.TimeOfDayFinding(name, start, width, share, len(times), loc, now)))
 	}
 
 	// Monitors that fail together share a cause and should be investigated together.

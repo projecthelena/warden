@@ -2,7 +2,9 @@
 
 Alerting answers "is it broken right now". This answers the slower question you only get to by staring at charts: this one climbs for four hours and then restarts, that one only misbehaves during business hours, these two always fail together.
 
-Warden recomputes findings once a day over the last 14 days and replaces them wholesale, so a pattern that stops happening stops being reported. A stale finding is worse than none — it sends you looking for something that is no longer there.
+Warden recomputes findings once a day over the last 14 days and replaces them wholesale, so a pattern that stops happening stops being reported. Pausing a monitor clears its findings: nothing is being measured, so there is nothing to report.
+
+Only successful checks feed the detectors. A failed check's latency is the time spent failing, and a single 10-second timeout would add enough to its hour to manufacture a ramp and a reset out of an outage. A stale finding is worse than none — it sends you looking for something that is no longer there.
 
 They show up in three places: on a monitor's page under **Patterns**, through `list_insights` in the MCP, and — if you turn it on — in a weekly summary on your notification channels.
 
@@ -36,7 +38,7 @@ Median latency this week against last week. This catches the slow slide that nev
 
 > API is 40% slower than it was a week ago: a typical response went from 250ms to 350ms. Nothing alerted, because no single check was slow enough to.
 
-Improvements are reported too — knowing a fix worked is worth as much as knowing it broke.
+Improvements are reported too, as their own finding labelled "Getting faster" — knowing a fix worked is worth as much as knowing it broke.
 
 ## What it deliberately is not
 

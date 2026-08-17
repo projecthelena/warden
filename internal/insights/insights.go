@@ -25,6 +25,10 @@ const (
 	KindRepeatOffender Kind = "repeat_offender"
 	KindCoFailure      Kind = "co_failure"
 	KindLatencyDrift   Kind = "latency_drift"
+	// KindLatencyImproved is the same measurement pointing the other way. It gets its own
+	// kind rather than a negative number under "latency_drift" so the dashboard is not
+	// left labelling a 40% speed-up as "Getting slower".
+	KindLatencyImproved Kind = "latency_improved"
 )
 
 // Finding is one thing worth telling a human, in their words rather than the detector's.
@@ -40,11 +44,10 @@ type Finding struct {
 	Confidence string `json:"confidence"`
 }
 
-// Sample is one hour of a monitor's latency history.
+// Sample is one hour of a monitor's latency history, averaged over its successful checks.
 type Sample struct {
-	Hour       time.Time
-	LatencyMs  int64
-	HadFailure bool
+	Hour      time.Time
+	LatencyMs int64
 }
 
 // Interval is one outage, used for co-failure analysis.
@@ -273,12 +276,16 @@ func DetectTimeOfDay(times []time.Time, bandHours int, minEvents int, minShare f
 
 // TimeOfDayFinding renders the band, in UTC and in the operator's own zone — an operator
 // reading "18:00–02:00 UTC" at midnight should not have to do the arithmetic.
-func TimeOfDayFinding(monitorName string, startHour, width int, share float64, n int, loc *time.Location) Finding {
+//
+// The offset is sampled at `at` rather than a fixed date, because in any zone that observes
+// daylight saving a hard-coded month is wrong for half the year: sampling January would
+// render Europe/Madrid's summer band an hour early.
+func TimeOfDayFinding(monitorName string, startHour, width int, share float64, n int, loc *time.Location, at time.Time) Finding {
 	endHour := (startHour + width) % 24
 
 	local := ""
 	if loc != nil && loc != time.UTC {
-		_, offset := time.Date(2026, 1, 1, startHour, 0, 0, 0, time.UTC).In(loc).Zone()
+		_, offset := at.In(loc).Zone()
 		ls := ((startHour+offset/3600)%24 + 24) % 24
 		le := ((endHour+offset/3600)%24 + 24) % 24
 		local = fmt.Sprintf(" (%02d:00–%02d:00 your time)", ls, le)

@@ -89,9 +89,16 @@ func (s *Store) GetMonitorInsights(monitorID string) ([]MonitorInsight, error) {
 	return out, rows.Err()
 }
 
-// HourlyLatency returns one average-latency point per hour for a monitor. Hourly is the
-// resolution the shapes live at: finer buries a four-hour ramp in per-check noise, coarser
-// erases it entirely.
+// HourlyLatency returns one average-latency point per hour for a monitor, over its
+// successful checks only. Hourly is the resolution the shapes live at: finer buries a
+// four-hour ramp in per-check noise, coarser erases it entirely.
+//
+// Failed checks are excluded for the same reason the baseline excludes them — a failed
+// check's latency is the time spent failing. Here it matters more than for a chart: a
+// single 10-second timeout adds 10,000ms to its hour, which is enough to manufacture a
+// ramp and a reset out of an outage and hand the sawtooth detector a pattern that never
+// happened. Hours with no successful check are omitted rather than reported as zero,
+// which would read as an impossibly fast hour and fake a reset.
 func (s *Store) HourlyLatency(monitorID string, since time.Time) ([]LatencyPoint, error) {
 	group := "strftime('%Y-%m-%d %H:00:00', timestamp)"
 	if s.IsPostgres() {
@@ -100,10 +107,9 @@ func (s *Store) HourlyLatency(monitorID string, since time.Time) ([]LatencyPoint
 
 	rows, err := s.db.Query(s.rebind(`
 		SELECT `+group+` AS ts_group,
-		       CAST(AVG(latency) AS INTEGER) AS avg_latency,
-		       MAX(CASE WHEN status != 'up' THEN 1 ELSE 0 END) AS failed
+		       CAST(AVG(latency) AS INTEGER) AS avg_latency
 		FROM monitor_checks
-		WHERE monitor_id = ? AND timestamp >= ?
+		WHERE monitor_id = ? AND timestamp >= ? AND status = 'up'
 		GROUP BY ts_group
 		ORDER BY ts_group ASC`), monitorID, since.UTC())
 	if err != nil {
@@ -115,15 +121,14 @@ func (s *Store) HourlyLatency(monitorID string, since time.Time) ([]LatencyPoint
 	for rows.Next() {
 		var tsStr string
 		var latency int64
-		var failed int
-		if err := rows.Scan(&tsStr, &latency, &failed); err != nil {
+		if err := rows.Scan(&tsStr, &latency); err != nil {
 			return nil, err
 		}
 		ts, err := time.Parse("2006-01-02 15:04:05", tsStr)
 		if err != nil {
 			continue
 		}
-		out = append(out, LatencyPoint{Timestamp: ts.UTC(), Latency: latency, Failed: failed == 1})
+		out = append(out, LatencyPoint{Timestamp: ts.UTC(), Latency: latency})
 	}
 	return out, rows.Err()
 }

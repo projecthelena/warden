@@ -96,7 +96,9 @@ func TestGetMonitorInsights_ScopesToOneMonitor(t *testing.T) {
 }
 
 // Hourly is the resolution the shapes live at: finer buries a four-hour ramp in per-check
-// noise, coarser erases it entirely.
+// noise, coarser erases it entirely. And only successful checks count — a 10-second
+// timeout would add 10,000ms to its hour, which is enough to manufacture a ramp and a
+// reset out of an outage and hand the sawtooth detector a pattern that never happened.
 func TestHourlyLatency(t *testing.T) {
 	RunTestWithBothDBs(t, "hourly latency", func(t *testing.T, s *Store) {
 		_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
@@ -104,10 +106,15 @@ func TestHourlyLatency(t *testing.T) {
 
 		base := time.Date(2026, 8, 16, 10, 0, 0, 0, time.UTC)
 		checks := []CheckResult{
+			// Hour 10: two good checks and one long timeout. The average must ignore the
+			// timeout entirely.
 			{MonitorID: "m1", Status: "up", Latency: 100, Timestamp: base.Add(5 * time.Minute)},
 			{MonitorID: "m1", Status: "up", Latency: 300, Timestamp: base.Add(25 * time.Minute)},
+			{MonitorID: "m1", Status: "down", Latency: 10000, Timestamp: base.Add(45 * time.Minute)},
+			// Hour 11: healthy.
 			{MonitorID: "m1", Status: "up", Latency: 500, Timestamp: base.Add(time.Hour)},
-			{MonitorID: "m1", Status: "down", Latency: 900, Timestamp: base.Add(90 * time.Minute)},
+			// Hour 12: nothing but failures.
+			{MonitorID: "m1", Status: "down", Latency: 9000, Timestamp: base.Add(2 * time.Hour)},
 		}
 		if err := s.BatchInsertChecks(checks); err != nil {
 			t.Fatalf("BatchInsertChecks: %v", err)
@@ -118,17 +125,17 @@ func TestHourlyLatency(t *testing.T) {
 			t.Fatalf("HourlyLatency: %v", err)
 		}
 		if len(points) != 2 {
-			t.Fatalf("expected 2 hourly points, got %d", len(points))
+			t.Fatalf("expected 2 hourly points, got %d — an hour with no successful check should be omitted, not reported as zero", len(points))
 		}
 		if points[0].Latency != 200 {
-			t.Errorf("first hour averaged %d, want 200", points[0].Latency)
+			t.Errorf("first hour averaged %d, want 200 — the timeout leaked into the average", points[0].Latency)
 		}
-		if !points[1].Failed {
-			t.Error("the hour containing a failed check should be flagged")
+		if points[1].Latency != 500 {
+			t.Errorf("second hour averaged %d, want 500", points[1].Latency)
 		}
 
 		// Anything before the window is excluded.
-		points, _ = s.HourlyLatency("m1", base.Add(2*time.Hour))
+		points, _ = s.HourlyLatency("m1", base.Add(3*time.Hour))
 		if len(points) != 0 {
 			t.Errorf("expected nothing after the window, got %d points", len(points))
 		}

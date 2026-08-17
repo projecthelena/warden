@@ -1,6 +1,6 @@
 import { MonitorInsight, useMonitorInsights } from "@/hooks/useInsights";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TrendingUp, Clock, Repeat, Link2, Waves } from "lucide-react";
+import { TrendingUp, TrendingDown, Clock, Repeat, Link2, Waves } from "lucide-react";
 
 const KIND_LABEL: Record<MonitorInsight["kind"], string> = {
     latency_sawtooth: "Climbs and resets",
@@ -9,6 +9,7 @@ const KIND_LABEL: Record<MonitorInsight["kind"], string> = {
     repeat_offender: "Breaks often",
     co_failure: "Fails with another monitor",
     latency_drift: "Getting slower",
+    latency_improved: "Getting faster",
 };
 
 function KindIcon({ kind }: { kind: MonitorInsight["kind"] }) {
@@ -22,6 +23,8 @@ function KindIcon({ kind }: { kind: MonitorInsight["kind"] }) {
             return <Clock className={cls} />;
         case "co_failure":
             return <Link2 className={cls} />;
+        case "latency_improved":
+            return <TrendingDown className={cls} />;
         default:
             return <TrendingUp className={cls} />;
     }

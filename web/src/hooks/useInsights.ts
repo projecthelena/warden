@@ -12,7 +12,8 @@ export interface MonitorInsight {
         | "time_of_day"
         | "repeat_offender"
         | "co_failure"
-        | "latency_drift";
+        | "latency_drift"
+        | "latency_improved";
     summary: string;
     detail?: Record<string, unknown>;
     confidence: "high" | "medium";

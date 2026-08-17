@@ -252,3 +252,25 @@ func TestRefreshInsights_IsPerMonitor(t *testing.T) {
 		t.Errorf("the unfiltered listing returned %d, want %d", len(all), len(noisy))
 	}
 }
+
+// A paused monitor is not being measured, so it has nothing to report. Leaving its old
+// findings in place would keep them on its page and in the weekly summary, describing a
+// fortnight that keeps receding further into the past.
+func TestRefreshInsights_ClearsFindingsForPausedMonitors(t *testing.T) {
+	m, store := newAlertTestManager(t)
+	now := time.Now().UTC().Truncate(time.Hour)
+	seedHourly(t, store, "m1", prod3Hourly, now)
+
+	m.refreshInsights(now)
+	if got, _ := store.GetMonitorInsights("m1"); len(got) == 0 {
+		t.Fatal("no findings stored while the monitor was running")
+	}
+
+	// Pausing takes it out of the running set, exactly as Sync does.
+	delete(m.monitors, "m1")
+	m.refreshInsights(now)
+
+	if got, _ := store.GetMonitorInsights("m1"); len(got) != 0 {
+		t.Errorf("a paused monitor kept %d stale findings: %+v", len(got), got)
+	}
+}
