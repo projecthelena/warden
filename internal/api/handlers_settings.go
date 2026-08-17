@@ -138,6 +138,32 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		alertRepeat = "60"
 	}
 
+	// Correlation and repeat-offender damping
+	corrWindow, _ := h.store.GetSetting("notification.correlation.window_seconds")
+	if corrWindow == "" {
+		corrWindow = "300"
+	}
+	corrMin, _ := h.store.GetSetting("notification.correlation.min_monitors")
+	if corrMin == "" {
+		corrMin = "3"
+	}
+	corrGroupPct, _ := h.store.GetSetting("notification.correlation.group_percent")
+	if corrGroupPct == "" {
+		corrGroupPct = "30"
+	}
+	corrProbePct, _ := h.store.GetSetting("notification.correlation.probe_percent")
+	if corrProbePct == "" {
+		corrProbePct = "80"
+	}
+	chronicLimit, _ := h.store.GetSetting("notification.chronic.limit")
+	if chronicLimit == "" {
+		chronicLimit = "3"
+	}
+	chronicWindow, _ := h.store.GetSetting("notification.chronic.window_minutes")
+	if chronicWindow == "" {
+		chronicWindow = "1440"
+	}
+
 	// Digest Settings
 	digestEnabled, _ := h.store.GetSetting("notification.digest.enabled")
 	if digestEnabled == "" {
@@ -188,6 +214,12 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		"notification.alert.sustained_seconds":       alertSustained,
 		"notification.alert.reminder_minutes":        alertReminder,
 		"notification.alert.repeat_reminder_minutes": alertRepeat,
+		"notification.correlation.window_seconds":    corrWindow,
+		"notification.correlation.min_monitors":      corrMin,
+		"notification.correlation.group_percent":     corrGroupPct,
+		"notification.correlation.probe_percent":     corrProbePct,
+		"notification.chronic.limit":                 chronicLimit,
+		"notification.chronic.window_minutes":        chronicWindow,
 		"notification.digest.enabled":                digestEnabled,
 		"notification.digest.time":                   digestTime,
 		"notification.digest.event_types":            digestEventTypes,
@@ -300,6 +332,12 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 		"notification.alert.sustained_seconds":       {0, 86400},
 		"notification.alert.reminder_minutes":        {0, 10080},
 		"notification.alert.repeat_reminder_minutes": {0, 10080},
+		"notification.correlation.window_seconds":    {0, 86400},
+		"notification.correlation.min_monitors":      {1, 1000},
+		"notification.correlation.group_percent":     {1, 100},
+		"notification.correlation.probe_percent":     {1, 100},
+		"notification.chronic.limit":                 {0, 1000},
+		"notification.chronic.window_minutes":        {1, 43200},
 		"notification.flap_window_checks":            {3, 100},
 		"notification.flap_threshold_percent":        {1, 100},
 		"notification.recovery_confirmation_checks":  {1, 20},

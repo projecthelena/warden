@@ -75,6 +75,7 @@ export interface Monitor {
     notificationCooldownMinutes?: number;
     latencyThreshold?: number;
     requestConfig?: RequestConfig;
+    alertsMuted?: boolean;
 }
 
 export interface Group {
@@ -253,6 +254,7 @@ interface MonitorStore {
     addMonitor: (name: string, url: string, groupName: string, interval?: number) => Promise<void>;
     updateMonitor: (id: string, updates: Partial<Monitor>) => void;
     deleteMonitor: (id: string) => Promise<void>;
+    setMonitorAlertsMuted: (id: string, muted: boolean) => Promise<void>;
     pauseMonitor: (id: string) => Promise<void>;
     resumeMonitor: (id: string) => Promise<void>;
 
@@ -790,6 +792,40 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
         } catch (e) {
             console.error(e);
             toast({ title: "Error", description: "Failed to delete monitor.", variant: "destructive" });
+        }
+    },
+
+    setMonitorAlertsMuted: async (id, muted) => {
+        try {
+            const res = await fetch(`/api/monitors/${id}/alerts`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ muted })
+            });
+            if (res.ok) {
+                queryClient.invalidateQueries({ queryKey: ["monitors"] });
+                queryClient.invalidateQueries({ queryKey: ["overview"] });
+                toast({
+                    title: muted ? "Alerts muted" : "Alerts unmuted",
+                    description: muted
+                        ? "This monitor still records outages and appears in the daily digest, but will not send alerts."
+                        : "This monitor will send alerts again."
+                });
+            } else if (res.status === 404) {
+                toast({ title: "Error", description: "Monitor not found.", variant: "destructive" });
+            } else {
+                const text = await res.text();
+                let errorMsg = "Failed to update monitor alerts.";
+                try {
+                    const json = JSON.parse(text);
+                    errorMsg = json.error || errorMsg;
+                } catch { /* ignore parse error */ }
+                toast({ title: "Error", description: errorMsg, variant: "destructive" });
+            }
+        } catch (e) {
+            console.error(e);
+            toast({ title: "Error", description: "Network error while updating monitor alerts.", variant: "destructive" });
         }
     },
 

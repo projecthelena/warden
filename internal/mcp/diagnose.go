@@ -123,6 +123,12 @@ type GetNotificationConfigOutput struct {
 	AlertAfterSeconds     int              `json:"alertAfterSeconds"`
 	ReminderMinutes       int              `json:"reminderMinutes"`
 	RepeatReminderMinutes int              `json:"repeatReminderMinutes"`
+	CorrelationWindowSec  int              `json:"correlationWindowSeconds"`
+	CorrelationMinMonitor int              `json:"correlationMinMonitors"`
+	CorrelationGroupPct   int              `json:"correlationGroupPercent"`
+	ChronicLimit          int              `json:"chronicAlertLimit"`
+	ChronicWindowMinutes  int              `json:"chronicWindowMinutes"`
+	MutedMonitors         []string         `json:"mutedMonitors"`
 	ImmediateEvents       []string         `json:"immediateEvents"`
 	DigestEnabled         bool             `json:"digestEnabled"`
 	DigestTime            string           `json:"digestTime,omitempty"`
@@ -142,6 +148,11 @@ func (s *Server) getNotificationConfig(ctx context.Context, _ *mcp.CallToolReque
 		AlertAfterSeconds:     s.settingInt("notification.alert.sustained_seconds", 180),
 		ReminderMinutes:       s.settingInt("notification.alert.reminder_minutes", 30),
 		RepeatReminderMinutes: s.settingInt("notification.alert.repeat_reminder_minutes", 60),
+		CorrelationWindowSec:  s.settingInt("notification.correlation.window_seconds", 300),
+		CorrelationMinMonitor: s.settingInt("notification.correlation.min_monitors", 3),
+		CorrelationGroupPct:   s.settingInt("notification.correlation.group_percent", 30),
+		ChronicLimit:          s.settingInt("notification.chronic.limit", 3),
+		ChronicWindowMinutes:  s.settingInt("notification.chronic.window_minutes", 1440),
 		DigestEnabled:         s.settingBool("notification.digest.enabled", false),
 		DigestTime:            s.setting("notification.digest.time"),
 		DigestEvents:          splitList(s.setting("notification.digest.event_types")),
@@ -149,7 +160,21 @@ func (s *Server) getNotificationConfig(ctx context.Context, _ *mcp.CallToolReque
 			"immediate alert, those are separate decisions now. down and degraded are announced only " +
 			"after the monitor has been in that state for alertAfterSeconds, then repeated after " +
 			"reminderMinutes and every repeatReminderMinutes while it lasts. A recovery is announced " +
-			"only if the outage itself was. Flapping monitors stay suppressed until they settle.",
+			"only if the outage itself was. Monitors that fail together within correlationWindowSeconds " +
+			"are announced as one incident, and a monitor that has already alerted chronicAlertLimit " +
+			"times inside chronicWindowMinutes is collapsed into one 'unstable' notice and then goes " +
+			"quiet. mutedMonitors never alert at all. Flapping monitors stay suppressed until they settle.",
+	}
+
+	monitors, err := s.store.GetMonitors()
+	if err != nil {
+		return nil, GetNotificationConfigOutput{}, fmt.Errorf("failed to load monitors: %w", err)
+	}
+	out.MutedMonitors = []string{}
+	for _, mon := range monitors {
+		if mon.AlertsMuted {
+			out.MutedMonitors = append(out.MutedMonitors, mon.Name)
+		}
 	}
 
 	// Appearing in the digest no longer diverts an event, so the immediate list is just the

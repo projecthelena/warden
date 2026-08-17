@@ -1,6 +1,6 @@
 # Notification Fatigue Prevention
 
-Warden prevents alert fatigue with four mechanisms that work together. A notification only fires when a problem is **confirmed, sustained, not flapping, and not in cooldown**.
+Warden prevents alert fatigue with several mechanisms that work together. A notification only fires when a problem is **confirmed, sustained, not already covered by a bigger incident, not from a monitor that has been shouting all day, not flapping, and not in cooldown**.
 
 ## How It Works
 
@@ -52,6 +52,42 @@ It works by measuring the percentage of state transitions in a sliding window. U
 
 Default: **enabled**, 25% threshold over last 21 checks.
 
+### Correlated Incidents
+
+Monitors that fail together are usually one thing failing. When enough of a group opens an outage inside the correlation window, Warden sends **one** message naming the group and the affected monitors instead of one per monitor.
+
+"Enough" is a percentage of the group with an absolute floor, so it still means something whether the group has 12 monitors or 200: `max(3, 30% of the group)`.
+
+```
+19:29  eleven of twelve NodeSource monitors start failing, all with 404
+19:32  ALERT: "11 of 12 monitors in NodeSource are down, for 3m: ..."
+20:02  reminder: one message, not eleven
+```
+
+Reminders follow the incident, not the monitor: outages announced together share a correlation id and are reminded about together.
+
+### Probe-Wide Failures
+
+Warden watches from one place. If **80% of every monitor across at least two groups** goes down at once, the likely explanation is Warden's own network rather than every unrelated service failing simultaneously — so it says that, once, instead of blaming each target.
+
+The two-group requirement matters: a single group going down entirely looks identical from here, and "your NodeSource group is down" is both more specific and safer to be wrong about than "your network is broken".
+
+### Repeat-Offender Damping
+
+A monitor that has already interrupted you three times in 24 hours is describing itself, not an event. On the third alert Warden says so explicitly and then stops sending individual alerts for it:
+
+```
+Dogfood SaaS has alerted 3 times in the last 24h and is down again.
+Muting its individual alerts until it settles — it stays in the daily
+digest and on the dashboard.
+```
+
+Subsequent outages are still recorded, still shown, still in the digest. They just do not interrupt. Because those outages are never marked as announced, their recoveries stay quiet too. Set the limit to 0 to turn the damping off.
+
+### Per-Monitor Mute
+
+Any monitor can have its alerts muted from its details panel (**Alerts → Mute Alerts**). A muted monitor is still checked, still records outages, and still appears in the digest and on the dashboard — it simply never interrupts anyone. This is the right tool for test and staging targets that should not wake anyone.
+
 ## Configuration
 
 All settings live in **Settings** on the dashboard. Changes apply immediately to all running monitors.
@@ -63,6 +99,12 @@ All settings live in **Settings** on the dashboard. Changes apply immediately to
 | First reminder (minutes) | 30 | 0-10080 |
 | Repeat reminder (minutes) | 60 | 0-10080 |
 | Cooldown minutes | 30 | 0-1440 |
+| Correlation window (seconds) | 300 | 0-86400 |
+| Correlation minimum monitors | 3 | 1-1000 |
+| Correlation group share (%) | 30 | 1-100 |
+| Probe-wide share (%) | 80 | 1-100 |
+| Repeat-offender limit | 3 | 0-1000 |
+| Repeat-offender window (minutes) | 1440 | 1-43200 |
 | Flap detection enabled | true | true/false |
 | Flap window (checks) | 21 | 3-100 |
 | Flap threshold (%) | 25 | 1-100 |

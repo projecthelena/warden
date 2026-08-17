@@ -78,6 +78,9 @@ type Monitor struct {
 	NotificationCooldownMin *int           `json:"notificationCooldownMinutes,omitempty"`
 	LatencyThreshold        *int           `json:"latencyThreshold,omitempty"`
 	RequestConfig           *RequestConfig `json:"requestConfig,omitempty"`
+	// AlertsMuted keeps a monitor fully recorded — checks, outages, digest, dashboard —
+	// while never letting it interrupt anyone. For test and staging targets.
+	AlertsMuted bool `json:"alertsMuted"`
 }
 
 type CheckResult struct {
@@ -148,8 +151,8 @@ func (s *Store) CreateMonitor(m Monitor) error {
 		}
 		reqCfg = sql.NullString{String: string(b), Valid: true}
 	}
-	_, err := s.db.Exec(s.rebind("INSERT INTO monitors (id, type, group_id, name, url, active, interval_seconds, created_at, confirmation_threshold, notification_cooldown_minutes, latency_threshold, request_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
-		m.ID, NormalizeMonitorType(m.Type), m.GroupID, m.Name, m.URL, m.Active, m.Interval, time.Now(), toNullInt64(m.ConfirmationThreshold), toNullInt64(m.NotificationCooldownMin), toNullInt64(m.LatencyThreshold), reqCfg)
+	_, err := s.db.Exec(s.rebind("INSERT INTO monitors (id, type, group_id, name, url, active, interval_seconds, created_at, confirmation_threshold, notification_cooldown_minutes, latency_threshold, request_config, alerts_muted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
+		m.ID, NormalizeMonitorType(m.Type), m.GroupID, m.Name, m.URL, m.Active, m.Interval, time.Now(), toNullInt64(m.ConfirmationThreshold), toNullInt64(m.NotificationCooldownMin), toNullInt64(m.LatencyThreshold), reqCfg, m.AlertsMuted)
 	return err
 }
 
@@ -203,7 +206,7 @@ func (s *Store) SetMonitorActive(id string, active bool) error {
 
 // GetMonitors returns all monitors
 func (s *Store) GetMonitors() ([]Monitor, error) {
-	rows, err := s.db.Query("SELECT id, type, group_id, name, url, active, interval_seconds, created_at, confirmation_threshold, notification_cooldown_minutes, latency_threshold, request_config FROM monitors ORDER BY created_at ASC")
+	rows, err := s.db.Query("SELECT id, type, group_id, name, url, active, interval_seconds, created_at, confirmation_threshold, notification_cooldown_minutes, latency_threshold, request_config, alerts_muted FROM monitors ORDER BY created_at ASC")
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +217,7 @@ func (s *Store) GetMonitors() ([]Monitor, error) {
 		var m Monitor
 		var confirmThreshold, cooldownMins, latencyThresh sql.NullInt64
 		var reqCfgStr sql.NullString
-		if err := rows.Scan(&m.ID, &m.Type, &m.GroupID, &m.Name, &m.URL, &m.Active, &m.Interval, &m.CreatedAt, &confirmThreshold, &cooldownMins, &latencyThresh, &reqCfgStr); err != nil {
+		if err := rows.Scan(&m.ID, &m.Type, &m.GroupID, &m.Name, &m.URL, &m.Active, &m.Interval, &m.CreatedAt, &confirmThreshold, &cooldownMins, &latencyThresh, &reqCfgStr, &m.AlertsMuted); err != nil {
 			return nil, err
 		}
 		m.Type = NormalizeMonitorType(m.Type)

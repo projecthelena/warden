@@ -101,6 +101,9 @@ type Manager struct {
 	// Duration ladder for down/degraded alerts (see alerts.go)
 	alertPolicy alertPolicy
 
+	// Thresholds for grouping simultaneous failures (see correlation.go)
+	correlationPolicy correlationPolicy
+
 	// Active Maintenance Windows
 	maintenanceWindows []db.Incident
 
@@ -138,6 +141,7 @@ func NewManager(store *db.Store) *Manager {
 		notificationTimezone:  time.UTC, // Default to UTC
 		notifier:              notifications.NewService(store),
 		alertPolicy:           defaultAlertPolicy(),
+		correlationPolicy:     defaultCorrelationPolicy(),
 		eventFilter: NotificationEventFilter{
 			DownEnabled:        true,
 			UpEnabled:          true,
@@ -756,6 +760,7 @@ func (m *Manager) Sync() {
 	eventFilter := m.loadEventFilter()
 	digestEnabled, digestTime, digestEventTypes := m.loadDigestConfig()
 	policy := m.loadAlertPolicy()
+	corrPolicy := m.loadCorrelationPolicy()
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -767,6 +772,7 @@ func (m *Manager) Sync() {
 	m.digestTime = digestTime
 	m.digestEventTypes = digestEventTypes
 	m.alertPolicy = policy
+	m.correlationPolicy = corrPolicy
 
 	// Update maintenance windows
 	m.maintenanceWindows = activeWindows

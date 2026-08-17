@@ -68,6 +68,7 @@ type MonitorDTO struct {
 	NotificationCooldownMin *int              `json:"notificationCooldownMinutes,omitempty"`
 	LatencyThreshold        *int              `json:"latencyThreshold,omitempty"`
 	RequestConfig           *db.RequestConfig `json:"requestConfig,omitempty"`
+	AlertsMuted             bool              `json:"alertsMuted"`
 }
 
 type MonitorEvent struct {
@@ -224,6 +225,7 @@ func (h *UptimeHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 				ConfirmationThreshold:   meta.ConfirmationThreshold,
 				NotificationCooldownMin: meta.NotificationCooldownMin,
 				LatencyThreshold:        meta.LatencyThreshold,
+				AlertsMuted:             meta.AlertsMuted,
 				RequestConfig:           meta.RequestConfig,
 			})
 		}

@@ -188,6 +188,7 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 				dashboard.Post("/monitors", crudH.CreateMonitor)
 				dashboard.Put("/monitors/{id}", crudH.UpdateMonitor)
 				dashboard.Delete("/monitors/{id}", crudH.DeleteMonitor)
+				dashboard.Post("/monitors/{id}/alerts", crudH.SetMonitorAlerts)
 				dashboard.Post("/monitors/{id}/pause", crudH.PauseMonitor)
 				dashboard.Post("/monitors/{id}/resume", crudH.ResumeMonitor)
 				dashboard.Get("/monitors/{id}/uptime", uptimeH.GetMonitorUptime)
