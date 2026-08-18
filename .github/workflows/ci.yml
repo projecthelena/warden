@@ -64,25 +64,9 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      - name: Cache Playwright Binaries
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
-
-      # Deliberately not `--with-deps`. That flag runs apt on every single run to reinstall
-      # the browsers' OS libraries, and it is what hung this job for 110 minutes on
-      # 2026-08-15 and 46 more on 2026-08-18: the browser binaries were already cached, only
-      # the apt call was not, and nothing times an unresponsive mirror out.
-      #
-      # The runner image already carries the libraries Chromium needs, and Chromium is the
-      # only browser these tests use. If that ever stops being true the failure is a browser
-      # that will not launch — immediate and obvious, not a job that sits there for an hour.
       - name: Install dependencies
         working-directory: web
-        run: |
-          npm ci
-          npx playwright install chromium
+        run: npm ci
 
       - name: Lint
         run: npm run lint
@@ -200,25 +184,17 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - name: Cache Playwright Browsers
+      - name: Cache Playwright Binaries
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
 
-      # Deliberately not `--with-deps`. That flag runs apt on every single run to reinstall
-      # the browsers' OS libraries, and it is what hung this job for 110 minutes on
-      # 2026-08-15 and 46 more on 2026-08-18: the browser binaries were already cached, only
-      # the apt call was not, and nothing times an unresponsive mirror out.
-      #
-      # Both chromium targets are named explicitly. Playwright launches the headless shell
-      # by default, which is a separate download from chromium itself, and a job that
-      # installs only one of them fails at browserType.launch rather than at install time.
-      #
-      # The runner image already carries the libraries Chromium needs, and Chromium is the
-      # only browser these tests use. If that ever stops being true the failure is a browser
-      # that will not launch — immediate and obvious, not a job that sits there for an hour.
       - name: Install dependencies
+        # No --with-deps: it runs apt on every run to reinstall the browsers' OS libraries,
+        # which is what hung this job twice. The binaries were already cached, only the apt
+        # call was not. Both chromium targets are named because Playwright launches the
+        # headless shell by default and that is a separate download.
         working-directory: web
         run: |
           npm ci
@@ -231,11 +207,9 @@ jobs:
       - name: Build Backend
         run: go build -o warden ./cmd/dashboard
 
-      # The wait is a real health check rather than `sleep 5`, which passed whether or not
-      # the server had come up and so turned a startup failure into a confusing browser
-      # error thirty lines later, with no server output anywhere. Starting the server and
-      # running the tests share a step so the process is unambiguously alive for both.
       - name: Run E2E Tests
+        # Waits for the server instead of sleeping: a sleep passed whether or not it came
+        # up, so a startup failure surfaced as a browser error with no server output.
         env:
           ADMIN_SECRET: warden-e2e-magic-key
           PLAYWRIGHT_BASE_URL: http://localhost:9096
@@ -244,33 +218,20 @@ jobs:
           ./warden > warden.log 2>&1 &
           server_pid=$!
 
-          echo "Waiting for the server to answer on :9096..."
+          echo "Waiting for the server on :9096..."
           for _ in $(seq 1 60); do
-            if curl -sf -o /dev/null http://localhost:9096/healthz; then
-              echo "Server is up."
-              break
-            fi
-            if ! kill -0 "$server_pid" 2>/dev/null; then
-              echo "::error::The server exited before it became healthy."
-              cat warden.log
-              exit 1
-            fi
+            curl -sf -o /dev/null http://localhost:9096/healthz && ready=1 && break
+            kill -0 "$server_pid" 2>/dev/null || break
             sleep 1
           done
-
-          if ! curl -sf -o /dev/null http://localhost:9096/healthz; then
-            echo "::error::The server never became healthy within 60s."
+          if [ -z "${ready:-}" ]; then
+            echo "::error::Server never answered on :9096"
             cat warden.log
             exit 1
           fi
 
-          # The server log is where a 500 during a test actually gets explained, so print it
-          # whichever way the run goes.
-          set +e
-          (cd web && npx playwright test --fail-on-flaky-tests)
-          status=$?
-          set -e
-
-          echo "----- server log -----"
+          status=0
+          (cd web && npx playwright test --fail-on-flaky-tests) || status=$?
+          # Where a 500 during a test gets explained, so print it either way.
           cat warden.log
           exit $status
