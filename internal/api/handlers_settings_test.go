@@ -320,3 +320,95 @@ func TestUpdateSettings_RejectsBadCorrelationThresholds(t *testing.T) {
 		}
 	}
 }
+
+// The adaptive latency settings are only reachable if the endpoint carries them, and the
+// defaults have to match what baseline.go really uses.
+func TestGetSettings_ReportsTheLatencyBaseline(t *testing.T) {
+	s, _ := db.NewStore(db.NewTestConfig())
+	m := uptime.NewManager(s)
+	h := NewSettingsHandler(s, m)
+
+	req := httptest.NewRequest("GET", "/api/settings", nil)
+	w := httptest.NewRecorder()
+	h.GetSettings(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var response map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	for key, want := range map[string]string{
+		"notification.latency.adaptive_enabled": "true",
+		"notification.latency.baseline_days":    "7",
+		"notification.latency.min_samples":      "200",
+		"notification.latency.factor_percent":   "150",
+		"notification.latency.floor_ms":         "100",
+	} {
+		if response[key] != want {
+			t.Errorf("%s = %q, want the default %q", key, response[key], want)
+		}
+	}
+}
+
+func TestUpdateSettings_PersistsTheLatencyBaseline(t *testing.T) {
+	s, _ := db.NewStore(db.NewTestConfig())
+	m := uptime.NewManager(s)
+	h := NewSettingsHandler(s, m)
+
+	body, _ := json.Marshal(map[string]string{
+		"notification.latency.adaptive_enabled": "false",
+		"notification.latency.baseline_days":    "14",
+		"notification.latency.factor_percent":   "200",
+		"notification.latency.floor_ms":         "0",
+	})
+	req := withAdminCtx(httptest.NewRequest("PATCH", "/api/settings", bytes.NewReader(body)))
+	w := httptest.NewRecorder()
+	h.UpdateSettings(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	for key, want := range map[string]string{
+		"notification.latency.adaptive_enabled": "false",
+		"notification.latency.baseline_days":    "14",
+		"notification.latency.factor_percent":   "200",
+		"notification.latency.floor_ms":         "0",
+	} {
+		if got, _ := s.GetSetting(key); got != want {
+			t.Errorf("%s = %q, want %q", key, got, want)
+		}
+	}
+}
+
+// A multiplier under 1x would call a service degraded at its own median, and the manager
+// quietly falls back to the default for anything it cannot use. Both are reasons the API
+// has to refuse the value rather than store it.
+func TestUpdateSettings_RejectsBadLatencyBaseline(t *testing.T) {
+	s, _ := db.NewStore(db.NewTestConfig())
+	m := uptime.NewManager(s)
+	h := NewSettingsHandler(s, m)
+
+	for _, tc := range []struct{ key, value string }{
+		{"notification.latency.factor_percent", "99"},
+		{"notification.latency.factor_percent", "-1"},
+		{"notification.latency.baseline_days", "0"},
+		{"notification.latency.baseline_days", "365"},
+		{"notification.latency.min_samples", "0"},
+		{"notification.latency.floor_ms", "-1"},
+	} {
+		body, _ := json.Marshal(map[string]string{tc.key: tc.value})
+		req := withAdminCtx(httptest.NewRequest("PATCH", "/api/settings", bytes.NewReader(body)))
+		w := httptest.NewRecorder()
+		h.UpdateSettings(w, req)
+
+		if w.Code == http.StatusOK {
+			t.Errorf("%s=%q was accepted", tc.key, tc.value)
+		}
+		if got, _ := s.GetSetting(tc.key); got == tc.value {
+			t.Errorf("%s=%q was persisted despite being invalid", tc.key, tc.value)
+		}
+	}
+}

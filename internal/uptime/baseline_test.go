@@ -1,6 +1,7 @@
 package uptime
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -425,5 +426,116 @@ func TestRefreshBaselines_NoOpWhenDisabled(t *testing.T) {
 
 	if _, ok, _ := store.GetLatencyBaseline("m1"); ok {
 		t.Error("a baseline was computed with the feature disabled")
+	}
+}
+
+// The reason the baseline is persisted at all: after a restart, Sync has to resolve each
+// monitor's threshold from the stored numbers rather than leaving everyone on the global
+// default until the hourly worker next runs. Nothing covered that path.
+func TestSync_AppliesThePersistedBaseline(t *testing.T) {
+	_, store := newAlertTestManager(t)
+	now := time.Now().UTC()
+
+	var checks []db.CheckResult
+	for i := 0; i < 300; i++ {
+		latency := int64(250)
+		if i%10 == 0 {
+			latency = 400
+		}
+		checks = append(checks, db.CheckResult{
+			MonitorID: "m1", Status: "up", Latency: latency,
+			Timestamp: now.Add(-time.Duration(i) * time.Minute),
+		})
+	}
+	if err := store.BatchInsertChecks(checks); err != nil {
+		t.Fatalf("BatchInsertChecks: %v", err)
+	}
+	if _, err := store.ComputeLatencyBaseline("m1", 7*24*time.Hour, 200, now); err != nil {
+		t.Fatalf("ComputeLatencyBaseline: %v", err)
+	}
+
+	// A fresh manager, as after a restart: it has never run the baseline worker.
+	restarted := NewManager(store)
+	restarted.Sync()
+
+	mon := restarted.GetMonitor("m1")
+	if mon == nil {
+		t.Fatal("Sync did not schedule the monitor")
+	}
+	// 400 * 1.5 = 600, versus 400 + 100 = 500.
+	if got := mon.GetLatencyThreshold(); got != 600 {
+		t.Errorf("threshold after Sync = %dms, want 600ms from the stored baseline", got)
+	}
+	if !strings.Contains(mon.DegradedMessage(), "normally ~250ms") {
+		t.Errorf("the message lost the baseline after Sync: %q", mon.DegradedMessage())
+	}
+}
+
+// With the feature off, Sync must fall back to the fixed threshold even though a baseline
+// is sitting in the table, and the message must stop claiming to know what normal is.
+func TestSync_IgnoresTheBaselineWhenAdaptiveIsOff(t *testing.T) {
+	_, store := newAlertTestManager(t)
+	now := time.Now().UTC()
+
+	var checks []db.CheckResult
+	for i := 0; i < 300; i++ {
+		checks = append(checks, db.CheckResult{
+			MonitorID: "m1", Status: "up", Latency: 250,
+			Timestamp: now.Add(-time.Duration(i) * time.Minute),
+		})
+	}
+	if err := store.BatchInsertChecks(checks); err != nil {
+		t.Fatalf("BatchInsertChecks: %v", err)
+	}
+	if _, err := store.ComputeLatencyBaseline("m1", 7*24*time.Hour, 200, now); err != nil {
+		t.Fatalf("ComputeLatencyBaseline: %v", err)
+	}
+	if err := store.SetSetting("notification.latency.adaptive_enabled", "false"); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+
+	restarted := NewManager(store)
+	restarted.Sync()
+
+	mon := restarted.GetMonitor("m1")
+	if got := mon.GetLatencyThreshold(); got != 1000 {
+		t.Errorf("threshold = %dms, want the global default 1000ms", got)
+	}
+	if strings.Contains(mon.DegradedMessage(), "normally") {
+		t.Errorf("the message still claims a baseline: %q", mon.DegradedMessage())
+	}
+}
+
+// A per-monitor threshold is a deliberate statement about that service, so Sync must not
+// let a learned baseline overrule it.
+func TestSync_KeepsThePerMonitorOverride(t *testing.T) {
+	_, store := newAlertTestManager(t)
+	now := time.Now().UTC()
+
+	override := 500
+	if err := store.UpdateMonitor("m1", db.MonitorTypeHTTP, "Jellyfin", "https://jellyfin.example.com",
+		60, nil, nil, &override, nil); err != nil {
+		t.Fatalf("UpdateMonitor: %v", err)
+	}
+
+	var checks []db.CheckResult
+	for i := 0; i < 300; i++ {
+		checks = append(checks, db.CheckResult{
+			MonitorID: "m1", Status: "up", Latency: 250,
+			Timestamp: now.Add(-time.Duration(i) * time.Minute),
+		})
+	}
+	if err := store.BatchInsertChecks(checks); err != nil {
+		t.Fatalf("BatchInsertChecks: %v", err)
+	}
+	if _, err := store.ComputeLatencyBaseline("m1", 7*24*time.Hour, 200, now); err != nil {
+		t.Fatalf("ComputeLatencyBaseline: %v", err)
+	}
+
+	restarted := NewManager(store)
+	restarted.Sync()
+
+	if got := restarted.GetMonitor("m1").GetLatencyThreshold(); got != 500 {
+		t.Errorf("threshold = %dms, want the explicit override 500ms", got)
 	}
 }
