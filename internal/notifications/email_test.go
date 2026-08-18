@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/projecthelena/warden/internal/db"
 )
 
 // fakeSMTP is a single-connection SMTP server that speaks just enough of the protocol to
@@ -452,5 +454,125 @@ func TestEmailNotifier_UsesSTARTTLSWhenOffered(t *testing.T) {
 	}
 	if _, _, data := server.received(); data != "" {
 		t.Error("message was delivered despite the failed TLS handshake")
+	}
+}
+
+// waitForDelivery polls the fake server, since dispatch happens on the service's worker
+// goroutine rather than inline.
+func waitForDelivery(t *testing.T, server *fakeSMTP, within time.Duration) string {
+	t.Helper()
+	deadline := time.Now().Add(within)
+	for time.Now().Before(deadline) {
+		if _, _, data := server.received(); data != "" {
+			return data
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return ""
+}
+
+// The switch in dispatch is what connects this whole file to the rest of Warden. The
+// existing slack dispatch test cannot assert delivery because it would need a real HTTP
+// round trip; the fake SMTP server means the email one can.
+func TestService_DispatchReachesAnEmailChannel(t *testing.T) {
+	server := newFakeSMTP(t, nil)
+	host, port := hostPort(t, server.addr)
+
+	store := newTestStore(t)
+	if err := store.CreateNotificationChannel(db.NotificationChannel{
+		ID:   "nc-email",
+		Type: "email",
+		Name: "Ops mailbox",
+		Config: fmt.Sprintf(`{"host":%q,"port":%q,"from":"warden@example.com","to":"ops@example.com"}`,
+			host, port),
+		Enabled:   true,
+		CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("CreateNotificationChannel: %v", err)
+	}
+
+	svc := NewService(store)
+	svc.Start()
+	svc.Enqueue(testEvent())
+
+	data := waitForDelivery(t, server, 3*time.Second)
+	if data == "" {
+		t.Fatal("the alert never reached the email channel")
+	}
+	if !strings.Contains(data, "Subject: [Warden] Monitor Down: API Gateway") {
+		t.Errorf("delivered message has the wrong subject:\n%s", data)
+	}
+}
+
+// A disabled channel is skipped for every type, and email is the one where "sent anyway"
+// would be visible in somebody's inbox rather than a log line.
+func TestService_DispatchSkipsADisabledEmailChannel(t *testing.T) {
+	server := newFakeSMTP(t, nil)
+	host, port := hostPort(t, server.addr)
+
+	store := newTestStore(t)
+	if err := store.CreateNotificationChannel(db.NotificationChannel{
+		ID:   "nc-off",
+		Type: "email",
+		Name: "Disabled",
+		Config: fmt.Sprintf(`{"host":%q,"port":%q,"from":"warden@example.com","to":"ops@example.com"}`,
+			host, port),
+		Enabled:   false,
+		CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("CreateNotificationChannel: %v", err)
+	}
+
+	svc := NewService(store)
+	svc.Start()
+	svc.Enqueue(testEvent())
+
+	if data := waitForDelivery(t, server, time.Second); data != "" {
+		t.Errorf("a disabled channel received mail:\n%s", data)
+	}
+}
+
+// SendDigest has its own switch, so email being wired into dispatch says nothing about
+// whether the daily summary reaches it.
+func TestService_SendDigestReachesAnEmailChannel(t *testing.T) {
+	server := newFakeSMTP(t, nil)
+	host, port := hostPort(t, server.addr)
+
+	store := newTestStore(t)
+	if err := store.CreateNotificationChannel(db.NotificationChannel{
+		ID:   "nc-digest",
+		Type: "email",
+		Name: "Ops mailbox",
+		Config: fmt.Sprintf(`{"host":%q,"port":%q,"from":"warden@example.com","to":"ops@example.com"}`,
+			host, port),
+		Enabled:   true,
+		CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("CreateNotificationChannel: %v", err)
+	}
+
+	NewService(store).SendDigest([]db.DigestEvent{
+		{MonitorID: "m1", MonitorName: "API Gateway", EventType: "down", Message: "Monitor is down"},
+	})
+
+	data := waitForDelivery(t, server, 3*time.Second)
+	if data == "" {
+		t.Fatal("the digest never reached the email channel")
+	}
+	// The digest subject carries an em dash, so it goes out RFC 2047 encoded and the raw
+	// header does not contain the words. Decode before asserting on it.
+	subject := ""
+	for _, line := range strings.Split(data, "\r\n") {
+		if strings.HasPrefix(line, "Subject: ") {
+			decoded, err := new(mime.WordDecoder).DecodeHeader(strings.TrimPrefix(line, "Subject: "))
+			if err != nil {
+				t.Fatalf("decoding the subject %q: %v", line, err)
+			}
+			subject = decoded
+			break
+		}
+	}
+	if !strings.HasPrefix(subject, "[Warden] Daily Summary") {
+		t.Errorf("delivered digest has the wrong subject: %q", subject)
 	}
 }

@@ -55,7 +55,9 @@ export class NotificationsPage {
         await expect(this.page.getByText(name)).toBeVisible();
     }
 
-    async createEmailChannel(name: string, from: string, to: string) {
+    // Opens the create sheet and fills the fields every email channel needs, stopping short
+    // of submitting so a caller can add credentials first.
+    async openEmailForm(name: string, from: string, to: string) {
         await expect(this.page.getByText('Wait ...')).toBeHidden();
         await expect(this.page).toHaveURL(/.*notifications/);
         await expect(this.page.getByRole('heading', { name: /Notification/i }).first()).toBeVisible({ timeout: 5000 });
@@ -70,7 +72,10 @@ export class NotificationsPage {
         await this.smtpHostInput.fill('smtp.example.com');
         await this.smtpFromInput.fill(from);
         await this.smtpToInput.fill(to);
+    }
 
+    async createEmailChannel(name: string, from: string, to: string) {
+        await this.openEmailForm(name, from, to);
         await this.submitBtn.click();
 
         // The row shows the recipients, which is what tells two mail channels apart.

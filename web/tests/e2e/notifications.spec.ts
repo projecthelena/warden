@@ -1,4 +1,5 @@
-import { test } from '@playwright/test';
+import { API_BASE } from '../apiBase';
+import { test, expect } from '@playwright/test';
 import { LoginPage } from '../pages/LoginPage';
 import { NotificationsPage } from '../pages/NotificationsPage';
 
@@ -52,4 +53,21 @@ test.describe('Notification Management', () => {
         await notifications.deleteChannel(channelName);
     });
 
+});
+
+test.describe('Email channel credentials', () => {
+    // A channel the server would refuse must be refused on the form, not accepted and then
+    // discovered silently on the night something goes down.
+    test('an email channel without a recipient is rejected', async ({ page }) => {
+        const resp = await page.request.post(`${API_BASE}/api/notifications/channels`, {
+            data: {
+                type: 'email',
+                name: `Broken ${Date.now()}`,
+                config: { host: 'smtp.example.com', from: 'alerts@example.com' },
+                enabled: true,
+            },
+        });
+        expect(resp.status()).not.toBe(200);
+        expect(resp.status()).not.toBe(201);
+    });
 });

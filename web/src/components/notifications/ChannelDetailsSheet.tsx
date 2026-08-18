@@ -24,7 +24,7 @@ import { SlackPreview } from "./SlackPreview";
 import { WebhookPayloadPreview } from "./WebhookPayloadPreview";
 import { EmailPreview } from "./EmailPreview";
 import { EmailChannelFields } from "./EmailChannelFields";
-import { EmailConfig, emptyEmailConfig, isEmailConfigured } from "@/lib/emailChannel";
+import { EmailConfig, emailConfigFromChannel, isEmailConfigured } from "@/lib/emailChannel";
 
 interface ChannelDetailsSheetProps {
     channel: NotificationChannel;
@@ -37,7 +37,7 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
     const [name, setName] = useState(channel.name);
     const [type, setType] = useState<NotificationChannel['type']>(channel.type);
     const [webhookUrl, setWebhookUrl] = useState(channel.config.webhookUrl || "");
-    const [email, setEmail] = useState<EmailConfig>(emailConfigFrom(channel));
+    const [email, setEmail] = useState<EmailConfig>(emailConfigFromChannel(channel.config));
     const [testing, setTesting] = useState(false);
 
     const isEmail = type === "email";
@@ -49,7 +49,7 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
         setName(channel.name);
         setType(channel.type);
         setWebhookUrl(channel.config.webhookUrl || "");
-        setEmail(emailConfigFrom(channel));
+        setEmail(emailConfigFromChannel(channel.config));
     }, [channel, open]);
 
     const handleSave = () => {
@@ -160,15 +160,3 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
     );
 }
 
-// emailConfigFrom reads a stored channel back into the form's shape. Anything missing
-// falls back to the defaults, which is what a channel of another type looks like here.
-function emailConfigFrom(channel: NotificationChannel): EmailConfig {
-    return {
-        host: channel.config.host || "",
-        port: channel.config.port || emptyEmailConfig.port,
-        username: channel.config.username || "",
-        password: channel.config.password || "",
-        from: channel.config.from || "",
-        to: channel.config.to || "",
-    };
-}

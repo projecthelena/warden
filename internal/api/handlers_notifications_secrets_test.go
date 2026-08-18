@@ -94,3 +94,77 @@ func TestGetChannelsMasksForViewersOnly(t *testing.T) {
 		}
 	}
 }
+
+// An SMTP password is a credential in a way a webhook URL is not: it is often the
+// operator's real mailbox password, reused elsewhere. maskSecrets blanks every string
+// rather than a list of known key names precisely so a channel type added later is covered
+// without anyone remembering to update a list, and email is the first type to test that
+// promise.
+func TestGetChannelsMasksTheSMTPPassword(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewNotificationChannelsHandler(store)
+
+	if err := store.CreateNotificationChannel(db.NotificationChannel{
+		ID:   "nc-email",
+		Type: "email",
+		Name: "Ops mailbox",
+		Config: `{"host":"smtp.example.com","port":"587","username":"alerts@example.com",` +
+			`"password":"SUPERSECRET","from":"alerts@example.com","to":"ops@example.com"}`,
+		Enabled:   true,
+		CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("failed to create channel: %v", err)
+	}
+
+	read := func(role string) string {
+		req := httptest.NewRequest("GET", "/api/notifications/channels", nil)
+		req = req.WithContext(context.WithValue(req.Context(), contextKeyUserRole, role))
+		rr := httptest.NewRecorder()
+		handler.GetChannels(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("%s: expected 200, got %d", role, rr.Code)
+		}
+		return rr.Body.String()
+	}
+
+	for _, role := range []string{RoleViewer, RoleStatusViewer} {
+		body := read(role)
+		if strings.Contains(body, "SUPERSECRET") {
+			t.Errorf("%s must not be able to read the SMTP password", role)
+		}
+		// The username is a credential half too, and the host tells an attacker where to
+		// try it. Everything is masked, so neither should survive.
+		if strings.Contains(body, "smtp.example.com") {
+			t.Errorf("%s should not see the SMTP host either", role)
+		}
+	}
+
+	for _, role := range []string{RoleEditor, RoleAdmin} {
+		if !strings.Contains(read(role), "SUPERSECRET") {
+			t.Errorf("%s edits and tests channels, so the edit form still needs the password", role)
+		}
+	}
+}
+
+// Masking has to survive a config whose values are not all strings: the port arrives as a
+// JSON number from the form, and a mask that choked on it would drop the whole config and
+// take the password's key with it.
+func TestMaskSecretsHandlesANumericPort(t *testing.T) {
+	masked := maskSecrets(`{"host":"smtp.example.com","port":587,"password":"SUPERSECRET"}`)
+
+	if strings.Contains(masked, "SUPERSECRET") {
+		t.Fatalf("the password survived masking: %s", masked)
+	}
+
+	var fields map[string]any
+	if err := json.Unmarshal([]byte(masked), &fields); err != nil {
+		t.Fatalf("masked config is not valid JSON: %v", err)
+	}
+	if fields["password"] != "***" {
+		t.Errorf("password = %v, want ***", fields["password"])
+	}
+	// A port is not a secret, and keeping it lets the UI tell one channel from another.
+	if fields["port"] != float64(587) {
+		t.Errorf("port = %v, want it left alone", fields["port"])
+	}
+}
