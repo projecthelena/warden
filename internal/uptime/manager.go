@@ -406,10 +406,7 @@ func (m *Manager) resultProcessor() {
 
 						confirmed := mon.IncrementDown()
 						if confirmed {
-							go func() {
-								_ = m.store.CloseOutage(res.MonitorID)
-								_ = m.store.CreateOutage(res.MonitorID, "down", message)
-							}()
+							m.openOutage(res.MonitorID, "down", message)
 							m.archiveForDigest(notifications.NotificationEvent{
 								MonitorID:   res.MonitorID,
 								MonitorName: mon.GetName(),
@@ -428,10 +425,7 @@ func (m *Manager) resultProcessor() {
 
 						confirmed := mon.IncrementDegraded()
 						if confirmed {
-							go func() {
-								_ = m.store.CloseOutage(res.MonitorID)
-								_ = m.store.CreateOutage(res.MonitorID, "degraded", degradedMsg)
-							}()
+							m.openOutage(res.MonitorID, "degraded", degradedMsg)
 							m.archiveForDigest(notifications.NotificationEvent{
 								MonitorID:   res.MonitorID,
 								MonitorName: mon.GetName(),
@@ -456,10 +450,7 @@ func (m *Manager) resultProcessor() {
 						confirmed := mon.IncrementDown()
 						if confirmed {
 							// Threshold met — create outage and notify
-							go func() {
-								_ = m.store.CloseOutage(res.MonitorID)
-								_ = m.store.CreateOutage(res.MonitorID, "down", message)
-							}()
+							m.openOutage(res.MonitorID, "down", message)
 							m.archiveForDigest(notifications.NotificationEvent{
 								MonitorID:   res.MonitorID,
 								MonitorName: mon.GetName(),
@@ -509,10 +500,7 @@ func (m *Manager) resultProcessor() {
 
 								confirmed := mon.IncrementDegraded()
 								if confirmed {
-									go func() {
-										_ = m.store.CloseOutage(res.MonitorID)
-										_ = m.store.CreateOutage(res.MonitorID, "degraded", degradedMsg)
-									}()
+									m.openOutage(res.MonitorID, "degraded", degradedMsg)
 									m.archiveForDigest(notifications.NotificationEvent{
 										MonitorID:   res.MonitorID,
 										MonitorName: mon.GetName(),
@@ -1037,6 +1025,22 @@ func (m *Manager) archiveForDigest(event notifications.NotificationEvent) {
 		string(event.Type), event.Message, event.Time); err != nil {
 		log.Printf("Failed to queue digest event: %v", err)
 	}
+}
+
+// openOutage records that a monitor has entered a bad state, replacing any outage still
+// open for it. This row is the only thing that can produce an alert, so unlike the events
+// around it a failure here is not something to swallow: it means the monitor is down, the
+// dashboard will not say so, and nobody will ever be told.
+func (m *Manager) openOutage(monitorID, kind, summary string) {
+	go func() {
+		if err := m.store.CloseOutage(monitorID); err != nil {
+			log.Printf("Failed to close the previous outage for %s: %v", monitorID, err)
+		}
+		if err := m.store.CreateOutage(monitorID, kind, summary); err != nil {
+			log.Printf("ALERTING: failed to open the %s outage for %s, so no alert will be sent for it: %v",
+				kind, monitorID, err)
+		}
+	}()
 }
 
 // notifyNow puts an event on the wire immediately.

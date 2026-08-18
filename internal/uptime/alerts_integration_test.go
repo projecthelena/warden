@@ -184,3 +184,82 @@ func TestShortOutageProducesNoMessagesAtAll(t *testing.T) {
 		t.Errorf("a blip nobody was told about produced %d recovery messages: %+v", len(sent), sent)
 	}
 }
+
+// The positive half of the recovery rule. TestShortOutageProducesNoMessagesAtAll covers
+// the silence; this covers the part that would leave an operator staring at a red alert
+// forever if it broke.
+func TestAnnouncedOutageDoesAnnounceItsRecovery(t *testing.T) {
+	store, err := db.NewStore(db.NewTestConfigWithPath("file:alerts_integration_3?mode=memory&cache=shared"))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	_ = store.SetSetting("notification.confirmation_threshold", "1")
+	_ = store.SetSetting("notification.flap_detection_enabled", "false")
+	_ = store.SetSetting("notification.cooldown_minutes", "0")
+
+	var failing bool
+	var mu sync.Mutex
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		down := failing
+		mu.Unlock()
+		if down {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	spy := &spyNotifier{}
+	m := NewManager(store)
+	m.notifier = spy
+	m.Start()
+	defer m.Stop()
+
+	if err := store.CreateMonitor(db.Monitor{
+		ID: "m-recovers", GroupID: "g-default", Name: "Recovers",
+		URL: ts.URL, Active: true, Interval: 1,
+	}); err != nil {
+		t.Fatalf("CreateMonitor: %v", err)
+	}
+	m.Sync()
+
+	time.Sleep(2 * time.Second)
+	mu.Lock()
+	failing = true
+	mu.Unlock()
+
+	outage := waitForOpenOutage(t, store, 8*time.Second)
+
+	// The outage outlasts the window and is announced.
+	m.evaluateAlerts(outage.StartTime.Add(3 * time.Minute))
+	if got := spy.byType(notifications.EventDown); len(got) != 1 {
+		t.Fatalf("expected the outage to be announced, got %d down alerts", len(got))
+	}
+
+	mu.Lock()
+	failing = false
+	mu.Unlock()
+
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(spy.byType(notifications.EventUp)) > 0 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	up := spy.byType(notifications.EventUp)
+	if len(up) != 1 {
+		t.Fatalf("an announced outage must announce its recovery, got %d up messages", len(up))
+	}
+	if up[0].MonitorName != "Recovers" {
+		t.Errorf("recovery names the wrong monitor: %q", up[0].MonitorName)
+	}
+	if open, _ := store.GetOpenOutages(); len(open) != 0 {
+		t.Error("the outage was left open")
+	}
+}
