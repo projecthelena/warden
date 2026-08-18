@@ -14,12 +14,34 @@ export interface MonitorEvent {
     responseHeaders?: Record<string, string>;
 }
 
+// The API stores a channel's config as a JSON string, because each channel type keeps a
+// different set of keys. The UI wants an object, so it is parsed once on the way in —
+// otherwise every read of channel.config.<key> is silently undefined.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parseChannelConfig(channel: any): NotificationChannel {
+    if (typeof channel?.config !== "string") {
+        return channel;
+    }
+    try {
+        return { ...channel, config: JSON.parse(channel.config) };
+    } catch {
+        return { ...channel, config: {} };
+    }
+}
+
 export interface NotificationChannel {
     id: string;
-    type: 'slack' | 'webhook';
+    type: 'slack' | 'webhook' | 'email';
     name: string;
     config: {
         webhookUrl?: string;
+        // Email channels talk SMTP instead of posting to a URL.
+        host?: string;
+        port?: string;
+        username?: string;
+        password?: string;
+        from?: string;
+        to?: string;
     };
     enabled: boolean;
 }
@@ -1056,7 +1078,7 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
             const res = await fetch("/api/notifications/channels", { credentials: "include" });
             if (res.ok) {
                 const data = await res.json();
-                set({ channels: data.channels || [] });
+                set({ channels: (data.channels || []).map(parseChannelConfig) });
             }
         } catch (e) {
             console.error("Failed to fetch channels", e);

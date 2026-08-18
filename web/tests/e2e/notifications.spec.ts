@@ -35,4 +35,21 @@ test.describe('Notification Management', () => {
         await notifications.deleteChannel(channelName);
     });
 
+
+    test('Create and Delete Email Channel', async ({ page }) => {
+        const notifications = new NotificationsPage(page);
+        const login = new LoginPage(page);
+
+        await notifications.goto();
+        if (await login.isVisible()) {
+            await login.login();
+            await page.getByRole('button', { name: 'Settings' }).click();
+            await page.getByRole('link', { name: 'Notifications' }).click();
+        }
+
+        const channelName = `On-call Inbox ${Date.now()}`;
+        await notifications.createEmailChannel(channelName, 'Warden <alerts@example.com>', 'oncall@example.com');
+        await notifications.deleteChannel(channelName);
+    });
+
 });

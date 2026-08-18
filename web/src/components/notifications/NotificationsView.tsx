@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useMonitorStore, NotificationChannel } from "@/lib/store";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Slack, Webhook, BellOff, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { Slack, Webhook, Mail, BellOff, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -32,6 +32,7 @@ export function NotificationsView() {
         switch (type) {
             case 'slack': return <Slack className="h-4 w-4" />;
             case 'webhook': return <Webhook className="h-4 w-4" />;
+            case 'email': return <Mail className="h-4 w-4" />;
             default: return <Webhook className="h-4 w-4" />;
         }
     }
@@ -40,11 +41,15 @@ export function NotificationsView() {
         switch (type) {
             case 'slack': return 'Slack';
             case 'webhook': return 'Webhook';
+            case 'email': return 'Email';
             default: return type;
         }
     }
 
     const getDisplayValue = (config: NotificationChannel['config']) => {
+        if (config.to) {
+            return config.to.length > 35 ? config.to.substring(0, 35) + '...' : config.to;
+        }
         if (config.webhookUrl) {
             const url = config.webhookUrl.replace('https://', '').replace('http://', '');
             return url.length > 35 ? url.substring(0, 35) + '...' : url;

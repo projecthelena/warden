@@ -86,6 +86,8 @@ func (s *Service) dispatch(event NotificationEvent) {
 			notifier = NewSlackNotifier(ch.Config)
 		case "webhook":
 			notifier = NewWebhookNotifier(ch.Config)
+		case "email":
+			notifier = NewEmailNotifier(ch.Config)
 		default:
 			log.Printf("Unknown channel type: %s", ch.Type)
 			continue
@@ -122,21 +124,7 @@ func (n *SlackNotifier) Send(event NotificationEvent) error {
 		return fmt.Errorf("webhookUrl missing or invalid")
 	}
 
-	color := "#36a64f" // Green (Up)
-	switch event.Type {
-	case EventDown:
-		color = "#dc3545" // Red
-	case EventDegraded:
-		color = "#ffc107" // Yellow
-	case EventSSLExpiring:
-		color = "#ff8c00" // Orange
-	case EventFlapping:
-		color = "#9b59b6" // Purple
-	case EventStabilized:
-		color = "#3498db" // Blue
-	case EventInsights:
-		color = "#6c757d" // Grey — informational, not a state change
-	}
+	color := eventColor(event.Type)
 
 	emoji := ":white_check_mark:"
 	switch event.Type {
@@ -154,21 +142,7 @@ func (n *SlackNotifier) Send(event NotificationEvent) error {
 		emoji = ":mag:"
 	}
 
-	title := "Monitor Recovered"
-	switch event.Type {
-	case EventDown:
-		title = "Monitor Down"
-	case EventDegraded:
-		title = "Monitor Degraded"
-	case EventSSLExpiring:
-		title = "SSL Certificate Expiring"
-	case EventFlapping:
-		title = "Monitor Flapping"
-	case EventStabilized:
-		title = "Monitor Stabilized"
-	case EventInsights:
-		title = "Weekly Patterns"
-	}
+	title := eventTitle(event.Type)
 
 	payload := map[string]interface{}{
 		"text": "*" + title + "*: " + event.MonitorName,
@@ -242,6 +216,8 @@ func SendDirect(channelType, configJSON string, event NotificationEvent) error {
 		notifier = NewSlackNotifier(configJSON)
 	case "webhook":
 		notifier = NewWebhookNotifier(configJSON)
+	case "email":
+		notifier = NewEmailNotifier(configJSON)
 	default:
 		return fmt.Errorf("unsupported channel type: %s", channelType)
 	}
@@ -289,6 +265,47 @@ func eventSeverity(eventType string) int {
 		return 5
 	default:
 		return 6
+	}
+}
+
+// eventTitle and eventColor are the human name and the severity colour of an event. The
+// Slack attachment and the email body render the same vocabulary, so they read it from
+// here rather than keeping two switches that drift apart.
+func eventTitle(eventType EventType) string {
+	switch eventType {
+	case EventDown:
+		return "Monitor Down"
+	case EventDegraded:
+		return "Monitor Degraded"
+	case EventSSLExpiring:
+		return "SSL Certificate Expiring"
+	case EventFlapping:
+		return "Monitor Flapping"
+	case EventStabilized:
+		return "Monitor Stabilized"
+	case EventInsights:
+		return "Weekly Patterns"
+	default:
+		return "Monitor Recovered"
+	}
+}
+
+func eventColor(eventType EventType) string {
+	switch eventType {
+	case EventDown:
+		return "#dc3545" // Red
+	case EventDegraded:
+		return "#ffc107" // Yellow
+	case EventSSLExpiring:
+		return "#ff8c00" // Orange
+	case EventFlapping:
+		return "#9b59b6" // Purple
+	case EventStabilized:
+		return "#3498db" // Blue
+	case EventInsights:
+		return "#6c757d" // Grey, informational rather than a state change
+	default:
+		return "#36a64f" // Green (Up)
 	}
 }
 
@@ -428,6 +445,11 @@ func (s *Service) SendDigest(events []db.DigestEvent) {
 			n := NewWebhookNotifier(ch.Config)
 			if err := n.sendDigest(summary, events); err != nil {
 				log.Printf("Digest: failed to send to webhook (%s): %v", ch.Name, err)
+			}
+		case "email":
+			n := NewEmailNotifier(ch.Config)
+			if err := n.sendDigest(summary); err != nil {
+				log.Printf("Digest: failed to send to email (%s): %v", ch.Name, err)
 			}
 		}
 	}

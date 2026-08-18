@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Trash2, Save, Bell, Slack, Webhook, Loader2, Send } from "lucide-react";
+import { Trash2, Save, Bell, Slack, Webhook, Mail, Loader2, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,6 +22,9 @@ import { Separator } from "@/components/ui/separator";
 import { useMonitorStore, NotificationChannel } from "@/lib/store";
 import { SlackPreview } from "./SlackPreview";
 import { WebhookPayloadPreview } from "./WebhookPayloadPreview";
+import { EmailPreview } from "./EmailPreview";
+import { EmailChannelFields } from "./EmailChannelFields";
+import { EmailConfig, emptyEmailConfig, isEmailConfigured } from "@/lib/emailChannel";
 
 interface ChannelDetailsSheetProps {
     channel: NotificationChannel;
@@ -34,20 +37,26 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
     const [name, setName] = useState(channel.name);
     const [type, setType] = useState<NotificationChannel['type']>(channel.type);
     const [webhookUrl, setWebhookUrl] = useState(channel.config.webhookUrl || "");
+    const [email, setEmail] = useState<EmailConfig>(emailConfigFrom(channel));
     const [testing, setTesting] = useState(false);
+
+    const isEmail = type === "email";
+    const config: Record<string, string> = isEmail ? { ...email } : { webhookUrl };
+    const canTest = isEmail ? isEmailConfigured(email) : webhookUrl !== "";
 
     // Reset state when channel changes
     useEffect(() => {
         setName(channel.name);
         setType(channel.type);
         setWebhookUrl(channel.config.webhookUrl || "");
+        setEmail(emailConfigFrom(channel));
     }, [channel, open]);
 
     const handleSave = () => {
         updateChannel(channel.id, {
             name,
             type,
-            config: { webhookUrl },
+            config,
         });
         onOpenChange(false);
     };
@@ -59,13 +68,13 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
 
     const handleTest = async () => {
         setTesting(true);
-        await testChannel(type, { webhookUrl });
+        await testChannel(type, config);
         setTesting(false);
     };
 
     return (
         <Sheet open={open} onOpenChange={onOpenChange}>
-            <SheetContent className="sm:max-w-[500px]">
+            <SheetContent className="sm:max-w-[500px] overflow-y-auto">
                 <SheetHeader>
                     <SheetTitle className="flex items-center gap-2">
                         <Bell className="w-5 h-5 text-primary" />
@@ -90,6 +99,9 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
                                 <SelectItem value="webhook">
                                     <div className="flex items-center gap-2"><Webhook className="w-4 h-4" /> Webhook</div>
                                 </SelectItem>
+                                <SelectItem value="email">
+                                    <div className="flex items-center gap-2"><Mail className="w-4 h-4" /> Email</div>
+                                </SelectItem>
                             </SelectContent>
                         </Select>
                     </div>
@@ -99,22 +111,26 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
                         <Input value={name} onChange={e => setName(e.target.value)} />
                     </div>
 
-                    <div className="grid gap-2">
-                        <Label>Webhook URL</Label>
-                        <Input
-                            value={webhookUrl}
-                            onChange={e => setWebhookUrl(e.target.value)}
-                            className="font-mono text-xs"
-                            placeholder={type === 'slack' ? "https://hooks.slack.com/services/..." : "https://your-endpoint.com/webhook"}
-                        />
-                        <p className="text-[0.8rem] text-muted-foreground">
-                            {type === 'slack'
-                                ? "Incoming Webhook URL from your Slack App."
-                                : "Any HTTP endpoint that accepts POST requests with JSON."}
-                        </p>
-                    </div>
+                    {isEmail ? (
+                        <EmailChannelFields config={email} onChange={setEmail} />
+                    ) : (
+                        <div className="grid gap-2">
+                            <Label>Webhook URL</Label>
+                            <Input
+                                value={webhookUrl}
+                                onChange={e => setWebhookUrl(e.target.value)}
+                                className="font-mono text-xs"
+                                placeholder={type === 'slack' ? "https://hooks.slack.com/services/..." : "https://your-endpoint.com/webhook"}
+                            />
+                            <p className="text-[0.8rem] text-muted-foreground">
+                                {type === 'slack'
+                                    ? "Incoming Webhook URL from your Slack App."
+                                    : "Any HTTP endpoint that accepts POST requests with JSON."}
+                            </p>
+                        </div>
+                    )}
 
-                    {type === 'slack' ? <SlackPreview /> : <WebhookPayloadPreview />}
+                    {isEmail ? <EmailPreview /> : type === 'slack' ? <SlackPreview /> : <WebhookPayloadPreview />}
                 </div>
 
                 <Separator className="my-4" />
@@ -127,7 +143,7 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
                         <Button
                             type="button"
                             variant="outline"
-                            disabled={!webhookUrl || testing}
+                            disabled={!canTest || testing}
                             onClick={handleTest}
                             data-testid="test-channel-btn"
                         >
@@ -142,4 +158,17 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
             </SheetContent>
         </Sheet>
     );
+}
+
+// emailConfigFrom reads a stored channel back into the form's shape. Anything missing
+// falls back to the defaults, which is what a channel of another type looks like here.
+function emailConfigFrom(channel: NotificationChannel): EmailConfig {
+    return {
+        host: channel.config.host || "",
+        port: channel.config.port || emptyEmailConfig.port,
+        username: channel.config.username || "",
+        password: channel.config.password || "",
+        from: channel.config.from || "",
+        to: channel.config.to || "",
+    };
 }

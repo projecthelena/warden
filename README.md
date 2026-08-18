@@ -46,6 +46,7 @@ See the [`docs/`](docs/) folder for detailed guides:
 - [Monitor Types](docs/monitor-types.md) — HTTP, TCP, ping and DNS checks, and the permissions ICMP needs
 - [API](docs/api.md) — REST API and Swagger docs
 - [MCP Server](docs/mcp.md) — connect Claude to your monitoring data
+- [Notifications](docs/notifications.md) — Slack, webhook and email channels, and how to configure SMTP
 - [Database](docs/database.md) — SQLite vs PostgreSQL configuration
 - [Password Recovery](docs/recovery.md) — reset a password or get back in after a lockout
 - [Load Testing](docs/load-testing.md) *(coming soon)*

@@ -113,13 +113,10 @@ func (h *NotificationChannelsHandler) CreateChannel(w http.ResponseWriter, r *ht
 		return
 	}
 
-	// SECURITY: Validate webhook URL for channel types that use it
-	if body.Type == "slack" || body.Type == "webhook" {
-		webhookURL := extractWebhookURL(body.Config)
-		if _, err := validateWebhookURL(webhookURL); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
+	// SECURITY: a channel is only stored once its config is known to be well formed
+	if err := validateChannelConfig(body.Type, body.Config); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	configBytes, err := json.Marshal(body.Config)
@@ -194,6 +191,28 @@ func validateWebhookURL(rawURL string) (string, error) {
 	return rawURL, nil
 }
 
+// validateChannelConfig rejects a channel whose config cannot possibly work, before it
+// reaches the database. Each type is checked on its own terms: a webhook needs a URL, an
+// email channel needs a server and somewhere to send to. Types we do not know are left
+// alone — the notifier reports the failure at send time.
+func validateChannelConfig(channelType string, config map[string]interface{}) error {
+	switch channelType {
+	case "slack", "webhook":
+		_, err := validateWebhookURL(extractWebhookURL(config))
+		return err
+	case "email":
+		encoded, err := json.Marshal(config)
+		if err != nil {
+			return fmt.Errorf("invalid config")
+		}
+		// Parsed by the notifier itself so that the form and the send path agree on what
+		// counts as valid, instead of drifting into two different sets of rules.
+		return notifications.ValidateEmailConfig(string(encoded))
+	default:
+		return nil
+	}
+}
+
 // extractWebhookURL pulls the webhook URL from a config map, supporting both key names.
 func extractWebhookURL(config map[string]interface{}) string {
 	if u, ok := config["webhook_url"].(string); ok {
@@ -238,13 +257,9 @@ func (h *NotificationChannelsHandler) UpdateChannel(w http.ResponseWriter, r *ht
 		return
 	}
 
-	// Validate webhook URL for types that use it
-	if body.Type == "slack" || body.Type == "webhook" {
-		webhookURL := extractWebhookURL(body.Config)
-		if _, err := validateWebhookURL(webhookURL); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
+	if err := validateChannelConfig(body.Type, body.Config); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	configBytes, err := json.Marshal(body.Config)
@@ -287,9 +302,7 @@ func (h *NotificationChannelsHandler) TestChannel(w http.ResponseWriter, r *http
 		return
 	}
 
-	// Validate webhook URL
-	webhookURL := extractWebhookURL(body.Config)
-	if _, err := validateWebhookURL(webhookURL); err != nil {
+	if err := validateChannelConfig(body.Type, body.Config); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

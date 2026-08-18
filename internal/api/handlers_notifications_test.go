@@ -394,3 +394,103 @@ func TestTestChannel_InvalidURL(t *testing.T) {
 		t.Errorf("expected 400, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
+
+func TestCreateChannel_Email(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewNotificationChannelsHandler(store)
+
+	payload := map[string]interface{}{
+		"type": "email", "name": "On-call inbox",
+		"config": map[string]string{
+			"host": "smtp.example.com",
+			"port": "587",
+			"from": "Warden <alerts@example.com>",
+			"to":   "oncall@example.com, cto@example.com",
+		},
+	}
+	body, _ := json.Marshal(payload)
+	req, _ := http.NewRequest("POST", "/api/notifications/channels", bytes.NewBuffer(body))
+	req = req.WithContext(context.WithValue(req.Context(), contextKeyUserRole, RoleAdmin))
+	rr := httptest.NewRecorder()
+
+	handler.CreateChannel(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	channels, err := store.GetNotificationChannels()
+	if err != nil {
+		t.Fatalf("GetNotificationChannels: %v", err)
+	}
+	if len(channels) != 1 || channels[0].Type != "email" {
+		t.Fatalf("expected one email channel, got %+v", channels)
+	}
+}
+
+// An email channel has no webhook URL. Before email existed the handler validated one for
+// every type, which would have rejected this outright.
+func TestCreateChannel_EmailValidation(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewNotificationChannelsHandler(store)
+
+	tests := []struct {
+		name       string
+		config     map[string]string
+		wantStatus int
+	}{
+		{
+			name:       "missing server",
+			config:     map[string]string{"from": "a@example.com", "to": "b@example.com"},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "missing recipients",
+			config:     map[string]string{"host": "smtp.example.com", "from": "a@example.com"},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "malformed recipient",
+			config:     map[string]string{"host": "smtp.example.com", "from": "a@example.com", "to": "not-an-address"},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "valid without credentials",
+			config:     map[string]string{"host": "smtp.example.com", "from": "a@example.com", "to": "b@example.com"},
+			wantStatus: http.StatusCreated,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			body, _ := json.Marshal(map[string]interface{}{"type": "email", "name": "Mail", "config": tc.config})
+			req, _ := http.NewRequest("POST", "/api/notifications/channels", bytes.NewBuffer(body))
+			req = req.WithContext(context.WithValue(req.Context(), contextKeyUserRole, RoleAdmin))
+			rr := httptest.NewRecorder()
+			handler.CreateChannel(rr, req)
+
+			if rr.Code != tc.wantStatus {
+				t.Errorf("expected %d, got %d: %s", tc.wantStatus, rr.Code, rr.Body.String())
+			}
+		})
+	}
+}
+
+func TestTestChannel_EmailRejectsBrokenConfig(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewNotificationChannelsHandler(store)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"type":   "email",
+		"config": map[string]string{"host": "smtp.example.com", "from": "a@example.com"},
+	})
+	req, _ := http.NewRequest("POST", "/api/notifications/channels/test", bytes.NewBuffer(body))
+	req = req.WithContext(context.WithValue(req.Context(), contextKeyUserRole, RoleAdmin))
+	rr := httptest.NewRecorder()
+
+	handler.TestChannel(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for a channel with no recipients, got %d: %s", rr.Code, rr.Body.String())
+	}
+}

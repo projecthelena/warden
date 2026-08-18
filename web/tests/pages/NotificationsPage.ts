@@ -8,6 +8,9 @@ export class NotificationsPage {
     readonly typeSelect: Locator;
     readonly nameInput: Locator;
     readonly webhookInput: Locator;
+    readonly smtpHostInput: Locator;
+    readonly smtpFromInput: Locator;
+    readonly smtpToInput: Locator;
     readonly submitBtn: Locator;
 
     constructor(page: Page) {
@@ -16,6 +19,9 @@ export class NotificationsPage {
         this.typeSelect = page.getByTestId('channel-type-select');
         this.nameInput = page.getByTestId('channel-name-input');
         this.webhookInput = page.getByTestId('channel-webhook-input');
+        this.smtpHostInput = page.getByTestId('channel-smtp-host-input');
+        this.smtpFromInput = page.getByTestId('channel-smtp-from-input');
+        this.smtpToInput = page.getByTestId('channel-smtp-to-input');
         this.submitBtn = page.getByTestId('create-channel-submit');
     }
 
@@ -47,6 +53,29 @@ export class NotificationsPage {
 
         // Verify creation
         await expect(this.page.getByText(name)).toBeVisible();
+    }
+
+    async createEmailChannel(name: string, from: string, to: string) {
+        await expect(this.page.getByText('Wait ...')).toBeHidden();
+        await expect(this.page).toHaveURL(/.*notifications/);
+        await expect(this.page.getByRole('heading', { name: /Notification/i }).first()).toBeVisible({ timeout: 5000 });
+
+        await expect(this.addChannelTrigger).toBeVisible();
+        await this.addChannelTrigger.click();
+
+        await this.typeSelect.click();
+        await this.page.getByTestId('channel-type-email').click();
+
+        await this.nameInput.fill(name);
+        await this.smtpHostInput.fill('smtp.example.com');
+        await this.smtpFromInput.fill(from);
+        await this.smtpToInput.fill(to);
+
+        await this.submitBtn.click();
+
+        // The row shows the recipients, which is what tells two mail channels apart.
+        await expect(this.page.getByText(name)).toBeVisible();
+        await expect(this.page.getByText(to, { exact: false })).toBeVisible();
     }
 
     async deleteChannel(name: string) {
