@@ -17,6 +17,7 @@ env:
 jobs:
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       frontend: ${{ steps.filter.outputs.frontend }}
       backend: ${{ steps.filter.outputs.backend }}
@@ -51,6 +52,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -78,6 +80,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # Postgres runs the dual-DB tests against a real server. Without it those tests only
     # exercise SQLite, so a migration or query that is invalid for Postgres merges green
     # and only breaks when someone starts the app against Postgres.
@@ -164,6 +167,17 @@ jobs:
     needs: changes
     if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-latest
+    # The official Playwright image ships the browsers and their OS libraries already
+    # installed. That removes the `playwright install --with-deps` step, which ran apt on
+    # every single run and is what hung CI for 110 minutes on 2026-08-15 and again on
+    # 2026-08-18 — an unresponsive Ubuntu mirror with nothing to time it out.
+    #
+    # Keep the tag in step with @playwright/test in web/package-lock.json. A mismatch makes
+    # Playwright re-download browsers at runtime, which puts the slow path straight back.
+    container:
+      image: mcr.microsoft.com/playwright:v1.57.0-noble
+      options: --user 1001
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -180,17 +194,9 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - name: Cache Playwright Binaries
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
-
       - name: Install dependencies
         working-directory: web
-        run: |
-          npm ci
-          npx playwright install --with-deps
+        run: npm ci
 
       - name: Build Frontend
         working-directory: web
