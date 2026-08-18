@@ -166,6 +166,11 @@ func (m *Manager) outageEvent(o db.OpenOutage, now time.Time, reminder bool) not
 
 	elapsed := formatAlertDuration(now.Sub(o.StartTime))
 	message := fmt.Sprintf("%s — %s for %s", o.Summary, state, elapsed)
+	if o.Summary == "" {
+		// A summary can come back empty from an older row or a failed write. Leading with
+		// the separator would make the alert read as though something had been cut off.
+		message = fmt.Sprintf("Monitor is %s for %s", state, elapsed)
+	}
 	if reminder {
 		message = fmt.Sprintf("Still %s after %s", state, elapsed)
 	}

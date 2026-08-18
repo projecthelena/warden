@@ -1,10 +1,12 @@
 package uptime
 
 import (
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/projecthelena/warden/internal/db"
+	"github.com/projecthelena/warden/internal/notifications"
 )
 
 // newAlertTestManager builds a manager wired to a store, with one registered monitor, and
@@ -220,5 +222,123 @@ func TestLoadAlertPolicy_ReadsSettings(t *testing.T) {
 	_ = store.SetSetting("notification.alert.sustained_seconds", "0")
 	if got := m.loadAlertPolicy(); got.SustainedFor != 0 {
 		t.Errorf("sustained_seconds=0 should mean no silent window, got %v", got.SustainedFor)
+	}
+}
+
+// --- evaluator edge cases ---
+
+// A monitor deleted mid-flight takes its outages with it (foreign key cascade), so the
+// evaluator simply finds nothing. The guard that matters is that it does not panic on the
+// nil monitor it would otherwise look up.
+func TestEvaluateAlerts_HandlesAnEmptyWorld(t *testing.T) {
+	m, _ := newAlertTestManager(t)
+
+	// No outages at all: the evaluator must return without touching the notifier.
+	m.evaluateAlerts(time.Now())
+
+	// And with the monitor gone from the running set but an outage still open.
+	openOutage(t, m.store, "down", "Monitor is down")
+	delete(m.monitors, "m1")
+	m.evaluateAlerts(time.Now().Add(time.Hour))
+}
+
+// The evaluator holds no lock while it works, and Sync can replace the policy underneath
+// it. Running both concurrently is the cheapest way to catch a lock that was forgotten.
+func TestEvaluateAlerts_IsSafeAlongsideSync(t *testing.T) {
+	m, store := newAlertTestManager(t)
+	openOutage(t, store, "down", "Monitor is down")
+
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			m.evaluateAlerts(time.Now().Add(time.Hour))
+		}()
+		go func() {
+			defer wg.Done()
+			m.Sync()
+		}()
+	}
+	wg.Wait()
+}
+
+// Two ticks landing on the same outage at once must produce one alert, not two. The claim
+// is exclusive at the database, and this is the test that says so from the evaluator's
+// side rather than the store's.
+func TestEvaluateAlerts_ConcurrentTicksAnnounceOnce(t *testing.T) {
+	m, store := newAlertTestManager(t)
+	spy := &spyNotifier{}
+	m.notifier = spy
+	o := openOutage(t, store, "down", "Monitor is down")
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			m.evaluateAlerts(o.StartTime.Add(3 * time.Minute))
+		}()
+	}
+	wg.Wait()
+
+	if got := spy.byType(notifications.EventDown); len(got) != 1 {
+		t.Errorf("concurrent ticks announced the same outage %d times", len(got))
+	}
+}
+
+// An outage that opened during maintenance and is still open after the window closes is
+// real and unannounced, so it must be announced then — the guard suppresses, it does not
+// consume the outage.
+func TestEvaluateAlerts_AnnouncesOnceMaintenanceEnds(t *testing.T) {
+	m, store := newAlertTestManager(t)
+	spy := &spyNotifier{}
+	m.notifier = spy
+	o := openOutage(t, store, "down", "Monitor is down")
+
+	now := time.Now().UTC()
+	ends := now.Add(30 * time.Minute)
+	m.maintenanceWindows = []db.Incident{{
+		StartTime: now.Add(-time.Hour), EndTime: &ends, AffectedGroups: `["g1"]`,
+	}}
+
+	m.evaluateAlerts(o.StartTime.Add(5 * time.Minute))
+	if got := spy.byType(notifications.EventDown); len(got) != 0 {
+		t.Fatalf("alerted during maintenance: %+v", got)
+	}
+
+	// The window closes; the outage is still open and still un-announced.
+	m.maintenanceWindows = nil
+	m.evaluateAlerts(o.StartTime.Add(40 * time.Minute))
+	if got := spy.byType(notifications.EventDown); len(got) != 1 {
+		t.Errorf("expected the outage to be announced after maintenance, got %d alerts", len(got))
+	}
+}
+
+// A flapping monitor is suppressed by design, and must resume being alertable once it
+// settles rather than staying silent for the life of the outage.
+func TestEvaluateAlerts_ResumesAfterFlappingSettles(t *testing.T) {
+	m, store := newAlertTestManager(t)
+	spy := &spyNotifier{}
+	m.notifier = spy
+	o := openOutage(t, store, "down", "Monitor is down")
+
+	mon := m.monitors["m1"]
+	mon.mu.Lock()
+	mon.isFlapping = true
+	mon.mu.Unlock()
+
+	m.evaluateAlerts(o.StartTime.Add(5 * time.Minute))
+	if got := spy.byType(notifications.EventDown); len(got) != 0 {
+		t.Fatalf("alerted while flapping: %+v", got)
+	}
+
+	mon.mu.Lock()
+	mon.isFlapping = false
+	mon.mu.Unlock()
+
+	m.evaluateAlerts(o.StartTime.Add(10 * time.Minute))
+	if got := spy.byType(notifications.EventDown); len(got) != 1 {
+		t.Errorf("expected the alert once it settled, got %d", len(got))
 	}
 }

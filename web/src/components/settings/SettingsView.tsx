@@ -375,7 +375,7 @@ function NotificationIntelligence() {
                                     Alerting Thresholds
                                 </AccordionTrigger>
                                 <AccordionContent>
-                                    <div className="space-y-2 pt-2 pb-4">
+                                    <div className="space-y-2 pt-2 pb-4" data-testid="alert-ladder">
                                         <div className="text-sm font-medium">When an outage is announced</div>
                                         <div className="text-sm text-muted-foreground">
                                             A monitor that goes down opens an outage silently. It is announced only if it is still
@@ -404,6 +404,7 @@ function NotificationIntelligence() {
                                                 </Label>
                                                 <Input
                                                     id="alert-reminder"
+                                                    data-testid="alert-reminder"
                                                     type="number"
                                                     min={0}
                                                     max={10080}
@@ -418,6 +419,7 @@ function NotificationIntelligence() {
                                                 </Label>
                                                 <Input
                                                     id="alert-repeat"
+                                                    data-testid="alert-repeat"
                                                     type="number"
                                                     min={0}
                                                     max={10080}
@@ -536,6 +538,7 @@ function NotificationIntelligence() {
                                             <Switch
                                                 checked={digestEnabled}
                                                 onCheckedChange={setDigestEnabled}
+                                                data-testid="digest-enabled"
                                             />
                                         </div>
                                         {digestEnabled && (
@@ -558,7 +561,7 @@ function NotificationIntelligence() {
                                                         Include in the digest
                                                         <HelpTip text="What the daily summary covers. This no longer affects immediate alerts: an event can appear in the digest and still reach you the moment it happens. To stop an immediate alert, turn that event off under Event Types." />
                                                     </Label>
-                                                    <div className="text-sm text-muted-foreground -mt-1">
+                                                    <div className="text-sm text-muted-foreground -mt-1" data-testid="digest-scope-note">
                                                         What the daily summary covers. Immediate alerts are controlled separately, under Event Types.
                                                     </div>
                                                     <div className="grid grid-cols-2 gap-2">
@@ -596,7 +599,7 @@ function NotificationIntelligence() {
                             </AccordionItem>
                         </Accordion>
 
-                        <Button onClick={handleSave} className="w-fit">Save Settings</Button>
+                        <Button onClick={handleSave} className="w-fit" data-testid="save-notification-settings">Save Settings</Button>
                     </div>
                 </TooltipProvider>
             </CardContent>
