@@ -565,3 +565,224 @@ func TestEvaluateAlerts_ProbeFailureDoesNotSwallowDegraded(t *testing.T) {
 		t.Errorf("the degraded outage was swallowed by the probe verdict: got %d degraded alerts", len(deg))
 	}
 }
+
+// --- correlation edge cases ---
+
+func TestRequiredForGroup_Degenerate(t *testing.T) {
+	p := defaultCorrelationPolicy()
+
+	// A group with no running monitors still cannot produce a correlated incident.
+	if got := p.requiredForGroup(0); got != p.MinMonitors {
+		t.Errorf("requiredForGroup(0) = %d, want the floor %d", got, p.MinMonitors)
+	}
+
+	// Exactly at the crossover: 10 monitors, 30% = 3, which ties the floor.
+	if got := p.requiredForGroup(10); got != 3 {
+		t.Errorf("requiredForGroup(10) = %d, want 3", got)
+	}
+	// 11 monitors, 30% = 3.3 → 4, so the percentage takes over.
+	if got := p.requiredForGroup(11); got != 4 {
+		t.Errorf("requiredForGroup(11) = %d, want 4", got)
+	}
+}
+
+func TestCluster_Degenerate(t *testing.T) {
+	if got := cluster(nil, 5*time.Minute); len(got) != 0 {
+		t.Errorf("cluster(nil) = %d clusters, want 0", len(got))
+	}
+
+	one := []db.OpenOutage{{ID: 1, MonitorID: "m1", StartTime: time.Now()}}
+	got := cluster(one, 5*time.Minute)
+	if len(got) != 1 || len(got[0]) != 1 {
+		t.Errorf("a single outage should be one cluster of one, got %v", clusterSizes(got))
+	}
+
+	// A zero window means only outages sharing the exact instant group together.
+	base := time.Date(2026, 8, 12, 19, 29, 0, 0, time.UTC)
+	same := []db.OpenOutage{
+		{ID: 1, MonitorID: "a", StartTime: base},
+		{ID: 2, MonitorID: "b", StartTime: base},
+		{ID: 3, MonitorID: "c", StartTime: base.Add(time.Second)},
+	}
+	got = cluster(same, 0)
+	if len(got) != 2 {
+		t.Errorf("with a zero window: %v clusters, want 2", clusterSizes(got))
+	}
+}
+
+func TestMonitorList_Degenerate(t *testing.T) {
+	if got := monitorList(nil, 8); got != "" {
+		t.Errorf("monitorList(nil) = %q, want empty", got)
+	}
+
+	// Exactly at the cap: no "and N more" tail.
+	var eight []db.OpenOutage
+	for i := 0; i < 8; i++ {
+		eight = append(eight, db.OpenOutage{MonitorName: fmt.Sprintf("m%d", i)})
+	}
+	if got := monitorList(eight, 8); strings.Contains(got, "more") {
+		t.Errorf("exactly at the cap should not be truncated: %q", got)
+	}
+
+	// One over: the tail appears and counts correctly.
+	nine := append(eight, db.OpenOutage{MonitorName: "m8"})
+	if got := monitorList(nine, 8); !strings.HasSuffix(got, "and 1 more") {
+		t.Errorf("one over the cap: %q", got)
+	}
+}
+
+func TestDistinctGroups(t *testing.T) {
+	outages := []db.OpenOutage{
+		{GroupID: "a"}, {GroupID: "a"}, {GroupID: "b"},
+	}
+	if got := distinctGroups(outages); got != 2 {
+		t.Errorf("distinctGroups = %d, want 2", got)
+	}
+	if got := distinctGroups(nil); got != 0 {
+		t.Errorf("distinctGroups(nil) = %d, want 0", got)
+	}
+}
+
+// Exactly at the group threshold must correlate; one short must not. An off-by-one here
+// either floods or hides.
+func TestEvaluateAlerts_GroupThresholdBoundary(t *testing.T) {
+	// 10 monitors: max(3, ceil(30% of 10)) = 3.
+	t.Run("one short stays individual", func(t *testing.T) {
+		m, store, spy := newCorrelationTestManager(t, "g-ns", 10)
+		start := openOutagesFor(t, store, []string{"m00", "m01"}, "Monitor is down")
+
+		m.evaluateAlerts(start.Add(3 * time.Minute))
+
+		sent := spy.byType(notifications.EventDown)
+		if len(sent) != 2 {
+			t.Fatalf("two failures in a group of ten should be two alerts, got %d", len(sent))
+		}
+	})
+
+	t.Run("exactly at the threshold correlates", func(t *testing.T) {
+		m, store, spy := newCorrelationTestManager(t, "g-ns", 10)
+		start := openOutagesFor(t, store, []string{"m00", "m01", "m02"}, "Monitor is down")
+
+		m.evaluateAlerts(start.Add(3 * time.Minute))
+
+		sent := spy.byType(notifications.EventDown)
+		if len(sent) != 1 {
+			t.Fatalf("three failures in a group of ten should be one incident, got %d: %v",
+				len(sent), messages(sent))
+		}
+		if !strings.Contains(sent[0].Message, "3 of 10") {
+			t.Errorf("message does not name the scale: %q", sent[0].Message)
+		}
+	})
+}
+
+// A monitor in maintenance is excluded before any counting, so it must not push a group
+// over the correlation threshold either.
+func TestEvaluateAlerts_MaintenanceMonitorsDoNotCount(t *testing.T) {
+	m, store, spy := newCorrelationTestManager(t, "g-ns", 10)
+	start := openOutagesFor(t, store, []string{"m00", "m01", "m02"}, "Monitor is down")
+
+	now := time.Now().UTC()
+	m.maintenanceWindows = []db.Incident{{
+		StartTime: now.Add(-time.Hour), AffectedGroups: `["g-ns"]`,
+	}}
+
+	m.evaluateAlerts(start.Add(3 * time.Minute))
+
+	if got := spy.byType(notifications.EventDown); len(got) != 0 {
+		t.Errorf("alerted for a group entirely in maintenance: %+v", messages(got))
+	}
+}
+
+// The chronic ladder, one step at a time. The boundary is where damping either fires early
+// and hides a real outage, or fires late and lets the flood through.
+func TestEvaluateAlerts_ChronicBoundary(t *testing.T) {
+	m, store, spy := newCorrelationTestManager(t, "g-ns", 12)
+
+	// Episodes 1 and 2 are ordinary alerts.
+	for i := 0; i < 2; i++ {
+		start := openOutagesFor(t, store, []string{"m00"}, "Monitor is down")
+		m.evaluateAlerts(start.Add(3 * time.Minute))
+		if err := store.CloseOutage("m00"); err != nil {
+			t.Fatalf("CloseOutage: %v", err)
+		}
+	}
+	sent := spy.byType(notifications.EventDown)
+	if len(sent) != 2 {
+		t.Fatalf("the first two episodes should alert normally, got %d", len(sent))
+	}
+	for _, e := range sent {
+		if strings.Contains(e.Message, "Muting") {
+			t.Errorf("damped too early: %q", e.Message)
+		}
+	}
+
+	// The third crosses the line and says so.
+	start := openOutagesFor(t, store, []string{"m00"}, "Monitor is down")
+	m.evaluateAlerts(start.Add(3 * time.Minute))
+	sent = spy.byType(notifications.EventDown)
+	if len(sent) != 3 || !strings.Contains(sent[2].Message, "Muting") {
+		t.Fatalf("the third episode should announce the damping, got %v", messages(sent))
+	}
+	if err := store.CloseOutage("m00"); err != nil {
+		t.Fatalf("CloseOutage: %v", err)
+	}
+
+	// The fourth is silent.
+	start = openOutagesFor(t, store, []string{"m00"}, "Monitor is down")
+	m.evaluateAlerts(start.Add(3 * time.Minute))
+	if got := spy.byType(notifications.EventDown); len(got) != 3 {
+		t.Errorf("the fourth episode was not damped: %v", messages(got))
+	}
+}
+
+// Episodes older than the window must age out, or a monitor that misbehaved yesterday
+// would stay muted forever.
+func TestEvaluateAlerts_ChronicWindowAgesOut(t *testing.T) {
+	m, store, spy := newCorrelationTestManager(t, "g-ns", 12)
+
+	// Three episodes announced two days ago — outside the 24h window.
+	old := time.Now().UTC().AddDate(0, 0, -2)
+	for i := 0; i < 3; i++ {
+		if err := store.CreateOutage("m00", "down", "Monitor is down"); err != nil {
+			t.Fatalf("CreateOutage: %v", err)
+		}
+		open, _ := store.GetOpenOutages()
+		if _, err := store.MarkOutageNotified(open[0].ID, old.Add(time.Duration(i)*time.Minute)); err != nil {
+			t.Fatalf("MarkOutageNotified: %v", err)
+		}
+		if err := store.CloseOutage("m00"); err != nil {
+			t.Fatalf("CloseOutage: %v", err)
+		}
+	}
+
+	start := openOutagesFor(t, store, []string{"m00"}, "Monitor is down")
+	m.evaluateAlerts(start.Add(3 * time.Minute))
+
+	sent := spy.byType(notifications.EventDown)
+	if len(sent) != 1 {
+		t.Fatalf("expected a normal alert, got %d", len(sent))
+	}
+	if strings.Contains(sent[0].Message, "Muting") {
+		t.Errorf("episodes from two days ago still counted towards the damping: %q", sent[0].Message)
+	}
+}
+
+// A muted monitor must not count towards a group's correlation threshold either — it is
+// excluded before anything is counted.
+func TestEvaluateAlerts_MutedMonitorDoesNotCountTowardsCorrelation(t *testing.T) {
+	m, store, spy := newCorrelationTestManager(t, "g-ns", 10)
+	if err := store.SetMonitorAlertsMuted("m02", true); err != nil {
+		t.Fatalf("SetMonitorAlertsMuted: %v", err)
+	}
+	m.Sync()
+
+	start := openOutagesFor(t, store, []string{"m00", "m01", "m02"}, "Monitor is down")
+	m.evaluateAlerts(start.Add(3 * time.Minute))
+
+	sent := spy.byType(notifications.EventDown)
+	if len(sent) != 2 {
+		t.Fatalf("a muted monitor pushed the group over the threshold: got %d alerts: %v",
+			len(sent), messages(sent))
+	}
+}
