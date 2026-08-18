@@ -120,40 +120,43 @@ type GetNotificationConfigOutput struct {
 	ConfirmationThreshold int              `json:"confirmationThreshold"`
 	CooldownMinutes       int              `json:"cooldownMinutes"`
 	FlapDetectionEnabled  bool             `json:"flapDetectionEnabled"`
+	AlertAfterSeconds     int              `json:"alertAfterSeconds"`
+	ReminderMinutes       int              `json:"reminderMinutes"`
+	RepeatReminderMinutes int              `json:"repeatReminderMinutes"`
 	ImmediateEvents       []string         `json:"immediateEvents"`
 	DigestEnabled         bool             `json:"digestEnabled"`
 	DigestTime            string           `json:"digestTime,omitempty"`
-	BatchedEvents         []string         `json:"batchedEvents"`
+	DigestEvents          []string         `json:"digestEvents"`
 	Channels              []ChannelSummary `json:"channels"`
 	Note                  string           `json:"note"`
 }
 
-// getNotificationConfig answers "why did I not get told". The batched events are the
-// part people miss: an event listed there is sent in the daily digest *instead of*
-// immediately, so putting "down" in it silences outage alerts.
+// getNotificationConfig answers "why did I not get told". The part people miss now is the
+// silent window: a down alert is held back until the monitor has been down for
+// alertAfterSeconds, so a short outage is real, recorded, and deliberately unannounced.
 func (s *Server) getNotificationConfig(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, GetNotificationConfigOutput, error) {
 	out := GetNotificationConfigOutput{
 		ConfirmationThreshold: s.settingInt("notification.confirmation_threshold", 3),
 		CooldownMinutes:       s.settingInt("notification.cooldown_minutes", 30),
 		FlapDetectionEnabled:  s.settingBool("notification.flap_detection_enabled", true),
+		AlertAfterSeconds:     s.settingInt("notification.alert.sustained_seconds", 180),
+		ReminderMinutes:       s.settingInt("notification.alert.reminder_minutes", 30),
+		RepeatReminderMinutes: s.settingInt("notification.alert.repeat_reminder_minutes", 60),
 		DigestEnabled:         s.settingBool("notification.digest.enabled", false),
 		DigestTime:            s.setting("notification.digest.time"),
-		BatchedEvents:         splitList(s.setting("notification.digest.event_types")),
-		Note: "An event listed in batchedEvents is sent in the daily digest instead of immediately, " +
-			"not as well as. Flapping monitors also have their down alerts suppressed until they settle.",
+		DigestEvents:          splitList(s.setting("notification.digest.event_types")),
+		Note: "digestEvents lists what the daily summary contains; it no longer suppresses the " +
+			"immediate alert, those are separate decisions now. down and degraded are announced only " +
+			"after the monitor has been in that state for alertAfterSeconds, then repeated after " +
+			"reminderMinutes and every repeatReminderMinutes while it lasts. A recovery is announced " +
+			"only if the outage itself was. Flapping monitors stay suppressed until they settle.",
 	}
 
-	// An event is only immediate if it is enabled *and* not being diverted to the digest.
-	// Reporting it as both would repeat the confusion this tool exists to clear up.
-	batched := make(map[string]bool, len(out.BatchedEvents))
-	if out.DigestEnabled {
-		for _, e := range out.BatchedEvents {
-			batched[e] = true
-		}
-	}
+	// Appearing in the digest no longer diverts an event, so the immediate list is just the
+	// per-event toggles.
 	out.ImmediateEvents = []string{}
 	for _, event := range []string{"down", "up", "degraded", "flapping", "stabilized", "ssl_expiring"} {
-		if s.settingBool("notification.event."+event+".enabled", true) && !batched[event] {
+		if s.settingBool("notification.event."+event+".enabled", true) {
 			out.ImmediateEvents = append(out.ImmediateEvents, event)
 		}
 	}

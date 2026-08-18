@@ -118,3 +118,112 @@ func TestUpdateSettings_LatencyThresholdUpdatesManager(t *testing.T) {
 		t.Errorf("Expected latency threshold 2000, got %d", m.GetLatencyThreshold())
 	}
 }
+
+// The sustained ladder is only configurable if the settings endpoint actually carries it.
+// Defaults matter as much as the stored values: a fresh install must report the ladder it
+// is really using, not blanks the UI would then save as zeros.
+func TestGetSettings_ReportsTheAlertLadder(t *testing.T) {
+	s, _ := db.NewStore(db.NewTestConfig())
+	m := uptime.NewManager(s)
+	h := NewSettingsHandler(s, m)
+
+	req := httptest.NewRequest("GET", "/api/settings", nil)
+	w := httptest.NewRecorder()
+	h.GetSettings(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var response map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	for key, want := range map[string]string{
+		"notification.alert.sustained_seconds":       "180",
+		"notification.alert.reminder_minutes":        "30",
+		"notification.alert.repeat_reminder_minutes": "60",
+	} {
+		if response[key] != want {
+			t.Errorf("%s = %q, want the default %q", key, response[key], want)
+		}
+	}
+}
+
+func TestUpdateSettings_PersistsTheAlertLadder(t *testing.T) {
+	s, _ := db.NewStore(db.NewTestConfig())
+	m := uptime.NewManager(s)
+	h := NewSettingsHandler(s, m)
+
+	body, _ := json.Marshal(map[string]string{
+		"notification.alert.sustained_seconds":       "300",
+		"notification.alert.reminder_minutes":        "15",
+		"notification.alert.repeat_reminder_minutes": "120",
+	})
+	req := withAdminCtx(httptest.NewRequest("PATCH", "/api/settings", bytes.NewReader(body)))
+	w := httptest.NewRecorder()
+	h.UpdateSettings(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	for key, want := range map[string]string{
+		"notification.alert.sustained_seconds":       "300",
+		"notification.alert.reminder_minutes":        "15",
+		"notification.alert.repeat_reminder_minutes": "120",
+	} {
+		got, err := s.GetSetting(key)
+		if err != nil || got != want {
+			t.Errorf("%s = %q (err %v), want %q", key, got, err, want)
+		}
+	}
+}
+
+// Zero is a legal, meaningful value on all three — no silent window, no reminders, no
+// repeats — so the validator must not treat it as missing and reject it.
+func TestUpdateSettings_AcceptsZeroOnTheAlertLadder(t *testing.T) {
+	s, _ := db.NewStore(db.NewTestConfig())
+	m := uptime.NewManager(s)
+	h := NewSettingsHandler(s, m)
+
+	body, _ := json.Marshal(map[string]string{
+		"notification.alert.sustained_seconds": "0",
+		"notification.alert.reminder_minutes":  "0",
+	})
+	req := withAdminCtx(httptest.NewRequest("PATCH", "/api/settings", bytes.NewReader(body)))
+	w := httptest.NewRecorder()
+	h.UpdateSettings(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("zero was rejected: %d %s", w.Code, w.Body.String())
+	}
+	if got, _ := s.GetSetting("notification.alert.sustained_seconds"); got != "0" {
+		t.Errorf("sustained_seconds = %q, want 0", got)
+	}
+}
+
+// Nonsense must not reach the manager, where it would silently fall back to the default
+// and leave the operator believing they had configured something.
+func TestUpdateSettings_RejectsAnOutOfRangeLadder(t *testing.T) {
+	s, _ := db.NewStore(db.NewTestConfig())
+	m := uptime.NewManager(s)
+	h := NewSettingsHandler(s, m)
+
+	for _, tc := range []struct{ key, value string }{
+		{"notification.alert.sustained_seconds", "-1"},
+		{"notification.alert.sustained_seconds", "999999"},
+		{"notification.alert.reminder_minutes", "not-a-number"},
+	} {
+		body, _ := json.Marshal(map[string]string{tc.key: tc.value})
+		req := withAdminCtx(httptest.NewRequest("PATCH", "/api/settings", bytes.NewReader(body)))
+		w := httptest.NewRecorder()
+		h.UpdateSettings(w, req)
+
+		if w.Code == http.StatusOK {
+			t.Errorf("%s=%q was accepted", tc.key, tc.value)
+		}
+		if got, _ := s.GetSetting(tc.key); got == tc.value {
+			t.Errorf("%s=%q was persisted despite being invalid", tc.key, tc.value)
+		}
+	}
+}

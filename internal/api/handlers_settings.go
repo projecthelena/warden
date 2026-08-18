@@ -124,6 +124,20 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		recoveryChecks = "1"
 	}
 
+	// Sustained-alert ladder
+	alertSustained, _ := h.store.GetSetting("notification.alert.sustained_seconds")
+	if alertSustained == "" {
+		alertSustained = "180"
+	}
+	alertReminder, _ := h.store.GetSetting("notification.alert.reminder_minutes")
+	if alertReminder == "" {
+		alertReminder = "30"
+	}
+	alertRepeat, _ := h.store.GetSetting("notification.alert.repeat_reminder_minutes")
+	if alertRepeat == "" {
+		alertRepeat = "60"
+	}
+
 	// Digest Settings
 	digestEnabled, _ := h.store.GetSetting("notification.digest.enabled")
 	if digestEnabled == "" {
@@ -152,29 +166,32 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 			}
 			return "false"
 		}(),
-		"notifications.slack.notify_on":             slackNotifyOn,
-		"sso.google.enabled":                        ssoGoogleEnabled,
-		"sso.google.client_id":                      ssoGoogleClientID,
-		"sso.google.secret_configured":              secretConfigured,
-		"sso.google.redirect_url":                   ssoGoogleRedirectURL,
-		"sso.google.allowed_domains":                ssoGoogleAllowedDomains,
-		"sso.google.auto_provision":                 ssoGoogleAutoProvision,
-		"notification.confirmation_threshold":       confirmThreshold,
-		"notification.cooldown_minutes":             cooldownMins,
-		"notification.flap_detection_enabled":       flapEnabled,
-		"notification.flap_window_checks":           flapWindow,
-		"notification.flap_threshold_percent":       flapThreshold,
-		"notification.event.down.enabled":           eventDown,
-		"notification.event.up.enabled":             eventUp,
-		"notification.event.degraded.enabled":       eventDegraded,
-		"notification.event.flapping.enabled":       eventFlapping,
-		"notification.event.stabilized.enabled":     eventStabilized,
-		"notification.event.ssl_expiring.enabled":   eventSSL,
-		"notification.recovery_confirmation_checks": recoveryChecks,
-		"notification.digest.enabled":               digestEnabled,
-		"notification.digest.time":                  digestTime,
-		"notification.digest.event_types":           digestEventTypes,
-		"app_url":                                   appURL,
+		"notifications.slack.notify_on":              slackNotifyOn,
+		"sso.google.enabled":                         ssoGoogleEnabled,
+		"sso.google.client_id":                       ssoGoogleClientID,
+		"sso.google.secret_configured":               secretConfigured,
+		"sso.google.redirect_url":                    ssoGoogleRedirectURL,
+		"sso.google.allowed_domains":                 ssoGoogleAllowedDomains,
+		"sso.google.auto_provision":                  ssoGoogleAutoProvision,
+		"notification.confirmation_threshold":        confirmThreshold,
+		"notification.cooldown_minutes":              cooldownMins,
+		"notification.flap_detection_enabled":        flapEnabled,
+		"notification.flap_window_checks":            flapWindow,
+		"notification.flap_threshold_percent":        flapThreshold,
+		"notification.event.down.enabled":            eventDown,
+		"notification.event.up.enabled":              eventUp,
+		"notification.event.degraded.enabled":        eventDegraded,
+		"notification.event.flapping.enabled":        eventFlapping,
+		"notification.event.stabilized.enabled":      eventStabilized,
+		"notification.event.ssl_expiring.enabled":    eventSSL,
+		"notification.recovery_confirmation_checks":  recoveryChecks,
+		"notification.alert.sustained_seconds":       alertSustained,
+		"notification.alert.reminder_minutes":        alertReminder,
+		"notification.alert.repeat_reminder_minutes": alertRepeat,
+		"notification.digest.enabled":                digestEnabled,
+		"notification.digest.time":                   digestTime,
+		"notification.digest.event_types":            digestEventTypes,
+		"app_url":                                    appURL,
 	})
 }
 
@@ -278,11 +295,14 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 	// Notification Fatigue Settings
 	notifFatigueChanged := false
 	notifFatigueIntKeys := map[string]struct{ min, max int }{
-		"notification.confirmation_threshold":       {1, 100},
-		"notification.cooldown_minutes":             {0, 1440},
-		"notification.flap_window_checks":           {3, 100},
-		"notification.flap_threshold_percent":       {1, 100},
-		"notification.recovery_confirmation_checks": {1, 20},
+		"notification.confirmation_threshold":        {1, 100},
+		"notification.cooldown_minutes":              {0, 1440},
+		"notification.alert.sustained_seconds":       {0, 86400},
+		"notification.alert.reminder_minutes":        {0, 10080},
+		"notification.alert.repeat_reminder_minutes": {0, 10080},
+		"notification.flap_window_checks":            {3, 100},
+		"notification.flap_threshold_percent":        {1, 100},
+		"notification.recovery_confirmation_checks":  {1, 20},
 	}
 
 	for key, bounds := range notifFatigueIntKeys {
