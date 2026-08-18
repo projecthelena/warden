@@ -205,17 +205,50 @@ jobs:
       - name: Build Backend
         run: go build -o warden ./cmd/dashboard
 
-      - name: Start Full Stack
+      # Starting the server and running the tests have to share a step. Every `run:` in a
+      # container job is its own `docker exec`, and a process backgrounded in one exec does
+      # not survive it — the server was being killed the moment its step ended, which the
+      # tests then saw as ERR_CONNECTION_REFUSED.
+      #
+      # The wait is a real health check rather than `sleep 5`, which passed whether or not
+      # the server had come up and turned a startup failure into a confusing test failure
+      # thirty lines later.
+      - name: Run E2E Tests
         env:
           ADMIN_SECRET: warden-e2e-magic-key
+          PLAYWRIGHT_BASE_URL: http://localhost:9096
         run: |
           rm -f warden.db
-          ./warden &
-          echo "Waiting for server to start..."
-          sleep 5
+          ./warden > warden.log 2>&1 &
+          server_pid=$!
 
-      - name: Run E2E Tests
-        working-directory: web
-        env:
-          PLAYWRIGHT_BASE_URL: http://localhost:9096
-        run: npx playwright test --fail-on-flaky-tests
+          echo "Waiting for the server to answer on :9096..."
+          for _ in $(seq 1 60); do
+            if curl -sf -o /dev/null http://localhost:9096/healthz; then
+              echo "Server is up."
+              break
+            fi
+            if ! kill -0 "$server_pid" 2>/dev/null; then
+              echo "::error::The server exited before it became healthy."
+              cat warden.log
+              exit 1
+            fi
+            sleep 1
+          done
+
+          if ! curl -sf -o /dev/null http://localhost:9096/healthz; then
+            echo "::error::The server never became healthy within 60s."
+            cat warden.log
+            exit 1
+          fi
+
+          # The server log is where a 500 during a test actually gets explained, so print it
+          # whichever way the run goes.
+          set +e
+          (cd web && npx playwright test --fail-on-flaky-tests)
+          status=$?
+          set -e
+
+          echo "----- server log -----"
+          cat warden.log
+          exit $status
