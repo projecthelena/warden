@@ -200,9 +200,29 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
+      - name: Cache Playwright Browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
+
+      # Deliberately not `--with-deps`. That flag runs apt on every single run to reinstall
+      # the browsers' OS libraries, and it is what hung this job for 110 minutes on
+      # 2026-08-15 and 46 more on 2026-08-18: the browser binaries were already cached, only
+      # the apt call was not, and nothing times an unresponsive mirror out.
+      #
+      # Both chromium targets are named explicitly. Playwright launches the headless shell
+      # by default, which is a separate download from chromium itself, and a job that
+      # installs only one of them fails at browserType.launch rather than at install time.
+      #
+      # The runner image already carries the libraries Chromium needs, and Chromium is the
+      # only browser these tests use. If that ever stops being true the failure is a browser
+      # that will not launch — immediate and obvious, not a job that sits there for an hour.
       - name: Install dependencies
         working-directory: web
-        run: npm ci
+        run: |
+          npm ci
+          npx playwright install chromium chromium-headless-shell
 
       - name: Build Frontend
         working-directory: web
