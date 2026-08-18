@@ -17,6 +17,7 @@ env:
 jobs:
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       frontend: ${{ steps.filter.outputs.frontend }}
       backend: ${{ steps.filter.outputs.backend }}
@@ -51,6 +52,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -78,6 +80,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # Postgres runs the dual-DB tests against a real server. Without it those tests only
     # exercise SQLite, so a migration or query that is invalid for Postgres merges green
     # and only breaks when someone starts the app against Postgres.
@@ -164,6 +167,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -187,10 +191,14 @@ jobs:
           key: playwright-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
 
       - name: Install dependencies
+        # No --with-deps: it runs apt on every run to reinstall the browsers' OS libraries,
+        # which is what hung this job twice. The binaries were already cached, only the apt
+        # call was not. Both chromium targets are named because Playwright launches the
+        # headless shell by default and that is a separate download.
         working-directory: web
         run: |
           npm ci
-          npx playwright install --with-deps
+          npx playwright install chromium chromium-headless-shell
 
       - name: Build Frontend
         working-directory: web
@@ -199,17 +207,31 @@ jobs:
       - name: Build Backend
         run: go build -o warden ./cmd/dashboard
 
-      - name: Start Full Stack
+      - name: Run E2E Tests
+        # Waits for the server instead of sleeping: a sleep passed whether or not it came
+        # up, so a startup failure surfaced as a browser error with no server output.
         env:
           ADMIN_SECRET: warden-e2e-magic-key
+          PLAYWRIGHT_BASE_URL: http://localhost:9096
         run: |
           rm -f warden.db
-          ./warden &
-          echo "Waiting for server to start..."
-          sleep 5
+          ./warden > warden.log 2>&1 &
+          server_pid=$!
 
-      - name: Run E2E Tests
-        working-directory: web
-        env:
-          PLAYWRIGHT_BASE_URL: http://localhost:9096
-        run: npx playwright test --fail-on-flaky-tests
+          echo "Waiting for the server on :9096..."
+          for _ in $(seq 1 60); do
+            curl -sf -o /dev/null http://localhost:9096/healthz && ready=1 && break
+            kill -0 "$server_pid" 2>/dev/null || break
+            sleep 1
+          done
+          if [ -z "${ready:-}" ]; then
+            echo "::error::Server never answered on :9096"
+            cat warden.log
+            exit 1
+          fi
+
+          status=0
+          (cd web && npx playwright test --fail-on-flaky-tests) || status=$?
+          # Where a 500 during a test gets explained, so print it either way.
+          cat warden.log
+          exit $status
