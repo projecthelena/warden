@@ -696,3 +696,56 @@ func TestListIncidentsSaysWhenItTruncated(t *testing.T) {
 		t.Error("expected the result to admit it was cut short")
 	}
 }
+
+// "Why was I not told" now has more possible answers than the toggles: a correlated
+// incident, the repeat-offender damping, or a muted monitor. The tool has to report all
+// three or the question is unanswerable from here.
+func TestNotificationConfigReportsCorrelationAndMutes(t *testing.T) {
+	s, store := newTestServer(t)
+
+	_, out, err := s.getNotificationConfig(context.Background(), nil, struct{}{})
+	if err != nil {
+		t.Fatalf("get_notification_config failed: %v", err)
+	}
+	if out.CorrelationWindowSec != 300 || out.CorrelationMinMonitor != 3 || out.CorrelationGroupPct != 30 {
+		t.Errorf("correlation defaults wrong: window=%d min=%d pct=%d",
+			out.CorrelationWindowSec, out.CorrelationMinMonitor, out.CorrelationGroupPct)
+	}
+	if out.ChronicLimit != 3 || out.ChronicWindowMinutes != 1440 {
+		t.Errorf("chronic defaults wrong: limit=%d window=%d", out.ChronicLimit, out.ChronicWindowMinutes)
+	}
+	if out.MutedMonitors == nil {
+		t.Error("mutedMonitors should serialise as an empty list rather than null")
+	}
+	if len(out.MutedMonitors) != 0 {
+		t.Errorf("nothing is muted yet, got %v", out.MutedMonitors)
+	}
+
+	if err := store.SetSetting("notification.chronic.limit", "5"); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+	_, out, _ = s.getNotificationConfig(context.Background(), nil, struct{}{})
+	if out.ChronicLimit != 5 {
+		t.Errorf("chronicAlertLimit = %d, want 5", out.ChronicLimit)
+	}
+}
+
+// A muted monitor is a common reason an outage produced no alert, so it has to be named
+// rather than left for the reader to go and check monitor by monitor.
+func TestNotificationConfigNamesMutedMonitors(t *testing.T) {
+	s, store := newTestServer(t)
+	seedMonitor(t, store, "m-audible", "Prod API", "https://api.example.com")
+	seedMonitor(t, store, "m-quiet", "Staging", "https://staging.example.com")
+
+	if err := store.SetMonitorAlertsMuted("m-quiet", true); err != nil {
+		t.Fatalf("SetMonitorAlertsMuted: %v", err)
+	}
+
+	_, out, err := s.getNotificationConfig(context.Background(), nil, struct{}{})
+	if err != nil {
+		t.Fatalf("get_notification_config failed: %v", err)
+	}
+	if len(out.MutedMonitors) != 1 || out.MutedMonitors[0] != "Staging" {
+		t.Errorf("mutedMonitors = %v, want [Staging]", out.MutedMonitors)
+	}
+}

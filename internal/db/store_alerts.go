@@ -125,13 +125,16 @@ func (s *Store) CloseOutageReport(monitorID string) (bool, error) {
 // Used when several monitors fail together and get a single message: every member has to
 // be stamped, or the ones left behind each fire their own alert a tick later.
 //
-// The notified_at IS NULL guard is per row, so a member that had already been announced on
-// its own keeps its original stamp and is simply not double-counted.
+// Both guards are per row, and match the single-outage stamp. notified_at keeps a member
+// that was already announced on its own from being pulled into the incident and
+// double-counted; end_time keeps a member that recovered between the evaluator reading its
+// snapshot and acting on it from being announced at all, which would name a monitor that is
+// back up and never produce a recovery for it.
 func (s *Store) MarkOutagesNotified(ids []int64, at time.Time, correlationID string) (int, error) {
 	claimed := 0
 	for _, id := range ids {
 		res, err := s.db.Exec(s.rebind(
-			"UPDATE monitor_outages SET notified_at = ?, correlation_id = ? WHERE id = ? AND notified_at IS NULL"),
+			"UPDATE monitor_outages SET notified_at = ?, correlation_id = ? WHERE id = ? AND notified_at IS NULL AND end_time IS NULL"),
 			at.UTC(), correlationID, id)
 		if err != nil {
 			return claimed, err
