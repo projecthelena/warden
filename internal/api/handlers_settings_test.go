@@ -412,3 +412,92 @@ func TestUpdateSettings_RejectsBadLatencyBaseline(t *testing.T) {
 		}
 	}
 }
+
+// The weekly summary is opt-in, and the endpoint has to say so: a default of "true" here
+// would start sending a new kind of message to every install that upgrades.
+func TestGetSettings_ReportsTheWeeklySummary(t *testing.T) {
+	s, _ := db.NewStore(db.NewTestConfig())
+	m := uptime.NewManager(s)
+	h := NewSettingsHandler(s, m)
+
+	req := httptest.NewRequest("GET", "/api/settings", nil)
+	w := httptest.NewRecorder()
+	h.GetSettings(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var response map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	if response["notification.insights.weekly_enabled"] != "false" {
+		t.Errorf("the weekly summary defaults to %q, want false", response["notification.insights.weekly_enabled"])
+	}
+	if response["notification.insights.weekly_day"] != "1" {
+		t.Errorf("weekly_day = %q, want 1 (Monday)", response["notification.insights.weekly_day"])
+	}
+	if response["notification.insights.weekly_time"] != "09:00" {
+		t.Errorf("weekly_time = %q, want 09:00", response["notification.insights.weekly_time"])
+	}
+}
+
+func TestUpdateSettings_PersistsTheWeeklySummary(t *testing.T) {
+	s, _ := db.NewStore(db.NewTestConfig())
+	m := uptime.NewManager(s)
+	h := NewSettingsHandler(s, m)
+
+	body, _ := json.Marshal(map[string]string{
+		"notification.insights.weekly_enabled": "true",
+		"notification.insights.weekly_day":     "5",
+		"notification.insights.weekly_time":    "17:30",
+	})
+	req := withAdminCtx(httptest.NewRequest("PATCH", "/api/settings", bytes.NewReader(body)))
+	w := httptest.NewRecorder()
+	h.UpdateSettings(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	for key, want := range map[string]string{
+		"notification.insights.weekly_enabled": "true",
+		"notification.insights.weekly_day":     "5",
+		"notification.insights.weekly_time":    "17:30",
+	} {
+		if got, _ := s.GetSetting(key); got != want {
+			t.Errorf("%s = %q, want %q", key, got, want)
+		}
+	}
+}
+
+// Sunday is 0 and Saturday is 6. A day outside that range would make the summary never
+// fire, silently, since the manager clamps it away.
+func TestUpdateSettings_RejectsABadWeekday(t *testing.T) {
+	s, _ := db.NewStore(db.NewTestConfig())
+	m := uptime.NewManager(s)
+	h := NewSettingsHandler(s, m)
+
+	for _, value := range []string{"7", "-1"} {
+		body, _ := json.Marshal(map[string]string{"notification.insights.weekly_day": value})
+		req := withAdminCtx(httptest.NewRequest("PATCH", "/api/settings", bytes.NewReader(body)))
+		w := httptest.NewRecorder()
+		h.UpdateSettings(w, req)
+
+		if w.Code == http.StatusOK {
+			t.Errorf("weekly_day=%q was accepted", value)
+		}
+	}
+
+	// Both ends of the valid range are legal.
+	for _, value := range []string{"0", "6"} {
+		body, _ := json.Marshal(map[string]string{"notification.insights.weekly_day": value})
+		req := withAdminCtx(httptest.NewRequest("PATCH", "/api/settings", bytes.NewReader(body)))
+		w := httptest.NewRecorder()
+		h.UpdateSettings(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("weekly_day=%q was rejected: %d", value, w.Code)
+		}
+	}
+}

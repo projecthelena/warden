@@ -10,7 +10,6 @@ export interface MonitorInsight {
         | "latency_sawtooth"
         | "periodic_reset"
         | "time_of_day"
-        | "repeat_offender"
         | "co_failure"
         | "latency_drift"
         | "latency_improved";

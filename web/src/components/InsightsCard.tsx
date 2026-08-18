@@ -6,7 +6,6 @@ const KIND_LABEL: Record<MonitorInsight["kind"], string> = {
     latency_sawtooth: "Climbs and resets",
     periodic_reset: "On a schedule",
     time_of_day: "Time of day",
-    repeat_offender: "Breaks often",
     co_failure: "Fails with another monitor",
     latency_drift: "Getting slower",
     latency_improved: "Getting faster",

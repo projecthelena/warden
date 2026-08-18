@@ -189,3 +189,87 @@ func TestEventTimesAndOutageWindows(t *testing.T) {
 		}
 	})
 }
+
+// Findings hang off a monitor, so deleting one must take its findings with it. An orphan
+// would keep showing up in the unfiltered listing that feeds the weekly summary, describing
+// a monitor that no longer exists.
+func TestMonitorInsights_GoWithTheMonitor(t *testing.T) {
+	RunTestWithBothDBs(t, "insights cascade", func(t *testing.T, s *Store) {
+		_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+		seedInsightMonitor(t, s, "m1", "API")
+
+		if err := s.ReplaceMonitorInsights("m1", []MonitorInsight{
+			{Kind: "latency_sawtooth", Summary: "climbs and resets", Confidence: "high"},
+		}, time.Now().UTC()); err != nil {
+			t.Fatalf("ReplaceMonitorInsights: %v", err)
+		}
+		if got, _ := s.GetMonitorInsights(""); len(got) != 1 {
+			t.Fatalf("expected 1 finding, got %d", len(got))
+		}
+
+		if err := s.DeleteMonitor("m1"); err != nil {
+			t.Fatalf("DeleteMonitor: %v", err)
+		}
+
+		got, err := s.GetMonitorInsights("")
+		if err != nil {
+			t.Fatalf("GetMonitorInsights: %v", err)
+		}
+		if len(got) != 0 {
+			t.Errorf("a deleted monitor left %d orphaned findings", len(got))
+		}
+	})
+}
+
+// The summary is the part a human reads, so a detail blob that will not parse must not
+// take the whole finding down with it.
+func TestGetMonitorInsights_SurvivesUnparseableDetail(t *testing.T) {
+	RunTestWithBothDBs(t, "bad detail", func(t *testing.T, s *Store) {
+		_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+		seedInsightMonitor(t, s, "m1", "API")
+
+		if err := s.ReplaceMonitorInsights("m1", []MonitorInsight{
+			{Kind: "latency_sawtooth", Summary: "climbs and resets", Confidence: "high"},
+		}, time.Now().UTC()); err != nil {
+			t.Fatalf("ReplaceMonitorInsights: %v", err)
+		}
+		if _, err := s.db.Exec(s.rebind(
+			"UPDATE monitor_insights SET detail = ? WHERE monitor_id = ?"), "{not json", "m1"); err != nil {
+			t.Fatalf("corrupting detail: %v", err)
+		}
+
+		got, err := s.GetMonitorInsights("m1")
+		if err != nil {
+			t.Fatalf("GetMonitorInsights returned an error rather than the finding: %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("expected the finding to survive, got %d", len(got))
+		}
+		if got[0].Summary != "climbs and resets" {
+			t.Errorf("summary lost: %q", got[0].Summary)
+		}
+		if got[0].Detail != nil {
+			t.Errorf("unparseable detail should come back empty, got %v", got[0].Detail)
+		}
+	})
+}
+
+// A finding with no detail at all is the normal case for several detectors, and must not
+// serialise as the string "null" or trip the reader.
+func TestReplaceMonitorInsights_HandlesNoDetail(t *testing.T) {
+	RunTestWithBothDBs(t, "no detail", func(t *testing.T, s *Store) {
+		_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+		seedInsightMonitor(t, s, "m1", "API")
+
+		if err := s.ReplaceMonitorInsights("m1", []MonitorInsight{
+			{Kind: "time_of_day", Summary: "evenings", Confidence: "medium"},
+		}, time.Now().UTC()); err != nil {
+			t.Fatalf("ReplaceMonitorInsights: %v", err)
+		}
+
+		got, _ := s.GetMonitorInsights("m1")
+		if len(got) != 1 || got[0].Detail != nil {
+			t.Errorf("expected one finding with no detail, got %+v", got)
+		}
+	})
+}

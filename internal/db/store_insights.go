@@ -198,13 +198,3 @@ func (s *Store) OutageWindowsSince(since time.Time) ([]OutageWindow, error) {
 	}
 	return out, rows.Err()
 }
-
-// CountOutagesSince counts a monitor's outages in a window, the input to "this one is
-// broken far more often than everything else".
-func (s *Store) CountOutagesSince(monitorID string, since time.Time) (int, error) {
-	var n int
-	err := s.db.QueryRow(s.rebind(
-		"SELECT COUNT(*) FROM monitor_outages WHERE monitor_id = ? AND start_time >= ?"),
-		monitorID, since.UTC()).Scan(&n)
-	return n, err
-}

@@ -19,12 +19,11 @@ import (
 type Kind string
 
 const (
-	KindSawtooth       Kind = "latency_sawtooth"
-	KindPeriodicReset  Kind = "periodic_reset"
-	KindTimeOfDay      Kind = "time_of_day"
-	KindRepeatOffender Kind = "repeat_offender"
-	KindCoFailure      Kind = "co_failure"
-	KindLatencyDrift   Kind = "latency_drift"
+	KindSawtooth      Kind = "latency_sawtooth"
+	KindPeriodicReset Kind = "periodic_reset"
+	KindTimeOfDay     Kind = "time_of_day"
+	KindCoFailure     Kind = "co_failure"
+	KindLatencyDrift  Kind = "latency_drift"
 	// KindLatencyImproved is the same measurement pointing the other way. It gets its own
 	// kind rather than a negative number under "latency_drift" so the dashboard is not
 	// left labelling a 40% speed-up as "Getting slower".
