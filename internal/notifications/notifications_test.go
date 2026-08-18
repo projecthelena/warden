@@ -1191,3 +1191,32 @@ func TestWebhookDigest_AllClear_MonitorsIsArray(t *testing.T) {
 		t.Errorf("expected empty monitors array, got %d entries", len(monitors))
 	}
 }
+
+// The weekly pattern summary is not a monitor state change, so it must not borrow a state
+// event's title. Sending it as "stabilized" produced "Monitor Stabilized: Weekly patterns".
+func TestSlackNotifier_InsightsEventHasItsOwnTitle(t *testing.T) {
+	var captured map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&captured)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	n := NewSlackNotifier(`{"webhookUrl":"` + srv.URL + `"}`)
+	if err := n.Send(NotificationEvent{
+		MonitorName: "Weekly patterns",
+		Type:        EventInsights,
+		Message:     "2 pattern(s) across 2 monitor(s)",
+		Time:        time.Now(),
+	}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	text, _ := captured["text"].(string)
+	if !strings.Contains(text, "Weekly Patterns") {
+		t.Errorf("title = %q, want it to say Weekly Patterns", text)
+	}
+	if strings.Contains(text, "Stabilized") {
+		t.Errorf("the insights message borrowed a monitor-state title: %q", text)
+	}
+}

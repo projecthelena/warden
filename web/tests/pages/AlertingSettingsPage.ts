@@ -41,6 +41,10 @@ export class AlertingSettingsPage {
         await this.openSection('High Latency', this.page.getByTestId('adaptive-latency-switch'));
     }
 
+    async openWeeklyPatterns() {
+        await this.openSection('Weekly Patterns', this.page.getByTestId('weekly-insights-switch'));
+    }
+
     async openDigest() {
         await this.openSection('Daily Digest', this.page.getByTestId('digest-enabled'));
     }

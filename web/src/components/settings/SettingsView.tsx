@@ -244,6 +244,9 @@ function NotificationIntelligence() {
     const [adaptiveLatency, setAdaptiveLatency] = useState(settings?.["notification.latency.adaptive_enabled"] !== "false");
     const [latencyFactor, setLatencyFactor] = useState(settings?.["notification.latency.factor_percent"] || "150");
     const [latencyBaselineDays, setLatencyBaselineDays] = useState(settings?.["notification.latency.baseline_days"] || "7");
+    const [weeklyInsights, setWeeklyInsights] = useState(settings?.["notification.insights.weekly_enabled"] === "true");
+    const [weeklyInsightsDay, setWeeklyInsightsDay] = useState(settings?.["notification.insights.weekly_day"] || "1");
+    const [weeklyInsightsTime, setWeeklyInsightsTime] = useState(settings?.["notification.insights.weekly_time"] || "09:00");
     const [flapEnabled, setFlapEnabled] = useState(settings?.["notification.flap_detection_enabled"] !== "false");
     const [flapWindow, setFlapWindow] = useState(settings?.["notification.flap_window_checks"] || "21");
     const [flapThreshold, setFlapThreshold] = useState(settings?.["notification.flap_threshold_percent"] || "25");
@@ -281,6 +284,9 @@ function NotificationIntelligence() {
             setAdaptiveLatency(settings["notification.latency.adaptive_enabled"] !== "false");
             setLatencyFactor(settings["notification.latency.factor_percent"] || "150");
             setLatencyBaselineDays(settings["notification.latency.baseline_days"] || "7");
+            setWeeklyInsights(settings["notification.insights.weekly_enabled"] === "true");
+            setWeeklyInsightsDay(settings["notification.insights.weekly_day"] || "1");
+            setWeeklyInsightsTime(settings["notification.insights.weekly_time"] || "09:00");
             setFlapEnabled(settings["notification.flap_detection_enabled"] !== "false");
             setFlapWindow(settings["notification.flap_window_checks"] || "21");
             setFlapThreshold(settings["notification.flap_threshold_percent"] || "25");
@@ -310,6 +316,9 @@ function NotificationIntelligence() {
             "notification.latency.adaptive_enabled": String(adaptiveLatency),
             "notification.latency.factor_percent": latencyFactor,
             "notification.latency.baseline_days": latencyBaselineDays,
+            "notification.insights.weekly_enabled": String(weeklyInsights),
+            "notification.insights.weekly_day": weeklyInsightsDay,
+            "notification.insights.weekly_time": weeklyInsightsTime,
             "notification.flap_detection_enabled": flapEnabled ? "true" : "false",
             "notification.flap_window_checks": flapWindow,
             "notification.flap_threshold_percent": flapThreshold,
@@ -594,6 +603,62 @@ function NotificationIntelligence() {
                                                 ? "Monitors without enough history yet, and monitors with their own latency threshold set, keep using that fixed number."
                                                 : "Every monitor is judged against the fixed latency threshold above."}
                                         </div>
+                                    </div>
+                                </AccordionContent>
+                            </AccordionItem>
+
+                            {/* Weekly patterns */}
+                            <AccordionItem value="weekly-patterns" className="border-none">
+                                <AccordionTrigger className="hover:no-underline text-sm font-semibold text-muted-foreground uppercase tracking-wider py-2">
+                                    Weekly Patterns
+                                </AccordionTrigger>
+                                <AccordionContent>
+                                    <div className="space-y-4 pt-2">
+                                        <div className="flex items-center justify-between">
+                                            <div className="pr-4">
+                                                <Label>Send a weekly summary of what Warden noticed</Label>
+                                                <div className="text-sm text-muted-foreground mt-1">
+                                                    Latency that climbs and resets, trouble that clusters at one time of
+                                                    day, monitors that always fail together, and slowdowns that never
+                                                    crossed a threshold. Nothing is sent on a week with nothing to report.
+                                                </div>
+                                            </div>
+                                            <Switch
+                                                checked={weeklyInsights}
+                                                onCheckedChange={setWeeklyInsights}
+                                                data-testid="weekly-insights-switch"
+                                            />
+                                        </div>
+                                        {weeklyInsights && (
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="grid gap-2">
+                                                    <Label htmlFor="weekly-insights-day">Send on</Label>
+                                                    <select
+                                                        id="weekly-insights-day"
+                                                        value={weeklyInsightsDay}
+                                                        onChange={(e) => setWeeklyInsightsDay(e.target.value)}
+                                                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                                                    >
+                                                        {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+                                                            .map((label, i) => (
+                                                                <option key={label} value={String(i)}>{label}</option>
+                                                            ))}
+                                                    </select>
+                                                </div>
+                                                <div className="grid gap-2">
+                                                    <Label htmlFor="weekly-insights-time">
+                                                        At
+                                                        <HelpTip text="Uses your configured timezone, same as the daily digest." />
+                                                    </Label>
+                                                    <Input
+                                                        id="weekly-insights-time"
+                                                        type="time"
+                                                        value={weeklyInsightsTime}
+                                                        onChange={(e) => setWeeklyInsightsTime(e.target.value)}
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </AccordionContent>
                             </AccordionItem>

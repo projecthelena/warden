@@ -49,6 +49,9 @@ test.describe('Per-monitor alert mute', () => {
 
         const groupName = `Mute Group ${Date.now()}`;
         await dashboard.createGroup(groupName);
+        // createGroup navigates to the group's own page, which is where this monitor will
+        // be listed. Remember it so the reload step returns somewhere deterministic.
+        const groupUrl = page.url();
 
         monitorName = `Mute Monitor ${Date.now()}`;
         await dashboard.createMonitorTrigger.click();
@@ -92,8 +95,10 @@ test.describe('Per-monitor alert mute', () => {
         await expect(muteBtn).toContainText('Unmute Alerts', { timeout: 10000 });
         await expect(page.getByText(/still appears in the daily digest/i)).toBeVisible();
 
-        // It survives a reload rather than living only in the sheet's state.
-        await page.reload();
+        // It survives a full reload rather than living only in the sheet's state. Go back
+        // to the board explicitly: creating the group navigated away, and reloading
+        // whatever route we happen to be on makes this step depend on that history.
+        await page.goto(groupUrl);
         await expect(page.getByText('Wait ...')).toBeHidden({ timeout: 10000 });
         await openMonitorSettings(page, monitorName);
         await expect(page.getByTestId('monitor-mute-alerts-btn')).toContainText('Unmute Alerts', {

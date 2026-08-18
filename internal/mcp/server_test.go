@@ -801,3 +801,65 @@ func TestGetMonitorLatencyOmitsMissingBaseline(t *testing.T) {
 		t.Errorf("a monitor with no history reported a baseline: %+v", out)
 	}
 }
+
+func seedInsight(t *testing.T, store *db.Store, monitorID, kind, summary string) {
+	t.Helper()
+	if err := store.ReplaceMonitorInsights(monitorID, []db.MonitorInsight{{
+		Kind: kind, Summary: summary, Confidence: "high",
+		Detail: map[string]any{"ramps": 9},
+	}}, time.Now().UTC()); err != nil {
+		t.Fatalf("ReplaceMonitorInsights: %v", err)
+	}
+}
+
+func TestListInsights(t *testing.T) {
+	s, store := newTestServer(t)
+	seedMonitor(t, store, "m-a", "Alpha", "https://a.example.com")
+	seedMonitor(t, store, "m-b", "Beta", "https://b.example.com")
+
+	seedInsight(t, store, "m-a", "latency_sawtooth", "Alpha climbs and resets")
+	seedInsight(t, store, "m-b", "time_of_day", "Beta misbehaves in the evening")
+
+	_, out, err := s.listInsights(context.Background(), nil, ListInsightsInput{})
+	if err != nil {
+		t.Fatalf("list_insights failed: %v", err)
+	}
+	if out.Count != 2 {
+		t.Fatalf("expected 2 findings, got %d", out.Count)
+	}
+
+	// Scoped to one monitor, by name.
+	_, out, err = s.listInsights(context.Background(), nil, ListInsightsInput{Monitor: "Alpha"})
+	if err != nil {
+		t.Fatalf("list_insights for Alpha failed: %v", err)
+	}
+	if out.Count != 1 || out.Insights[0].Monitor != "Alpha" {
+		t.Errorf("monitor filter returned %+v", out.Insights)
+	}
+	if out.Insights[0].Detail["ramps"] == nil {
+		t.Errorf("detail did not survive the round trip: %+v", out.Insights[0].Detail)
+	}
+
+	// Scoped to one kind.
+	_, out, err = s.listInsights(context.Background(), nil, ListInsightsInput{Kind: "time_of_day"})
+	if err != nil {
+		t.Fatalf("list_insights by kind failed: %v", err)
+	}
+	if out.Count != 1 || out.Insights[0].Kind != "time_of_day" {
+		t.Errorf("kind filter returned %+v", out.Insights)
+	}
+}
+
+// Nothing found is a legitimate answer and must not look like a broken tool.
+func TestListInsightsEmpty(t *testing.T) {
+	s, store := newTestServer(t)
+	seedMonitor(t, store, "m-a", "Alpha", "https://a.example.com")
+
+	_, out, err := s.listInsights(context.Background(), nil, ListInsightsInput{})
+	if err != nil {
+		t.Fatalf("list_insights failed: %v", err)
+	}
+	if out.Count != 0 || out.Insights == nil {
+		t.Errorf("expected an empty list rather than null: %+v", out)
+	}
+}

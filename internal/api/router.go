@@ -113,6 +113,7 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 	incidentH := NewIncidentHandler(store)
 	maintH := NewMaintenanceHandler(store, manager)
 	eventH := NewEventHandler(store, manager)
+	insightH := NewInsightHandler(store)
 	statusPageH := NewStatusPageHandler(store, manager, authH)
 	notifH := NewNotificationChannelsHandler(store)
 	userH := NewUserHandler(store)
@@ -194,6 +195,7 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 				dashboard.Get("/monitors/{id}/uptime", uptimeH.GetMonitorUptime)
 				dashboard.Get("/monitors/{id}/latency", uptimeH.GetMonitorLatency)
 				dashboard.Get("/monitors/{id}/events", uptimeH.GetMonitorEvents)
+				dashboard.Get("/monitors/{id}/insights", insightH.GetMonitorInsights)
 
 				// Incidents
 				dashboard.Get("/incidents", incidentH.GetIncidents)
@@ -238,6 +240,9 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 
 				// Events (for history)
 				dashboard.Get("/events", eventH.GetSystemEvents)
+
+				// Pattern findings across every monitor
+				dashboard.Get("/insights", insightH.GetInsights)
 
 				// Users (admin only)
 				dashboard.Post("/users", userH.CreateUser)
