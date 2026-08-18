@@ -15,23 +15,29 @@ type OpenOutage struct {
 	MonitorName    string
 	MonitorURL     string
 	GroupID        string
+	GroupName      string
 	Type           string // "down" or "degraded"
 	Summary        string
 	StartTime      time.Time
 	NotifiedAt     *time.Time
 	LastReminderAt *time.Time
+	CorrelationID  string
+	AlertsMuted    bool
 }
 
-// GetOpenOutages returns every outage without an end time, newest first. The alerting
-// evaluator polls this on every tick, so it stays a single indexed query.
+// GetOpenOutages returns every outage without an end time, oldest first. The alerting
+// evaluator polls this on every tick, so it stays a single indexed query. Oldest-first
+// matters for correlation: the earliest member of a cluster anchors its time window.
 func (s *Store) GetOpenOutages() ([]OpenOutage, error) {
 	rows, err := s.db.Query(s.rebind(`
-		SELECT o.id, o.monitor_id, m.name, m.url, m.group_id, o.type,
-		       COALESCE(o.summary, ''), o.start_time, o.notified_at, o.last_reminder_at
+		SELECT o.id, o.monitor_id, m.name, m.url, m.group_id, g.name, o.type,
+		       COALESCE(o.summary, ''), o.start_time, o.notified_at, o.last_reminder_at,
+		       COALESCE(o.correlation_id, ''), m.alerts_muted
 		FROM monitor_outages o
 		JOIN monitors m ON o.monitor_id = m.id
+		JOIN groups g ON m.group_id = g.id
 		WHERE o.end_time IS NULL
-		ORDER BY o.start_time DESC`))
+		ORDER BY o.start_time ASC`))
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +48,8 @@ func (s *Store) GetOpenOutages() ([]OpenOutage, error) {
 		var o OpenOutage
 		var notified, reminded sql.NullTime
 		if err := rows.Scan(&o.ID, &o.MonitorID, &o.MonitorName, &o.MonitorURL, &o.GroupID,
-			&o.Type, &o.Summary, &o.StartTime, &notified, &reminded); err != nil {
+			&o.GroupName, &o.Type, &o.Summary, &o.StartTime, &notified, &reminded,
+			&o.CorrelationID, &o.AlertsMuted); err != nil {
 			return nil, err
 		}
 		if notified.Valid {
@@ -112,4 +119,47 @@ func (s *Store) CloseOutageReport(monitorID string) (bool, error) {
 		return false, err
 	}
 	return wasNotified, nil
+}
+
+// MarkOutagesNotified stamps a whole set of outages as announced under one correlation id.
+// Used when several monitors fail together and get a single message: every member has to
+// be stamped, or the ones left behind each fire their own alert a tick later.
+//
+// Both guards are per row, and match the single-outage stamp. notified_at keeps a member
+// that was already announced on its own from being pulled into the incident and
+// double-counted; end_time keeps a member that recovered between the evaluator reading its
+// snapshot and acting on it from being announced at all, which would name a monitor that is
+// back up and never produce a recovery for it.
+func (s *Store) MarkOutagesNotified(ids []int64, at time.Time, correlationID string) (int, error) {
+	claimed := 0
+	for _, id := range ids {
+		res, err := s.db.Exec(s.rebind(
+			"UPDATE monitor_outages SET notified_at = ?, correlation_id = ? WHERE id = ? AND notified_at IS NULL AND end_time IS NULL"),
+			at.UTC(), correlationID, id)
+		if err != nil {
+			return claimed, err
+		}
+		if n, err := res.RowsAffected(); err == nil && n > 0 {
+			claimed++
+		}
+	}
+	return claimed, nil
+}
+
+// CountAnnouncedOutagesSince counts how many times this monitor has interrupted someone in
+// a window. It is the input to the repeat-offender damping: a monitor that has already
+// alerted three times today is telling you about itself, not about an event.
+func (s *Store) CountAnnouncedOutagesSince(monitorID string, since time.Time) (int, error) {
+	var n int
+	err := s.db.QueryRow(s.rebind(
+		"SELECT COUNT(*) FROM monitor_outages WHERE monitor_id = ? AND notified_at IS NOT NULL AND notified_at >= ?"),
+		monitorID, since.UTC()).Scan(&n)
+	return n, err
+}
+
+// SetMonitorAlertsMuted flips the per-monitor mute. A muted monitor still records outages
+// and still shows up in the daily digest; it just never interrupts anyone.
+func (s *Store) SetMonitorAlertsMuted(monitorID string, muted bool) error {
+	_, err := s.db.Exec(s.rebind("UPDATE monitors SET alerts_muted = ? WHERE id = ?"), muted, monitorID)
+	return err
 }

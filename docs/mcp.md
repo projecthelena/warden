@@ -41,7 +41,7 @@ That boundary is enforced by the server, not by asking the model nicely. Give ou
 | `list_ssl_warnings` | Which certificates are about to expire? |
 | `check_now` | Did my fix work? Runs the check immediately instead of waiting for the interval. |
 
-`get_notification_config` reports the sustained-alert ladder (`alertAfterSeconds`, `reminderMinutes`, `repeatReminderMinutes`) alongside the toggles, because "it was down for 90 seconds" is now the most common answer to "why was I not told". `digestEvents` lists what the daily summary covers and no longer suppresses the immediate alert — those are separate decisions. It never returns webhook URLs.
+`get_notification_config` reports the sustained-alert ladder (`alertAfterSeconds`, `reminderMinutes`, `repeatReminderMinutes`) alongside the toggles, because "it was down for 90 seconds" is now the most common answer to "why was I not told". `digestEvents` lists what the daily summary covers and no longer suppresses the immediate alert — those are separate decisions. It also reports the correlation thresholds, the repeat-offender limit and which monitors have their alerts muted, since any of those can be the reason a real outage never reached you. It never returns webhook URLs.
 
 ## Writing (editor key only)
 

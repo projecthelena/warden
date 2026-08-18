@@ -398,6 +398,63 @@ func (h *CRUDHandler) DeleteMonitor(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// SetMonitorAlerts mutes or unmutes a monitor's alerts. A muted monitor is still checked,
+// still records outages and still appears in the daily digest and on the dashboard — it
+// simply never interrupts anyone. Meant for test and staging targets.
+// @Summary      Mute or unmute a monitor's alerts
+// @Tags         monitors
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path string true "Monitor ID"
+// @Param        body  body object{muted=bool} true "Mute state"
+// @Success      200  {object} object{message=string,alertsMuted=bool}
+// @Failure      400  {object} object{error=string} "ID required or invalid body"
+// @Failure      404  {object} object{error=string} "Monitor not found"
+// @Router       /monitors/{id}/alerts [post]
+func (h *CRUDHandler) SetMonitorAlerts(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleEditor) {
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "ID required")
+		return
+	}
+
+	var body struct {
+		Muted bool `json:"muted"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	monitors, err := h.store.GetMonitors()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load monitors")
+		return
+	}
+	found := false
+	for _, m := range monitors {
+		if m.ID == id {
+			found = true
+			break
+		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "monitor not found")
+		return
+	}
+
+	if err := h.store.SetMonitorAlertsMuted(id, body.Muted); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update monitor alerts")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"message": "monitor alerts updated", "alertsMuted": body.Muted})
+}
+
 // PauseMonitor stops checking a monitor without deleting it.
 // @Summary      Pause monitor
 // @Tags         monitors

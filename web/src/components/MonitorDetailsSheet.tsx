@@ -25,7 +25,7 @@ import { Switch } from "@/components/ui/switch";
 import { StatusBadge } from "@/components/ui/monitor-visuals";
 import { useRole } from "@/hooks/useRole";
 import { useToast } from "@/components/ui/use-toast";
-import { Trash2, Save, BarChart, Pause, Play, X, ExternalLink } from "lucide-react";
+import { Trash2, Save, BarChart, Pause, Play, X, ExternalLink, BellOff, Bell } from "lucide-react";
 import { Link } from "react-router-dom";
 import {
     AlertDialog,
@@ -47,7 +47,7 @@ interface MonitorDetailsSheetProps {
 }
 
 export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDetailsSheetProps) {
-    const { updateMonitor, deleteMonitor, pauseMonitor, resumeMonitor, user } = useMonitorStore();
+    const { updateMonitor, deleteMonitor, pauseMonitor, resumeMonitor, setMonitorAlertsMuted, user } = useMonitorStore();
     const { canEdit } = useRole();
     const { toast } = useToast();
     const isPaused = monitor.status === 'paused';
@@ -743,6 +743,31 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                                 ) : (
                                     <>
                                         <Pause className="w-4 h-4 mr-2" /> Pause Monitor
+                                    </>
+                                )}
+                            </Button>
+                        </div>
+
+                        <div className="pt-6 border-t border-border">
+                            <h3 className="text-sm font-medium mb-2">Alerts</h3>
+                            <p className="text-xs text-muted-foreground mb-4">
+                                {monitor.alertsMuted
+                                    ? "Alerts are muted. This monitor is still checked and still appears in the daily digest and on the dashboard — it just never interrupts you."
+                                    : "Mute alerts for a test or staging target. It keeps being checked and keeps its history; it simply stops sending notifications."}
+                            </p>
+                            <Button
+                                variant={monitor.alertsMuted ? "default" : "secondary"}
+                                className="w-full"
+                                data-testid="monitor-mute-alerts-btn"
+                                onClick={() => setMonitorAlertsMuted(monitor.id, !monitor.alertsMuted)}
+                            >
+                                {monitor.alertsMuted ? (
+                                    <>
+                                        <Bell className="w-4 h-4 mr-2" /> Unmute Alerts
+                                    </>
+                                ) : (
+                                    <>
+                                        <BellOff className="w-4 h-4 mr-2" /> Mute Alerts
                                     </>
                                 )}
                             </Button>

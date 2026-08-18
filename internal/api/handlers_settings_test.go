@@ -227,3 +227,96 @@ func TestUpdateSettings_RejectsAnOutOfRangeLadder(t *testing.T) {
 		}
 	}
 }
+
+// The correlation thresholds are only tunable if the endpoint carries them, and their
+// defaults have to be the ones the manager really uses: a blank would be saved back as
+// something else the first time anyone touched the form.
+func TestGetSettings_ReportsTheCorrelationThresholds(t *testing.T) {
+	s, _ := db.NewStore(db.NewTestConfig())
+	m := uptime.NewManager(s)
+	h := NewSettingsHandler(s, m)
+
+	req := httptest.NewRequest("GET", "/api/settings", nil)
+	w := httptest.NewRecorder()
+	h.GetSettings(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var response map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	for key, want := range map[string]string{
+		"notification.correlation.window_seconds": "300",
+		"notification.correlation.min_monitors":   "3",
+		"notification.correlation.group_percent":  "30",
+		"notification.correlation.probe_percent":  "80",
+		"notification.chronic.limit":              "3",
+		"notification.chronic.window_minutes":     "1440",
+	} {
+		if response[key] != want {
+			t.Errorf("%s = %q, want the default %q", key, response[key], want)
+		}
+	}
+}
+
+func TestUpdateSettings_PersistsTheCorrelationThresholds(t *testing.T) {
+	s, _ := db.NewStore(db.NewTestConfig())
+	m := uptime.NewManager(s)
+	h := NewSettingsHandler(s, m)
+
+	body, _ := json.Marshal(map[string]string{
+		"notification.correlation.window_seconds": "600",
+		"notification.correlation.min_monitors":   "5",
+		"notification.correlation.group_percent":  "50",
+		"notification.chronic.limit":              "0",
+	})
+	req := withAdminCtx(httptest.NewRequest("PATCH", "/api/settings", bytes.NewReader(body)))
+	w := httptest.NewRecorder()
+	h.UpdateSettings(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	for key, want := range map[string]string{
+		"notification.correlation.window_seconds": "600",
+		"notification.correlation.min_monitors":   "5",
+		"notification.correlation.group_percent":  "50",
+		"notification.chronic.limit":              "0",
+	} {
+		if got, _ := s.GetSetting(key); got != want {
+			t.Errorf("%s = %q, want %q", key, got, want)
+		}
+	}
+}
+
+// Nonsense here is worse than elsewhere: the manager falls back to its default for a value
+// it cannot use, so an accepted bad value leaves the operator believing they widened a
+// window that never moved.
+func TestUpdateSettings_RejectsBadCorrelationThresholds(t *testing.T) {
+	s, _ := db.NewStore(db.NewTestConfig())
+	m := uptime.NewManager(s)
+	h := NewSettingsHandler(s, m)
+
+	for _, tc := range []struct{ key, value string }{
+		{"notification.correlation.group_percent", "0"},
+		{"notification.correlation.group_percent", "101"},
+		{"notification.correlation.probe_percent", "-5"},
+		{"notification.correlation.min_monitors", "0"},
+		{"notification.chronic.window_minutes", "0"},
+	} {
+		body, _ := json.Marshal(map[string]string{tc.key: tc.value})
+		req := withAdminCtx(httptest.NewRequest("PATCH", "/api/settings", bytes.NewReader(body)))
+		w := httptest.NewRecorder()
+		h.UpdateSettings(w, req)
+
+		if w.Code == http.StatusOK {
+			t.Errorf("%s=%q was accepted", tc.key, tc.value)
+		}
+		if got, _ := s.GetSetting(tc.key); got == tc.value {
+			t.Errorf("%s=%q was persisted despite being invalid", tc.key, tc.value)
+		}
+	}
+}
