@@ -37,6 +37,10 @@ export class AlertingSettingsPage {
         await this.openSection('Alerting Thresholds', this.page.getByTestId('alert-ladder'));
     }
 
+    async openLatency() {
+        await this.openSection('High Latency', this.page.getByTestId('adaptive-latency-switch'));
+    }
+
     async openDigest() {
         await this.openSection('Daily Digest', this.page.getByTestId('digest-enabled'));
     }

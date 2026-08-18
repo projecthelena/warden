@@ -43,6 +43,8 @@ That boundary is enforced by the server, not by asking the model nicely. Give ou
 
 `get_notification_config` reports the sustained-alert ladder (`alertAfterSeconds`, `reminderMinutes`, `repeatReminderMinutes`) alongside the toggles, because "it was down for 90 seconds" is now the most common answer to "why was I not told". `digestEvents` lists what the daily summary covers and no longer suppresses the immediate alert — those are separate decisions. It also reports the correlation thresholds, the repeat-offender limit and which monitors have their alerts muted, since any of those can be the reason a real outage never reached you. It never returns webhook URLs.
 
+`get_monitor_latency` returns the monitor's learned baseline (`baselineP50Ms`, `baselineP95Ms`) and the line it must cross to count as slow (`degradedAboveMs`) alongside the samples. Without them a raw number of milliseconds cannot be judged — 650ms is unremarkable for one target and a two-and-a-half-times regression for another. The fields are omitted for a monitor that has not built a baseline yet.
+
 ## Writing (editor key only)
 
 | Tool | Does |

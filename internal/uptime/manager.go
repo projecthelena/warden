@@ -104,6 +104,9 @@ type Manager struct {
 	// Thresholds for grouping simultaneous failures (see correlation.go)
 	correlationPolicy correlationPolicy
 
+	// How each monitor's own latency baseline becomes its degraded threshold (see baseline.go)
+	baselinePolicy baselinePolicy
+
 	// Active Maintenance Windows
 	maintenanceWindows []db.Incident
 
@@ -142,6 +145,7 @@ func NewManager(store *db.Store) *Manager {
 		notifier:              notifications.NewService(store),
 		alertPolicy:           defaultAlertPolicy(),
 		correlationPolicy:     defaultCorrelationPolicy(),
+		baselinePolicy:        defaultBaselinePolicy(),
 		eventFilter: NotificationEventFilter{
 			DownEnabled:        true,
 			UpEnabled:          true,
@@ -184,6 +188,9 @@ func (m *Manager) Start() {
 
 	// Start the alert evaluator — the only thing that turns an open outage into a message
 	go m.alertEvaluator()
+
+	// Start the latency baseline worker
+	go m.baselineWorker()
 
 	// Start Notification Service
 	m.notifier.Start()
@@ -396,7 +403,7 @@ func (m *Manager) resultProcessor() {
 					message += " (Status: " + strconv.Itoa(res.StatusCode) + ")"
 				}
 
-				degradedMsg := "High latency detected (>" + strconv.FormatInt(threshold, 10) + "ms)"
+				degradedMsg := mon.DegradedMessage()
 
 				if !hasHistory {
 					// Handle Initial State — use confirmation logic
@@ -761,6 +768,15 @@ func (m *Manager) Sync() {
 	digestEnabled, digestTime, digestEventTypes := m.loadDigestConfig()
 	policy := m.loadAlertPolicy()
 	corrPolicy := m.loadCorrelationPolicy()
+	basePolicy := m.loadBaselinePolicy()
+
+	// Loaded before the lock: resolving each monitor's degraded threshold needs its own
+	// baseline, and a failure here only means everyone falls back to the global default.
+	baselines, err := m.store.GetLatencyBaselines()
+	if err != nil {
+		log.Printf("Failed to load latency baselines: %v", err)
+		baselines = map[string]db.LatencyBaseline{}
+	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -773,6 +789,7 @@ func (m *Manager) Sync() {
 	m.digestEventTypes = digestEventTypes
 	m.alertPolicy = policy
 	m.correlationPolicy = corrPolicy
+	m.baselinePolicy = basePolicy
 
 	// Update maintenance windows
 	m.maintenanceWindows = activeWindows
@@ -809,10 +826,13 @@ func (m *Manager) Sync() {
 		}
 		interval := time.Duration(intervalSec) * time.Second
 
-		// Resolve per-monitor latency threshold
-		monLatencyThresh := m.latencyThreshold // global default
-		if dbM.LatencyThreshold != nil {
-			monLatencyThresh = int64(*dbM.LatencyThreshold)
+		// Resolve the degraded threshold: explicit override, else the monitor's own
+		// baseline, else the global default (see baseline.go).
+		b, hasBaseline := baselines[dbM.ID]
+		monLatencyThresh := resolveLatencyThreshold(dbM.LatencyThreshold, b, hasBaseline, basePolicy, m.latencyThreshold)
+		monBaselineP50 := int64(0)
+		if hasBaseline && basePolicy.Enabled {
+			monBaselineP50 = b.P50
 		}
 
 		if existing, exists := m.monitors[dbM.ID]; exists {
@@ -820,6 +840,7 @@ func (m *Manager) Sync() {
 			existing.ApplyConfig(cfg)
 			existing.SetLatencyThreshold(monLatencyThresh)
 			existing.SetAlertsMuted(dbM.AlertsMuted)
+			existing.SetBaselineP50(monBaselineP50)
 
 			// Check for changes (URL, Type, Interval, or RequestConfig)
 			needRestart := existing.GetTargetURL() != dbM.URL ||
@@ -841,6 +862,7 @@ func (m *Manager) Sync() {
 			mon.ApplyConfig(cfg)
 			mon.SetLatencyThreshold(monLatencyThresh)
 			mon.SetAlertsMuted(dbM.AlertsMuted)
+			mon.SetBaselineP50(monBaselineP50)
 
 			// Hydrate history from DB
 			checks, err := m.store.GetMonitorChecks(dbM.ID, 50)

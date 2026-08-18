@@ -749,3 +749,55 @@ func TestNotificationConfigNamesMutedMonitors(t *testing.T) {
 		t.Errorf("mutedMonitors = %v, want [Staging]", out.MutedMonitors)
 	}
 }
+
+// A raw latency number cannot be judged on its own: 650ms is fine for one target and a
+// two-and-a-half-times regression for another. The tool has to carry the baseline.
+func TestGetMonitorLatencyReportsBaseline(t *testing.T) {
+	s, store := newTestServer(t)
+	seedMonitor(t, store, "m-api", "API", "https://api.example.com")
+
+	now := time.Now().UTC()
+	var checks []db.CheckResult
+	for i := 0; i < 100; i++ {
+		latency := int64(250)
+		if i%10 == 0 {
+			latency = 400
+		}
+		checks = append(checks, db.CheckResult{
+			MonitorID: "m-api", Status: "up", Latency: latency,
+			Timestamp: now.Add(-time.Duration(i) * time.Minute),
+		})
+	}
+	if err := store.BatchInsertChecks(checks); err != nil {
+		t.Fatalf("BatchInsertChecks: %v", err)
+	}
+	if _, err := store.ComputeLatencyBaseline("m-api", 7*24*time.Hour, 10, now); err != nil {
+		t.Fatalf("ComputeLatencyBaseline: %v", err)
+	}
+
+	_, out, err := s.getMonitorLatency(context.Background(), nil, GetMonitorLatencyInput{Monitor: "API", Hours: 24})
+	if err != nil {
+		t.Fatalf("get_monitor_latency failed: %v", err)
+	}
+	if out.BaselineP50Ms != 250 || out.BaselineP95Ms != 400 {
+		t.Errorf("baseline = p50 %d / p95 %d, want 250 / 400", out.BaselineP50Ms, out.BaselineP95Ms)
+	}
+	// 400 * 1.5 = 600, versus 400 + 100 = 500.
+	if out.DegradedAboveMs != 600 {
+		t.Errorf("degradedAboveMs = %d, want 600", out.DegradedAboveMs)
+	}
+}
+
+// Without a baseline the fields stay absent rather than reporting a confident zero.
+func TestGetMonitorLatencyOmitsMissingBaseline(t *testing.T) {
+	s, store := newTestServer(t)
+	seedMonitor(t, store, "m-new", "New", "https://new.example.com")
+
+	_, out, err := s.getMonitorLatency(context.Background(), nil, GetMonitorLatencyInput{Monitor: "New", Hours: 24})
+	if err != nil {
+		t.Fatalf("get_monitor_latency failed: %v", err)
+	}
+	if out.BaselineP50Ms != 0 || out.DegradedAboveMs != 0 || out.BaselineNote != "" {
+		t.Errorf("a monitor with no history reported a baseline: %+v", out)
+	}
+}
