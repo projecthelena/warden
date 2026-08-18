@@ -125,3 +125,72 @@ test.describe('Sustained alert ladder', () => {
         expect(stored['notification.alert.reminder_minutes']).toBe('30');
     });
 });
+
+test.describe('Adaptive latency thresholds', () => {
+    test.beforeEach(async ({ page }) => {
+        const login = new LoginPage(page);
+        await page.goto('/dashboard');
+        await expect(page.getByText('Wait ...')).toBeHidden({ timeout: 10000 });
+        if (await login.isVisible()) {
+            await login.login();
+            await expect(page).toHaveURL(/.*dashboard/);
+        }
+    });
+
+    // On by default, and the detail fields only make sense while it is on — showing a
+    // multiplier for a feature that is off would invite configuring something inert.
+    test('is on by default and reveals its settings', async ({ page }) => {
+        const settings = new AlertingSettingsPage(page);
+        await settings.goto();
+        await settings.openLatency();
+
+        const toggle = page.getByTestId('adaptive-latency-switch');
+        await expect(toggle).toHaveAttribute('data-state', 'checked');
+        await expect(page.getByLabel(/Slow at/)).toBeVisible();
+        await expect(page.getByLabel(/Learn from/)).toBeVisible();
+
+        await toggle.click();
+        await expect(page.getByLabel(/Slow at/)).toHaveCount(0);
+        // And it says what happens instead, rather than leaving a blank panel.
+        await expect(page.getByText(/judged against the fixed latency threshold/i)).toBeVisible();
+
+        await toggle.click();
+        await expect(page.getByLabel(/Slow at/)).toBeVisible();
+    });
+
+    test('persists the multiplier and the window', async ({ page }) => {
+        const settings = new AlertingSettingsPage(page);
+        await settings.goto();
+        await settings.openLatency();
+
+        await page.getByLabel(/Slow at/).fill('200');
+        await page.getByLabel(/Learn from/).fill('14');
+        expect(await settings.saveAndWait()).toBe(200);
+
+        const stored = await serverSettings(page);
+        expect(stored['notification.latency.factor_percent']).toBe('200');
+        expect(stored['notification.latency.baseline_days']).toBe('14');
+
+        await page.reload();
+        await settings.openLatency();
+        await expect(page.getByLabel(/Slow at/)).toHaveValue('200');
+        await expect(page.getByLabel(/Learn from/)).toHaveValue('14');
+
+        // Restore the defaults for the rest of the suite.
+        await page.getByLabel(/Slow at/).fill('150');
+        await page.getByLabel(/Learn from/).fill('7');
+        expect(await settings.saveAndWait()).toBe(200);
+    });
+
+    // A multiplier below 1x would mark a service degraded at its own median. The manager
+    // rejects it and falls back, so the API must not accept it in the first place.
+    test('the API rejects a multiplier below 1x', async ({ page }) => {
+        const resp = await page.request.patch(`${API_BASE}/api/settings`, {
+            data: { 'notification.latency.factor_percent': '50' },
+        });
+        expect(resp.status()).not.toBe(200);
+
+        const stored = await serverSettings(page);
+        expect(stored['notification.latency.factor_percent']).toBe('150');
+    });
+});
