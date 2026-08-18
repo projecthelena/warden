@@ -194,3 +194,68 @@ test.describe('Adaptive latency thresholds', () => {
         expect(stored['notification.latency.factor_percent']).toBe('150');
     });
 });
+
+test.describe('Pattern insights', () => {
+    test.beforeEach(async ({ page }) => {
+        const login = new LoginPage(page);
+        await page.goto('/dashboard');
+        await expect(page.getByText('Wait ...')).toBeHidden({ timeout: 10000 });
+        if (await login.isVisible()) {
+            await login.login();
+            await expect(page).toHaveURL(/.*dashboard/);
+        }
+    });
+
+    // Off by default: an upgrade must not start sending a new kind of message on its own.
+    test('the weekly summary is opt-in', async ({ page }) => {
+        const settings = new AlertingSettingsPage(page);
+        await settings.goto();
+        await settings.openWeeklyPatterns();
+
+        const toggle = page.getByTestId('weekly-insights-switch');
+        await expect(toggle).toHaveAttribute('data-state', 'unchecked');
+        // The schedule only appears once it is on — there is nothing to schedule otherwise.
+        await expect(page.getByLabel('Send on')).toHaveCount(0);
+
+        await toggle.click();
+        await expect(page.getByLabel('Send on')).toBeVisible();
+        await page.getByLabel('Send on').selectOption('5');
+        await page.getByLabel(/^At/).fill('17:30');
+        expect(await settings.saveAndWait()).toBe(200);
+
+        const stored = await serverSettings(page);
+        expect(stored['notification.insights.weekly_enabled']).toBe('true');
+        expect(stored['notification.insights.weekly_day']).toBe('5');
+        expect(stored['notification.insights.weekly_time']).toBe('17:30');
+
+        await page.reload();
+        await settings.openWeeklyPatterns();
+        await expect(page.getByTestId('weekly-insights-switch')).toHaveAttribute('data-state', 'checked');
+        await expect(page.getByLabel('Send on')).toHaveValue('5');
+
+        // Back off for the rest of the suite.
+        await page.getByTestId('weekly-insights-switch').click();
+        expect(await settings.saveAndWait()).toBe(200);
+    });
+
+    // Findings are recomputed daily over two weeks, so a fresh instance has none. The card
+    // must render nothing at all rather than an empty state — a panel that is permanently
+    // blank trains people to stop looking at it.
+    test('a monitor with no findings shows no patterns panel', async ({ page }) => {
+        const resp = await page.request.get(`${API_BASE}/api/insights`);
+        expect(resp.ok(), 'GET /api/insights should be authorised').toBeTruthy();
+        expect(await resp.json()).toEqual([]);
+
+        await page.goto('/dashboard');
+        await expect(page.getByText('Wait ...')).toBeHidden({ timeout: 10000 });
+        await expect(page.getByTestId('monitor-insights')).toHaveCount(0);
+    });
+
+    // The per-monitor endpoint answers for a monitor that has none, rather than 404ing —
+    // the card fetches it on every monitor page.
+    test('the per-monitor endpoint returns an empty list, not an error', async ({ page }) => {
+        const resp = await page.request.get(`${API_BASE}/api/monitors/does-not-exist/insights`);
+        expect(resp.status()).toBe(200);
+        expect(await resp.json()).toEqual([]);
+    });
+});

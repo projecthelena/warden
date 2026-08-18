@@ -301,3 +301,190 @@ func TestTimeOfDayFinding_UsesTheOffsetInEffect(t *testing.T) {
 		t.Error("the same band rendered identically in winter and summer — the offset is not being sampled")
 	}
 }
+
+// --- detector edge cases ---
+
+// Exactly at MinRamps is a pattern; one short is a coincidence. This is the line between
+// reporting a real sawtooth and labelling every service that had a bad afternoon.
+func TestDetectSawtooth_RampCountBoundary(t *testing.T) {
+	base := time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC)
+	cfg := DefaultSawtoothConfig()
+
+	// One clean ramp-and-reset cycle: climb for four hours, drop back, idle.
+	cycle := []int64{200, 260, 330, 420, 200, 200, 200, 200}
+
+	build := func(n int) []Sample {
+		var vals []int64
+		for i := 0; i < n; i++ {
+			vals = append(vals, cycle...)
+		}
+		// Pad so the quiet baseline stays at 200 rather than being dragged up.
+		for i := 0; i < 40; i++ {
+			vals = append(vals, 200)
+		}
+		return seriesFrom(vals, base)
+	}
+
+	if ramps, _, found := DetectSawtooth(build(cfg.MinRamps-1), cfg); found {
+		t.Errorf("%d ramps was reported as a pattern (MinRamps is %d)", len(ramps), cfg.MinRamps)
+	}
+	if ramps, _, found := DetectSawtooth(build(cfg.MinRamps), cfg); !found {
+		t.Errorf("exactly MinRamps was not reported: got %d ramps", len(ramps))
+	}
+}
+
+// A series too short to hold a pattern must not produce one.
+func TestDetectSawtooth_TooShort(t *testing.T) {
+	base := time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC)
+	if _, _, found := DetectSawtooth(seriesFrom([]int64{200, 300, 400}, base), DefaultSawtoothConfig()); found {
+		t.Error("three samples produced a sawtooth")
+	}
+}
+
+// Zeros would be read as an impossibly fast hour and fake a reset. The baseline skips
+// them, and a series of nothing but zeros yields no baseline at all.
+func TestDetectSawtooth_IgnoresZeroSamples(t *testing.T) {
+	base := time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC)
+	zeros := make([]int64, 100)
+	if _, baseline, found := DetectSawtooth(seriesFrom(zeros, base), DefaultSawtoothConfig()); found || baseline != 0 {
+		t.Errorf("an all-zero series produced baseline=%d found=%v", baseline, found)
+	}
+}
+
+func TestDetectPeriodicity_Degenerate(t *testing.T) {
+	base := time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC)
+
+	if _, ok := DetectPeriodicity(nil, 3, 0.25); ok {
+		t.Error("no events claimed a cadence")
+	}
+	if _, ok := DetectPeriodicity([]time.Time{base}, 3, 0.25); ok {
+		t.Error("a single event claimed a cadence")
+	}
+
+	// All at the same instant: the mean gap is zero, which must not divide by zero or
+	// register as a perfect cadence.
+	same := []time.Time{base, base, base, base}
+	if _, ok := DetectPeriodicity(same, 3, 0.25); ok {
+		t.Error("four simultaneous events claimed a cadence")
+	}
+
+	// Order must not matter — the detector sorts before measuring.
+	shuffled := []time.Time{
+		base.Add(18 * time.Hour), base, base.Add(6 * time.Hour), base.Add(12 * time.Hour),
+	}
+	period, ok := DetectPeriodicity(shuffled, 3, 0.25)
+	if !ok || period < 5*time.Hour+45*time.Minute || period > 6*time.Hour+15*time.Minute {
+		t.Errorf("unsorted input: period=%v ok=%v, want ~6h", period, ok)
+	}
+}
+
+func TestDetectTimeOfDay_Degenerate(t *testing.T) {
+	base := time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC)
+
+	if _, _, _, found := DetectTimeOfDay(nil, 8, 8, 0.6); found {
+		t.Error("no events produced a band")
+	}
+
+	// Fewer events than the minimum is not evidence, however concentrated.
+	var few []time.Time
+	for i := 0; i < 3; i++ {
+		few = append(few, base.Add(20*time.Hour))
+	}
+	if _, _, _, found := DetectTimeOfDay(few, 8, 8, 0.6); found {
+		t.Error("three events produced a band")
+	}
+
+	// A band wider than a day, or of zero width, is not a band.
+	var many []time.Time
+	for i := 0; i < 20; i++ {
+		many = append(many, base.Add(20*time.Hour))
+	}
+	if _, _, _, found := DetectTimeOfDay(many, 24, 8, 0.6); found {
+		t.Error("a 24-hour band was accepted")
+	}
+	if _, _, _, found := DetectTimeOfDay(many, 0, 8, 0.6); found {
+		t.Error("a zero-width band was accepted")
+	}
+}
+
+// The band has to be able to wrap midnight, which is exactly where the real evening
+// concentration sits.
+func TestDetectTimeOfDay_WrapsMidnight(t *testing.T) {
+	base := time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC)
+	var times []time.Time
+	for day := 0; day < 5; day++ {
+		for _, h := range []int{22, 23, 0, 1} {
+			times = append(times, base.AddDate(0, 0, day).Add(time.Duration(h)*time.Hour))
+		}
+	}
+
+	start, width, share, found := DetectTimeOfDay(times, 8, 8, 0.6)
+	if !found {
+		t.Fatalf("a band across midnight was not detected (share %.2f)", share)
+	}
+	if width != 8 {
+		t.Errorf("width = %d", width)
+	}
+	if start > 23 || start < 18 {
+		t.Errorf("band starts at %02d:00, expected it to open in the evening", start)
+	}
+}
+
+func TestDetectDrift_Degenerate(t *testing.T) {
+	base := time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC)
+	mk := func(v int64, n int) []Sample {
+		out := make([]Sample, 0, n)
+		for i := 0; i < n; i++ {
+			out = append(out, Sample{Hour: base.Add(time.Duration(i) * time.Hour), LatencyMs: v})
+		}
+		return out
+	}
+
+	// Identical windows are not drift.
+	if _, _, _, found := DetectDrift(mk(250, 10), mk(250, 10), 25, 20); found {
+		t.Error("identical windows reported as drift")
+	}
+
+	// A previous window of zeros cannot yield a percentage; it must not divide by zero.
+	if _, _, _, found := DetectDrift(mk(250, 10), mk(0, 10), 25, 20); found {
+		t.Error("a zero baseline produced a drift percentage")
+	}
+
+	// Exactly at both thresholds counts: 250 → 312 is 24.8%, just under; 250 → 313 is 25.2%.
+	if _, _, _, found := DetectDrift(mk(312, 10), mk(250, 10), 25, 20); found {
+		t.Error("just under the threshold was reported")
+	}
+	if _, _, _, found := DetectDrift(mk(313, 10), mk(250, 10), 25, 20); !found {
+		t.Error("just over the threshold was not reported")
+	}
+}
+
+func TestOverlap_Degenerate(t *testing.T) {
+	base := time.Date(2026, 8, 12, 19, 0, 0, 0, time.UTC)
+	now := base.Add(time.Hour)
+
+	// A zero-length interval contributes nothing rather than dividing by zero.
+	zero := []Interval{{Start: base, End: base}}
+	other := []Interval{{Start: base, End: base.Add(10 * time.Minute)}}
+	if got := Overlap(zero, other, now); got != 0 {
+		t.Errorf("a zero-length interval gave overlap %.2f", got)
+	}
+
+	// An interval that ends before it starts is corrupt and must be skipped, not counted
+	// as negative time.
+	backwards := []Interval{{Start: base.Add(10 * time.Minute), End: base}}
+	if got := Overlap(backwards, other, now); got != 0 {
+		t.Errorf("a backwards interval gave overlap %.2f", got)
+	}
+
+	// Overlap is never above 1 even when several of b's outages fall inside one of a's.
+	long := []Interval{{Start: base, End: base.Add(time.Hour)}}
+	manySmall := []Interval{
+		{Start: base, End: base.Add(20 * time.Minute)},
+		{Start: base.Add(20 * time.Minute), End: base.Add(40 * time.Minute)},
+		{Start: base.Add(40 * time.Minute), End: base.Add(time.Hour)},
+	}
+	if got := Overlap(long, manySmall, now); got > 1 {
+		t.Errorf("overlap = %.2f, must never exceed 1", got)
+	}
+}
