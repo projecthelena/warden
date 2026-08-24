@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ChannelDetailsSheet } from "./ChannelDetailsSheet";
 import { CreateChannelSheet } from "./CreateChannelSheet";
+import { channelDisplayValue } from "@/lib/channelConfig";
 
 export function NotificationsView() {
     const { channels, fetchChannels, deleteChannel } = useMonitorStore();
@@ -44,17 +45,6 @@ export function NotificationsView() {
             case 'email': return 'Email';
             default: return type;
         }
-    }
-
-    const getDisplayValue = (config: NotificationChannel['config']) => {
-        if (config.to) {
-            return config.to.length > 35 ? config.to.substring(0, 35) + '...' : config.to;
-        }
-        if (config.webhookUrl) {
-            const url = config.webhookUrl.replace('https://', '').replace('http://', '');
-            return url.length > 35 ? url.substring(0, 35) + '...' : url;
-        }
-        return 'Configured';
     }
 
     return (
@@ -96,7 +86,7 @@ export function NotificationsView() {
                                     </TableCell>
                                     <TableCell>
                                         <span className="text-muted-foreground font-mono text-xs">
-                                            {getDisplayValue(channel.config)}
+                                            {channelDisplayValue(channel.config)}
                                         </span>
                                     </TableCell>
                                     <TableCell>

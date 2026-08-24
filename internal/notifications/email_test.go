@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"mime"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -27,7 +29,21 @@ type fakeSMTP struct {
 	startTLS bool
 }
 
+// fakeSMTPOptions describes how the server should misbehave. The zero value is a server
+// that accepts everything, which is what most tests want; the fields exist so the error
+// paths in deliver() can be reached without a real mail server refusing a real message.
+type fakeSMTPOptions struct {
+	extensions []string // announced in the EHLO reply
+	rejectFrom bool     // answer MAIL FROM with a permanent failure
+	rejectRcpt string   // answer RCPT TO with a permanent failure for this address
+	silent     bool     // accept the connection and then never say anything
+}
+
 func newFakeSMTP(t *testing.T, greetingExtensions []string) *fakeSMTP {
+	return newFakeSMTPWith(t, fakeSMTPOptions{extensions: greetingExtensions})
+}
+
+func newFakeSMTPWith(t *testing.T, opts fakeSMTPOptions) *fakeSMTP {
 	t.Helper()
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -43,12 +59,19 @@ func newFakeSMTP(t *testing.T, greetingExtensions []string) *fakeSMTP {
 			return
 		}
 		defer func() { _ = conn.Close() }()
-		s.serve(conn, greetingExtensions)
+		if opts.silent {
+			// Hold the connection open without a greeting. The client is left waiting on
+			// a read, which is the case the total deadline exists for.
+			_, _ = io.Copy(io.Discard, conn)
+			return
+		}
+		s.serve(conn, opts)
 	}()
 	return s
 }
 
-func (s *fakeSMTP) serve(conn net.Conn, extensions []string) {
+func (s *fakeSMTP) serve(conn net.Conn, opts fakeSMTPOptions) {
+	extensions := opts.extensions
 	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
 	r := bufio.NewReader(conn)
 	write := func(line string) { _, _ = fmt.Fprintf(conn, "%s\r\n", line) }
@@ -71,13 +94,22 @@ func (s *fakeSMTP) serve(conn net.Conn, extensions []string) {
 			}
 			write("250 SIZE 10240000")
 		case strings.HasPrefix(cmd, "MAIL FROM:"):
+			if opts.rejectFrom {
+				write("550 sender rejected")
+				continue
+			}
 			s.mu.Lock()
 			s.from = extractAngleAddr(line)
 			s.mu.Unlock()
 			write("250 OK")
 		case strings.HasPrefix(cmd, "RCPT TO:"):
+			addr := extractAngleAddr(line)
+			if opts.rejectRcpt != "" && strings.EqualFold(addr, opts.rejectRcpt) {
+				write("550 no such user here")
+				continue
+			}
 			s.mu.Lock()
-			s.to = append(s.to, extractAngleAddr(line))
+			s.to = append(s.to, addr)
 			s.mu.Unlock()
 			write("250 OK")
 		case cmd == "DATA":
@@ -574,5 +606,207 @@ func TestService_SendDigestReachesAnEmailChannel(t *testing.T) {
 	}
 	if !strings.HasPrefix(subject, "[Warden] Daily Summary") {
 		t.Errorf("delivered digest has the wrong subject: %q", subject)
+	}
+}
+
+// The recipient cap is the difference between a distribution list and an accident. A
+// pasted address book would otherwise become one SMTP conversation with hundreds of RCPT
+// TO commands, which is how a channel gets a server to rate-limit the whole instance.
+func TestEmailConfig_RecipientCap(t *testing.T) {
+	addresses := func(n int) string {
+		list := make([]string, n)
+		for i := range list {
+			list[i] = fmt.Sprintf("ops%d@example.com", i)
+		}
+		return strings.Join(list, ",")
+	}
+
+	cfg, err := NewEmailNotifier(fmt.Sprintf(`{"host":"h","from":"a@example.com","to":%q}`, addresses(50))).parseConfig()
+	if err != nil {
+		t.Fatalf("50 recipients should be accepted: %v", err)
+	}
+	if len(cfg.To) != 50 {
+		t.Errorf("expected 50 recipients, got %d", len(cfg.To))
+	}
+
+	err = ValidateEmailConfig(fmt.Sprintf(`{"host":"h","from":"a@example.com","to":%q}`, addresses(51)))
+	if err == nil {
+		t.Fatal("expected 51 recipients to be rejected")
+	}
+	if !strings.Contains(err.Error(), "max 50") {
+		t.Errorf("expected the error to name the cap, got %v", err)
+	}
+}
+
+// SMTP allows 998 characters per line. A monitor whose name or error message runs long
+// would produce a base64 blob well past that, and a server is entitled to reject or
+// truncate it — so every encoded line has to be wrapped.
+func TestEmailMessage_WrapsBase64At76Columns(t *testing.T) {
+	cfg := &emailConfig{Host: "h", Port: 587, From: "a@example.com", To: []string{"b@example.com"}}
+	long := strings.Repeat("the check timed out and the upstream never answered. ", 40)
+
+	msg, err := buildMessage(cfg, "subject", long, "<p>"+long+"</p>")
+	if err != nil {
+		t.Fatalf("buildMessage: %v", err)
+	}
+
+	for i, line := range strings.Split(string(msg), "\r\n") {
+		if len(line) > 76 {
+			t.Fatalf("line %d is %d characters, past the 76 RFC 2045 allows: %q", i, len(line), line)
+		}
+	}
+
+	// Wrapped, but still the same bytes once the wrapping is undone.
+	var encoded strings.Builder
+	for _, line := range strings.Split(string(msg), "\r\n") {
+		if line != "" && !strings.Contains(line, " ") && !strings.HasPrefix(line, "--") {
+			encoded.WriteString(line)
+		}
+	}
+	if !strings.Contains(encoded.String(), base64.StdEncoding.EncodeToString([]byte(long))) {
+		t.Error("the wrapped plain part does not decode back to the body that went in")
+	}
+}
+
+// Port 465 is TLS from the first byte. Getting this wrong is not a failed send but a
+// silent one: the client would sit waiting for a plaintext 220 greeting that a TLS server
+// never sends, and the alert would die on the dial timeout.
+//
+// The port is a variable precisely so this can be checked — 465 is privileged and a test
+// binary cannot listen on it. The server here does not speak TLS, so the handshake fails;
+// what is being asserted is what Warden put on the wire first.
+func TestEmailNotifier_ImplicitTLSOnPort465(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+
+	first := make(chan []byte, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			first <- nil
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+		buf := make([]byte, 3)
+		n, _ := io.ReadFull(conn, buf)
+		first <- buf[:n]
+	}()
+
+	host, port := hostPort(t, ln.Addr().String())
+	portNum, err := strconv.Atoi(port)
+	if err != nil {
+		t.Fatalf("port %q: %v", port, err)
+	}
+
+	original := implicitTLSPort
+	implicitTLSPort = portNum
+	t.Cleanup(func() { implicitTLSPort = original })
+
+	config := fmt.Sprintf(`{"host":%q,"port":%q,"from":"warden@example.com","to":"ops@example.com"}`, host, port)
+	if err := NewEmailNotifier(config).Send(testEvent()); err == nil {
+		t.Error("expected the send to fail against a server that does not speak TLS")
+	}
+
+	opening := <-first
+	if len(opening) < 3 {
+		t.Fatalf("the client sent %d bytes before reading; on this port it must open with TLS", len(opening))
+	}
+	// A TLS record starts with the handshake content type and the protocol version.
+	if opening[0] != 0x16 || opening[1] != 0x03 {
+		t.Errorf("expected a TLS ClientHello, got % x — the client waited for a plaintext greeting", opening)
+	}
+}
+
+// A server that takes the message and then refuses a recipient must produce an error that
+// names the address. "Send failed" on a channel with six recipients tells the operator
+// nothing about which one is wrong.
+func TestEmailNotifier_SurfacesARejectedRecipient(t *testing.T) {
+	server := newFakeSMTPWith(t, fakeSMTPOptions{rejectRcpt: "gone@example.com"})
+	host, port := hostPort(t, server.addr)
+
+	config := fmt.Sprintf(`{"host":%q,"port":%q,"from":"warden@example.com","to":"ops@example.com, gone@example.com"}`, host, port)
+	err := NewEmailNotifier(config).Send(testEvent())
+	if err == nil {
+		t.Fatal("expected an error when the server refuses a recipient")
+	}
+	if !strings.Contains(err.Error(), "gone@example.com") {
+		t.Errorf("expected the error to name the rejected recipient, got %v", err)
+	}
+
+	if _, _, data := server.received(); data != "" {
+		t.Error("the message was delivered even though a recipient was refused")
+	}
+}
+
+func TestEmailNotifier_SurfacesARejectedSender(t *testing.T) {
+	server := newFakeSMTPWith(t, fakeSMTPOptions{rejectFrom: true})
+	host, port := hostPort(t, server.addr)
+
+	config := fmt.Sprintf(`{"host":%q,"port":%q,"from":"warden@example.com","to":"ops@example.com"}`, host, port)
+	err := NewEmailNotifier(config).Send(testEvent())
+	if err == nil {
+		t.Fatal("expected an error when the server refuses the sender")
+	}
+	if !strings.Contains(err.Error(), "MAIL FROM") {
+		t.Errorf("expected the error to name the failed command, got %v", err)
+	}
+}
+
+// The notification worker drains the queue one event at a time, so a server that accepts
+// the connection and then says nothing would hold up every other alert behind it. The
+// deadline covers the conversation, not just the dial.
+func TestEmailNotifier_GivesUpOnASilentServer(t *testing.T) {
+	server := newFakeSMTPWith(t, fakeSMTPOptions{silent: true})
+	host, port := hostPort(t, server.addr)
+
+	original := smtpTotalTimeout
+	smtpTotalTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { smtpTotalTimeout = original })
+
+	config := fmt.Sprintf(`{"host":%q,"port":%q,"from":"warden@example.com","to":"ops@example.com"}`, host, port)
+
+	start := time.Now()
+	err := NewEmailNotifier(config).Send(testEvent())
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected an error from a server that never answers")
+	}
+	if elapsed > 5*time.Second {
+		t.Errorf("the send took %s; the deadline should have ended it in about %s", elapsed, smtpTotalTimeout)
+	}
+}
+
+// The digest is a summary, so the link back to the full report is the part that makes it
+// actionable. It is only added when there is an app URL to build it from.
+func TestEmailDigest_LinksToTheFullReport(t *testing.T) {
+	summary := digestSummary{
+		TotalEvents:  2,
+		MonitorCount: 1,
+		Date:         time.Date(2026, 3, 14, 8, 0, 0, 0, time.UTC),
+		AppURL:       "https://warden.example.com",
+		Monitors: []digestMonitor{{
+			Name:   "API Gateway",
+			Events: []digestEventCount{{Type: "down", Count: 2}},
+		}},
+	}
+
+	link := "https://warden.example.com/incidents?date=2026-03-14"
+	if !strings.Contains(digestText(summary), link) {
+		t.Errorf("the plain text digest should link to the report:\n%s", digestText(summary))
+	}
+	if !strings.Contains(digestHTML(summary), `href="`+link+`"`) {
+		t.Error("the HTML digest should link to the report")
+	}
+
+	// Without an app URL there is nothing to link to, and a bare "View full report" with
+	// no destination is worse than no line at all.
+	summary.AppURL = ""
+	if strings.Contains(digestText(summary), "View full report") {
+		t.Error("expected no report line when there is no app URL")
 	}
 }

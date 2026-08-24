@@ -21,10 +21,15 @@ import (
 	"time"
 )
 
-const (
-	// A hung SMTP server must not stall the notification worker, which drains the queue
-	// one event at a time. Same reasoning as the 10s timeout on the webhook client.
-	smtpDialTimeout  = 10 * time.Second
+// A hung SMTP server must not stall the notification worker, which drains the queue one
+// event at a time. Same reasoning as the 10s timeout on the webhook client.
+const smtpDialTimeout = 10 * time.Second
+
+// These two are variables rather than constants so the tests can reach the branches they
+// guard, which is otherwise impossible from a test binary: 465 is a privileged port that
+// no unprivileged process can listen on, and waiting out a 30s deadline is not something a
+// unit test can afford. Nothing in the running server writes to either.
+var (
 	smtpTotalTimeout = 30 * time.Second
 
 	// implicitTLSPort speaks TLS from the first byte (SMTPS). Every other port starts in

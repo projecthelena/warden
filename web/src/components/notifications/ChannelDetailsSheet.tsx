@@ -108,7 +108,7 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
 
                     <div className="grid gap-2">
                         <Label>Friendly Name</Label>
-                        <Input value={name} onChange={e => setName(e.target.value)} />
+                        <Input value={name} onChange={e => setName(e.target.value)} data-testid="channel-details-name-input" />
                     </div>
 
                     {isEmail ? (
@@ -150,7 +150,7 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
                             {testing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
                             Send Test
                         </Button>
-                        <Button onClick={handleSave}>
+                        <Button onClick={handleSave} data-testid="save-channel-btn">
                             <Save className="w-4 h-4 mr-2" /> Save Changes
                         </Button>
                     </div>

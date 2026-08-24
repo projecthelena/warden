@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -492,5 +493,102 @@ func TestTestChannel_EmailRejectsBrokenConfig(t *testing.T) {
 
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for a channel with no recipients, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+// The dashboard reads a rejection as JSON and shows data.error. When the body is plain
+// text res.json() rejects, data.error is undefined, and every reason — whichever field is
+// wrong, and why — collapses into a generic "Failed to add channel." Validating per field
+// is only worth anything if the reason survives the trip, so the shape is asserted here
+// rather than the status alone.
+func TestChannelValidation_ReportsTheReasonAsJSON(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewNotificationChannelsHandler(store)
+
+	if err := store.CreateNotificationChannel(db.NotificationChannel{
+		ID: "nc1", Type: "email", Name: "Mail",
+		Config: `{"host":"smtp.example.com","from":"a@example.com","to":"b@example.com"}`, Enabled: true,
+	}); err != nil {
+		t.Fatalf("seeding a channel: %v", err)
+	}
+
+	r := chi.NewRouter()
+	r.Use(testAdminRoleMiddleware)
+	r.Post("/notifications/channels", handler.CreateChannel)
+	r.Put("/notifications/channels/{id}", handler.UpdateChannel)
+	r.Post("/notifications/channels/test", handler.TestChannel)
+
+	cases := []struct {
+		name     string
+		method   string
+		path     string
+		config   map[string]string
+		wantSaid string
+	}{
+		{
+			name:     "create without a recipient",
+			method:   "POST",
+			path:     "/notifications/channels",
+			config:   map[string]string{"host": "smtp.example.com", "from": "a@example.com"},
+			wantSaid: "at least one recipient is required",
+		},
+		{
+			name:     "create with a malformed recipient",
+			method:   "POST",
+			path:     "/notifications/channels",
+			config:   map[string]string{"host": "smtp.example.com", "from": "a@example.com", "to": "nope"},
+			wantSaid: "nope",
+		},
+		{
+			name:     "create with an impossible port",
+			method:   "POST",
+			path:     "/notifications/channels",
+			config:   map[string]string{"host": "smtp.example.com", "port": "70000", "from": "a@example.com", "to": "b@example.com"},
+			wantSaid: "70000",
+		},
+		{
+			name:     "update without a server",
+			method:   "PUT",
+			path:     "/notifications/channels/nc1",
+			config:   map[string]string{"from": "a@example.com", "to": "b@example.com"},
+			wantSaid: "host is required",
+		},
+		{
+			name:     "test without a recipient",
+			method:   "POST",
+			path:     "/notifications/channels/test",
+			config:   map[string]string{"host": "smtp.example.com", "from": "a@example.com"},
+			wantSaid: "at least one recipient is required",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body, _ := json.Marshal(map[string]interface{}{"type": "email", "name": "Mail", "config": tc.config})
+			req, _ := http.NewRequest(tc.method, tc.path, bytes.NewBuffer(body))
+			rr := httptest.NewRecorder()
+			r.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d: %s", rr.Code, rr.Body.String())
+			}
+
+			var decoded map[string]string
+			if err := json.Unmarshal(rr.Body.Bytes(), &decoded); err != nil {
+				t.Fatalf("the body is not JSON, so the dashboard shows a generic error: %q", rr.Body.String())
+			}
+			if !strings.Contains(decoded["error"], tc.wantSaid) {
+				t.Errorf("expected the reason to mention %q, got %q", tc.wantSaid, decoded["error"])
+			}
+		})
+	}
+
+	// A rejected update must leave the stored channel exactly as it was.
+	channels, _ := store.GetNotificationChannels()
+	if len(channels) != 1 {
+		t.Fatalf("expected the seeded channel and nothing else, got %d", len(channels))
+	}
+	if !strings.Contains(channels[0].Config, "smtp.example.com") {
+		t.Errorf("the rejected update changed the stored config: %s", channels[0].Config)
 	}
 }

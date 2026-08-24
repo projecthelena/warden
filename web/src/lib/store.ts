@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { toast } from "@/components/ui/use-toast";
 import { queryClient } from "./queryClient";
+import { parseChannelConfig } from "./channelConfig";
 
 export interface MonitorEvent {
     id: string;
@@ -12,21 +13,6 @@ export interface MonitorEvent {
     errorMessage?: string;
     responseBody?: string;
     responseHeaders?: Record<string, string>;
-}
-
-// The API stores a channel's config as a JSON string, because each channel type keeps a
-// different set of keys. The UI wants an object, so it is parsed once on the way in —
-// otherwise every read of channel.config.<key> is silently undefined.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function parseChannelConfig(channel: any): NotificationChannel {
-    if (typeof channel?.config !== "string") {
-        return channel;
-    }
-    try {
-        return { ...channel, config: JSON.parse(channel.config) };
-    } catch {
-        return { ...channel, config: {} };
-    }
 }
 
 export interface NotificationChannel {
