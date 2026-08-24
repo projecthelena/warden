@@ -17,6 +17,7 @@ type Writer interface {
 	AddGroup(name string) (db.Group, error)
 	SetMonitorActive(id string, active bool) error
 	RenameGroup(id, name string) error
+	MoveMonitor(monitorID, groupID string) error
 }
 
 // MonitorInput mirrors the API's creation input. It is redeclared here so this package
@@ -60,6 +61,13 @@ func (s *Server) addWriteTools(srv *mcp.Server) {
 		Title:       "Rename a group",
 		Description: "Rename an existing group. Accepts the group's current name or its id.",
 	}, s.renameGroup)
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:  "move_monitor",
+		Title: "Move a monitor to another group",
+		Description: "Move a monitor into a different group. The monitor keeps its id, history, " +
+			"uptime and incidents; only the grouping changes. Both arguments accept a name or an id.",
+	}, s.moveMonitor)
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "set_monitor_paused",
@@ -183,6 +191,56 @@ func (s *Server) renameGroup(ctx context.Context, _ *mcp.CallToolRequest, in Ren
 	return nil, GroupOutput{ID: id, Name: name}, nil
 }
 
+type MoveMonitorInput struct {
+	Monitor string `json:"monitor" jsonschema:"the monitor's name or id"`
+	Group   string `json:"group" jsonschema:"the destination group's name or id"`
+}
+
+type MoveMonitorOutput struct {
+	Monitor string `json:"monitor"`
+	From    string `json:"from,omitempty"`
+	Group   string `json:"group"`
+	Moved   bool   `json:"moved"`
+}
+
+func (s *Server) moveMonitor(ctx context.Context, _ *mcp.CallToolRequest, in MoveMonitorInput) (*mcp.CallToolResult, MoveMonitorOutput, error) {
+	// resolveGroupID falls back to Default when handed nothing, which is right for
+	// creation and wrong here: it would quietly move the monitor somewhere nobody asked for.
+	if strings.TrimSpace(in.Group) == "" {
+		return nil, MoveMonitorOutput{}, fmt.Errorf("group is required: name the destination group")
+	}
+	m, err := s.resolveMonitor(in.Monitor)
+	if err != nil {
+		return nil, MoveMonitorOutput{}, err
+	}
+	groups, err := s.store.GetGroups()
+	if err != nil {
+		return nil, MoveMonitorOutput{}, fmt.Errorf("failed to load groups: %w", err)
+	}
+	group, err := findGroup(groups, in.Group)
+	if err != nil {
+		return nil, MoveMonitorOutput{}, err
+	}
+	var sourceName string
+	for _, g := range groups {
+		if g.ID == m.GroupID {
+			sourceName = g.Name
+			break
+		}
+	}
+	// Naming where it came from lets the caller report the change without having looked
+	// the monitor up first, and makes an accidental move obvious in the transcript.
+	out := MoveMonitorOutput{Monitor: m.Name, From: sourceName, Group: group.Name}
+	if m.GroupID == group.ID {
+		return nil, out, nil
+	}
+	if err := s.writer.MoveMonitor(m.ID, group.ID); err != nil {
+		return nil, MoveMonitorOutput{}, err
+	}
+	out.Moved = true
+	return nil, out, nil
+}
+
 type SetMonitorPausedInput struct {
 	Monitor string `json:"monitor" jsonschema:"the monitor's name or id"`
 	Paused  bool   `json:"paused" jsonschema:"true to stop checking it, false to resume"`
@@ -207,18 +265,33 @@ func (s *Server) setMonitorPaused(ctx context.Context, _ *mcp.CallToolRequest, i
 // resolveGroupID accepts a group name or id, and falls back to the Default group so a
 // caller handed nothing but a list of URLs still succeeds.
 func (s *Server) resolveGroupID(nameOrID string) (string, error) {
+	g, err := s.resolveGroup(nameOrID)
+	if err != nil {
+		return "", err
+	}
+	return g.ID, nil
+}
+
+// resolveGroup is resolveGroupID for callers that also need the group's display name.
+func (s *Server) resolveGroup(nameOrID string) (db.Group, error) {
+	groups, err := s.store.GetGroups()
+	if err != nil {
+		return db.Group{}, fmt.Errorf("failed to load groups: %w", err)
+	}
+	return findGroup(groups, nameOrID)
+}
+
+// findGroup matches a name or id against an already-loaded list. GetGroups also selects
+// every monitor to nest them, so a caller that needs two lookups reads the list once and
+// comes here twice.
+func findGroup(groups []db.Group, nameOrID string) (db.Group, error) {
 	query := strings.TrimSpace(nameOrID)
 	if query == "" {
 		query = "Default"
 	}
-
-	groups, err := s.store.GetGroups()
-	if err != nil {
-		return "", fmt.Errorf("failed to load groups: %w", err)
-	}
 	for _, g := range groups {
 		if g.ID == query || strings.EqualFold(g.Name, query) {
-			return g.ID, nil
+			return g, nil
 		}
 	}
 
@@ -226,5 +299,5 @@ func (s *Server) resolveGroupID(nameOrID string) (string, error) {
 	for _, g := range groups {
 		names = append(names, g.Name)
 	}
-	return "", fmt.Errorf("no group named %q. Existing groups: %s. Use create_group to add one", query, strings.Join(names, ", "))
+	return db.Group{}, fmt.Errorf("no group named %q. Existing groups: %s. Use create_group to add one", query, strings.Join(names, ", "))
 }

@@ -85,7 +85,7 @@ export function MonitorCard({ monitor, groupId }: { monitor: Monitor, groupId: s
                     <StatusBadge status={monitor.status} isMaintenance={isMaintenance} />
                 </div>
             </div>
-            <MonitorDetailsSheet monitor={monitor} open={detailsOpen} onOpenChange={setDetailsOpen} />
+            <MonitorDetailsSheet monitor={monitor} groupId={groupId} open={detailsOpen} onOpenChange={setDetailsOpen} />
         </>
     )
 }

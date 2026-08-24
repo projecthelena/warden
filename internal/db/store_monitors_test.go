@@ -1,6 +1,7 @@
 package db
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -1570,5 +1571,93 @@ func TestMonitorCRUD_RequestConfig(t *testing.T) {
 	}
 	if found.RequestConfig != nil {
 		t.Errorf("Expected RequestConfig to be nil after clearing, got %+v", found.RequestConfig)
+	}
+}
+
+func TestMoveMonitorToGroup(t *testing.T) {
+	RunTestWithBothDBs(t, "MoveMonitorToGroup", func(t *testing.T, s *Store) {
+		_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+		_ = s.CreateGroup(Group{ID: "g2", Name: "G2"})
+		if err := s.CreateMonitor(Monitor{ID: "m1", GroupID: "g1", Name: "M1", URL: "http://test.com", Active: true, Interval: 60}); err != nil {
+			t.Fatalf("CreateMonitor failed: %v", err)
+		}
+		if err := s.BatchInsertChecks([]CheckResult{{MonitorID: "m1", Status: "up", Latency: 12, Timestamp: time.Now()}}); err != nil {
+			t.Fatalf("BatchInsertChecks failed: %v", err)
+		}
+
+		if err := s.MoveMonitorToGroup("m1", "g2"); err != nil {
+			t.Fatalf("MoveMonitorToGroup failed: %v", err)
+		}
+
+		groups, err := s.GetGroups()
+		if err != nil {
+			t.Fatalf("GetGroups failed: %v", err)
+		}
+		byID := map[string]Group{}
+		for _, g := range groups {
+			byID[g.ID] = g
+		}
+		if len(byID["g1"].Monitors) != 0 {
+			t.Errorf("expected g1 to be empty, got %d monitors", len(byID["g1"].Monitors))
+		}
+		if len(byID["g2"].Monitors) != 1 || byID["g2"].Monitors[0].ID != "m1" {
+			t.Errorf("expected m1 in g2, got %+v", byID["g2"].Monitors)
+		}
+
+		// The move must not cost the monitor its history: that is the whole reason it is a
+		// move and not a delete plus a create.
+		checks, err := s.GetMonitorChecks("m1", 10)
+		if err != nil {
+			t.Fatalf("GetMonitorChecks failed: %v", err)
+		}
+		if len(checks) != 1 {
+			t.Errorf("expected history to survive the move, got %d checks", len(checks))
+		}
+	})
+}
+
+// Sending a monitor to the group it is already in is not an error. It reports a row
+// touched either way, so callers cannot use the error to detect a no-op.
+func TestMoveMonitorToGroupSameGroup(t *testing.T) {
+	s := newTestStore(t)
+	_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+	if err := s.CreateMonitor(Monitor{ID: "m1", GroupID: "g1", Name: "M1", URL: "http://test.com", Active: true, Interval: 60}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	if err := s.MoveMonitorToGroup("m1", "g1"); err != nil {
+		t.Errorf("moving a monitor to its own group should be a no-op, got %v", err)
+	}
+	monitors, _ := s.GetMonitors()
+	if monitors[0].GroupID != "g1" {
+		t.Errorf("expected the monitor to stay in g1, got %s", monitors[0].GroupID)
+	}
+}
+
+func TestMoveMonitorToGroupUnknownMonitor(t *testing.T) {
+	s := newTestStore(t)
+	_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+
+	if err := s.MoveMonitorToGroup("nope", "g1"); !errors.Is(err, ErrMonitorNotFound) {
+		t.Errorf("expected ErrMonitorNotFound, got %v", err)
+	}
+}
+
+// group_id is a foreign key and SQLite runs with it enforced, so the database is the
+// backstop behind the handler's own check. A monitor pointed at a group that does not
+// exist would vanish from every listing, which joins through groups.
+func TestMoveMonitorToGroupUnknownGroupIsRejected(t *testing.T) {
+	s := newTestStore(t)
+	_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+	if err := s.CreateMonitor(Monitor{ID: "m1", GroupID: "g1", Name: "M1", URL: "http://test.com", Active: true, Interval: 60}); err != nil {
+		t.Fatalf("CreateMonitor failed: %v", err)
+	}
+
+	if err := s.MoveMonitorToGroup("m1", "g-nope"); err == nil {
+		t.Fatal("expected the foreign key to reject an unknown group")
+	}
+	monitors, _ := s.GetMonitors()
+	if monitors[0].GroupID != "g1" {
+		t.Errorf("expected the monitor to stay in g1, got %s", monitors[0].GroupID)
 	}
 }

@@ -27,3 +27,7 @@ func (w mcpWriter) SetMonitorActive(id string, active bool) error {
 }
 
 func (w mcpWriter) RenameGroup(id, name string) error { return w.h.RenameGroup(id, name) }
+
+func (w mcpWriter) MoveMonitor(monitorID, groupID string) error {
+	return w.h.MoveMonitor(monitorID, groupID)
+}

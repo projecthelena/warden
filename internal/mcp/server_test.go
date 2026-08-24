@@ -41,6 +41,10 @@ func (w *fakeWriter) SetMonitorActive(id string, active bool) error {
 
 func (w *fakeWriter) RenameGroup(id, name string) error { return w.store.UpdateGroup(id, name) }
 
+func (w *fakeWriter) MoveMonitor(monitorID, groupID string) error {
+	return w.store.MoveMonitorToGroup(monitorID, groupID)
+}
+
 func newTestServer(t *testing.T) (*Server, *db.Store) {
 	t.Helper()
 
@@ -295,7 +299,7 @@ func TestViewerNeverSeesWriteTools(t *testing.T) {
 	}
 	for _, tool := range tools.Tools {
 		switch tool.Name {
-		case "create_monitors", "create_group", "rename_group", "set_monitor_paused":
+		case "create_monitors", "create_group", "rename_group", "move_monitor", "set_monitor_paused":
 			t.Errorf("write tool %q advertised to a read-only caller", tool.Name)
 		}
 	}
@@ -333,7 +337,7 @@ func TestEditorSeesWriteTools(t *testing.T) {
 	for _, tool := range tools.Tools {
 		found[tool.Name] = true
 	}
-	for _, want := range []string{"create_monitors", "create_group", "rename_group", "set_monitor_paused"} {
+	for _, want := range []string{"create_monitors", "create_group", "rename_group", "move_monitor", "set_monitor_paused"} {
 		if !found[want] {
 			t.Errorf("expected write tool %q for an editor", want)
 		}
@@ -861,5 +865,72 @@ func TestListInsightsEmpty(t *testing.T) {
 	}
 	if out.Count != 0 || out.Insights == nil {
 		t.Errorf("expected an empty list rather than null: %+v", out)
+	}
+}
+
+func TestMoveMonitorBetweenGroups(t *testing.T) {
+	s, store := newTestServer(t)
+	seedMonitor(t, store, "m-google-abc", "Google", "https://google.com")
+	if err := store.CreateGroup(db.Group{ID: "g-prod", Name: "Production"}); err != nil {
+		t.Fatalf("failed to seed group: %v", err)
+	}
+
+	// Both arguments take a display name, because that is all an assistant is given.
+	_, out, err := s.moveMonitor(context.Background(), nil, MoveMonitorInput{Monitor: "Google", Group: "Production"})
+	if err != nil {
+		t.Fatalf("move_monitor failed: %v", err)
+	}
+	if !out.Moved || out.Group != "Production" {
+		t.Errorf("expected a move into Production, got %+v", out)
+	}
+	if out.From != "Default" {
+		t.Errorf("expected the result to name the group it came from, got %q", out.From)
+	}
+
+	m, err := s.resolveMonitor("Google")
+	if err != nil {
+		t.Fatalf("resolveMonitor failed: %v", err)
+	}
+	if m.GroupID != "g-prod" {
+		t.Errorf("expected the monitor in g-prod, got %s", m.GroupID)
+	}
+}
+
+// Moving a monitor to the group it is already in is not an error, but saying "moved" for
+// it would have the model report a change that never happened.
+func TestMoveMonitorToSameGroupIsANoOp(t *testing.T) {
+	s, store := newTestServer(t)
+	seedMonitor(t, store, "m-google-abc", "Google", "https://google.com")
+
+	_, out, err := s.moveMonitor(context.Background(), nil, MoveMonitorInput{Monitor: "Google", Group: "Default"})
+	if err != nil {
+		t.Fatalf("move_monitor failed: %v", err)
+	}
+	if out.Moved {
+		t.Error("expected moved=false when the monitor is already in that group")
+	}
+}
+
+// resolveGroupID falls back to Default when handed nothing. For a move that would send
+// the monitor somewhere the caller never named.
+func TestMoveMonitorRequiresADestination(t *testing.T) {
+	s, store := newTestServer(t)
+	seedMonitor(t, store, "m-google-abc", "Google", "https://google.com")
+
+	if _, _, err := s.moveMonitor(context.Background(), nil, MoveMonitorInput{Monitor: "Google"}); err == nil {
+		t.Fatal("expected an error when no destination group is given")
+	}
+}
+
+func TestMoveMonitorUnknownGroupPointsAtCreateGroup(t *testing.T) {
+	s, store := newTestServer(t)
+	seedMonitor(t, store, "m-google-abc", "Google", "https://google.com")
+
+	_, _, err := s.moveMonitor(context.Background(), nil, MoveMonitorInput{Monitor: "Google", Group: "Missing"})
+	if err == nil {
+		t.Fatal("expected an unknown group to be an error")
+	}
+	if !strings.Contains(err.Error(), "create_group") {
+		t.Errorf("expected the error to point at create_group, got %q", err)
 	}
 }

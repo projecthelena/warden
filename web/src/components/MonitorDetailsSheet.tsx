@@ -42,12 +42,13 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 
 interface MonitorDetailsSheetProps {
     monitor: Monitor;
+    groupId: string;
     open: boolean;
     onOpenChange: (open: boolean) => void;
 }
 
-export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDetailsSheetProps) {
-    const { updateMonitor, deleteMonitor, pauseMonitor, resumeMonitor, setMonitorAlertsMuted, user } = useMonitorStore();
+export function MonitorDetailsSheet({ monitor, groupId, open, onOpenChange }: MonitorDetailsSheetProps) {
+    const { updateMonitor, deleteMonitor, pauseMonitor, resumeMonitor, setMonitorAlertsMuted, moveMonitor, user, groups } = useMonitorStore();
     const { canEdit } = useRole();
     const { toast } = useToast();
     const isPaused = monitor.status === 'paused';
@@ -78,6 +79,8 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [latencyData, setLatencyData] = useState<any[]>([]);
     const [timeRange, setTimeRange] = useState("1h");
+    const [moving, setMoving] = useState(false);
+    const [pendingGroup, setPendingGroup] = useState<string | null>(null);
 
     useEffect(() => {
         if (open) {
@@ -298,6 +301,22 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
         onOpenChange(false);
     };
 
+    // Moving is its own action rather than part of Save, the same as pausing and muting,
+    // and it is confirmed for the same reason Delete is. A regroup is visible outside the
+    // dashboard — every status page scoped to the old group stops showing the monitor —
+    // and a Select fires on a stray keystroke while its trigger has focus, which is far too
+    // little friction for that. Confirming also gives the operator a chance to save the
+    // rest of the form first, since the sheet closes with the card it lives on.
+    const handleMove = async () => {
+        const destination = pendingGroup;
+        setPendingGroup(null);
+        if (!destination || destination === groupId || moving) return;
+        setMoving(true);
+        const ok = await moveMonitor(monitor.id, destination);
+        setMoving(false);
+        if (ok) onOpenChange(false);
+    };
+
     const formatUptime = (val: number) => {
         if (val === 100) return "100%";
         return val.toFixed(2) + "%";
@@ -512,6 +531,51 @@ export function MonitorDetailsSheet({ monitor, open, onOpenChange }: MonitorDeta
                                         <SelectItem value="600" className="cursor-pointer">10 Minutes</SelectItem>
                                     </SelectContent>
                                 </Select>
+                            </div>
+                            <div className="grid gap-2">
+                                <Label>Group</Label>
+                                <Select
+                                    onValueChange={(v) => { if (v !== groupId) setPendingGroup(v); }}
+                                    value={groupId}
+                                    disabled={moving}
+                                >
+                                    <SelectTrigger data-testid="monitor-edit-group-select">
+                                        <SelectValue placeholder="Select group" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {groups.map((g) => (
+                                            <SelectItem key={g.id} value={g.id} className="cursor-pointer">
+                                                {g.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-xs text-muted-foreground">
+                                    Moving is its own action, like pausing — it does not wait for Save.
+                                </p>
+                                <AlertDialog
+                                    open={pendingGroup !== null}
+                                    onOpenChange={(o) => { if (!o) setPendingGroup(null); }}
+                                >
+                                    <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                            <AlertDialogTitle>
+                                                Move to {groups.find(g => g.id === pendingGroup)?.name}?
+                                            </AlertDialogTitle>
+                                            <AlertDialogDescription>
+                                                <strong>{monitor.name}</strong> keeps its history, uptime and
+                                                incidents. Status pages scoped to its current group stop showing
+                                                it, and any unsaved changes on this tab are discarded.
+                                            </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                            <AlertDialogCancel data-testid="monitor-move-cancel">Cancel</AlertDialogCancel>
+                                            <AlertDialogAction onClick={handleMove} data-testid="monitor-move-confirm">
+                                                Move Monitor
+                                            </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                </AlertDialog>
                             </div>
                             <div className="pt-4 border-t border-border">
                                 <h3 className="text-sm font-medium mb-3">Notification Overrides</h3>
