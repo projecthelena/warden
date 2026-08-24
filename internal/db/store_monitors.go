@@ -204,6 +204,23 @@ func (s *Store) SetMonitorActive(id string, active bool) error {
 	return nil
 }
 
+// MoveMonitorToGroup reassigns a monitor to another group. The monitor keeps its id, so
+// its checks, outages and insights follow it across untouched — only the grouping moves.
+func (s *Store) MoveMonitorToGroup(id, groupID string) error {
+	res, err := s.db.Exec(s.rebind("UPDATE monitors SET group_id = ? WHERE id = ?"), groupID, id)
+	if err != nil {
+		return fmt.Errorf("failed to move monitor: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rows == 0 {
+		return ErrMonitorNotFound
+	}
+	return nil
+}
+
 // GetMonitors returns all monitors
 func (s *Store) GetMonitors() ([]Monitor, error) {
 	rows, err := s.db.Query("SELECT id, type, group_id, name, url, active, interval_seconds, created_at, confirmation_threshold, notification_cooldown_minutes, latency_threshold, request_config, alerts_muted FROM monitors ORDER BY created_at ASC")

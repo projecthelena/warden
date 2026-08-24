@@ -851,6 +851,9 @@ func (m *Manager) Sync() {
 			existing.SetLatencyThreshold(monLatencyThresh)
 			existing.SetAlertsMuted(dbM.AlertsMuted)
 			existing.SetBaselineP50(monBaselineP50)
+			// A monitor that has been moved to another group keeps running; only the
+			// maintenance window and outage cluster it belongs to change.
+			existing.SetGroupID(dbM.GroupID)
 
 			// Check for changes (URL, Type, Interval, or RequestConfig)
 			needRestart := existing.GetTargetURL() != dbM.URL ||

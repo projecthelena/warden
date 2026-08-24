@@ -54,7 +54,14 @@ That boundary is enforced by the server, not by asking the model nicely. Give ou
 | `create_monitors` | Creates monitors from a list of targets, in one call. |
 | `create_group` | Creates a group to organise monitors into. |
 | `rename_group` | Renames a group. |
+| `move_monitor` | Moves a monitor into another group, keeping its history. |
 | `set_monitor_paused` | Stops or restarts checking a monitor, keeping its history. |
+
+`move_monitor` takes a name or an id for both the monitor and the destination group, and
+reports `moved: false` when the monitor is already there rather than claiming a change it
+did not make. Unlike creation, it will not fall back to the `Default` group: a move with
+no destination is an error, because guessing one would silently regroup a monitor nobody
+asked to touch.
 
 Deleting is deliberately not offered. Removing monitors takes their history with them, and it is not something worth doing on a model's initiative; use the dashboard.
 

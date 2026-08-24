@@ -455,6 +455,55 @@ func (h *CRUDHandler) SetMonitorAlerts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"message": "monitor alerts updated", "alertsMuted": body.Muted})
 }
 
+// SetMonitorGroup moves a monitor into another group. Like pausing and muting, it takes
+// effect on its own rather than as part of an edit: the monitor keeps its id, so its
+// history, uptime and incidents move with it and nothing else about it changes.
+// @Summary      Move a monitor to another group
+// @Tags         monitors
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path string true "Monitor ID"
+// @Param        body  body object{groupId=string} true "Destination group"
+// @Success      200  {object} object{message=string,groupId=string}
+// @Failure      400  {object} object{error=string} "ID required, invalid body or missing groupId"
+// @Failure      404  {object} object{error=string} "Monitor or group not found"
+// @Router       /monitors/{id}/group [post]
+func (h *CRUDHandler) SetMonitorGroup(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleEditor) {
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "ID required")
+		return
+	}
+
+	var body struct {
+		GroupID string `json:"groupId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.MoveMonitor(id, body.GroupID); err != nil {
+		switch {
+		case errors.Is(err, db.ErrMonitorNotFound):
+			writeError(w, http.StatusNotFound, "monitor not found")
+		case errors.Is(err, ErrGroupNotFound):
+			writeError(w, http.StatusNotFound, "selected group does not exist")
+		case errors.Is(err, ErrMonitorInvalid):
+			writeError(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), "invalid monitor: "))
+		default:
+			writeError(w, http.StatusInternalServerError, "failed to move monitor")
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"message": "monitor moved", "groupId": body.GroupID})
+}
+
 // PauseMonitor stops checking a monitor without deleting it.
 // @Summary      Pause monitor
 // @Tags         monitors

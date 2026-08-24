@@ -299,7 +299,18 @@ func (m *Monitor) GetType() string {
 }
 
 func (m *Monitor) GetGroupID() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return m.groupID
+}
+
+// SetGroupID moves a running monitor to another group. Grouping decides which maintenance
+// window silences it and which outage cluster it is counted in, not how it is checked, so
+// it is applied in place instead of restarting the monitor and losing its hydrated state.
+func (m *Monitor) SetGroupID(groupID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.groupID = groupID
 }
 
 func (m *Monitor) GetInterval() time.Duration {
