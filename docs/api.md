@@ -42,6 +42,22 @@ curl -X POST http://localhost:9090/api/monitors \
 
 Omitting `type` on a `PUT` keeps the type the monitor already has.
 
+### Moving a monitor between groups
+
+Grouping is not part of the `PUT`. Like pausing and muting, it has its own endpoint, so a
+regroup is one request that cannot half-apply alongside an edit:
+
+```bash
+curl -X POST http://localhost:9090/api/monitors/m-postgres-a1b2c3/group \
+  -H "Authorization: Bearer sk_live_..." -H 'Content-Type: application/json' \
+  -d '{"groupId":"g-production"}'
+```
+
+The monitor keeps its id, so its checks, uptime, outages and incidents move with it.
+Sending the group it is already in is a no-op rather than an error. A group that does not
+exist returns `404`. Note that a status page scoped to the old group stops showing the
+monitor the moment it leaves.
+
 ## MCP
 
 Warden also speaks the Model Context Protocol at `/api/mcp`, so an assistant can answer questions about your monitoring. See [MCP Server](mcp.md).

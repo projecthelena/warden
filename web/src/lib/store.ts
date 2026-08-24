@@ -277,6 +277,7 @@ interface MonitorStore {
     updateMonitor: (id: string, updates: Partial<Monitor>) => void;
     deleteMonitor: (id: string) => Promise<void>;
     setMonitorAlertsMuted: (id: string, muted: boolean) => Promise<void>;
+    moveMonitor: (id: string, groupId: string) => Promise<boolean>;
     pauseMonitor: (id: string) => Promise<void>;
     resumeMonitor: (id: string) => Promise<void>;
 
@@ -814,6 +815,42 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
         } catch (e) {
             console.error(e);
             toast({ title: "Error", description: "Failed to delete monitor.", variant: "destructive" });
+        }
+    },
+
+    moveMonitor: async (id, groupId) => {
+        const groupName = get().groups.find(g => g.id === groupId)?.name ?? "another group";
+        try {
+            const res = await fetch(`/api/monitors/${id}/group`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ groupId })
+            });
+            if (res.ok) {
+                // The "monitors" query is the /api/uptime fetch that feeds the whole group
+                // list, so invalidating it picks up both the group the monitor left and the
+                // one it joined. The overview has no query behind it, hence the direct call.
+                queryClient.invalidateQueries({ queryKey: ["monitors"] });
+                get().fetchOverview();
+                toast({
+                    title: "Monitor moved",
+                    description: `Now in ${groupName}. Its history and incidents moved with it.`
+                });
+                return true;
+            }
+            const text = await res.text();
+            let errorMsg = "Failed to move monitor.";
+            try {
+                const json = JSON.parse(text);
+                errorMsg = json.error || errorMsg;
+            } catch { /* ignore parse error */ }
+            toast({ title: "Error", description: errorMsg, variant: "destructive" });
+            return false;
+        } catch (e) {
+            console.error(e);
+            toast({ title: "Error", description: "Network error while moving the monitor.", variant: "destructive" });
+            return false;
         }
     },
 

@@ -56,19 +56,8 @@ func (h *CRUDHandler) AddMonitor(in MonitorInput) (db.Monitor, error) {
 		return db.Monitor{}, fmt.Errorf("%w: %s", ErrMonitorInvalid, err)
 	}
 
-	groups, err := h.store.GetGroups()
-	if err != nil {
-		return db.Monitor{}, fmt.Errorf("failed to check groups: %w", err)
-	}
-	groupExists := false
-	for _, g := range groups {
-		if g.ID == in.GroupID {
-			groupExists = true
-			break
-		}
-	}
-	if !groupExists {
-		return db.Monitor{}, fmt.Errorf("%w: %s", ErrGroupNotFound, in.GroupID)
+	if err := h.requireGroup(in.GroupID); err != nil {
+		return db.Monitor{}, err
 	}
 
 	// Simulates a unique constraint the schema does not have.
@@ -99,6 +88,24 @@ func (h *CRUDHandler) AddMonitor(in MonitorInput) (db.Monitor, error) {
 
 	h.manager.Sync()
 	return m, nil
+}
+
+// requireGroup fails unless the group exists. group_id is a foreign key, so without this
+// the caller would get a constraint error instead of a "no such group".
+func (h *CRUDHandler) requireGroup(groupID string) error {
+	if groupID == "" {
+		return fmt.Errorf("%w: groupId is required", ErrMonitorInvalid)
+	}
+	groups, err := h.store.GetGroups()
+	if err != nil {
+		return fmt.Errorf("failed to check groups: %w", err)
+	}
+	for _, g := range groups {
+		if g.ID == groupID {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: %s", ErrGroupNotFound, groupID)
 }
 
 func validateNotificationOverrides(in MonitorInput) error {
@@ -138,6 +145,22 @@ func (h *CRUDHandler) AddGroup(name string) (db.Group, error) {
 
 func (h *CRUDHandler) SetMonitorActive(id string, active bool) error {
 	if err := h.store.SetMonitorActive(id, active); err != nil {
+		return err
+	}
+	h.manager.Sync()
+	return nil
+}
+
+// MoveMonitor reassigns a monitor to another group. Grouping is the only thing that
+// changes: history, uptime and open incidents stay attached to the monitor.
+func (h *CRUDHandler) MoveMonitor(monitorID, groupID string) error {
+	if monitorID == "" {
+		return fmt.Errorf("%w: monitor id is required", ErrMonitorInvalid)
+	}
+	if err := h.requireGroup(groupID); err != nil {
+		return err
+	}
+	if err := h.store.MoveMonitorToGroup(monitorID, groupID); err != nil {
 		return err
 	}
 	h.manager.Sync()

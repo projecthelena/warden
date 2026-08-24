@@ -39,7 +39,9 @@ export class DashboardPage {
         await expect(this.createMonitorTrigger).toBeVisible({ timeout: 30000 });
     }
 
-    async createGroup(name: string) {
+    // Returns the new group's path, so a test that has to come back to it later does not
+    // have to find it in the sidebar.
+    async createGroup(name: string): Promise<string> {
         await this.createGroupTrigger.click();
         await this.createGroupInput.fill(name);
         await this.createGroupSubmit.click();
@@ -47,6 +49,7 @@ export class DashboardPage {
         await expect(this.page).toHaveURL(/\/groups\//);
         // Robust check: first visible occurrence
         await expect(this.page.getByText(name).first()).toBeVisible();
+        return new URL(this.page.url()).pathname;
     }
 
     async createMonitor(name: string, url: string) {
@@ -143,6 +146,51 @@ export class DashboardPage {
 
         // Verify the new name appears in the monitor list
         await expect(this.page.getByText(newName).first()).toBeVisible({ timeout: 10000 });
+    }
+
+    // Picking a group asks for confirmation and then moves the monitor on its own, without
+    // the Save button. Returns the move's response status.
+    async moveMonitorToGroup(monitorName: string, groupName: string): Promise<number> {
+        await this.pickGroup(monitorName, groupName);
+
+        const movePromise = this.page.waitForResponse(
+            resp => /\/api\/monitors\/[^/]+\/group$/.test(resp.url()) && resp.request().method() === 'POST',
+            { timeout: 10000 }
+        );
+        const refetchPromise = this.page.waitForResponse(
+            resp => resp.url().includes('/api/uptime') && resp.request().method() === 'GET' && resp.status() === 200,
+            { timeout: 10000 }
+        );
+        await this.page.getByTestId('monitor-move-confirm').click();
+        const status = (await movePromise).status();
+        await refetchPromise;
+
+        // The card belongs to the group the monitor left, so the sheet goes with it.
+        await expect(this.page.locator('[data-state="open"].fixed.inset-0')).toHaveCount(0, { timeout: 10000 });
+        return status;
+    }
+
+    // Opens the monitor's Settings tab and picks a destination, stopping at the
+    // confirmation dialog so a test can decide whether to go through with it.
+    async pickGroup(monitorName: string, groupName: string) {
+        await this.openMonitorSettings(monitorName);
+
+        const groupSelect = this.page.getByTestId('monitor-edit-group-select');
+        await expect(groupSelect).toBeVisible({ timeout: 5000 });
+        await groupSelect.click();
+        await this.page.getByRole('option', { name: groupName, exact: true }).click();
+        await expect(this.page.getByTestId('monitor-move-confirm')).toBeVisible({ timeout: 5000 });
+    }
+
+    async openMonitorSettings(monitorName: string) {
+        await this.page.getByText(monitorName).first().click();
+        await expect(this.page.locator('[data-state="open"].fixed.inset-0')).toBeVisible({ timeout: 5000 });
+        await this.page.getByTestId('monitor-settings-tab').click();
+    }
+
+    async openGroup(path: string) {
+        await this.page.goto(path);
+        await this.waitForLoad();
     }
 
     async createInvalidMonitor(name: string, url: string) {
