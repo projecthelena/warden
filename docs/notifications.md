@@ -24,9 +24,10 @@ that everything else is already piped into.
 | :--- | :--- |
 | SMTP Server | Hostname of your mail server, e.g. `smtp.resend.com` |
 | Port | `587` by default. `465` connects over TLS immediately; everything else upgrades with STARTTLS |
-| Username / Password | Optional. Leave both blank for a local relay that doesn't authenticate |
+| Username / Password | Optional. A password requires a username; credentials are only sent over TLS |
 | From | `alerts@example.com`, or `Warden <alerts@example.com>` |
 | Send To | One address, or several separated by commas |
+| Allow insecure local relay | Off by default. Enable only for a trusted, unauthenticated relay that cannot offer STARTTLS |
 
 Alerts arrive as both plain text and HTML, so they read correctly in a terminal mail client
 and in Gmail alike. The subject line carries the state and the monitor, so it is legible
@@ -40,14 +41,16 @@ from a phone's lock screen without opening anything:
 
 ### About encryption
 
-Warden will not send your password over an unencrypted connection. On port 465 the whole
+Warden will not send your password or alert contents over an unencrypted connection by
+default. On port 465 the whole
 conversation is encrypted from the first byte. On any other port Warden upgrades the
 connection with STARTTLS when the server offers it — and if the server does **not** offer
-it while the channel has credentials, the send fails with an error rather than putting the
-password on the wire in the clear.
+it, the send fails with an error rather than putting the password or alert body on the wire
+in the clear.
 
-A server that offers no STARTTLS and needs no credentials — a relay on `localhost`, or one
-reachable only inside your network — still works, because there is nothing to leak.
+For a trusted local relay that offers no STARTTLS and needs no credentials, explicitly
+enable **Allow insecure local relay**. This exception only permits the alert contents to be
+sent in plaintext; Warden still refuses to send SMTP credentials without TLS.
 
 ### Common providers
 
@@ -67,8 +70,9 @@ your normal account password will be rejected.
 Use **Send Test** on the channel — it delivers a sample alert through the same code path as
 a real one, and reports the server's own error message rather than a generic failure.
 
-- *"does not offer STARTTLS and this channel has credentials"* — the server won't encrypt
-  the connection. Try port 465, or the provider's documented submission port.
+- *"does not offer STARTTLS"* — the server won't encrypt the connection. Try port 465 or
+  the provider's documented submission port. Only for a trusted, unauthenticated local
+  relay, enable **Allow insecure local relay**.
 - *"authenticating as …"* — wrong username or password. Many providers want an API key as
   the password and a fixed string as the username.
 - *"connecting to …: i/o timeout"* — the port is blocked. Several hosting providers block

@@ -90,7 +90,9 @@ export function NotificationsView() {
                                         </span>
                                     </TableCell>
                                     <TableCell>
-                                        <Badge variant="secondary">Active</Badge>
+                                        <Badge variant={channel.enabled ? "secondary" : "outline"}>
+                                            {channel.enabled ? "Active" : "Disabled"}
+                                        </Badge>
                                     </TableCell>
                                     <TableCell>
                                         <DropdownMenu>

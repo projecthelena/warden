@@ -2,11 +2,21 @@ package notifications
 
 import (
 	"bufio"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
+	"encoding/pem"
 	"fmt"
 	"io"
+	"math/big"
 	"mime"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,22 +31,30 @@ import (
 // on the envelope, not only on the absence of an error.
 type fakeSMTP struct {
 	addr string
+	done chan struct{}
 
 	mu       sync.Mutex
 	from     string
 	to       []string
 	data     string
 	startTLS bool
+	authed   bool
+	username string
+	password string
 }
 
 // fakeSMTPOptions describes how the server should misbehave. The zero value is a server
 // that accepts everything, which is what most tests want; the fields exist so the error
 // paths in deliver() can be reached without a real mail server refusing a real message.
 type fakeSMTPOptions struct {
-	extensions []string // announced in the EHLO reply
-	rejectFrom bool     // answer MAIL FROM with a permanent failure
-	rejectRcpt string   // answer RCPT TO with a permanent failure for this address
-	silent     bool     // accept the connection and then never say anything
+	extensions  []string // announced in the EHLO reply
+	rejectFrom  bool     // answer MAIL FROM with a permanent failure
+	rejectRcpt  string   // answer RCPT TO with a permanent failure for this address
+	silent      bool     // accept the connection and then never say anything
+	tlsConfig   *tls.Config
+	implicitTLS bool
+	username    string
+	password    string
 }
 
 func newFakeSMTP(t *testing.T, greetingExtensions []string) *fakeSMTP {
@@ -52,8 +70,9 @@ func newFakeSMTPWith(t *testing.T, opts fakeSMTPOptions) *fakeSMTP {
 	}
 	t.Cleanup(func() { _ = ln.Close() })
 
-	s := &fakeSMTP{addr: ln.Addr().String()}
+	s := &fakeSMTP{addr: ln.Addr().String(), done: make(chan struct{})}
 	go func() {
+		defer close(s.done)
 		conn, err := ln.Accept()
 		if err != nil {
 			return
@@ -64,6 +83,12 @@ func newFakeSMTPWith(t *testing.T, opts fakeSMTPOptions) *fakeSMTP {
 			// a read, which is the case the total deadline exists for.
 			_, _ = io.Copy(io.Discard, conn)
 			return
+		}
+		if opts.implicitTLS {
+			conn = tls.Server(conn, opts.tlsConfig)
+			if err := conn.(*tls.Conn).Handshake(); err != nil {
+				return
+			}
 		}
 		s.serve(conn, opts)
 	}()
@@ -133,10 +158,40 @@ func (s *fakeSMTP) serve(conn net.Conn, opts fakeSMTPOptions) {
 			s.mu.Lock()
 			s.startTLS = true
 			s.mu.Unlock()
-			// Answering 220 and then not speaking TLS is enough: the test only needs to
-			// know that the client asked, and the failed handshake proves it did not
-			// carry on in the clear.
 			write("220 go ahead")
+			if opts.tlsConfig == nil {
+				// Most STARTTLS error tests deliberately stop here: the failed handshake
+				// proves the client did not carry on in plaintext.
+				continue
+			}
+			tlsConn := tls.Server(conn, opts.tlsConfig)
+			if err := tlsConn.Handshake(); err != nil {
+				return
+			}
+			conn = tlsConn
+			r = bufio.NewReader(conn)
+		case strings.HasPrefix(cmd, "AUTH PLAIN"):
+			parts := strings.Fields(strings.TrimSpace(line))
+			if len(parts) != 3 {
+				write("501 malformed auth")
+				continue
+			}
+			decoded, err := base64.StdEncoding.DecodeString(parts[2])
+			fields := strings.Split(string(decoded), "\x00")
+			if err != nil || len(fields) != 3 {
+				write("501 malformed auth")
+				continue
+			}
+			s.mu.Lock()
+			s.authed = true
+			s.username = fields[1]
+			s.password = fields[2]
+			s.mu.Unlock()
+			if fields[1] != opts.username || fields[2] != opts.password {
+				write("535 invalid credentials")
+				continue
+			}
+			write("235 authenticated")
 		case cmd == "QUIT":
 			write("221 bye")
 			return
@@ -156,6 +211,74 @@ func (s *fakeSMTP) sawSTARTTLS() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.startTLS
+}
+
+func (s *fakeSMTP) authentication() (bool, string, string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.authed, s.username, s.password
+}
+
+func testTLSConfigs(t *testing.T) (*tls.Config, *x509.CertPool) {
+	t.Helper()
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "Warden SMTP test"},
+		NotBefore:    time.Now().Add(-time.Minute),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("create certificate: %v", err)
+	}
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatalf("marshal key: %v", err)
+	}
+	certificate, err := tls.X509KeyPair(
+		pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),
+		pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}),
+	)
+	if err != nil {
+		t.Fatalf("load certificate: %v", err)
+	}
+	leaf, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("parse certificate: %v", err)
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(leaf)
+	return &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12}, roots
+}
+
+func trustTestSMTP(t *testing.T, roots *x509.CertPool) {
+	t.Helper()
+	original := smtpTLSConfig
+	smtpTLSConfig = func(serverName string) *tls.Config {
+		return &tls.Config{ServerName: serverName, RootCAs: roots, MinVersion: tls.VersionTLS12}
+	}
+	t.Cleanup(func() { smtpTLSConfig = original })
+}
+
+func useSMTPTotalTimeout(t *testing.T, timeout time.Duration) {
+	t.Helper()
+	smtpTimeoutMu.Lock()
+	original := smtpTotalTimeout
+	smtpTotalTimeout = timeout
+	smtpTimeoutMu.Unlock()
+	t.Cleanup(func() {
+		smtpTimeoutMu.Lock()
+		smtpTotalTimeout = original
+		smtpTimeoutMu.Unlock()
+	})
 }
 
 func extractAngleAddr(line string) string {
@@ -210,6 +333,16 @@ func TestEmailConfig_NumericPortFromJSON(t *testing.T) {
 	}
 }
 
+func TestEmailConfig_PreservesPasswordBytes(t *testing.T) {
+	cfg, err := NewEmailNotifier(`{"host":"smtp.example.com","username":"warden","password":" secret ","from":"a@example.com","to":"b@example.com"}`).parseConfig()
+	if err != nil {
+		t.Fatalf("parseConfig: %v", err)
+	}
+	if cfg.Password != " secret " {
+		t.Errorf("password was modified: got %q", cfg.Password)
+	}
+}
+
 func TestEmailConfig_MultipleRecipients(t *testing.T) {
 	cfg, err := NewEmailNotifier(`{"host":"h","from":"a@example.com","to":" b@example.com , c@example.com ,"}`).parseConfig()
 	if err != nil {
@@ -232,12 +365,14 @@ func TestEmailConfig_DisplayNameRecipient(t *testing.T) {
 
 func TestEmailConfig_Rejections(t *testing.T) {
 	cases := map[string]string{
-		"missing host":      `{"from":"a@example.com","to":"b@example.com"}`,
-		"missing from":      `{"host":"h","to":"b@example.com"}`,
-		"invalid from":      `{"host":"h","from":"not-an-address","to":"b@example.com"}`,
-		"missing to":        `{"host":"h","from":"a@example.com"}`,
-		"invalid recipient": `{"host":"h","from":"a@example.com","to":"b@example.com, nope"}`,
-		"invalid port":      `{"host":"h","port":"70000","from":"a@example.com","to":"b@example.com"}`,
+		"missing host":              `{"from":"a@example.com","to":"b@example.com"}`,
+		"missing from":              `{"host":"h","to":"b@example.com"}`,
+		"invalid from":              `{"host":"h","from":"not-an-address","to":"b@example.com"}`,
+		"missing to":                `{"host":"h","from":"a@example.com"}`,
+		"invalid recipient":         `{"host":"h","from":"a@example.com","to":"b@example.com, nope"}`,
+		"invalid port":              `{"host":"h","port":"70000","from":"a@example.com","to":"b@example.com"}`,
+		"password without username": `{"host":"h","password":"secret","from":"a@example.com","to":"b@example.com"}`,
+		"invalid insecure flag":     `{"host":"h","allowInsecure":1,"from":"a@example.com","to":"b@example.com"}`,
 	}
 	for name, config := range cases {
 		if err := ValidateEmailConfig(config); err == nil {
@@ -337,7 +472,7 @@ func TestEmailNotifier_SendsOverSMTP(t *testing.T) {
 	server := newFakeSMTP(t, nil)
 	host, port := hostPort(t, server.addr)
 
-	config := fmt.Sprintf(`{"host":%q,"port":%q,"from":"Warden <warden@example.com>","to":"ops@example.com"}`, host, port)
+	config := fmt.Sprintf(`{"host":%q,"port":%q,"from":"Warden <warden@example.com>","to":"ops@example.com","allowInsecure":true}`, host, port)
 	if err := NewEmailNotifier(config).Send(testEvent()); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -357,11 +492,28 @@ func TestEmailNotifier_SendsOverSMTP(t *testing.T) {
 	}
 }
 
-func TestEmailNotifier_SendDirect(t *testing.T) {
+func TestEmailNotifier_RefusesPlaintextByDefault(t *testing.T) {
 	server := newFakeSMTP(t, nil)
 	host, port := hostPort(t, server.addr)
 
 	config := fmt.Sprintf(`{"host":%q,"port":%q,"from":"warden@example.com","to":"ops@example.com"}`, host, port)
+	err := NewEmailNotifier(config).Send(testEvent())
+	if err == nil {
+		t.Fatal("expected plaintext delivery to require an explicit opt-in")
+	}
+	if !strings.Contains(err.Error(), "alert contents") {
+		t.Errorf("expected the error to explain the plaintext risk, got %v", err)
+	}
+	if _, _, data := server.received(); data != "" {
+		t.Error("message was delivered without TLS or an explicit insecure-relay opt-in")
+	}
+}
+
+func TestEmailNotifier_SendDirect(t *testing.T) {
+	server := newFakeSMTP(t, nil)
+	host, port := hostPort(t, server.addr)
+
+	config := fmt.Sprintf(`{"host":%q,"port":%q,"from":"warden@example.com","to":"ops@example.com","allowInsecure":true}`, host, port)
 	if err := SendDirect("email", config, testEvent()); err != nil {
 		t.Fatalf("SendDirect: %v", err)
 	}
@@ -401,7 +553,7 @@ func TestEmailNotifier_SendsDigest(t *testing.T) {
 		}},
 	}
 
-	config := fmt.Sprintf(`{"host":%q,"port":%q,"from":"warden@example.com","to":"ops@example.com"}`, host, port)
+	config := fmt.Sprintf(`{"host":%q,"port":%q,"from":"warden@example.com","to":"ops@example.com","allowInsecure":true}`, host, port)
 	if err := NewEmailNotifier(config).sendDigest(summary); err != nil {
 		t.Fatalf("sendDigest: %v", err)
 	}
@@ -489,6 +641,34 @@ func TestEmailNotifier_UsesSTARTTLSWhenOffered(t *testing.T) {
 	}
 }
 
+func TestEmailNotifier_AuthenticatesAfterSTARTTLS(t *testing.T) {
+	serverTLS, roots := testTLSConfigs(t)
+	server := newFakeSMTPWith(t, fakeSMTPOptions{
+		extensions: []string{"STARTTLS", "AUTH PLAIN"},
+		tlsConfig:  serverTLS,
+		username:   "warden",
+		password:   " secret ",
+	})
+	trustTestSMTP(t, roots)
+	host, port := hostPort(t, server.addr)
+
+	config := fmt.Sprintf(`{"host":%q,"port":%q,"username":"warden","password":" secret ","from":"warden@example.com","to":"ops@example.com"}`, host, port)
+	if err := NewEmailNotifier(config).Send(testEvent()); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	if !server.sawSTARTTLS() {
+		t.Fatal("client did not upgrade the connection with STARTTLS")
+	}
+	authed, username, password := server.authentication()
+	if !authed || username != "warden" || password != " secret " {
+		t.Errorf("unexpected authentication: authenticated=%v username=%q password=%q", authed, username, password)
+	}
+	if _, _, data := server.received(); data == "" {
+		t.Fatal("authenticated STARTTLS connection did not deliver the message")
+	}
+}
+
 // waitForDelivery polls the fake server, since dispatch happens on the service's worker
 // goroutine rather than inline.
 func waitForDelivery(t *testing.T, server *fakeSMTP, within time.Duration) string {
@@ -515,7 +695,7 @@ func TestService_DispatchReachesAnEmailChannel(t *testing.T) {
 		ID:   "nc-email",
 		Type: "email",
 		Name: "Ops mailbox",
-		Config: fmt.Sprintf(`{"host":%q,"port":%q,"from":"warden@example.com","to":"ops@example.com"}`,
+		Config: fmt.Sprintf(`{"host":%q,"port":%q,"from":"warden@example.com","to":"ops@example.com","allowInsecure":true}`,
 			host, port),
 		Enabled:   true,
 		CreatedAt: time.Now(),
@@ -536,6 +716,55 @@ func TestService_DispatchReachesAnEmailChannel(t *testing.T) {
 	}
 }
 
+func TestService_SlowEmailDoesNotBlockWebhook(t *testing.T) {
+	webhookDelivered := make(chan struct{}, 1)
+	webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		webhookDelivered <- struct{}{}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(webhook.Close)
+	silent := newFakeSMTPWith(t, fakeSMTPOptions{silent: true})
+	silentHost, silentPort := hostPort(t, silent.addr)
+
+	useSMTPTotalTimeout(t, 750*time.Millisecond)
+
+	store := newTestStore(t)
+	// The slow channel is created last so the database returns it first. A serial
+	// dispatcher would wait for its timeout before it even attempted the webhook.
+	for _, channel := range []db.NotificationChannel{
+		{
+			ID: "nc-webhook", Type: "webhook", Name: "Webhook",
+			Config:  fmt.Sprintf(`{"webhookUrl":%q}`, webhook.URL),
+			Enabled: true,
+		},
+		{
+			ID: "nc-silent", Type: "email", Name: "Silent",
+			Config:  fmt.Sprintf(`{"host":%q,"port":%q,"from":"warden@example.com","to":"ops@example.com","allowInsecure":true}`, silentHost, silentPort),
+			Enabled: true,
+		},
+	} {
+		if err := store.CreateNotificationChannel(channel); err != nil {
+			t.Fatalf("CreateNotificationChannel(%s): %v", channel.ID, err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	svc := NewService(store)
+	svc.Start()
+	svc.Enqueue(testEvent())
+
+	select {
+	case <-webhookDelivered:
+	case <-time.After(400 * time.Millisecond):
+		t.Fatal("the silent SMTP channel blocked webhook delivery")
+	}
+	select {
+	case <-silent.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the silent SMTP worker did not stop after its deadline")
+	}
+}
+
 // A disabled channel is skipped for every type, and email is the one where "sent anyway"
 // would be visible in somebody's inbox rather than a log line.
 func TestService_DispatchSkipsADisabledEmailChannel(t *testing.T) {
@@ -547,7 +776,7 @@ func TestService_DispatchSkipsADisabledEmailChannel(t *testing.T) {
 		ID:   "nc-off",
 		Type: "email",
 		Name: "Disabled",
-		Config: fmt.Sprintf(`{"host":%q,"port":%q,"from":"warden@example.com","to":"ops@example.com"}`,
+		Config: fmt.Sprintf(`{"host":%q,"port":%q,"from":"warden@example.com","to":"ops@example.com","allowInsecure":true}`,
 			host, port),
 		Enabled:   false,
 		CreatedAt: time.Now(),
@@ -575,7 +804,7 @@ func TestService_SendDigestReachesAnEmailChannel(t *testing.T) {
 		ID:   "nc-digest",
 		Type: "email",
 		Name: "Ops mailbox",
-		Config: fmt.Sprintf(`{"host":%q,"port":%q,"from":"warden@example.com","to":"ops@example.com"}`,
+		Config: fmt.Sprintf(`{"host":%q,"port":%q,"from":"warden@example.com","to":"ops@example.com","allowInsecure":true}`,
 			host, port),
 		Enabled:   true,
 		CreatedAt: time.Now(),
@@ -721,6 +950,37 @@ func TestEmailNotifier_ImplicitTLSOnPort465(t *testing.T) {
 	}
 }
 
+func TestEmailNotifier_DeliversWithAuthenticatedImplicitTLS(t *testing.T) {
+	serverTLS, roots := testTLSConfigs(t)
+	server := newFakeSMTPWith(t, fakeSMTPOptions{
+		extensions:  []string{"AUTH PLAIN"},
+		tlsConfig:   serverTLS,
+		implicitTLS: true,
+		username:    "warden",
+		password:    "secret",
+	})
+	trustTestSMTP(t, roots)
+	host, port := hostPort(t, server.addr)
+	portNum, err := strconv.Atoi(port)
+	if err != nil {
+		t.Fatalf("port %q: %v", port, err)
+	}
+	originalPort := implicitTLSPort
+	implicitTLSPort = portNum
+	t.Cleanup(func() { implicitTLSPort = originalPort })
+
+	config := fmt.Sprintf(`{"host":%q,"port":%q,"username":"warden","password":"secret","from":"warden@example.com","to":"ops@example.com"}`, host, port)
+	if err := NewEmailNotifier(config).Send(testEvent()); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if authed, username, password := server.authentication(); !authed || username != "warden" || password != "secret" {
+		t.Errorf("unexpected authentication: authenticated=%v username=%q password=%q", authed, username, password)
+	}
+	if _, _, data := server.received(); data == "" {
+		t.Fatal("authenticated implicit-TLS connection did not deliver the message")
+	}
+}
+
 // A server that takes the message and then refuses a recipient must produce an error that
 // names the address. "Send failed" on a channel with six recipients tells the operator
 // nothing about which one is wrong.
@@ -728,7 +988,7 @@ func TestEmailNotifier_SurfacesARejectedRecipient(t *testing.T) {
 	server := newFakeSMTPWith(t, fakeSMTPOptions{rejectRcpt: "gone@example.com"})
 	host, port := hostPort(t, server.addr)
 
-	config := fmt.Sprintf(`{"host":%q,"port":%q,"from":"warden@example.com","to":"ops@example.com, gone@example.com"}`, host, port)
+	config := fmt.Sprintf(`{"host":%q,"port":%q,"from":"warden@example.com","to":"ops@example.com, gone@example.com","allowInsecure":true}`, host, port)
 	err := NewEmailNotifier(config).Send(testEvent())
 	if err == nil {
 		t.Fatal("expected an error when the server refuses a recipient")
@@ -746,7 +1006,7 @@ func TestEmailNotifier_SurfacesARejectedSender(t *testing.T) {
 	server := newFakeSMTPWith(t, fakeSMTPOptions{rejectFrom: true})
 	host, port := hostPort(t, server.addr)
 
-	config := fmt.Sprintf(`{"host":%q,"port":%q,"from":"warden@example.com","to":"ops@example.com"}`, host, port)
+	config := fmt.Sprintf(`{"host":%q,"port":%q,"from":"warden@example.com","to":"ops@example.com","allowInsecure":true}`, host, port)
 	err := NewEmailNotifier(config).Send(testEvent())
 	if err == nil {
 		t.Fatal("expected an error when the server refuses the sender")
@@ -763,11 +1023,10 @@ func TestEmailNotifier_GivesUpOnASilentServer(t *testing.T) {
 	server := newFakeSMTPWith(t, fakeSMTPOptions{silent: true})
 	host, port := hostPort(t, server.addr)
 
-	original := smtpTotalTimeout
-	smtpTotalTimeout = 200 * time.Millisecond
-	t.Cleanup(func() { smtpTotalTimeout = original })
+	const timeout = 200 * time.Millisecond
+	useSMTPTotalTimeout(t, timeout)
 
-	config := fmt.Sprintf(`{"host":%q,"port":%q,"from":"warden@example.com","to":"ops@example.com"}`, host, port)
+	config := fmt.Sprintf(`{"host":%q,"port":%q,"from":"warden@example.com","to":"ops@example.com","allowInsecure":true}`, host, port)
 
 	start := time.Now()
 	err := NewEmailNotifier(config).Send(testEvent())
@@ -777,7 +1036,7 @@ func TestEmailNotifier_GivesUpOnASilentServer(t *testing.T) {
 		t.Fatal("expected an error from a server that never answers")
 	}
 	if elapsed > 5*time.Second {
-		t.Errorf("the send took %s; the deadline should have ended it in about %s", elapsed, smtpTotalTimeout)
+		t.Errorf("the send took %s; the deadline should have ended it in about %s", elapsed, timeout)
 	}
 }
 

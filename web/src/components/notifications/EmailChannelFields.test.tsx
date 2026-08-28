@@ -28,6 +28,7 @@ describe("EmailChannelFields", () => {
                     password: "secret",
                     from: "Warden <alerts@example.com>",
                     to: "ops@example.com",
+                    allowInsecure: false,
                 }}
                 onChange={vi.fn()}
             />
@@ -59,5 +60,15 @@ describe("EmailChannelFields", () => {
         expect(screen.getByTestId("channel-smtp-to-input")).toBeRequired();
         expect(screen.getByTestId("channel-smtp-username-input")).not.toBeRequired();
         expect(screen.getByTestId("channel-smtp-password-input")).not.toBeRequired();
+    });
+
+    it("requires an explicit opt-in before showing the plaintext warning", async () => {
+        const onChange = vi.fn();
+        render(<EmailChannelFields config={emptyEmailConfig} onChange={onChange} />);
+
+        expect(screen.queryByText("Alert contents may be readable on the network.")).not.toBeInTheDocument();
+        await userEvent.click(screen.getByTestId("channel-smtp-allow-insecure-switch"));
+
+        expect(onChange).toHaveBeenCalledWith({ ...emptyEmailConfig, allowInsecure: true });
     });
 });

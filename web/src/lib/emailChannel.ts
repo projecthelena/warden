@@ -1,5 +1,5 @@
-// The shape of an email channel's config, as the form holds it. The API takes and returns
-// these as plain strings, which is why the port is one too.
+// The shape of an email channel's config, as the form holds it. Text fields stay strings
+// (including the port), while the insecure-relay opt-in is an explicit boolean.
 export interface EmailConfig {
     host: string;
     port: string;
@@ -7,6 +7,7 @@ export interface EmailConfig {
     password: string;
     from: string;
     to: string;
+    allowInsecure: boolean;
 }
 
 export const emptyEmailConfig: EmailConfig = {
@@ -16,6 +17,7 @@ export const emptyEmailConfig: EmailConfig = {
     password: "",
     from: "",
     to: "",
+    allowInsecure: false,
 };
 
 // isEmailConfigured reports whether there is enough here to attempt a send. The server
@@ -31,13 +33,15 @@ export function isEmailConfigured(config: EmailConfig): boolean {
 // The password comes back with the rest: the form preloads it so that saving an unrelated
 // change does not blank it. A channel that stopped authenticating would not fall back to
 // sending in the clear, it would stop sending at all.
-export function emailConfigFromChannel(config: Record<string, string | undefined>): EmailConfig {
+export function emailConfigFromChannel(config: Record<string, string | boolean | undefined>): EmailConfig {
+    const stringValue = (value: string | boolean | undefined) => typeof value === "string" ? value : "";
     return {
-        host: config.host || "",
-        port: config.port || emptyEmailConfig.port,
-        username: config.username || "",
-        password: config.password || "",
-        from: config.from || "",
-        to: config.to || "",
+        host: stringValue(config.host),
+        port: stringValue(config.port) || emptyEmailConfig.port,
+        username: stringValue(config.username),
+        password: stringValue(config.password),
+        from: stringValue(config.from),
+        to: stringValue(config.to),
+        allowInsecure: config.allowInsecure === true,
     };
 }

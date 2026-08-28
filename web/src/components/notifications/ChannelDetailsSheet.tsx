@@ -19,6 +19,7 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import { useMonitorStore, NotificationChannel } from "@/lib/store";
 import { SlackPreview } from "./SlackPreview";
 import { WebhookPayloadPreview } from "./WebhookPayloadPreview";
@@ -38,10 +39,11 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
     const [type, setType] = useState<NotificationChannel['type']>(channel.type);
     const [webhookUrl, setWebhookUrl] = useState(channel.config.webhookUrl || "");
     const [email, setEmail] = useState<EmailConfig>(emailConfigFromChannel(channel.config));
+    const [enabled, setEnabled] = useState(channel.enabled);
     const [testing, setTesting] = useState(false);
 
     const isEmail = type === "email";
-    const config: Record<string, string> = isEmail ? { ...email } : { webhookUrl };
+    const config: Record<string, string | boolean> = isEmail ? { ...email } : { webhookUrl };
     const canTest = isEmail ? isEmailConfigured(email) : webhookUrl !== "";
 
     // Reset state when channel changes
@@ -50,6 +52,7 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
         setType(channel.type);
         setWebhookUrl(channel.config.webhookUrl || "");
         setEmail(emailConfigFromChannel(channel.config));
+        setEnabled(channel.enabled);
     }, [channel, open]);
 
     const handleSave = () => {
@@ -57,6 +60,7 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
             name,
             type,
             config,
+            enabled,
         });
         onOpenChange(false);
     };
@@ -104,6 +108,22 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
                                 </SelectItem>
                             </SelectContent>
                         </Select>
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-md border border-border p-3">
+                        <div className="grid gap-1">
+                            <Label htmlFor="channel-enabled">Channel enabled</Label>
+                            <p className="text-[0.8rem] text-muted-foreground">
+                                Disabled channels do not receive alerts or daily digests.
+                            </p>
+                        </div>
+                        <Switch
+                            id="channel-enabled"
+                            checked={enabled}
+                            onCheckedChange={setEnabled}
+                            data-testid="channel-enabled-switch"
+                            aria-label="Channel enabled"
+                        />
                     </div>
 
                     <div className="grid gap-2">
@@ -159,4 +179,3 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
         </Sheet>
     );
 }
-

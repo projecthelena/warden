@@ -45,16 +45,23 @@ type Notifier interface {
 	Send(event NotificationEvent) error
 }
 
+type deliveryJob struct {
+	channel db.NotificationChannel
+	event   NotificationEvent
+}
+
 // Service manages the notification queue and dispatching
 type Service struct {
-	store *db.Store
-	queue chan NotificationEvent
+	store      *db.Store
+	queue      chan NotificationEvent
+	deliveries map[string]chan deliveryJob
 }
 
 func NewService(store *db.Store) *Service {
 	return &Service{
-		store: store,
-		queue: make(chan NotificationEvent, 100),
+		store:      store,
+		queue:      make(chan NotificationEvent, 100),
+		deliveries: make(map[string]chan deliveryJob),
 	}
 }
 
@@ -79,23 +86,50 @@ func (s *Service) dispatch(event NotificationEvent) {
 		if !ch.Enabled {
 			continue
 		}
+		s.enqueueDelivery(ch, event)
+	}
+}
 
-		var notifier Notifier
-		switch ch.Type {
-		case "slack":
-			notifier = NewSlackNotifier(ch.Config)
-		case "webhook":
-			notifier = NewWebhookNotifier(ch.Config)
-		case "email":
-			notifier = NewEmailNotifier(ch.Config)
-		default:
-			log.Printf("Unknown channel type: %s", ch.Type)
-			continue
-		}
+// Each channel gets its own ordered delivery queue. A slow SMTP conversation can only
+// hold up later messages for that same channel; Slack, webhooks, and other email channels
+// continue independently.
+func (s *Service) enqueueDelivery(channel db.NotificationChannel, event NotificationEvent) {
+	jobs, exists := s.deliveries[channel.ID]
+	if !exists {
+		jobs = make(chan deliveryJob, 100)
+		s.deliveries[channel.ID] = jobs
+		go s.deliveryWorker(jobs)
+	}
 
-		if err := notifier.Send(event); err != nil {
-			log.Printf("Failed to send notification to %s (%s): %v", ch.Name, ch.Type, err)
-		}
+	select {
+	case jobs <- deliveryJob{channel: channel, event: event}:
+	default:
+		log.Printf("Notification queue full for channel %s (%s), dropping event for %s", channel.Name, channel.Type, event.MonitorID)
+	}
+}
+
+func (s *Service) deliveryWorker(jobs <-chan deliveryJob) {
+	for job := range jobs {
+		s.sendToChannel(job.channel, job.event)
+	}
+}
+
+func (s *Service) sendToChannel(channel db.NotificationChannel, event NotificationEvent) {
+	var notifier Notifier
+	switch channel.Type {
+	case "slack":
+		notifier = NewSlackNotifier(channel.Config)
+	case "webhook":
+		notifier = NewWebhookNotifier(channel.Config)
+	case "email":
+		notifier = NewEmailNotifier(channel.Config)
+	default:
+		log.Printf("Unknown channel type: %s", channel.Type)
+		return
+	}
+
+	if err := notifier.Send(event); err != nil {
+		log.Printf("Failed to send notification to %s (%s): %v", channel.Name, channel.Type, err)
 	}
 }
 

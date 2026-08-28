@@ -28,6 +28,7 @@ export interface NotificationChannel {
         password?: string;
         from?: string;
         to?: string;
+        allowInsecure?: boolean;
     };
     enabled: boolean;
 }
@@ -275,11 +276,11 @@ interface MonitorStore {
     addIncidentUpdate: (incidentId: string, status: string, message: string) => Promise<IncidentUpdate | null>;
     setIncidentVisibility: (incidentId: string, isPublic: boolean) => Promise<boolean>;
     getIncidentWithUpdates: (incidentId: string) => Promise<Incident | null>;
-    addChannel: (channel: Omit<NotificationChannel, 'id' | 'enabled'>) => Promise<void>;
+    addChannel: (channel: Omit<NotificationChannel, 'id'>) => Promise<void>;
     updateChannel: (id: string, updates: Partial<NotificationChannel>) => void;
     deleteChannel: (id: string) => Promise<void>;
     fetchChannels: () => Promise<void>;
-    testChannel: (type: string, config: Record<string, string>) => Promise<{ success: boolean; error?: string }>;
+    testChannel: (type: string, config: Record<string, string | boolean>) => Promise<{ success: boolean; error?: string }>;
 
     updateUser: (data: { password?: string; currentPassword?: string; timezone?: string }) => Promise<void>;
 

@@ -18,6 +18,7 @@ import (
 	"net/smtp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -25,17 +26,26 @@ import (
 // event at a time. Same reasoning as the 10s timeout on the webhook client.
 const smtpDialTimeout = 10 * time.Second
 
-// These two are variables rather than constants so the tests can reach the branches they
-// guard, which is otherwise impossible from a test binary: 465 is a privileged port that
-// no unprivileged process can listen on, and waiting out a 30s deadline is not something a
-// unit test can afford. Nothing in the running server writes to either.
+// These are variables rather than constants so tests can reach branches that otherwise
+// require a privileged port, a 30-second wait, or a publicly trusted certificate. The
+// running server never replaces them.
 var (
+	smtpTimeoutMu    sync.RWMutex
 	smtpTotalTimeout = 30 * time.Second
+	smtpTLSConfig    = func(serverName string) *tls.Config {
+		return &tls.Config{ServerName: serverName, MinVersion: tls.VersionTLS12}
+	}
 
 	// implicitTLSPort speaks TLS from the first byte (SMTPS). Every other port starts in
 	// plaintext and upgrades with STARTTLS.
 	implicitTLSPort = 465
 )
+
+func currentSMTPTotalTimeout() time.Duration {
+	smtpTimeoutMu.RLock()
+	defer smtpTimeoutMu.RUnlock()
+	return smtpTotalTimeout
+}
 
 // EmailNotifier delivers alerts over SMTP.
 type EmailNotifier struct {
@@ -52,21 +62,27 @@ func NewEmailNotifier(configJSON string) *EmailNotifier {
 // sending so that both the alert path and the digest path fail the same way, and so the
 // tests can check the validation without opening a socket.
 type emailConfig struct {
-	Host     string
-	Port     int
-	Username string
-	Password string
-	From     string
-	To       []string
+	Host          string
+	Port          int
+	Username      string
+	Password      string
+	From          string
+	To            []string
+	AllowInsecure bool
 }
 
 func (n *EmailNotifier) parseConfig() (*emailConfig, error) {
 	cfg := &emailConfig{
 		Host:     configString(n.config, "host"),
 		Username: configString(n.config, "username"),
-		Password: configString(n.config, "password"),
+		Password: configRawString(n.config, "password"),
 		From:     configString(n.config, "from"),
 	}
+	allowInsecure, err := configBool(n.config, "allowInsecure")
+	if err != nil {
+		return nil, err
+	}
+	cfg.AllowInsecure = allowInsecure
 
 	if cfg.Host == "" {
 		return nil, fmt.Errorf("host is required")
@@ -87,6 +103,9 @@ func (n *EmailNotifier) parseConfig() (*emailConfig, error) {
 
 	if cfg.From == "" {
 		return nil, fmt.Errorf("from address is required")
+	}
+	if cfg.Username == "" && cfg.Password != "" {
+		return nil, fmt.Errorf("username is required when a password is configured")
 	}
 	if _, err := mail.ParseAddress(cfg.From); err != nil {
 		return nil, fmt.Errorf("from address %q is not a valid email address", cfg.From)
@@ -112,6 +131,30 @@ func configString(config map[string]interface{}, key string) string {
 	default:
 		return ""
 	}
+}
+
+// Passwords are opaque bytes supplied by the SMTP provider. Trimming one silently changes
+// the credential, so secrets use a separate reader from human-entered fields.
+func configRawString(config map[string]interface{}, key string) string {
+	value, _ := config[key].(string)
+	return value
+}
+
+func configBool(config map[string]interface{}, key string) (bool, error) {
+	value, exists := config[key]
+	if !exists || value == nil {
+		return false, nil
+	}
+	switch v := value.(type) {
+	case bool:
+		return v, nil
+	case string:
+		parsed, err := strconv.ParseBool(strings.TrimSpace(v))
+		if err == nil {
+			return parsed, nil
+		}
+	}
+	return false, fmt.Errorf("%s must be a boolean", key)
 }
 
 // parseRecipients splits and validates a comma-separated recipient list.
@@ -190,10 +233,10 @@ func (n *EmailNotifier) sendDigest(summary digestSummary) error {
 // deliver opens the SMTP conversation and hands over one message.
 //
 // The TLS rule: port 465 is TLS from the first byte, anything else upgrades with STARTTLS
-// when the server offers it. When it doesn't, the message still goes out unencrypted only
-// if there are no credentials to leak — a local relay with no auth is a normal
-// self-hosted setup. If credentials exist, net/smtp refuses to send them over a plaintext
-// link anyway, and we surface that as an error instead of silently not authenticating.
+// when the server offers it. Plaintext delivery is disabled by default because alert
+// contents can be sensitive even when there is no password. An operator may explicitly
+// opt a trusted, unauthenticated local relay into plaintext; credentials are never sent
+// without TLS, regardless of that setting.
 func deliver(cfg *emailConfig, msg []byte) error {
 	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
 
@@ -201,7 +244,7 @@ func deliver(cfg *emailConfig, msg []byte) error {
 	var err error
 	if cfg.Port == implicitTLSPort {
 		dialer := &net.Dialer{Timeout: smtpDialTimeout}
-		conn, err = tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{ServerName: cfg.Host, MinVersion: tls.VersionTLS12})
+		conn, err = tls.DialWithDialer(dialer, "tcp", addr, smtpTLSConfig(cfg.Host))
 	} else {
 		conn, err = net.DialTimeout("tcp", addr, smtpDialTimeout)
 	}
@@ -210,7 +253,7 @@ func deliver(cfg *emailConfig, msg []byte) error {
 	}
 	// The deadline covers the whole conversation, not just the dial: a server that
 	// accepts the connection and then stops talking is the case that hangs a worker.
-	if err := conn.SetDeadline(time.Now().Add(smtpTotalTimeout)); err != nil {
+	if err := conn.SetDeadline(time.Now().Add(currentSMTPTotalTimeout())); err != nil {
 		_ = conn.Close()
 		return err
 	}
@@ -224,11 +267,13 @@ func deliver(cfg *emailConfig, msg []byte) error {
 
 	if cfg.Port != implicitTLSPort {
 		if ok, _ := client.Extension("STARTTLS"); ok {
-			if err := client.StartTLS(&tls.Config{ServerName: cfg.Host, MinVersion: tls.VersionTLS12}); err != nil {
+			if err := client.StartTLS(smtpTLSConfig(cfg.Host)); err != nil {
 				return fmt.Errorf("starttls with %s: %w", cfg.Host, err)
 			}
 		} else if cfg.Username != "" {
 			return fmt.Errorf("%s does not offer STARTTLS and this channel has credentials; refusing to send the password in the clear", cfg.Host)
+		} else if !cfg.AllowInsecure {
+			return fmt.Errorf("%s does not offer STARTTLS; refusing to send alert contents in the clear (enable insecure relay only for a trusted local SMTP server)", cfg.Host)
 		}
 	}
 

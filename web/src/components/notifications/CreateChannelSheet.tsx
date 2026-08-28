@@ -37,7 +37,7 @@ export function CreateChannelSheet({ onCreate }: { onCreate?: (c: any) => void }
     const [testing, setTesting] = useState(false);
 
     const isEmail = type === "email";
-    const config: Record<string, string> = isEmail ? { ...email } : { webhookUrl };
+    const config: Record<string, string | boolean> = isEmail ? { ...email } : { webhookUrl };
     const canTest = isEmail ? isEmailConfigured(email) : webhookUrl !== "";
 
     const handleSubmit = (e: React.FormEvent) => {

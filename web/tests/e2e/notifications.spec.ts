@@ -145,6 +145,7 @@ test.describe('Email channel credentials', () => {
         expect(after.config.username).toBe('alerts@example.com');
         expect(after.config.host).toBe('smtp.example.com');
         expect(after.config.to).toBe('oncall@example.com');
+        expect(after.enabled, 'editing the channel disabled it').toBe(true);
 
         await page.request.delete(`${API_BASE}/api/notifications/channels/${after.id}`);
     });

@@ -1,5 +1,6 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { EmailConfig } from "@/lib/emailChannel";
 
 // Both the create and the edit sheet render the same six fields, so they live here rather
@@ -90,6 +91,28 @@ export function EmailChannelFields({
                     Separate several recipients with commas. Port 465 connects over TLS; anything
                     else upgrades with STARTTLS.
                 </p>
+            </div>
+
+            <div className="flex items-start justify-between gap-4 rounded-md border border-border p-3">
+                <div className="grid gap-1">
+                    <Label htmlFor="allow-insecure-smtp">Allow insecure local relay</Label>
+                    <p className="text-[0.8rem] text-muted-foreground">
+                        Send alert contents without TLS only when this trusted relay offers no
+                        STARTTLS. Credentials are never sent in plaintext.
+                    </p>
+                    {config.allowInsecure && (
+                        <p className="text-[0.8rem] font-medium text-destructive">
+                            Alert contents may be readable on the network.
+                        </p>
+                    )}
+                </div>
+                <Switch
+                    id="allow-insecure-smtp"
+                    checked={config.allowInsecure}
+                    onCheckedChange={(checked) => onChange({ ...config, allowInsecure: checked })}
+                    data-testid="channel-smtp-allow-insecure-switch"
+                    aria-label="Allow insecure local relay"
+                />
             </div>
         </>
     );

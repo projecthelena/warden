@@ -245,7 +245,7 @@ func (h *NotificationChannelsHandler) UpdateChannel(w http.ResponseWriter, r *ht
 		Type    string                 `json:"type"`
 		Name    string                 `json:"name"`
 		Config  map[string]interface{} `json:"config"`
-		Enabled bool                   `json:"enabled"`
+		Enabled *bool                  `json:"enabled"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -274,7 +274,29 @@ func (h *NotificationChannelsHandler) UpdateChannel(w http.ResponseWriter, r *ht
 		return
 	}
 
-	if err := h.store.UpdateNotificationChannel(id, body.Name, body.Type, string(configBytes), body.Enabled); err != nil {
+	channels, err := h.store.GetNotificationChannels()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to fetch channel")
+		return
+	}
+	var current *db.NotificationChannel
+	for i := range channels {
+		if channels[i].ID == id {
+			current = &channels[i]
+			break
+		}
+	}
+	if current == nil {
+		writeError(w, http.StatusNotFound, "Channel not found")
+		return
+	}
+
+	enabled := current.Enabled
+	if body.Enabled != nil {
+		enabled = *body.Enabled
+	}
+
+	if err := h.store.UpdateNotificationChannel(id, body.Name, body.Type, string(configBytes), enabled); err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to update channel")
 		return
 	}
@@ -284,7 +306,7 @@ func (h *NotificationChannelsHandler) UpdateChannel(w http.ResponseWriter, r *ht
 		"type":    body.Type,
 		"name":    body.Name,
 		"config":  string(configBytes),
-		"enabled": body.Enabled,
+		"enabled": enabled,
 	})
 }
 

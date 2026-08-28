@@ -165,6 +165,46 @@ func TestUpdateChannel(t *testing.T) {
 	if channels[0].Type != "webhook" {
 		t.Errorf("expected type 'webhook', got '%s'", channels[0].Type)
 	}
+	if !channels[0].Enabled {
+		t.Error("expected the channel to remain enabled")
+	}
+}
+
+func TestUpdateChannel_PreservesEnabledWhenOmitted(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewNotificationChannelsHandler(store)
+
+	if err := store.CreateNotificationChannel(db.NotificationChannel{
+		ID: "nc-disabled", Type: "webhook", Name: "Disabled",
+		Config: `{"webhookUrl":"http://old.example.com"}`, Enabled: false,
+	}); err != nil {
+		t.Fatalf("Failed to create channel: %v", err)
+	}
+
+	r := chi.NewRouter()
+	r.Use(testAdminRoleMiddleware)
+	r.Put("/notifications/channels/{id}", handler.UpdateChannel)
+
+	payload := map[string]interface{}{
+		"type":   "webhook",
+		"name":   "Still Disabled",
+		"config": map[string]string{"webhookUrl": "http://new.example.com/hook"},
+	}
+	body, _ := json.Marshal(payload)
+	req, _ := http.NewRequest("PUT", "/notifications/channels/nc-disabled", bytes.NewBuffer(body))
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	channels, err := store.GetNotificationChannels()
+	if err != nil {
+		t.Fatalf("GetNotificationChannels: %v", err)
+	}
+	if len(channels) != 1 || channels[0].Enabled {
+		t.Fatalf("an update without enabled changed the channel state: %+v", channels)
+	}
 }
 
 func TestUpdateChannel_ValidationErrors(t *testing.T) {

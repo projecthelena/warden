@@ -35,6 +35,7 @@ describe("isEmailConfigured", () => {
                 password: "",
                 from: "alerts@example.com",
                 to: "ops@example.com",
+                allowInsecure: true,
             })
         ).toBe(true);
     });
@@ -54,6 +55,7 @@ describe("emailConfigFromChannel", () => {
         expect(config.password).toBe("secret");
         expect(config.username).toBe("alerts@example.com");
         expect(config.port).toBe("465");
+        expect(config.allowInsecure).toBe(false);
     });
 
     it("falls back to the submission port rather than leaving it blank", () => {
@@ -70,5 +72,16 @@ describe("emailConfigFromChannel", () => {
         expect(config.from).toBe("");
         expect(config.to).toBe("");
         expect(config.password).toBe("");
+        expect(config.allowInsecure).toBe(false);
+    });
+
+    it("restores an explicit insecure-relay opt-in", () => {
+        const config = emailConfigFromChannel({
+            host: "localhost",
+            port: "25",
+            allowInsecure: true,
+        });
+
+        expect(config.allowInsecure).toBe(true);
     });
 });
