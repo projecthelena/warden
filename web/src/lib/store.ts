@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { toast } from "@/components/ui/use-toast";
 import { queryClient } from "./queryClient";
+import { parseChannelConfig } from "./channelConfig";
 
 export interface MonitorEvent {
     id: string;
@@ -16,10 +17,18 @@ export interface MonitorEvent {
 
 export interface NotificationChannel {
     id: string;
-    type: 'slack' | 'webhook';
+    type: 'slack' | 'webhook' | 'email';
     name: string;
     config: {
         webhookUrl?: string;
+        // Email channels talk SMTP instead of posting to a URL.
+        host?: string;
+        port?: string;
+        username?: string;
+        password?: string;
+        from?: string;
+        to?: string;
+        allowInsecure?: boolean;
     };
     enabled: boolean;
 }
@@ -267,11 +276,11 @@ interface MonitorStore {
     addIncidentUpdate: (incidentId: string, status: string, message: string) => Promise<IncidentUpdate | null>;
     setIncidentVisibility: (incidentId: string, isPublic: boolean) => Promise<boolean>;
     getIncidentWithUpdates: (incidentId: string) => Promise<Incident | null>;
-    addChannel: (channel: Omit<NotificationChannel, 'id' | 'enabled'>) => Promise<void>;
+    addChannel: (channel: Omit<NotificationChannel, 'id'>) => Promise<void>;
     updateChannel: (id: string, updates: Partial<NotificationChannel>) => void;
     deleteChannel: (id: string) => Promise<void>;
     fetchChannels: () => Promise<void>;
-    testChannel: (type: string, config: Record<string, string>) => Promise<{ success: boolean; error?: string }>;
+    testChannel: (type: string, config: Record<string, string | boolean>) => Promise<{ success: boolean; error?: string }>;
 
     updateUser: (data: { password?: string; currentPassword?: string; timezone?: string }) => Promise<void>;
 
@@ -1093,7 +1102,7 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
             const res = await fetch("/api/notifications/channels", { credentials: "include" });
             if (res.ok) {
                 const data = await res.json();
-                set({ channels: data.channels || [] });
+                set({ channels: (data.channels || []).map(parseChannelConfig) });
             }
         } catch (e) {
             console.error("Failed to fetch channels", e);

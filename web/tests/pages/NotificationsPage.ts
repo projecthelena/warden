@@ -7,7 +7,11 @@ export class NotificationsPage {
     // Sheet Elements
     readonly typeSelect: Locator;
     readonly nameInput: Locator;
+    readonly detailsNameInput: Locator;
     readonly webhookInput: Locator;
+    readonly smtpHostInput: Locator;
+    readonly smtpFromInput: Locator;
+    readonly smtpToInput: Locator;
     readonly submitBtn: Locator;
 
     constructor(page: Page) {
@@ -15,7 +19,11 @@ export class NotificationsPage {
         this.addChannelTrigger = page.getByTestId('create-channel-trigger');
         this.typeSelect = page.getByTestId('channel-type-select');
         this.nameInput = page.getByTestId('channel-name-input');
+        this.detailsNameInput = page.getByTestId('channel-details-name-input');
         this.webhookInput = page.getByTestId('channel-webhook-input');
+        this.smtpHostInput = page.getByTestId('channel-smtp-host-input');
+        this.smtpFromInput = page.getByTestId('channel-smtp-from-input');
+        this.smtpToInput = page.getByTestId('channel-smtp-to-input');
         this.submitBtn = page.getByTestId('create-channel-submit');
     }
 
@@ -47,6 +55,51 @@ export class NotificationsPage {
 
         // Verify creation
         await expect(this.page.getByText(name)).toBeVisible();
+    }
+
+    // Opens the create sheet and fills the fields every email channel needs, stopping short
+    // of submitting so a caller can add credentials first.
+    async openEmailForm(name: string, from: string, to: string) {
+        await expect(this.page.getByText('Wait ...')).toBeHidden();
+        await expect(this.page).toHaveURL(/.*notifications/);
+        await expect(this.page.getByRole('heading', { name: /Notification/i }).first()).toBeVisible({ timeout: 5000 });
+
+        await expect(this.addChannelTrigger).toBeVisible();
+        await this.addChannelTrigger.click();
+
+        await this.typeSelect.click();
+        await this.page.getByTestId('channel-type-email').click();
+
+        await this.nameInput.fill(name);
+        await this.smtpHostInput.fill('smtp.example.com');
+        await this.smtpFromInput.fill(from);
+        await this.smtpToInput.fill(to);
+    }
+
+    async createEmailChannel(name: string, from: string, to: string) {
+        await this.openEmailForm(name, from, to);
+        await this.submitBtn.click();
+
+        // The row shows the recipients, which is what tells two mail channels apart.
+        await expect(this.page.getByText(name)).toBeVisible();
+        await expect(this.page.getByText(to, { exact: false })).toBeVisible();
+    }
+
+    // Opens a channel's details sheet, where editing, testing and deleting live.
+    async openChannel(name: string) {
+        await this.page.getByText(name).click();
+        await expect(this.page.getByTestId('delete-channel-btn')).toBeVisible({ timeout: 5000 });
+    }
+
+    // Saves the open details sheet and waits for the write to land, so a caller reading the
+    // channel back from the API is not racing the request.
+    async saveOpenChannel() {
+        const saved = this.page.waitForResponse(
+            resp => resp.url().includes('/api/notifications/channels') && resp.request().method() === 'PUT',
+            { timeout: 10000 }
+        );
+        await this.page.getByTestId('save-channel-btn').click();
+        return saved;
     }
 
     async deleteChannel(name: string) {

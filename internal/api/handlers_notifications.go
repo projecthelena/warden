@@ -33,7 +33,7 @@ func NewNotificationChannelsHandler(store *db.Store) *NotificationChannelsHandle
 func (h *NotificationChannelsHandler) GetChannels(w http.ResponseWriter, r *http.Request) {
 	channels, err := h.store.GetNotificationChannels()
 	if err != nil {
-		http.Error(w, "Failed to fetch channels", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "Failed to fetch channels")
 		return
 	}
 	// A webhook URL is a credential: anyone holding it can post into the channel. Only
@@ -98,33 +98,36 @@ func (h *NotificationChannelsHandler) CreateChannel(w http.ResponseWriter, r *ht
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "Invalid body", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "Invalid body")
 		return
 	}
 
 	if body.Type == "" || body.Name == "" {
-		http.Error(w, "Type and Name are required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "Type and Name are required")
 		return
 	}
 
 	// SECURITY: Validate name length
 	if len(body.Name) > 255 {
-		http.Error(w, "Name too long (max 255 characters)", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "Name too long (max 255 characters)")
 		return
 	}
 
-	// SECURITY: Validate webhook URL for channel types that use it
-	if body.Type == "slack" || body.Type == "webhook" {
-		webhookURL := extractWebhookURL(body.Config)
-		if _, err := validateWebhookURL(webhookURL); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
+	// SECURITY: a channel is only stored once its config is known to be well formed
+	//
+	// Reported with writeError, like the rest of the API, rather than http.Error. The
+	// dashboard reads a failure as JSON and shows data.error; a plain-text body makes
+	// res.json() reject and every rejection collapses into "Failed to add channel." The
+	// point of validating per field is telling the operator which field is wrong, and
+	// that only survives if the reason arrives in the shape the client parses.
+	if err := validateChannelConfig(body.Type, body.Config); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 
 	configBytes, err := json.Marshal(body.Config)
 	if err != nil {
-		http.Error(w, "Invalid config", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "Invalid config")
 		return
 	}
 
@@ -140,7 +143,7 @@ func (h *NotificationChannelsHandler) CreateChannel(w http.ResponseWriter, r *ht
 	}
 
 	if err := h.store.CreateNotificationChannel(channel); err != nil {
-		http.Error(w, "Failed to create channel", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "Failed to create channel")
 		return
 	}
 
@@ -164,12 +167,12 @@ func (h *NotificationChannelsHandler) DeleteChannel(w http.ResponseWriter, r *ht
 	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
-		http.Error(w, "Missing ID", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "Missing ID")
 		return
 	}
 
 	if err := h.store.DeleteNotificationChannel(id); err != nil {
-		http.Error(w, "Failed to delete channel", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "Failed to delete channel")
 		return
 	}
 
@@ -194,6 +197,28 @@ func validateWebhookURL(rawURL string) (string, error) {
 	return rawURL, nil
 }
 
+// validateChannelConfig rejects a channel whose config cannot possibly work, before it
+// reaches the database. Each type is checked on its own terms: a webhook needs a URL, an
+// email channel needs a server and somewhere to send to. Types we do not know are left
+// alone — the notifier reports the failure at send time.
+func validateChannelConfig(channelType string, config map[string]interface{}) error {
+	switch channelType {
+	case "slack", "webhook":
+		_, err := validateWebhookURL(extractWebhookURL(config))
+		return err
+	case "email":
+		encoded, err := json.Marshal(config)
+		if err != nil {
+			return fmt.Errorf("invalid config")
+		}
+		// Parsed by the notifier itself so that the form and the send path agree on what
+		// counts as valid, instead of drifting into two different sets of rules.
+		return notifications.ValidateEmailConfig(string(encoded))
+	default:
+		return nil
+	}
+}
+
 // extractWebhookURL pulls the webhook URL from a config map, supporting both key names.
 func extractWebhookURL(config map[string]interface{}) string {
 	if u, ok := config["webhook_url"].(string); ok {
@@ -212,7 +237,7 @@ func (h *NotificationChannelsHandler) UpdateChannel(w http.ResponseWriter, r *ht
 	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
-		http.Error(w, "Missing ID", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "Missing ID")
 		return
 	}
 
@@ -220,41 +245,59 @@ func (h *NotificationChannelsHandler) UpdateChannel(w http.ResponseWriter, r *ht
 		Type    string                 `json:"type"`
 		Name    string                 `json:"name"`
 		Config  map[string]interface{} `json:"config"`
-		Enabled bool                   `json:"enabled"`
+		Enabled *bool                  `json:"enabled"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "Invalid body", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "Invalid body")
 		return
 	}
 
 	if body.Type == "" || body.Name == "" {
-		http.Error(w, "Type and Name are required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "Type and Name are required")
 		return
 	}
 
 	if len(body.Name) > 255 {
-		http.Error(w, "Name too long (max 255 characters)", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "Name too long (max 255 characters)")
 		return
 	}
 
-	// Validate webhook URL for types that use it
-	if body.Type == "slack" || body.Type == "webhook" {
-		webhookURL := extractWebhookURL(body.Config)
-		if _, err := validateWebhookURL(webhookURL); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
+	if err := validateChannelConfig(body.Type, body.Config); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 
 	configBytes, err := json.Marshal(body.Config)
 	if err != nil {
-		http.Error(w, "Invalid config", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "Invalid config")
 		return
 	}
 
-	if err := h.store.UpdateNotificationChannel(id, body.Name, body.Type, string(configBytes), body.Enabled); err != nil {
-		http.Error(w, "Failed to update channel", http.StatusInternalServerError)
+	channels, err := h.store.GetNotificationChannels()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to fetch channel")
+		return
+	}
+	var current *db.NotificationChannel
+	for i := range channels {
+		if channels[i].ID == id {
+			current = &channels[i]
+			break
+		}
+	}
+	if current == nil {
+		writeError(w, http.StatusNotFound, "Channel not found")
+		return
+	}
+
+	enabled := current.Enabled
+	if body.Enabled != nil {
+		enabled = *body.Enabled
+	}
+
+	if err := h.store.UpdateNotificationChannel(id, body.Name, body.Type, string(configBytes), enabled); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to update channel")
 		return
 	}
 
@@ -263,7 +306,7 @@ func (h *NotificationChannelsHandler) UpdateChannel(w http.ResponseWriter, r *ht
 		"type":    body.Type,
 		"name":    body.Name,
 		"config":  string(configBytes),
-		"enabled": body.Enabled,
+		"enabled": enabled,
 	})
 }
 
@@ -278,25 +321,23 @@ func (h *NotificationChannelsHandler) TestChannel(w http.ResponseWriter, r *http
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "Invalid body", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "Invalid body")
 		return
 	}
 
 	if body.Type == "" {
-		http.Error(w, "Type is required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "Type is required")
 		return
 	}
 
-	// Validate webhook URL
-	webhookURL := extractWebhookURL(body.Config)
-	if _, err := validateWebhookURL(webhookURL); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if err := validateChannelConfig(body.Type, body.Config); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	configBytes, err := json.Marshal(body.Config)
 	if err != nil {
-		http.Error(w, "Invalid config", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "Invalid config")
 		return
 	}
 
