@@ -1,10 +1,10 @@
 # MCP Server
 
-Warden serves a [Model Context Protocol](https://modelcontextprotocol.io) endpoint, so an assistant like Claude can answer questions about your monitoring: what is down, what happened overnight, why a monitor failed.
+Warden serves a [Model Context Protocol](https://modelcontextprotocol.io) endpoint, so an AI assistant can answer questions about your monitoring: what is down, what happened overnight, why a monitor failed, and whether latency was getting worse before the outage. With an editor key, the same assistant can also create and organise monitors.
 
 The endpoint is at `/api/mcp` and speaks Streamable HTTP. It sits behind the same authentication as the rest of the API, and what it offers depends on the role of the key you connect with.
 
-## Connect Claude
+## Connect an AI assistant
 
 Create a read-only API key first, in **Settings > API Keys**, with the role `viewer`. Then:
 
@@ -17,9 +17,9 @@ Ask it things like "what is down right now", "what happened to the checkout API 
 
 For other clients, point them at the same URL with the same `Authorization` header.
 
-## The key's role decides what Claude can do
+## The key's role decides what the assistant can do
 
-The tool set follows the API key. A `viewer` key is offered the four read tools and nothing else; the write tools are not advertised and calling one by name returns `unknown tool`. An `editor` key gets all eight.
+The tool set follows the API key. A `viewer` key is offered only the read and diagnostic tools; the write tools are not advertised and calling one by name returns `unknown tool`. An `editor` key adds the five management tools below.
 
 That boundary is enforced by the server, not by asking the model nicely. Give out a `viewer` key unless you actually want things created.
 
@@ -176,4 +176,6 @@ A working server answers with its capabilities and an `Mcp-Session-Id` header. `
 
 ## What it cannot do
 
-It reads. It does not create, pause or delete monitors, and it cannot send you anything: an assistant only looks when you ask it to. If you want to be told when something breaks, that is the notification side, see [Notifications](../README.md).
+With a `viewer` key it only reads and runs immediate checks. With an `editor` key it can also create and organise monitors, and pause or resume them. It never offers monitor deletion, user or credential management, notification configuration, status-page configuration, incident editing, or autonomous remediation.
+
+MCP responds when you ask an assistant to use it; it does not initiate a conversation when something breaks. For proactive delivery, configure [notifications](notifications.md) through Slack, webhooks or email.

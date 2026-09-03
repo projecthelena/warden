@@ -65,6 +65,17 @@ sent in plaintext; Warden still refuses to send SMTP credentials without TLS.
 For Gmail you need an [app password](https://support.google.com/accounts/answer/185833);
 your normal account password will be rejected.
 
+### Production smoke test
+
+Do this once with the real provider before depending on email alerts:
+
+1. Verify the sending domain and `From` address with the provider. Publish the SPF and DKIM records it gives you; add DMARC when the provider is passing both.
+2. Create the email channel with the provider's submission host, port and credentials. Never put the password in a compose file, shell history or repository.
+3. Use **Send Test** and confirm the message reaches the intended inbox rather than only checking for a success toast. Inspect the received message headers and verify that SPF, DKIM and DMARC pass.
+4. Create a temporary monitor for a URL you control, let it produce one real down alert and one recovery alert, then remove the monitor. This validates the scheduler and fatigue rules as well as SMTP; **Send Test** only validates direct delivery.
+
+Repeat the direct test after rotating SMTP credentials or changing DNS authentication records.
+
 ### When it doesn't work
 
 Use **Send Test** on the channel — it delivers a sample alert through the same code path as
