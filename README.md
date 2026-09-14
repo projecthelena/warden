@@ -63,6 +63,7 @@ See the [`docs/`](docs/) folder for detailed guides:
 - [Adaptive Latency](docs/adaptive-latency.md) — how Warden learns each monitor's normal response time and detects regressions
 - [Notification Fatigue](docs/notification-fatigue.md) — confirmation windows, reminders, correlation and alert damping
 - [Database](docs/database.md) — SQLite vs PostgreSQL configuration
+- [PostgreSQL Migration](docs/postgresql-migration.md) — move a complete Warden installation to another PostgreSQL instance
 - [Password Recovery](docs/recovery.md) — reset a password or get back in after a lockout
 - [Load Testing](docs/load-testing.md) _(coming soon)_
 

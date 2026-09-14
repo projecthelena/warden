@@ -42,3 +42,7 @@ There is no built-in migration tool between backends. To migrate:
 1. Export your SQLite data
 2. Import into PostgreSQL
 3. Update environment variables to point to PostgreSQL
+
+## Moving an existing PostgreSQL installation
+
+Follow [Move Warden to another PostgreSQL instance](postgresql-migration.md) for the complete dump, restore, verification, rollback, and latency-relearning checklist.
