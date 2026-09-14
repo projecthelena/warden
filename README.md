@@ -4,6 +4,10 @@
 
 Open-source, self-hosted uptime monitoring built to be operated directly or through an AI assistant. Warden helps agencies and teams monitor HTTP endpoints, TCP ports, ICMP hosts and DNS records, publish status pages, and deliver alerts — from a single binary with no external dependencies.
 
+Warden also [learns the normal latency of every monitor](docs/adaptive-latency.md). It can
+detect that a healthy response became unusually slow without forcing a 20 ms health check
+and a 450 ms remote storefront to share the same threshold.
+
 <div align="center">
   <img src="assets/dashboard-overview.png" alt="Dashboard Preview" width="100%" />
 </div>
@@ -56,6 +60,8 @@ See the [`docs/`](docs/) folder for detailed guides:
 - [API](docs/api.md) — REST API and Swagger docs
 - [MCP Server](docs/mcp.md) — inspect and safely operate Warden from an AI assistant
 - [Notifications](docs/notifications.md) — Slack, webhook and email channels, and how to configure SMTP
+- [Adaptive Latency](docs/adaptive-latency.md) — how Warden learns each monitor's normal response time and detects regressions
+- [Notification Fatigue](docs/notification-fatigue.md) — confirmation windows, reminders, correlation and alert damping
 - [Database](docs/database.md) — SQLite vs PostgreSQL configuration
 - [Password Recovery](docs/recovery.md) — reset a password or get back in after a lockout
 - [Load Testing](docs/load-testing.md) _(coming soon)_

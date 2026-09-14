@@ -54,6 +54,10 @@ Default: **enabled**, 25% threshold over last 21 checks.
 
 ### Adaptive Latency Thresholds
 
+See [Adaptive Latency Baselines](adaptive-latency.md) for the complete guide, including
+learning time, threshold precedence, MCP inspection, and what happens when Warden moves to
+a different network or region.
+
 "Slow" is not a single number. A health check that answers in 254ms and a homepage that answers in 427ms are not degraded at the same point, and a fixed global threshold gets both wrong: too high for the fast one, too low for the slow one.
 
 Warden learns each monitor's own p50 and p95 from its recent successful checks and marks it degraded above `max(p95 x 1.5, p95 + 100ms)`. The multiplier governs for normal services; the 100ms floor takes over for very fast targets, so a service whose p95 is 8ms is not called degraded at 12ms.
