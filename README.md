@@ -1,8 +1,6 @@
 # <img src="assets/favicon.svg" width="28" height="28" alt="PH" /> Warden
 
-[![CI](https://github.com/projecthelena/warden/actions/workflows/ci.yml/badge.svg)](https://github.com/projecthelena/warden/actions/workflows/ci.yml)
-[![Docker](https://github.com/projecthelena/warden/actions/workflows/docker.yml/badge.svg)](https://github.com/projecthelena/warden/actions/workflows/docker.yml)
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+[![CI](https://github.com/projecthelena/warden/actions/workflows/ci.yml/badge.svg)](https://github.com/projecthelena/warden/actions/workflows/ci.yml) [![Docker](https://github.com/projecthelena/warden/actions/workflows/docker.yml/badge.svg)](https://github.com/projecthelena/warden/actions/workflows/docker.yml) [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 
 Open-source, self-hosted uptime monitoring built to be operated directly or through an AI assistant. Warden helps agencies and teams monitor HTTP endpoints, TCP ports, ICMP hosts and DNS records, publish status pages, and deliver alerts — from a single binary with no external dependencies.
 
@@ -34,7 +32,7 @@ Open `http://localhost:9090` and create your admin account.
 ## Environment Variables
 
 | Variable | Default | Description |
-| :--- | :--- | :--- |
+| :-- | :-- | :-- |
 | `LISTEN_ADDR` | `:9090` | Port Warden listens on. Change it if 9090 is already taken. |
 | `DB_TYPE` | `sqlite` | `sqlite` or `postgres`. Warden uses SQLite by default — no setup needed. Set to `postgres` if you want to use PostgreSQL. Takes precedence over `DB_URL` auto-detection. |
 | `DB_PATH` | `/data/warden.db` | Where the SQLite database file is stored. Only matters when using SQLite. |
@@ -60,7 +58,11 @@ See the [`docs/`](docs/) folder for detailed guides:
 - [Notifications](docs/notifications.md) — Slack, webhook and email channels, and how to configure SMTP
 - [Database](docs/database.md) — SQLite vs PostgreSQL configuration
 - [Password Recovery](docs/recovery.md) — reset a password or get back in after a lockout
-- [Load Testing](docs/load-testing.md) *(coming soon)*
+- [Load Testing](docs/load-testing.md) _(coming soon)_
+
+### Markdown style
+
+Markdown prose stays unwrapped: one source line per paragraph. Run `npm run format:markdown` to fix every tracked Markdown file or `npm run check:markdown` to verify it. The pre-push hook and CI run the same check.
 
 ## License
 

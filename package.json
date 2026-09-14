@@ -1,0 +1,11 @@
+{
+  "name": "warden-markdown-tooling",
+  "private": true,
+  "scripts": {
+    "format:markdown": "git ls-files -z '*.md' | xargs -0 prettier --write",
+    "check:markdown": "git ls-files -z '*.md' | xargs -0 prettier --check"
+  },
+  "devDependencies": {
+    "prettier": "3.9.6"
+  }
+}

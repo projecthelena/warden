@@ -18,8 +18,8 @@ External database. Best when you already run PostgreSQL or need to scale beyond 
 
 ## Which one should I pick?
 
-| | SQLite | PostgreSQL |
-| :--- | :--- | :--- |
+|  | SQLite | PostgreSQL |
+| :-- | :-- | :-- |
 | Setup | Nothing to configure | Requires a running PostgreSQL server |
 | Best for | Single instance, low-to-medium traffic | High availability, large-scale monitoring |
 | Backups | Copy one file | Use `pg_dump` or your existing backup pipeline |

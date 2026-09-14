@@ -5,6 +5,7 @@
 The current status page is functional but minimal — a simple list of monitor names with colored status dots and an "All Systems Operational" banner. It lacks the features modern teams expect from a public-facing status page.
 
 **What's missing:**
+
 - No uptime history visualization (90-day bars)
 - No overall uptime percentage per monitor
 - No incident history (only active incidents shown)
@@ -20,6 +21,7 @@ The status page is the public face of reliability. It builds trust, reduces supp
 ## Current Architecture
 
 ### Frontend (`web/src/components/status-page/StatusPage.tsx`)
+
 - Single-page component with inline sub-components
 - Auto-refreshes every 60s with countdown timer
 - Shows: status header banner, scheduled maintenance, critical outages, groups with monitors
@@ -27,15 +29,18 @@ The status page is the public face of reliability. It builds trust, reduces supp
 - Status states: Operational (green), Degraded (yellow), Down (red), Maintenance (blue)
 
 ### Backend (`internal/api/handlers_status_pages.go`)
+
 - `GET /api/s/{slug}` — public endpoint returning groups, monitors, active incidents
 - Monitor data comes from live uptime manager (in-memory history)
 - Incidents merged from auto-detected outages + manual incidents
 
 ### Database (`internal/db/store_status_pages.go`)
+
 - `status_pages` table: slug, title, group_id, public, enabled
 - No branding columns, no subscriber infrastructure
 
 ### Data Available
+
 - `monitor_checks` table stores every check result (monitor_id, status, latency, timestamp)
 - `GetUptimeStats()` already computes 24h/7d/30d uptime from raw checks
 - Data retention configurable up to 3650 days
@@ -95,6 +100,7 @@ Each phase is independently shippable and valuable.
 ### What Was Built
 
 #### Backend: `GetDailyUptimeStats(monitorID, days)`
+
 - **File:** `internal/db/store_monitors.go`
 - Queries `monitor_checks` grouped by `DATE(timestamp)`
 - Returns `[]DailyUptimeStat` with date, total checks, up count, uptime percentage
@@ -103,12 +109,14 @@ Each phase is independently shippable and valuable.
 - Input validation (1-365 days)
 
 #### Backend: Extended Public Status API
+
 - **File:** `internal/api/handlers_status_pages.go`
 - `MonitorDTO` now includes `uptimeDays` (90-day array) and `overallUptime`
 - Each monitor in `/api/s/{slug}` response carries its 90-day history
 - Overall uptime computed from raw check counts across the 90-day window
 
 #### Frontend: `UptimeBar` Component
+
 - **File:** `web/src/components/status-page/UptimeBar.tsx`
 - 90 thin vertical bars, flex-sized to fill available width
 - Color scale: green (100%) -> yellow-green (99-99.9%) -> yellow (95-99%) -> orange (90-95%) -> red (<90%) -> gray (no data)
@@ -117,6 +125,7 @@ Each phase is independently shippable and valuable.
 - Responsive: bars flex naturally to container width
 
 #### Frontend: Redesigned StatusPage
+
 - **File:** `web/src/components/status-page/StatusPage.tsx`
 - Compact status banner (icon + label + description + countdown)
 - Monitors in card sections with uptime bars below each name
@@ -125,6 +134,7 @@ Each phase is independently shippable and valuable.
 - All existing functionality preserved
 
 #### Tests
+
 - **File:** `internal/db/store_monitors_test.go`
 - `TestGetDailyUptimeStats_Empty` — no checks returns all -1 days
 - `TestGetDailyUptimeStats_WithChecks` — 8 up + 2 down = 80% verified
@@ -141,6 +151,7 @@ Each phase is independently shippable and valuable.
 ### Tasks
 
 #### 2.1 — Backend: Resolved Incidents Query
+
 - **File:** `internal/db/store_incidents.go`
 - Add `GetResolvedIncidents(since time.Time) ([]Incident, error)`
 - Fetch incidents where status = 'resolved' or 'completed', end_time > since
@@ -148,6 +159,7 @@ Each phase is independently shippable and valuable.
 - Order by start_time DESC
 
 #### 2.2 — Backend: Past Incidents in API Response
+
 - **File:** `internal/api/handlers_status_pages.go`
 - Extend `GetPublicStatus()` response with `pastIncidents` field
 - Group by date (ISO date string key)
@@ -155,6 +167,7 @@ Each phase is independently shippable and valuable.
 - Limit to last 14 days
 
 #### 2.3 — Frontend: Incident History Section
+
 - New section below monitor groups in `StatusPage.tsx`
 - Heading: "Past Incidents"
 - Each day: date header (e.g., "Feb 14, 2026") + incident cards below
@@ -163,9 +176,11 @@ Each phase is independently shippable and valuable.
 - Show last 7 days by default, "Show more" expands to 14
 
 #### 2.4 — Tests
+
 - Unit test for `GetResolvedIncidents` in `internal/db/store_incidents_test.go`
 
 ### API Response Shape
+
 ```json
 {
   "title": "Global Status",
@@ -196,11 +211,12 @@ Each phase is independently shippable and valuable.
 ### Tasks
 
 #### 3.1 — Database Migration
+
 - **Files:** `internal/db/migrations/sqlite/00008_*.sql`, `internal/db/migrations/postgres/00008_*.sql`
 - Add columns to `status_pages`:
 
 | Column | Type | Default | Description |
-|--------|------|---------|-------------|
+| --- | --- | --- | --- |
 | `description` | TEXT | `''` | Subtitle/tagline |
 | `logo_url` | TEXT | `''` | URL or base64 data URI |
 | `accent_color` | TEXT | `''` | Hex color for theming |
@@ -212,12 +228,14 @@ Each phase is independently shippable and valuable.
 | `custom_css` | TEXT | `''` | Custom CSS injection |
 
 #### 3.2 — Backend: Config in Store and API
+
 - **File:** `internal/db/store_status_pages.go`
 - Extend `StatusPage` struct with new fields
 - Update `UpsertStatusPage()` to handle new fields
 - Include config fields in `GetPublicStatus()` response
 
 #### 3.3 — Admin UI: Status Page Settings
+
 - **File:** `web/src/components/status-pages/StatusPageSettings.tsx` (new)
 - Dialog/drawer when clicking a status page in admin
 - Sections:
@@ -228,6 +246,7 @@ Each phase is independently shippable and valuable.
 - Update `StatusPagesView.tsx` to add "Configure" button
 
 #### 3.4 — Frontend: Apply Config to Public Page
+
 - **File:** `web/src/components/status-page/StatusPage.tsx`
 - Apply logo: show image in header if set, fallback to Activity icon
 - Apply accent color: override CSS custom property
@@ -236,10 +255,12 @@ Each phase is independently shippable and valuable.
 - Inject custom_css via `<style>` tag (sanitized)
 
 #### 3.5 — Tests
+
 - Unit test for config persistence
 - E2E: verify config changes apply to public page
 
 ### Config API Shape
+
 ```json
 {
   "title": "Acme Status",
@@ -264,6 +285,7 @@ Each phase is independently shippable and valuable.
 ### Tasks
 
 #### 4.1 — Database: Subscribers Table
+
 - **Files:** `internal/db/migrations/sqlite/00009_*.sql`, `internal/db/migrations/postgres/00009_*.sql`
 
 ```sql
@@ -281,6 +303,7 @@ CREATE TABLE status_page_subscribers (
 ```
 
 #### 4.2 — Backend: Subscription Endpoints
+
 - **File:** `internal/api/handlers_subscribers.go` (new)
 - **Public routes** (no auth):
   - `POST /api/s/{slug}/subscribe` — accepts `{email, components?}`, generates token, sends confirmation email
@@ -292,6 +315,7 @@ CREATE TABLE status_page_subscribers (
 - Rate limiting on subscribe endpoint
 
 #### 4.3 — Backend: Email Notifier
+
 - **File:** `internal/notifications/email.go` (new)
 - SMTP config via env vars: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`
 - HTML email templates:
@@ -302,6 +326,7 @@ CREATE TABLE status_page_subscribers (
 - Every email includes one-click unsubscribe link (CAN-SPAM compliance)
 
 #### 4.4 — Backend: Trigger Subscriber Notifications
+
 - **File:** `internal/notifications/notifications.go`
 - Dispatch to subscribers when:
   - New incident created (or auto-detected outage starts)
@@ -311,6 +336,7 @@ CREATE TABLE status_page_subscribers (
 - Filter by component subscription preferences
 
 #### 4.5 — Frontend: Subscribe Widget
+
 - **File:** `web/src/components/status-page/SubscribeButton.tsx` (new)
 - "Subscribe to updates" button in status page header
 - Click opens dialog: email input, optional component checkboxes, submit
@@ -318,12 +344,14 @@ CREATE TABLE status_page_subscribers (
 - Error handling: duplicate email, invalid format, rate limited
 
 #### 4.6 — Admin UI: Subscriber Management
+
 - New tab/section in status page settings
 - Table: email, confirmed status, subscribed components, date
 - Delete button per subscriber
 - Subscriber count badge on admin row
 
 #### 4.7 — Tests
+
 - Unit tests: subscriber store, email template rendering
 - Integration test: full subscription flow
 
@@ -362,7 +390,7 @@ Can unsubscribe via link in any email -> GET /api/s/{slug}/unsubscribe/{token}
 ## Files Modified/Created Per Phase
 
 | File | Phase | Change |
-|------|-------|--------|
+| --- | --- | --- |
 | `internal/db/store_monitors.go` | 1 | `GetDailyUptimeStats()` |
 | `internal/db/store_monitors_test.go` | 1 | 5 new tests |
 | `internal/api/handlers_status_pages.go` | 1, 2, 3 | Extended API response |
@@ -397,22 +425,22 @@ This redesign draws from patterns established by:
 
 ### Industry-Standard Features Being Added
 
-| Feature | Phase | Industry Expectation |
-|---------|-------|---------------------|
-| 90-day uptime bars | 1 | THE most expected element |
-| Overall uptime % | 1 | Trust signal, SOC2 evidence |
-| Incident history | 2 | Shows response patterns |
-| Custom branding | 3 | "Your company's" page |
-| Theme selection | 3 | Dark/light/system |
-| Email subscribers | 4 | Proactive communication |
-| Component subscriptions | 4 | Targeted notifications |
+| Feature                 | Phase | Industry Expectation        |
+| ----------------------- | ----- | --------------------------- |
+| 90-day uptime bars      | 1     | THE most expected element   |
+| Overall uptime %        | 1     | Trust signal, SOC2 evidence |
+| Incident history        | 2     | Shows response patterns     |
+| Custom branding         | 3     | "Your company's" page       |
+| Theme selection         | 3     | Dark/light/system           |
+| Email subscribers       | 4     | Proactive communication     |
+| Component subscriptions | 4     | Targeted notifications      |
 
 ### SOC2 Relevance
 
-| SOC2 Requirement | Feature |
-|-----------------|---------|
-| Availability monitoring | Uptime bars + percentages |
-| Incident documentation | Past incidents timeline |
-| Proactive notifications | Subscriber emails |
-| Change management | Maintenance window visibility |
-| Audit trail | Incident lifecycle history |
+| SOC2 Requirement        | Feature                       |
+| ----------------------- | ----------------------------- |
+| Availability monitoring | Uptime bars + percentages     |
+| Incident documentation  | Past incidents timeline       |
+| Proactive notifications | Subscriber emails             |
+| Change management       | Maintenance window visibility |
+| Audit trail             | Incident lifecycle history    |

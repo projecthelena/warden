@@ -56,10 +56,10 @@ The marker for "already sent this week" is stored in the database rather than in
 
 ## Configuration
 
-| Setting | Default |
-|---------|---------|
-| Weekly summary enabled | false |
-| Weekly summary day | Monday |
-| Weekly summary time | 09:00 |
+| Setting                | Default |
+| ---------------------- | ------- |
+| Weekly summary enabled | false   |
+| Weekly summary day     | Monday  |
+| Weekly summary time    | 09:00   |
 
 The detection window (14 days), the daily cadence and the detector thresholds are not configurable. They are chosen to be conservative: the cost of a false pattern is someone spending an afternoon chasing it.

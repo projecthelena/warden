@@ -12,8 +12,8 @@ docker run -d -p 9090:9090 \
   ghcr.io/projecthelena/warden:latest
 ```
 
-| Variable | Default | Description |
-| :--- | :--- | :--- |
+| Variable  | Default           | Description              |
+| :-------- | :---------------- | :----------------------- |
 | `DB_PATH` | `/data/warden.db` | Path to the SQLite file. |
 
 **When to use:** Single-instance deployments, low-to-medium traffic, simplicity.
@@ -29,7 +29,7 @@ docker run -d -p 9090:9090 \
 ```
 
 | Variable | Default | Description |
-| :--- | :--- | :--- |
+| :-- | :-- | :-- |
 | `DB_TYPE` | `sqlite` | Set to `postgres` (auto-detected if `DB_URL` starts with `postgres`). |
 | `DB_URL` | — | PostgreSQL connection string. |
 
