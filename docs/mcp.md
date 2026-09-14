@@ -45,8 +45,7 @@ That boundary is enforced by the server, not by asking the model nicely. Give ou
 
 `get_monitor_latency` returns the monitor's learned baseline (`baselineP50Ms`, `baselineP95Ms`) and the line it must cross to count as slow (`degradedAboveMs`) alongside the samples. Without them a raw number of milliseconds cannot be judged — 650ms is unremarkable for one target and a two-and-a-half-times regression for another. The fields are omitted for a monitor that has not built a baseline yet.
 
-See [Adaptive Latency Baselines](adaptive-latency.md) for the formula, learning period,
-threshold precedence, and guidance for migrations between networks or regions.
+See [Adaptive Latency Baselines](adaptive-latency.md) for the formula, learning period, threshold precedence, and guidance for migrations between networks or regions.
 
 `list_insights` returns the patterns Warden has found over the last 14 days — latency that climbs and resets, trouble clustered at one time of day, monitors that fail together, week-over-week slowdowns. It answers what is quietly wrong rather than what is broken right now, and an empty result means nothing stood out rather than an error. See [patterns.md](patterns.md).
 

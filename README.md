@@ -4,9 +4,9 @@
 
 Open-source, self-hosted uptime monitoring built to be operated directly or through an AI assistant. Warden helps agencies and teams monitor HTTP endpoints, TCP ports, ICMP hosts and DNS records, publish status pages, and deliver alerts — from a single binary with no external dependencies.
 
-Warden also [learns the normal latency of every monitor](docs/adaptive-latency.md). It can
-detect that a healthy response became unusually slow without forcing a 20 ms health check
-and a 450 ms remote storefront to share the same threshold.
+Warden also [learns the normal latency of every monitor](docs/adaptive-latency.md). It can detect that a healthy response became unusually slow without forcing a 20 ms health check and a 450 ms remote storefront to share the same threshold.
+
+Warden also [learns the normal latency of every monitor](docs/adaptive-latency.md). It can detect that a healthy response became unusually slow without forcing a 20 ms health check and a 450 ms remote storefront to share the same threshold.
 
 <div align="center">
   <img src="assets/dashboard-overview.png" alt="Dashboard Preview" width="100%" />
