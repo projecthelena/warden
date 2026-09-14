@@ -220,6 +220,7 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 				// Settings
 				dashboard.Get("/settings", settingsH.GetSettings)
 				dashboard.Patch("/settings", settingsH.UpdateSettings)
+				dashboard.Post("/settings/latency-baselines/relearn", settingsH.RelearnLatencyBaselines)
 
 				// SSO Settings (admin only)
 				dashboard.Post("/settings/sso/test", ssoH.TestSSOConfig)

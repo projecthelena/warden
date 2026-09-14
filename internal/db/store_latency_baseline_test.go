@@ -139,3 +139,38 @@ func TestComputeLatencyBaseline_RespectsWindow(t *testing.T) {
 		}
 	})
 }
+
+func TestRelearnLatencyBaselines_KeepsHistoryAndExcludesOldChecks(t *testing.T) {
+	RunTestWithBothDBs(t, "relearn latency baseline", func(t *testing.T, s *Store) {
+		seedBaselineMonitor(t, s)
+		now := time.Now().UTC().Truncate(time.Second)
+		old := make([]CheckResult, 20)
+		for i := range old {
+			old[i] = CheckResult{MonitorID: "m1", Status: "up", Latency: 100, Timestamp: now.Add(-time.Hour)}
+		}
+		if err := s.BatchInsertChecks(old); err != nil {
+			t.Fatalf("seed checks: %v", err)
+		}
+		if _, err := s.ComputeLatencyBaseline("m1", 24*time.Hour, 10, now); err != nil {
+			t.Fatalf("initial baseline: %v", err)
+		}
+		if err := s.RelearnLatencyBaselines(now); err != nil {
+			t.Fatalf("RelearnLatencyBaselines: %v", err)
+		}
+
+		if all, err := s.GetLatencyBaselines(); err != nil || len(all) != 0 {
+			t.Fatalf("baselines after reset = %v, err=%v", all, err)
+		}
+		var checkCount int
+		if err := s.db.QueryRow("SELECT COUNT(*) FROM monitor_checks").Scan(&checkCount); err != nil || checkCount != 20 {
+			t.Fatalf("check history count = %d, err=%v; want 20", checkCount, err)
+		}
+		cutoff, err := s.GetSetting("notification.latency.learn_after")
+		if err != nil || cutoff != now.Format(time.RFC3339Nano) {
+			t.Fatalf("learn_after = %q, err=%v", cutoff, err)
+		}
+		if written, err := s.ComputeLatencyBaselineSince("m1", now, 10, now.Add(time.Minute)); err != nil || written {
+			t.Fatalf("old checks rebuilt baseline: written=%v err=%v", written, err)
+		}
+	})
+}
