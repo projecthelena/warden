@@ -193,7 +193,7 @@ func (h *Router) PerformSetup(w http.ResponseWriter, r *http.Request) {
 	user, err := h.store.Authenticate(req.Username, req.Password)
 	if err != nil {
 		// User was created but auth failed - shouldn't happen but handle gracefully
-		log.Printf("AUDIT: [SETUP] Auto-login failed for '%s': %v", req.Username, err)
+		log.Printf("AUDIT: [SETUP] Auto-login failed for '%s': %v", sanitizeLog(req.Username), err) // #nosec G706 -- sanitized
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
 		})

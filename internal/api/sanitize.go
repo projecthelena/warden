@@ -1,6 +1,6 @@
 package api
 
-import "strings"
+import "github.com/projecthelena/warden/internal/logging"
 
 // sanitizeLog removes newlines, carriage returns, tabs, and other control
 // characters from a string before it is written to log output. This prevents
@@ -9,23 +9,5 @@ import "strings"
 //
 // The result is truncated to 256 characters to prevent log flooding.
 func sanitizeLog(s string) string {
-	s = strings.ReplaceAll(s, "\n", "\\n")
-	s = strings.ReplaceAll(s, "\r", "\\r")
-	s = strings.ReplaceAll(s, "\t", "\\t")
-
-	var b strings.Builder
-	b.Grow(len(s))
-	for _, r := range s {
-		if r < 0x20 || r == 0x7F {
-			continue
-		}
-		b.WriteRune(r)
-	}
-	s = b.String()
-
-	const maxLen = 256
-	if len(s) > maxLen {
-		s = s[:maxLen] + "..."
-	}
-	return s
+	return logging.Sanitize(s)
 }
