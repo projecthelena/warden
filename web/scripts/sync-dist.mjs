@@ -23,8 +23,6 @@ for (const entry of readdirSync(repoRoot)) {
 
 cpSync(distDir, repoRoot, { recursive: true });
 
-if (!existsSync(gitkeep)) {
-  writeFileSync(gitkeep, "");
-}
+writeFileSync(gitkeep, "", { flag: "a" });
 
 console.log(`Copied frontend assets to ${repoRoot}`);

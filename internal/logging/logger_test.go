@@ -2,6 +2,7 @@ package logging
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -40,4 +41,16 @@ func TestNew(t *testing.T) {
 			t.Errorf("Expected output %q, got %q", expected, got)
 		}
 	})
+}
+
+func TestSanitize(t *testing.T) {
+	got := Sanitize("monitor\r\nforged\tentry\x00")
+	if got != `monitor\r\nforged\tentry` {
+		t.Fatalf("Sanitize() = %q", got)
+	}
+
+	long := strings.Repeat("a", 300)
+	if got := Sanitize(long); len(got) != 259 || !strings.HasSuffix(got, "...") {
+		t.Fatalf("long Sanitize() length = %d, suffix=%q", len(got), got[len(got)-3:])
+	}
 }

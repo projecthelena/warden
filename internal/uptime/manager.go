@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/projecthelena/warden/internal/db"
+	wardenlog "github.com/projecthelena/warden/internal/logging"
 	"github.com/projecthelena/warden/internal/notifications"
 )
 
@@ -1162,7 +1163,7 @@ func (m *Manager) RemoveMonitor(id string) {
 		mon.Stop()
 		delete(m.monitors, id)
 		delete(m.sslNotifiedThresholds, id)
-		log.Printf("Explicitly stopped monitor: %s", id)
+		log.Printf("Explicitly stopped monitor: %s", wardenlog.Sanitize(id)) // #nosec G706 -- sanitized
 	}
 }
 
