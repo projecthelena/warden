@@ -22,6 +22,7 @@ jobs:
       frontend: ${{ steps.filter.outputs.frontend }}
       backend: ${{ steps.filter.outputs.backend }}
       app: ${{ steps.filter.outputs.app }}
+      markdown: ${{ steps.filter.outputs.markdown }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,6 +48,35 @@ jobs:
               - 'go.mod'
               - 'go.sum'
               - '.github/workflows/ci.yml'
+            markdown:
+              - '**/*.md'
+              - '.prettierrc.json'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'Makefile'
+              - '.githooks/pre-push'
+              - '.github/workflows/ci.yml'
+
+  markdown:
+    needs: changes
+    if: needs.changes.outputs.markdown == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install Markdown formatter
+        run: npm ci
+
+      - name: Check Markdown format
+        run: npm run check:markdown
 
   frontend:
     needs: changes

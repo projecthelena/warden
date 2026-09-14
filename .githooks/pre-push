@@ -40,19 +40,22 @@ run_check() {
     fi
 }
 
-# 1. Frontend Lint
+# 1. Markdown format
+run_check "Markdown Format" "cd \"$REPO_ROOT\" && make check-markdown"
+
+# 2. Frontend Lint
 run_check "Frontend Lint" "cd \"$REPO_ROOT/web\" && npm run lint"
 
-# 2. Backend Lint
+# 3. Backend Lint
 run_check "Backend Lint" "cd \"$REPO_ROOT\" && golangci-lint run"
 
-# 3. Frontend Unit Tests
+# 4. Frontend Unit Tests
 run_check "Frontend Tests" "cd \"$REPO_ROOT/web\" && npm run test"
 
-# 4. Backend Unit Tests
+# 5. Backend Unit Tests
 run_check "Backend Tests" "cd \"$REPO_ROOT\" && go test ./..."
 
-# 5. Security Scan (gosec)
+# 6. Security Scan (gosec)
 run_check "Security Scan (gosec)" "cd \"$REPO_ROOT\" && make security"
 
 echo -e "${BLUE}========================================${NC}"

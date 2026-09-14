@@ -117,27 +117,27 @@ Any monitor can have its alerts muted from its details panel (**Alerts → Mute 
 
 All settings live in **Settings** on the dashboard. Changes apply immediately to all running monitors.
 
-| Setting | Default | Range |
-|---------|---------|-------|
-| Confirmation threshold | 3 | 1-100 |
-| Announce after (seconds) | 180 | 0-86400 |
-| First reminder (minutes) | 30 | 0-10080 |
-| Repeat reminder (minutes) | 60 | 0-10080 |
-| Cooldown minutes | 30 | 0-1440 |
-| Correlation window (seconds) | 300 | 0-86400 |
-| Correlation minimum monitors | 3 | 1-1000 |
-| Correlation group share (%) | 30 | 1-100 |
-| Probe-wide share (%) | 80 | 1-100 |
-| Repeat-offender limit | 3 | 0-1000 |
-| Repeat-offender window (minutes) | 1440 | 1-43200 |
-| Adaptive latency thresholds | true | true/false |
-| Latency baseline window (days) | 7 | 1-90 |
-| Latency baseline minimum samples | 200 | 1-1000000 |
-| Degraded at (% of p95) | 150 | 100-10000 |
-| Degraded floor above p95 (ms) | 100 | 0-60000 |
-| Flap detection enabled | true | true/false |
-| Flap window (checks) | 21 | 3-100 |
-| Flap threshold (%) | 25 | 1-100 |
+| Setting                          | Default | Range      |
+| -------------------------------- | ------- | ---------- |
+| Confirmation threshold           | 3       | 1-100      |
+| Announce after (seconds)         | 180     | 0-86400    |
+| First reminder (minutes)         | 30      | 0-10080    |
+| Repeat reminder (minutes)        | 60      | 0-10080    |
+| Cooldown minutes                 | 30      | 0-1440     |
+| Correlation window (seconds)     | 300     | 0-86400    |
+| Correlation minimum monitors     | 3       | 1-1000     |
+| Correlation group share (%)      | 30      | 1-100      |
+| Probe-wide share (%)             | 80      | 1-100      |
+| Repeat-offender limit            | 3       | 0-1000     |
+| Repeat-offender window (minutes) | 1440    | 1-43200    |
+| Adaptive latency thresholds      | true    | true/false |
+| Latency baseline window (days)   | 7       | 1-90       |
+| Latency baseline minimum samples | 200     | 1-1000000  |
+| Degraded at (% of p95)           | 150     | 100-10000  |
+| Degraded floor above p95 (ms)    | 100     | 0-60000    |
+| Flap detection enabled           | true    | true/false |
+| Flap window (checks)             | 21      | 3-100      |
+| Flap threshold (%)               | 25      | 1-100      |
 
 ### Per-Monitor Overrides
 
@@ -149,7 +149,7 @@ Flap detection, correlation and repeat-offender settings are global only.
 
 ## The digest does not silence anything
 
-Selecting an event under **Daily Digest → Include in the digest** controls what the daily summary covers. It used to *divert* the event, so choosing "Down" there silenced outage alerts entirely — an easy way to end up with no notifications at all without realising it.
+Selecting an event under **Daily Digest → Include in the digest** controls what the daily summary covers. It used to _divert_ the event, so choosing "Down" there silenced outage alerts entirely — an easy way to end up with no notifications at all without realising it.
 
 Those are now two independent decisions:
 

@@ -1,4 +1,4 @@
-.PHONY: backend frontend build docker test test-frontend test-all clean dev-backend dev-frontend dev-bundle lint lint-frontend lint-backend security govuln vuln secrets audit hooks check docs e2e-fresh stop faketarget
+.PHONY: backend frontend build docker test test-frontend test-all clean dev-backend dev-frontend dev-bundle lint lint-frontend lint-backend format-markdown check-markdown security govuln vuln secrets audit hooks check docs e2e-fresh stop faketarget
 
 BACKEND_ENV ?= LISTEN_ADDR=:9096 COOKIE_SECURE=false
 BIN_DIR ?= $(PWD)/bin
@@ -64,6 +64,12 @@ lint-backend:
 
 lint: lint-frontend lint-backend
 
+format-markdown:
+	npm run format:markdown
+
+check-markdown:
+	npm run check:markdown
+
 # Keep these in sync with .github/workflows/ci.yml — running a different version locally
 # than CI does is how "green on my machine" turns into a red pipeline.
 GOSEC_VERSION ?= v2.28.0
@@ -127,8 +133,8 @@ e2e-ui:
 
 hooks:
 	git config core.hooksPath .githooks
-	@echo "Git hooks installed! Pre-push will run: lint, tests, and security checks."
+	@echo "Git hooks installed! Pre-push will run: Markdown format, lint, tests, and security checks."
 
 # Run all pre-push checks manually (same as pre-push hook)
-check: lint test-all security
+check: check-markdown lint test-all security
 	@echo "All checks passed!"

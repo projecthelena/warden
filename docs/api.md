@@ -30,9 +30,7 @@ Keys carry a role. Use `viewer` for anything that only needs to read.
 
 ## Monitors
 
-A monitor carries a `type` alongside its target, which decides what check runs against
-it — `http` (default), `tcp`, `ping` or `dns`. The target format differs per type, and
-so do the options in `requestConfig`. See [Monitor Types](monitor-types.md).
+A monitor carries a `type` alongside its target, which decides what check runs against it — `http` (default), `tcp`, `ping` or `dns`. The target format differs per type, and so do the options in `requestConfig`. See [Monitor Types](monitor-types.md).
 
 ```bash
 curl -X POST http://localhost:9090/api/monitors \
@@ -44,8 +42,7 @@ Omitting `type` on a `PUT` keeps the type the monitor already has.
 
 ### Moving a monitor between groups
 
-Grouping is not part of the `PUT`. Like pausing and muting, it has its own endpoint, so a
-regroup is one request that cannot half-apply alongside an edit:
+Grouping is not part of the `PUT`. Like pausing and muting, it has its own endpoint, so a regroup is one request that cannot half-apply alongside an edit:
 
 ```bash
 curl -X POST http://localhost:9090/api/monitors/m-postgres-a1b2c3/group \
@@ -53,10 +50,7 @@ curl -X POST http://localhost:9090/api/monitors/m-postgres-a1b2c3/group \
   -d '{"groupId":"g-production"}'
 ```
 
-The monitor keeps its id, so its checks, uptime, outages and incidents move with it.
-Sending the group it is already in is a no-op rather than an error. A group that does not
-exist returns `404`. Note that a status page scoped to the old group stops showing the
-monitor the moment it leaves.
+The monitor keeps its id, so its checks, uptime, outages and incidents move with it. Sending the group it is already in is a no-op rather than an error. A group that does not exist returns `404`. Note that a status page scoped to the old group stops showing the monitor the moment it leaves.
 
 ## MCP
 
@@ -66,11 +60,11 @@ Warden also speaks the Model Context Protocol at `/api/mcp`, so an assistant can
 
 These do not require authentication:
 
-| Method | Path | Description |
-| :--- | :--- | :--- |
-| `POST` | `/api/auth/login` | Login |
-| `POST` | `/api/setup` | Initial admin setup |
-| `GET` | `/api/s/{slug}` | Public status page data |
+| Method | Path              | Description             |
+| :----- | :---------------- | :---------------------- |
+| `POST` | `/api/auth/login` | Login                   |
+| `POST` | `/api/setup`      | Initial admin setup     |
+| `GET`  | `/api/s/{slug}`   | Public status page data |
 
 ## Automation
 
