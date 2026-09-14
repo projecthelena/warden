@@ -159,9 +159,13 @@ func addGroupWithMonitors(t *testing.T, m *Manager, store *db.Store, groupID, na
 }
 
 func openOutagesFor(t *testing.T, store *db.Store, ids []string, summary string) time.Time {
+	return openOutagesForType(t, store, ids, "down", summary)
+}
+
+func openOutagesForType(t *testing.T, store *db.Store, ids []string, outageType, summary string) time.Time {
 	t.Helper()
 	for _, id := range ids {
-		if err := store.CreateOutage(id, "down", summary); err != nil {
+		if err := store.CreateOutage(id, outageType, summary); err != nil {
 			t.Fatalf("CreateOutage(%s): %v", id, err)
 		}
 	}
@@ -172,6 +176,43 @@ func openOutagesFor(t *testing.T, store *db.Store, ids []string, summary string)
 	// The newest one: outages opened microseconds apart become due microseconds apart, so
 	// anchoring on the oldest would leave the rest a hair short of the window.
 	return open[len(open)-1].StartTime
+}
+
+func TestEvaluateAlerts_CorrelatedDegradationKeepsItsType(t *testing.T) {
+	m, store, spy := newCorrelationTestManager(t, "g-ns", 6)
+	start := openOutagesForType(t, store, []string{"m00", "m01", "m02"}, "degraded", "High latency detected")
+
+	m.evaluateAlerts(start.Add(3 * time.Minute))
+	m.evaluateAlerts(start.Add(34 * time.Minute))
+
+	sent := spy.byType(notifications.EventDegraded)
+	if len(sent) != 2 {
+		t.Fatalf("expected one degraded group alert and one reminder, got %d: %+v", len(sent), messages(sent))
+	}
+	if !strings.Contains(sent[0].Message, "3 of 6 monitors in NodeSource are degraded") {
+		t.Errorf("group alert lost the degraded state: %q", sent[0].Message)
+	}
+	if !strings.HasPrefix(sent[1].Message, "Still degraded after") {
+		t.Errorf("group reminder lost the degraded state: %q", sent[1].Message)
+	}
+	if got := spy.byType(notifications.EventDown); len(got) != 0 {
+		t.Errorf("degraded group was incorrectly sent as down: %+v", got)
+	}
+}
+
+func TestEvaluateAlerts_DoesNotMixDownAndDegradedCorrelations(t *testing.T) {
+	m, store, spy := newCorrelationTestManager(t, "g-ns", 10)
+	openOutagesForType(t, store, []string{"m00", "m01", "m02"}, "down", "Monitor is down")
+	start := openOutagesForType(t, store, []string{"m03", "m04", "m05"}, "degraded", "High latency detected")
+
+	m.evaluateAlerts(start.Add(3 * time.Minute))
+
+	if got := spy.byType(notifications.EventDown); len(got) != 1 {
+		t.Fatalf("expected one down correlation, got %d: %+v", len(got), got)
+	}
+	if got := spy.byType(notifications.EventDegraded); len(got) != 1 {
+		t.Fatalf("expected one degraded correlation, got %d: %+v", len(got), got)
+	}
 }
 
 // The 12-Aug case: eleven of twelve monitors returned 404 inside two minutes. That is one
@@ -499,6 +540,38 @@ func TestEvaluateAlerts_ChronicNoticeKeepsTheOutageType(t *testing.T) {
 	}
 	if !strings.Contains(notices[0].Message, "Muting its individual alerts") {
 		t.Errorf("wrong message: %q", notices[0].Message)
+	}
+}
+
+func TestEvaluateAlerts_ChronicDegradationSaysDegraded(t *testing.T) {
+	m, store, spy := newCorrelationTestManager(t, "g-ns", 12)
+	base := time.Now().UTC().Add(-2 * time.Hour)
+
+	for i := 0; i < 2; i++ {
+		if err := store.CreateOutage("m00", "degraded", "High latency detected"); err != nil {
+			t.Fatalf("CreateOutage: %v", err)
+		}
+		open, _ := store.GetOpenOutages()
+		if _, err := store.MarkOutageNotified(open[0].ID, base.Add(time.Duration(i)*time.Minute)); err != nil {
+			t.Fatalf("MarkOutageNotified: %v", err)
+		}
+		if err := store.CloseOutage("m00"); err != nil {
+			t.Fatalf("CloseOutage: %v", err)
+		}
+	}
+
+	start := openOutagesForType(t, store, []string{"m00"}, "degraded", "High latency detected")
+	m.evaluateAlerts(start.Add(3 * time.Minute))
+
+	notices := spy.byType(notifications.EventDegraded)
+	if len(notices) != 1 {
+		t.Fatalf("expected one degraded chronic notice, got %d", len(notices))
+	}
+	if !strings.Contains(notices[0].Message, "is degraded again") {
+		t.Errorf("chronic notice lost the degraded state: %q", notices[0].Message)
+	}
+	if strings.Contains(notices[0].Message, "is down again") {
+		t.Errorf("degraded notice incorrectly says down: %q", notices[0].Message)
 	}
 }
 

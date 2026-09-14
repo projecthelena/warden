@@ -260,14 +260,19 @@ func (m *Manager) announceProbeFailure(pending []db.OpenOutage, now time.Time, p
 // announceGroupFailures turns "eleven monitors in NodeSource returned 404 within two
 // minutes" into one message, and returns whatever was not part of a group incident.
 func (m *Manager) announceGroupFailures(pending []db.OpenOutage, now time.Time, policy alertPolicy, corr correlationPolicy, groupSizes map[string]int) []db.OpenOutage {
-	byGroup := make(map[string][]db.OpenOutage)
+	type groupState struct {
+		groupID    string
+		outageType string
+	}
+	byGroup := make(map[groupState][]db.OpenOutage)
 	for _, o := range pending {
-		byGroup[o.GroupID] = append(byGroup[o.GroupID], o)
+		key := groupState{groupID: o.GroupID, outageType: o.Type}
+		byGroup[key] = append(byGroup[key], o)
 	}
 
 	var leftover []db.OpenOutage
-	for groupID, groupOutages := range byGroup {
-		needed := corr.requiredForGroup(groupSizes[groupID])
+	for key, groupOutages := range byGroup {
+		needed := corr.requiredForGroup(groupSizes[key.groupID])
 
 		for _, c := range cluster(groupOutages, corr.Window) {
 			affected := distinctMonitors(c)
@@ -282,8 +287,8 @@ func (m *Manager) announceGroupFailures(pending []db.OpenOutage, now time.Time, 
 				continue
 			}
 
-			key := correlationKey("group", c[0])
-			claimed, err := m.store.MarkOutagesNotified(outageIDs(c), now, key)
+			incidentKey := correlationKey("group", c[0])
+			claimed, err := m.store.MarkOutagesNotified(outageIDs(c), now, incidentKey)
 			if err != nil {
 				log.Printf("Alerting: failed to stamp correlated outage: %v", err)
 				leftover = append(leftover, c...)
@@ -296,13 +301,13 @@ func (m *Manager) announceGroupFailures(pending []db.OpenOutage, now time.Time, 
 			m.notifyNow(notifications.NotificationEvent{
 				MonitorID:   "",
 				MonitorName: c[0].GroupName,
-				Type:        notifications.EventDown,
-				Message: fmt.Sprintf("%d of %d monitors in %s are down, for %s: %s",
-					affected, groupSizes[groupID], c[0].GroupName,
+				Type:        outageEventType(c[0].Type),
+				Message: fmt.Sprintf("%d of %d monitors in %s are %s, for %s: %s",
+					affected, groupSizes[key.groupID], c[0].GroupName, outageState(c[0].Type),
 					formatAlertDuration(now.Sub(c[0].StartTime)), monitorList(c, 8)),
 				Time: now,
 			})
-			log.Printf("Alerting: correlated failure in group %s, %d monitors", groupID, affected)
+			log.Printf("Alerting: correlated %s in group %s, %d monitors", c[0].Type, key.groupID, affected)
 		}
 	}
 	return leftover
@@ -341,6 +346,7 @@ func (m *Manager) announceSingle(o db.OpenOutage, now time.Time, policy alertPol
 	// This one crosses the line. Say so plainly instead of pretending it is news, so the
 	// silence that follows is something the operator chose to read about, not a mystery.
 	if corr.ChronicLimit > 0 && announced == corr.ChronicLimit-1 {
+		state := outageState(o.Type)
 		m.notifyNow(notifications.NotificationEvent{
 			MonitorID:   o.MonitorID,
 			MonitorName: o.MonitorName,
@@ -351,8 +357,8 @@ func (m *Manager) announceSingle(o db.OpenOutage, now time.Time, policy alertPol
 			// it to someone who had turned flapping notifications off.
 			Type: outageEventType(o.Type),
 			Message: fmt.Sprintf(
-				"%s has alerted %d times in the last %s and is down again. Muting its individual alerts until it settles — it stays in the daily digest and on the dashboard.",
-				o.MonitorName, corr.ChronicLimit, formatAlertDuration(corr.ChronicWindow)),
+				"%s has alerted %d times in the last %s and is %s again. Muting its individual alerts until it settles — it stays in the daily digest and on the dashboard.",
+				o.MonitorName, corr.ChronicLimit, formatAlertDuration(corr.ChronicWindow), state),
 			Time: now,
 		})
 		log.Printf("Alerting: %s is chronically unstable, damping its alerts", o.MonitorID)
@@ -412,9 +418,9 @@ func (m *Manager) sendReminders(eligible []db.OpenOutage, now time.Time, policy 
 		m.notifyNow(notifications.NotificationEvent{
 			MonitorID:   "",
 			MonitorName: members[0].GroupName,
-			Type:        notifications.EventDown,
-			Message: fmt.Sprintf("Still down after %s: %s",
-				formatAlertDuration(now.Sub(members[0].StartTime)), monitorList(members, 8)),
+			Type:        outageEventType(members[0].Type),
+			Message: fmt.Sprintf("Still %s after %s: %s",
+				outageState(members[0].Type), formatAlertDuration(now.Sub(members[0].StartTime)), monitorList(members, 8)),
 			Time: now,
 		})
 	}
@@ -429,12 +435,16 @@ func outageEventType(outageType string) notifications.EventType {
 	return notifications.EventDown
 }
 
+func outageState(outageType string) string {
+	if outageType == "degraded" {
+		return "degraded"
+	}
+	return "down"
+}
+
 func (m *Manager) outageEvent(o db.OpenOutage, now time.Time, reminder bool) notifications.NotificationEvent {
 	kind := outageEventType(o.Type)
-	state := "down"
-	if o.Type == "degraded" {
-		state = "degraded"
-	}
+	state := outageState(o.Type)
 
 	elapsed := formatAlertDuration(now.Sub(o.StartTime))
 	message := fmt.Sprintf("%s — %s for %s", o.Summary, state, elapsed)
