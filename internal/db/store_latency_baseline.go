@@ -64,7 +64,13 @@ func (s *Store) percentileLatency(monitorID string, since time.Time, total, perc
 // unreliable baseline is worse than no baseline, because everything downstream trusts it.
 // Reports whether a baseline was written.
 func (s *Store) ComputeLatencyBaseline(monitorID string, window time.Duration, minSamples int, now time.Time) (bool, error) {
-	since := now.Add(-window)
+	return s.ComputeLatencyBaselineSince(monitorID, now.Add(-window), minSamples, now)
+}
+
+// ComputeLatencyBaselineSince recalculates a baseline using only checks at or after since.
+// It is used after moving Warden so history remains available without teaching the new
+// installation what was normal on the old network.
+func (s *Store) ComputeLatencyBaselineSince(monitorID string, since time.Time, minSamples int, now time.Time) (bool, error) {
 
 	var total int
 	err := s.db.QueryRow(s.rebind(
@@ -89,6 +95,33 @@ func (s *Store) ComputeLatencyBaseline(monitorID string, window time.Duration, m
 	return true, s.upsertLatencyBaseline(LatencyBaseline{
 		MonitorID: monitorID, P50: p50, P95: p95, Samples: total, ComputedAt: now.UTC(),
 	})
+}
+
+// RelearnLatencyBaselines forgets the derived baselines without deleting check history.
+// The cutoff prevents the hourly worker from immediately rebuilding them from old checks.
+func (s *Store) RelearnLatencyBaselines(now time.Time) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	cutoff := now.UTC().Format(time.RFC3339Nano)
+	if s.IsPostgres() {
+		_, err = tx.Exec("INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = excluded.value", "notification.latency.learn_after", cutoff)
+	} else {
+		_, err = tx.Exec("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", "notification.latency.learn_after", cutoff)
+	}
+	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec("DELETE FROM monitor_latency_baseline"); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(s.rebind("UPDATE monitor_outages SET end_time = ? WHERE end_time IS NULL AND type = 'degraded'"), now.UTC()); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) upsertLatencyBaseline(b LatencyBaseline) error {

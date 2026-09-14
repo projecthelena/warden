@@ -383,6 +383,32 @@ func TestUpdateSettings_PersistsTheLatencyBaseline(t *testing.T) {
 	}
 }
 
+func TestRelearnLatencyBaselines_AdminOnly(t *testing.T) {
+	s, _ := db.NewStore(db.NewTestConfig())
+	m := uptime.NewManager(s)
+	h := NewSettingsHandler(s, m)
+
+	for _, tc := range []struct {
+		name string
+		req  *http.Request
+		want int
+	}{
+		{name: "anonymous", req: httptest.NewRequest("POST", "/api/settings/latency-baselines/relearn", nil), want: http.StatusForbidden},
+		{name: "admin", req: withAdminCtx(httptest.NewRequest("POST", "/api/settings/latency-baselines/relearn", nil)), want: http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			h.RelearnLatencyBaselines(w, tc.req)
+			if w.Code != tc.want {
+				t.Fatalf("status = %d, want %d: %s", w.Code, tc.want, w.Body.String())
+			}
+		})
+	}
+	if cutoff, err := s.GetSetting("notification.latency.learn_after"); err != nil || cutoff == "" {
+		t.Fatalf("learn_after = %q, err=%v", cutoff, err)
+	}
+}
+
 // A multiplier under 1x would call a service degraded at its own median, and the manager
 // quietly falls back to the default for anything it cannot use. Both are reasons the API
 // has to refuse the value rather than store it.

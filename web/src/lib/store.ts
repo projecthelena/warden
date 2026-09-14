@@ -300,6 +300,7 @@ interface MonitorStore {
     settings: Settings | null;
     fetchSettings: () => Promise<void>;
     updateSettings: (settings: Partial<Settings>) => Promise<void>;
+    relearnLatencyBaselines: () => Promise<boolean>;
 
     fetchSystemStats: () => Promise<SystemStats | null>;
 
@@ -1282,6 +1283,27 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
             }));
         } catch (error) {
             console.error('Failed to update settings:', error);
+        }
+    },
+
+    relearnLatencyBaselines: async () => {
+        try {
+            const res = await fetch('/api/settings/latency-baselines/relearn', {
+                method: 'POST',
+                credentials: 'include'
+            });
+            if (!res.ok) return false;
+            const result = await res.json();
+            set((state) => ({
+                settings: {
+                    ...(state.settings || { latency_threshold: "1000", data_retention_days: "365" }),
+                    "notification.latency.learn_after": result.learnAfter
+                }
+            }));
+            return true;
+        } catch (error) {
+            console.error('Failed to restart latency learning:', error);
+            return false;
         }
     },
 

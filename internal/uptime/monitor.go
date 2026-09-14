@@ -385,6 +385,19 @@ func (m *Monitor) ResetDegraded() bool {
 	return wasConfirmed
 }
 
+// ForgetDegradedState clears runtime-only degradation state when adaptive latency starts
+// learning again. Persisted checks are deliberately left untouched.
+func (m *Monitor) ForgetDegradedState() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.consecutiveDegCount = 0
+	m.confirmedDegraded = false
+	delete(m.lastNotifiedAt, "degraded")
+	for i := range m.history {
+		m.history[i].IsDegraded = false
+	}
+}
+
 // IsConfirmedDown returns whether the monitor has met the down confirmation threshold.
 func (m *Monitor) IsConfirmedDown() bool {
 	m.mu.RLock()

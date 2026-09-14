@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/projecthelena/warden/internal/db"
 	"github.com/projecthelena/warden/internal/uptime"
@@ -159,6 +160,7 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	if baselineFloor == "" {
 		baselineFloor = "100"
 	}
+	baselineLearnAfter, _ := h.store.GetSetting("notification.latency.learn_after")
 
 	// Weekly pattern summary
 	weeklyInsights, _ := h.store.GetSetting("notification.insights.weekly_enabled")
@@ -258,6 +260,7 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		"notification.latency.min_samples":           baselineMinSamples,
 		"notification.latency.factor_percent":        baselineFactor,
 		"notification.latency.floor_ms":              baselineFloor,
+		"notification.latency.learn_after":           baselineLearnAfter,
 		"notification.correlation.window_seconds":    corrWindow,
 		"notification.correlation.min_monitors":      corrMin,
 		"notification.correlation.group_percent":     corrGroupPct,
@@ -268,6 +271,21 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		"notification.digest.time":                   digestTime,
 		"notification.digest.event_types":            digestEventTypes,
 		"app_url":                                    appURL,
+	})
+}
+
+// RelearnLatencyBaselines forgets derived latency baselines and learns from new checks.
+func (h *SettingsHandler) RelearnLatencyBaselines(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, RoleAdmin) {
+		return
+	}
+	now := time.Now().UTC()
+	if err := h.manager.RelearnLatencyBaselines(now); err != nil {
+		http.Error(w, "Failed to restart latency learning", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status": "learning", "learnAfter": now.Format(time.RFC3339Nano),
 	})
 }
 

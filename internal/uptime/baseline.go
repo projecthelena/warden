@@ -28,6 +28,9 @@ type baselinePolicy struct {
 	// stops very fast targets from alerting on noise: a service whose p95 is 8ms should not
 	// be called degraded at 12ms.
 	FloorMs int64
+	// LearnAfter excludes history from an old network or region after an operator asks
+	// Warden to relearn. Zero means the regular rolling window applies.
+	LearnAfter time.Time
 }
 
 func defaultBaselinePolicy() baselinePolicy {
@@ -60,12 +63,9 @@ func (p baselinePolicy) adaptiveThreshold(b db.LatencyBaseline) (int64, bool) {
 // SLA, usually — and outranks anything learned. Otherwise the monitor's own baseline, and
 // failing that the global default, which is all a monitor with no history has.
 //
-// Repointing a monitor at a different target does not reset its baseline. It cannot: the
-// old target's checks stay in the table by design — this codebase keeps a monitor's
-// history across edits rather than discarding it — so any recomputation would derive the
-// same numbers again. The baseline simply re-learns as the window rolls past the change.
-// Anyone who needs the new target judged correctly today can set the per-monitor
-// threshold, which outranks the baseline.
+// Repointing a monitor does not reset its baseline automatically because ordinary edits
+// should preserve continuity. An operator can explicitly relearn after moving networks;
+// that keeps history but records a cutoff so old checks cannot rebuild the baseline.
 func resolveLatencyThreshold(override *int, baseline db.LatencyBaseline, hasBaseline bool, p baselinePolicy, globalDefault int64) int64 {
 	if override != nil && *override > 0 {
 		return int64(*override)
@@ -113,7 +113,11 @@ func (m *Manager) refreshBaselines(now time.Time) {
 	for id := range m.GetAll() {
 		// A monitor without enough history is skipped rather than given a shaky baseline;
 		// it keeps using the global default until it has learned enough.
-		if _, err := m.store.ComputeLatencyBaseline(id, policy.Window, policy.MinSamples, now); err != nil {
+		since := now.Add(-policy.Window)
+		if policy.LearnAfter.After(since) {
+			since = policy.LearnAfter
+		}
+		if _, err := m.store.ComputeLatencyBaselineSince(id, since, policy.MinSamples, now); err != nil {
 			log.Printf("Baseline: failed to compute for %s: %v", id, err)
 		}
 	}
@@ -178,6 +182,33 @@ func (m *Manager) loadBaselinePolicy() baselinePolicy {
 	if v, ok := m.settingInt("notification.latency.floor_ms"); ok {
 		p.FloorMs = int64(v)
 	}
+	if val, err := m.store.GetSetting("notification.latency.learn_after"); err == nil && val != "" {
+		if cutoff, err := time.Parse(time.RFC3339Nano, val); err == nil {
+			p.LearnAfter = cutoff
+		}
+	}
 
 	return p
+}
+
+// RelearnLatencyBaselines starts adaptive learning over with checks made from now on.
+// Historical checks remain in the database for charts and uptime reports.
+func (m *Manager) RelearnLatencyBaselines(now time.Time) error {
+	if err := m.store.RelearnLatencyBaselines(now); err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	m.baselinePolicy.LearnAfter = now.UTC()
+	monitors := make([]*Monitor, 0, len(m.monitors))
+	for _, mon := range m.monitors {
+		monitors = append(monitors, mon)
+	}
+	m.mu.Unlock()
+
+	for _, mon := range monitors {
+		mon.ForgetDegradedState()
+	}
+	m.applyLatencyThresholds()
+	return nil
 }
