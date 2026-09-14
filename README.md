@@ -2,28 +2,24 @@
 
 [![CI](https://github.com/projecthelena/warden/actions/workflows/ci.yml/badge.svg)](https://github.com/projecthelena/warden/actions/workflows/ci.yml) [![Docker](https://github.com/projecthelena/warden/actions/workflows/docker.yml/badge.svg)](https://github.com/projecthelena/warden/actions/workflows/docker.yml) [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 
-Open-source, self-hosted uptime monitoring built to be operated directly or through an AI assistant. Warden helps agencies and teams monitor HTTP endpoints, TCP ports, ICMP hosts and DNS records, publish status pages, and deliver alerts — from a single binary with no external dependencies.
+Warden is an open-source, self-hosted uptime monitor that learns what is normal, reduces alert noise, and can be operated directly or through an AI assistant.
 
-Warden also [learns the normal latency of every monitor](docs/adaptive-latency.md). It can detect that a healthy response became unusually slow without forcing a 20 ms health check and a 450 ms remote storefront to share the same threshold.
-
-Warden also [learns the normal latency of every monitor](docs/adaptive-latency.md). It can detect that a healthy response became unusually slow without forcing a 20 ms health check and a 450 ms remote storefront to share the same threshold.
+It monitors HTTP endpoints, TCP ports, ICMP hosts, and DNS records; publishes status pages; and sends alerts through Slack, webhooks, or email. Adaptive latency baselines, failure confirmation, flapping detection, and incident correlation help distinguish a real problem from a transient spike.
 
 <div align="center">
-  <img src="assets/dashboard-overview.png" alt="Dashboard Preview" width="100%" />
+  <img src="assets/dashboard-overview.png" alt="Warden dashboard" width="100%" />
 </div>
 
-## Operate Warden through your AI
+## Why Warden
 
-Warden includes a role-scoped [MCP server](docs/mcp.md), so an MCP-compatible assistant can answer questions such as:
+- **Quiet by design:** sustained failures, cooldowns, flapping detection, and correlation prevent one problem from becoming dozens of alerts.
+- **Learns each service:** every monitor can build its own latency baseline instead of sharing an arbitrary global threshold.
+- **AI-ready and safe:** the role-scoped MCP server lets an assistant investigate and manage monitors without exposing destructive operations.
+- **Simple to own:** run one container with SQLite, or connect PostgreSQL when you need an external database.
 
-- "What is down right now?"
-- "What happened while I was asleep?"
-- "Was the checkout API getting slower before it failed?"
-- "Create monitors for these client domains and put them in a new group."
+Read [Why Warden](docs/why-warden.md) for the product direction and comparison with conventional uptime monitoring.
 
-Use a `viewer` key for everyday investigation. An `editor` key additionally lets the assistant create, group, move, pause and resume monitors; destructive deletion is deliberately unavailable through MCP. Agencies can group monitors by client and publish a focused status page for each group.
-
-## Quick Start
+## Quick start
 
 ```bash
 docker run -d -p 9090:9090 \
@@ -33,43 +29,11 @@ docker run -d -p 9090:9090 \
 
 Open `http://localhost:9090` and create your admin account.
 
-## Environment Variables
-
-| Variable | Default | Description |
-| :-- | :-- | :-- |
-| `LISTEN_ADDR` | `:9090` | Port Warden listens on. Change it if 9090 is already taken. |
-| `DB_TYPE` | `sqlite` | `sqlite` or `postgres`. Warden uses SQLite by default — no setup needed. Set to `postgres` if you want to use PostgreSQL. Takes precedence over `DB_URL` auto-detection. |
-| `DB_PATH` | `/data/warden.db` | Where the SQLite database file is stored. Only matters when using SQLite. |
-| `DB_URL` | — | PostgreSQL connection string (e.g. `postgres://user:pass@host:5432/warden`). Setting this automatically switches to PostgreSQL. |
-| `COOKIE_SECURE` | `false` | Set `true` if you serve Warden over HTTPS. Tells browsers to only send login cookies over secure connections, preventing them from leaking on plain HTTP. |
-| `TRUST_PROXY` | `false` | Set `true` if Warden runs behind a reverse proxy (nginx, Traefik, Caddy). Lets Warden see users' real IPs for rate limiting. Leave `false` if Warden is exposed directly — otherwise anyone can fake their IP. |
-| `ADMIN_SECRET` | — | For development and testing only. Enables the database reset endpoint and disables rate limits. Do not set in production. |
-
-## Docker Compose
-
-Ready-to-use compose files in [`deploy/`](deploy/):
-
-- [**SQLite**](deploy/docker-compose.sqlite.yml) — simplest, no extra services
-- [**PostgreSQL**](deploy/docker-compose.postgres.yml) — for larger deployments
+Production options are covered in the [configuration guide](docs/configuration.md). Ready-to-use SQLite and PostgreSQL Compose files live in [`deploy/`](deploy/).
 
 ## Documentation
 
-See the [`docs/`](docs/) folder for detailed guides:
-
-- [Monitor Types](docs/monitor-types.md) — HTTP, TCP, ping and DNS checks, and the permissions ICMP needs
-- [API](docs/api.md) — REST API and Swagger docs
-- [MCP Server](docs/mcp.md) — inspect and safely operate Warden from an AI assistant
-- [Notifications](docs/notifications.md) — Slack, webhook and email channels, and how to configure SMTP
-- [Adaptive Latency](docs/adaptive-latency.md) — how Warden learns each monitor's normal response time and detects regressions
-- [Notification Fatigue](docs/notification-fatigue.md) — confirmation windows, reminders, correlation and alert damping
-- [Database](docs/database.md) — SQLite vs PostgreSQL configuration
-- [PostgreSQL Migration](docs/postgresql-migration.md) — move a complete Warden installation to another PostgreSQL instance
-- [Password Recovery](docs/recovery.md) — reset a password or get back in after a lockout
-- [Load Testing](docs/load-testing.md) _(coming soon)_
-
-### Markdown style
-
-Markdown prose stays unwrapped: one source line per paragraph. Run `npm run format:markdown` to fix every tracked Markdown file or `npm run check:markdown` to verify it. The pre-push hook and CI run the same check.
+Start with the [documentation index](docs/README.md), or read the [public roadmap](docs/roadmap.md).
 
 ## License
 
