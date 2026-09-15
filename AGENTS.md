@@ -4,7 +4,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## Project Overview
 
-Warden is a self-hosted uptime monitoring application by Project Helena. Go 1.24 backend with embedded React/TypeScript frontend, dual-database support (SQLite and PostgreSQL). Ships as a single binary with no external dependencies.
+Warden is a self-hosted uptime monitoring application by Project Helena. Go 1.25 backend with embedded React/TypeScript frontend and dual-database support (SQLite and PostgreSQL). It ships as a single binary without runtime package dependencies.
 
 ## Commands
 
@@ -66,8 +66,8 @@ Three layers: **Handlers → Store → Database/Uptime Engine**
 - **Uptime Manager:** `internal/uptime/manager.go` — 50 worker goroutines consuming from a buffered job queue (1000). Results batch-written every 2s or 50 items. Handles latency threshold detection, per-monitor request configuration (method, headers, body, timeout, retries, accepted status codes), SSL cert expiry warnings, flap detection, and data retention cleanup.
 - **Checks:** `internal/uptime/checks.go` — `runCheck()` owns timing, retries and the result envelope for every monitor type and delegates the single attempt to `probeHTTP` / `probeTCP` / `probePing` / `probeDNS`. Adding a check type means adding a probe and a case in `probe()`; everything downstream of the result queue is type-agnostic. The type constants live in `internal/db` (`db.MonitorTypeHTTP` and friends) because the store owns the model. Ping needs an ICMP socket — see `docs/monitor-types.md`.
 - **Monitor:** `internal/uptime/monitor.go` — per-monitor goroutine with confirmation thresholds, notification cooldowns, recovery confirmation, and flap detection state. All mutable state protected by `sync.RWMutex`.
-- **Notifications:** `internal/notifications/` — pluggable notification service (Slack, webhooks). Supports per-event-type toggles, daily digest, and notification cooldowns.
-- **Auth:** Session-based with cookie auth. SSO (Google) support. First admin created via `ADMIN_SECRET` env var during setup flow. Passwords hashed with bcrypt.
+- **Notifications:** `internal/notifications/` — notification providers implement direct alerts and, where supported, daily digests. Channel configuration and test sends enter through `handlers_notifications.go`. Provider credentials must never appear in returned errors or logs.
+- **Auth:** Session-based with cookie auth and Google or generic OIDC SSO. First admin created via `ADMIN_SECRET` during setup. Passwords are hashed with bcrypt.
 - **Static assets:** `internal/static/` — production frontend embedded into the binary via Go embed.
 
 ### Database
@@ -131,6 +131,13 @@ Playwright tests in `web/tests/e2e/` use page object models from `web/tests/page
 
 - Flag inconsistent state updates between React Query hooks and the legacy Zustand store.
 - Flag sheets whose content can exceed the viewport without remaining scrollable.
+
+### Integrations
+
+- Require notifier tests for payload formatting, provider errors, credential redaction, and provider payload limits.
+- Require handler tests for channel validation and test sends. A provider added to the UI must also be registered for direct alerts and digests where supported.
+- Require an end-to-end test for each channel form, including the **Send Test** success or failure shown to the operator. CI must use a local fake receiver rather than real provider credentials.
+- Require complete callback-flow tests for authentication providers: state validation, token verification, required claims, account lookup or provisioning, session creation, and role redirects.
 
 ### Review scope
 
