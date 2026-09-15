@@ -84,6 +84,7 @@ export function OIDCSettings() {
                         </p>
                     </div>
                     <Switch
+                        aria-label="Enable OIDC"
                         checked={enabled}
                         onCheckedChange={setEnabled}
                         disabled={!canEnable}
@@ -154,6 +155,7 @@ export function OIDCSettings() {
                         </p>
                     </div>
                     <Switch
+                        aria-label="Auto-provision users"
                         checked={autoProvision}
                         onCheckedChange={setAutoProvision}
                     />

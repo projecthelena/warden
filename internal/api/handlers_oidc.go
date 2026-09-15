@@ -26,6 +26,8 @@ type oidcClaims struct {
 	Picture       string `json:"picture"`
 }
 
+const oidcRequestTimeout = 10 * time.Second
+
 func oidcSubjectID(issuer, subject string) string {
 	return url.QueryEscape(strings.TrimRight(issuer, "/")) + ":" + url.QueryEscape(subject)
 }
@@ -64,7 +66,9 @@ func (h *SSOHandler) absoluteOIDCRedirect(r *http.Request, redirectURL string) (
 }
 
 func (h *SSOHandler) OIDCLogin(w http.ResponseWriter, r *http.Request) {
-	_, cfg, err := h.oidcProvider(r.Context())
+	ctx, cancel := context.WithTimeout(r.Context(), oidcRequestTimeout)
+	defer cancel()
+	_, cfg, err := h.oidcProvider(ctx)
 	if err != nil {
 		http.Redirect(w, r, "/login?error=sso_not_configured", http.StatusTemporaryRedirect)
 		return
@@ -91,7 +95,18 @@ func (h *SSOHandler) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login?error=invalid_state", http.StatusTemporaryRedirect)
 		return
 	}
-	provider, cfg, err := h.oidcProvider(r.Context())
+	if r.URL.Query().Get("error") != "" {
+		http.Redirect(w, r, "/login?error=oauth_denied", http.StatusTemporaryRedirect)
+		return
+	}
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		http.Redirect(w, r, "/login?error=missing_code", http.StatusTemporaryRedirect)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), oidcRequestTimeout)
+	defer cancel()
+	provider, cfg, err := h.oidcProvider(ctx)
 	if err != nil {
 		http.Redirect(w, r, "/login?error=sso_not_configured", http.StatusTemporaryRedirect)
 		return
@@ -100,7 +115,7 @@ func (h *SSOHandler) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login?error=invalid_request", http.StatusTemporaryRedirect)
 		return
 	}
-	token, err := cfg.Exchange(r.Context(), r.URL.Query().Get("code"))
+	token, err := cfg.Exchange(ctx, code)
 	if err != nil {
 		http.Redirect(w, r, "/login?error=token_exchange_failed", http.StatusTemporaryRedirect)
 		return
@@ -110,7 +125,7 @@ func (h *SSOHandler) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login?error=invalid_token", http.StatusTemporaryRedirect)
 		return
 	}
-	idToken, err := provider.Verifier(&oidc.Config{ClientID: cfg.ClientID}).Verify(r.Context(), rawIDToken)
+	idToken, err := provider.Verifier(&oidc.Config{ClientID: cfg.ClientID}).Verify(ctx, rawIDToken)
 	if err != nil {
 		http.Redirect(w, r, "/login?error=invalid_token", http.StatusTemporaryRedirect)
 		return

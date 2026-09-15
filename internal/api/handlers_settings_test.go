@@ -93,6 +93,60 @@ func TestUpdateSettings_InvalidBody(t *testing.T) {
 	}
 }
 
+func TestUpdateSettings_ValidatesOIDCBeforeSaving(t *testing.T) {
+	s, _ := db.NewStore(db.NewTestConfig())
+	h := NewSettingsHandler(s, uptime.NewManager(s))
+	tests := []struct {
+		name string
+		body map[string]string
+	}{
+		{name: "incomplete enabled config", body: map[string]string{"sso.oidc.enabled": "true"}},
+		{name: "issuer with credentials", body: map[string]string{"sso.oidc.issuer_url": "https://user:pass@id.example.com"}},
+		{name: "bad redirect", body: map[string]string{"sso.oidc.redirect_url": "javascript:alert(1)"}},
+		{name: "bad domain", body: map[string]string{"sso.oidc.allowed_domains": "https://example.com"}},
+		{name: "bad boolean", body: map[string]string{"sso.oidc.auto_provision": "yes"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			body, _ := json.Marshal(test.body)
+			req := httptest.NewRequest(http.MethodPatch, "/api/settings", bytes.NewReader(body))
+			recorder := httptest.NewRecorder()
+			h.UpdateSettings(recorder, withAdminCtx(req))
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d: %s", recorder.Code, recorder.Body.String())
+			}
+			for key := range test.body {
+				if value, _ := s.GetSetting(key); value != "" {
+					t.Fatalf("invalid setting %s was saved as %q", key, value)
+				}
+			}
+		})
+	}
+}
+
+func TestUpdateSettings_PreservesOIDCSecret(t *testing.T) {
+	s, _ := db.NewStore(db.NewTestConfig())
+	h := NewSettingsHandler(s, uptime.NewManager(s))
+	for key, value := range map[string]string{
+		"sso.oidc.enabled": "true", "sso.oidc.issuer_url": "https://id.example.com",
+		"sso.oidc.client_id": "warden", "sso.oidc.client_secret": "keep-me",
+	} {
+		_ = s.SetSetting(key, value)
+	}
+	body, _ := json.Marshal(map[string]string{"sso.oidc.provider_name": "Company SSO"})
+	req := httptest.NewRequest(http.MethodPatch, "/api/settings", bytes.NewReader(body))
+	recorder := httptest.NewRecorder()
+
+	h.UpdateSettings(recorder, withAdminCtx(req))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if secret, _ := s.GetSetting("sso.oidc.client_secret"); secret != "keep-me" {
+		t.Fatalf("OIDC secret changed to %q", secret)
+	}
+}
+
 func TestUpdateSettings_LatencyThresholdUpdatesManager(t *testing.T) {
 	s, _ := db.NewStore(db.NewTestConfig())
 	m := uptime.NewManager(s)
