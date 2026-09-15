@@ -32,7 +32,10 @@ export function OIDCSettings() {
     useEffect(() => {
         fetchSettings();
     }, [fetchSettings]);
+
     useEffect(() => {
+        if (!settings) return;
+
         setEnabled(settings["sso.oidc.enabled"] === "true");
         setIssuerUrl(settings["sso.oidc.issuer_url"] || "");
         setClientId(settings["sso.oidc.client_id"] || "");
