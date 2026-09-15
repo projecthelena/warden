@@ -138,6 +138,8 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 			auth.Get("/auth/sso/status", ssoH.GetSSOStatus)
 			auth.Get("/auth/sso/google", ssoH.GoogleLogin)
 			auth.Get("/auth/sso/google/callback", ssoH.GoogleCallback)
+			auth.Get("/auth/sso/oidc", ssoH.OIDCLogin)
+			auth.Get("/auth/sso/oidc/callback", ssoH.OIDCCallback)
 		})
 
 		// Public Status Pages

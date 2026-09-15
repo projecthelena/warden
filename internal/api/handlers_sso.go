@@ -71,6 +71,7 @@ func (h *SSOHandler) getGoogleOAuthConfig() (*oauth2.Config, error) {
 // GetSSOStatus returns the status of configured SSO providers (public endpoint)
 func (h *SSOHandler) GetSSOStatus(w http.ResponseWriter, r *http.Request) {
 	googleEnabled := false
+	oidcEnabled := false
 
 	// Check if Google SSO is fully configured and enabled
 	enabled, _ := h.store.GetSetting("sso.google.enabled")
@@ -80,9 +81,20 @@ func (h *SSOHandler) GetSSOStatus(w http.ResponseWriter, r *http.Request) {
 	if enabled == "true" && clientID != "" && clientSecret != "" {
 		googleEnabled = true
 	}
+	oidcOn, _ := h.store.GetSetting("sso.oidc.enabled")
+	oidcIssuer, _ := h.store.GetSetting("sso.oidc.issuer_url")
+	oidcClientID, _ := h.store.GetSetting("sso.oidc.client_id")
+	oidcSecret, _ := h.store.GetSetting("sso.oidc.client_secret")
+	oidcEnabled = oidcOn == "true" && oidcIssuer != "" && oidcClientID != "" && oidcSecret != ""
 
-	writeJSON(w, http.StatusOK, map[string]bool{
-		"google": googleEnabled,
+	providerName, _ := h.store.GetSetting("sso.oidc.provider_name")
+	if providerName == "" {
+		providerName = "SSO"
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"google":           googleEnabled,
+		"oidc":             oidcEnabled,
+		"oidcProviderName": providerName,
 	})
 }
 

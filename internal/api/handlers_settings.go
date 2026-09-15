@@ -64,11 +64,23 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	ssoGoogleRedirectURL, _ := h.store.GetSetting("sso.google.redirect_url")
 	ssoGoogleAllowedDomains, _ := h.store.GetSetting("sso.google.allowed_domains")
 	ssoGoogleAutoProvision, _ := h.store.GetSetting("sso.google.auto_provision")
+	ssoOIDCEnabled, _ := h.store.GetSetting("sso.oidc.enabled")
+	ssoOIDCIssuerURL, _ := h.store.GetSetting("sso.oidc.issuer_url")
+	ssoOIDCClientID, _ := h.store.GetSetting("sso.oidc.client_id")
+	ssoOIDCClientSecret, _ := h.store.GetSetting("sso.oidc.client_secret")
+	ssoOIDCRedirectURL, _ := h.store.GetSetting("sso.oidc.redirect_url")
+	ssoOIDCProviderName, _ := h.store.GetSetting("sso.oidc.provider_name")
+	ssoOIDCAllowedDomains, _ := h.store.GetSetting("sso.oidc.allowed_domains")
+	ssoOIDCAutoProvision, _ := h.store.GetSetting("sso.oidc.auto_provision")
 
 	// Only indicate if secret is configured, don't return actual value
 	secretConfigured := "false"
 	if ssoGoogleClientSecret != "" {
 		secretConfigured = "true"
+	}
+	oidcSecretConfigured := "false"
+	if ssoOIDCClientSecret != "" {
+		oidcSecretConfigured = "true"
 	}
 
 	// Notification Fatigue Settings
@@ -237,6 +249,14 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		"sso.google.redirect_url":                    ssoGoogleRedirectURL,
 		"sso.google.allowed_domains":                 ssoGoogleAllowedDomains,
 		"sso.google.auto_provision":                  ssoGoogleAutoProvision,
+		"sso.oidc.enabled":                           ssoOIDCEnabled,
+		"sso.oidc.issuer_url":                        ssoOIDCIssuerURL,
+		"sso.oidc.client_id":                         ssoOIDCClientID,
+		"sso.oidc.secret_configured":                 oidcSecretConfigured,
+		"sso.oidc.redirect_url":                      ssoOIDCRedirectURL,
+		"sso.oidc.provider_name":                     ssoOIDCProviderName,
+		"sso.oidc.allowed_domains":                   ssoOIDCAllowedDomains,
+		"sso.oidc.auto_provision":                    ssoOIDCAutoProvision,
 		"notification.confirmation_threshold":        confirmThreshold,
 		"notification.cooldown_minutes":              cooldownMins,
 		"notification.flap_detection_enabled":        flapEnabled,
@@ -375,6 +395,14 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 		"sso.google.redirect_url",
 		"sso.google.allowed_domains",
 		"sso.google.auto_provision",
+		"sso.oidc.enabled",
+		"sso.oidc.issuer_url",
+		"sso.oidc.client_id",
+		"sso.oidc.client_secret",
+		"sso.oidc.redirect_url",
+		"sso.oidc.provider_name",
+		"sso.oidc.allowed_domains",
+		"sso.oidc.auto_provision",
 	}
 
 	for _, key := range ssoKeys {

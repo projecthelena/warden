@@ -45,6 +45,8 @@ export function LoginPage() {
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [googleSSOEnabled, setGoogleSSOEnabled] = useState(false);
+    const [oidcSSOEnabled, setOIDCSSOEnabled] = useState(false);
+    const [oidcProviderName, setOIDCProviderName] = useState("SSO");
 
     // Check for SSO errors in URL params
     useEffect(() => {
@@ -61,6 +63,8 @@ export function LoginPage() {
             .then(res => res.json())
             .then(data => {
                 setGoogleSSOEnabled(data.google === true);
+                setOIDCSSOEnabled(data.oidc === true);
+                if (data.oidcProviderName) setOIDCProviderName(data.oidcProviderName);
             })
             .catch(() => {
                 setGoogleSSOEnabled(false);
@@ -162,7 +166,7 @@ export function LoginPage() {
                             )}
                         </Button>
 
-                        {googleSSOEnabled && (
+                        {(googleSSOEnabled || oidcSSOEnabled) && (
                             <>
                                 <div className="relative w-full">
                                     <div className="absolute inset-0 flex items-center">
@@ -175,7 +179,7 @@ export function LoginPage() {
                                     </div>
                                 </div>
 
-                                <Button
+                                {googleSSOEnabled && <Button
                                     type="button"
                                     variant="outline"
                                     className="w-full"
@@ -184,7 +188,8 @@ export function LoginPage() {
                                 >
                                     <GoogleIcon className="mr-2 h-4 w-4" />
                                     Sign in with Google
-                                </Button>
+                                </Button>}
+                                {oidcSSOEnabled && <Button type="button" variant="outline" className="w-full" onClick={() => { window.location.href = "/api/auth/sso/oidc"; }} data-testid="oidc-sso-btn">Sign in with {oidcProviderName}</Button>}
                             </>
                         )}
                     </div>
