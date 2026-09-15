@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -19,6 +20,54 @@ type SettingsHandler struct {
 
 func NewSettingsHandler(store *db.Store, manager *uptime.Manager) *SettingsHandler {
 	return &SettingsHandler{store: store, manager: manager}
+}
+
+var oidcSettingKeys = []string{
+	"sso.oidc.enabled",
+	"sso.oidc.issuer_url",
+	"sso.oidc.client_id",
+	"sso.oidc.client_secret",
+	"sso.oidc.redirect_url",
+	"sso.oidc.provider_name",
+	"sso.oidc.allowed_domains",
+	"sso.oidc.auto_provision",
+}
+
+func validateOIDCSettings(values map[string]string) error {
+	for _, key := range []string{"sso.oidc.enabled", "sso.oidc.auto_provision"} {
+		if value := values[key]; value != "" && value != "true" && value != "false" {
+			return fmt.Errorf("%s must be true or false", key)
+		}
+	}
+	if len(values["sso.oidc.client_id"]) > 512 || len(values["sso.oidc.client_secret"]) > 4096 {
+		return fmt.Errorf("client credentials for OIDC are too long")
+	}
+	if len(values["sso.oidc.provider_name"]) > 80 {
+		return fmt.Errorf("provider name for OIDC is too long")
+	}
+	issuer := strings.TrimRight(strings.TrimSpace(values["sso.oidc.issuer_url"]), "/")
+	if issuer != "" {
+		u, err := url.Parse(issuer)
+		if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+			return fmt.Errorf("issuer for OIDC must be an HTTP(S) URL without credentials, query, or fragment")
+		}
+	}
+	if redirect := strings.TrimSpace(values["sso.oidc.redirect_url"]); redirect != "" && !strings.HasPrefix(redirect, "/") {
+		u, err := url.Parse(redirect)
+		if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil {
+			return fmt.Errorf("redirect URL for OIDC must be a relative path or HTTP(S) URL")
+		}
+	}
+	for _, domain := range strings.Split(values["sso.oidc.allowed_domains"], ",") {
+		domain = strings.TrimSpace(domain)
+		if domain != "" && (strings.ContainsAny(domain, "/:@") || !validHostPattern.MatchString(domain)) {
+			return fmt.Errorf("invalid OIDC allowed domain %q", domain)
+		}
+	}
+	if values["sso.oidc.enabled"] == "true" && (issuer == "" || values["sso.oidc.client_id"] == "" || values["sso.oidc.client_secret"] == "") {
+		return fmt.Errorf("issuer, client ID, and client secret are required when OIDC is enabled")
+	}
+	return nil
 }
 
 // GetSettings returns all application settings (secrets are masked).
@@ -64,11 +113,23 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	ssoGoogleRedirectURL, _ := h.store.GetSetting("sso.google.redirect_url")
 	ssoGoogleAllowedDomains, _ := h.store.GetSetting("sso.google.allowed_domains")
 	ssoGoogleAutoProvision, _ := h.store.GetSetting("sso.google.auto_provision")
+	ssoOIDCEnabled, _ := h.store.GetSetting("sso.oidc.enabled")
+	ssoOIDCIssuerURL, _ := h.store.GetSetting("sso.oidc.issuer_url")
+	ssoOIDCClientID, _ := h.store.GetSetting("sso.oidc.client_id")
+	ssoOIDCClientSecret, _ := h.store.GetSetting("sso.oidc.client_secret")
+	ssoOIDCRedirectURL, _ := h.store.GetSetting("sso.oidc.redirect_url")
+	ssoOIDCProviderName, _ := h.store.GetSetting("sso.oidc.provider_name")
+	ssoOIDCAllowedDomains, _ := h.store.GetSetting("sso.oidc.allowed_domains")
+	ssoOIDCAutoProvision, _ := h.store.GetSetting("sso.oidc.auto_provision")
 
 	// Only indicate if secret is configured, don't return actual value
 	secretConfigured := "false"
 	if ssoGoogleClientSecret != "" {
 		secretConfigured = "true"
+	}
+	oidcSecretConfigured := "false"
+	if ssoOIDCClientSecret != "" {
+		oidcSecretConfigured = "true"
 	}
 
 	// Notification Fatigue Settings
@@ -237,6 +298,14 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		"sso.google.redirect_url":                    ssoGoogleRedirectURL,
 		"sso.google.allowed_domains":                 ssoGoogleAllowedDomains,
 		"sso.google.auto_provision":                  ssoGoogleAutoProvision,
+		"sso.oidc.enabled":                           ssoOIDCEnabled,
+		"sso.oidc.issuer_url":                        ssoOIDCIssuerURL,
+		"sso.oidc.client_id":                         ssoOIDCClientID,
+		"sso.oidc.secret_configured":                 oidcSecretConfigured,
+		"sso.oidc.redirect_url":                      ssoOIDCRedirectURL,
+		"sso.oidc.provider_name":                     ssoOIDCProviderName,
+		"sso.oidc.allowed_domains":                   ssoOIDCAllowedDomains,
+		"sso.oidc.auto_provision":                    ssoOIDCAutoProvision,
 		"notification.confirmation_threshold":        confirmThreshold,
 		"notification.cooldown_minutes":              cooldownMins,
 		"notification.flap_detection_enabled":        flapEnabled,
@@ -309,6 +378,26 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	oidcChanged := false
+	oidcValues := make(map[string]string, len(oidcSettingKeys))
+	for _, key := range oidcSettingKeys {
+		oidcValues[key], _ = h.store.GetSetting(key)
+		if value, ok := body[key]; ok {
+			oidcChanged = true
+			oidcValues[key] = value
+			if key != "sso.oidc.client_secret" {
+				oidcValues[key] = strings.TrimSpace(value)
+			}
+			body[key] = oidcValues[key]
+		}
+	}
+	if oidcChanged {
+		if err := validateOIDCSettings(oidcValues); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+
 	if val, ok := body["latency_threshold"]; ok {
 		// Validate int
 		i, err := strconv.Atoi(val)
@@ -376,6 +465,7 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 		"sso.google.allowed_domains",
 		"sso.google.auto_provision",
 	}
+	ssoKeys = append(ssoKeys, oidcSettingKeys...)
 
 	for _, key := range ssoKeys {
 		if val, ok := body[key]; ok {

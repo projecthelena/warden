@@ -146,6 +146,14 @@ export interface Settings {
     "sso.google.redirect_url"?: string;
     "sso.google.allowed_domains"?: string;
     "sso.google.auto_provision"?: string;
+    "sso.oidc.enabled"?: string;
+    "sso.oidc.issuer_url"?: string;
+    "sso.oidc.client_id"?: string;
+    "sso.oidc.secret_configured"?: string;
+    "sso.oidc.redirect_url"?: string;
+    "sso.oidc.provider_name"?: string;
+    "sso.oidc.allowed_domains"?: string;
+    "sso.oidc.auto_provision"?: string;
     // Allow any string key for flexibility
     [key: string]: string | undefined;
 }
