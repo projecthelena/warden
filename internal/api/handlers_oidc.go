@@ -127,11 +127,12 @@ func (h *SSOHandler) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 	autoProvision, _ := h.store.GetSetting("sso.oidc.auto_provision")
 	user, err := h.store.FindOrCreateSSOUser("oidc", claims.Subject, claims.Email, name, claims.Picture, autoProvision != "false")
 	if err != nil {
-		if err == db.ErrUserNotFound {
+		switch err {
+		case db.ErrUserNotFound:
 			http.Redirect(w, r, "/login?error=user_not_found", http.StatusTemporaryRedirect)
-		} else if err == db.ErrAccountLinkingNeed {
+		case db.ErrAccountLinkingNeed:
 			http.Redirect(w, r, "/login?error=account_exists_link_required", http.StatusTemporaryRedirect)
-		} else {
+		default:
 			log.Printf("AUDIT: [OIDC] user creation failed: %v", err)
 			http.Redirect(w, r, "/login?error=user_creation_failed", http.StatusTemporaryRedirect)
 		}
