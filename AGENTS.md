@@ -9,12 +9,14 @@ Warden is a self-hosted uptime monitoring application by Project Helena. Go 1.24
 ## Commands
 
 ### Development (two terminals)
+
 ```bash
 make dev-backend          # Go server on :9096 (sets ADMIN_SECRET for local dev)
 make dev-frontend         # Vite dev server on :5173, proxies /api to :9096
 ```
 
 ### Build
+
 ```bash
 make build                # Full production build (frontend + backend → bin/warden)
 make build-frontend       # Vite build, copies output to internal/static/dist/
@@ -23,6 +25,7 @@ make docker               # Docker image build
 ```
 
 ### Test
+
 ```bash
 make test                 # Go unit tests (go test ./...)
 make lint                 # Both frontend (ESLint) and backend (golangci-lint)
@@ -43,6 +46,7 @@ cd web && npx playwright test tests/e2e/auth.spec.ts
 ```
 
 ### Other
+
 ```bash
 make stop                 # Kill dev servers on :9096/:5173
 make check                # Run lint + tests + security (same as pre-push hook)
@@ -86,6 +90,7 @@ React 18 + TypeScript + Vite SPA.
 - **Path alias:** `@/*` maps to `web/src/*`
 
 ### Key Environment Variables
+
 - `LISTEN_ADDR` — server bind address (default `:9090`, dev uses `:9096`)
 - `DB_TYPE` — `sqlite` (default) or `postgres`
 - `DB_PATH` — SQLite file path (default `/data/warden.db`)
@@ -95,6 +100,7 @@ React 18 + TypeScript + Vite SPA.
 - `TRUST_PROXY` — set `true` behind reverse proxy for real IP rate limiting
 
 ### E2E Test Setup
+
 Playwright tests in `web/tests/e2e/` use page object models from `web/tests/pages/`. Tests run sequentially (1 worker, Chromium only). The backend must be running with `ADMIN_SECRET=warden-e2e-magic-key`. Playwright auto-starts the Vite dev server locally.
 
 ### Testing Patterns
