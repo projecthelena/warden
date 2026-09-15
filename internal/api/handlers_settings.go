@@ -40,22 +40,22 @@ func validateOIDCSettings(values map[string]string) error {
 		}
 	}
 	if len(values["sso.oidc.client_id"]) > 512 || len(values["sso.oidc.client_secret"]) > 4096 {
-		return fmt.Errorf("OIDC client credentials are too long")
+		return fmt.Errorf("client credentials for OIDC are too long")
 	}
 	if len(values["sso.oidc.provider_name"]) > 80 {
-		return fmt.Errorf("OIDC provider name is too long")
+		return fmt.Errorf("provider name for OIDC is too long")
 	}
 	issuer := strings.TrimRight(strings.TrimSpace(values["sso.oidc.issuer_url"]), "/")
 	if issuer != "" {
 		u, err := url.Parse(issuer)
 		if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-			return fmt.Errorf("OIDC issuer must be an HTTP(S) URL without credentials, query, or fragment")
+			return fmt.Errorf("issuer for OIDC must be an HTTP(S) URL without credentials, query, or fragment")
 		}
 	}
 	if redirect := strings.TrimSpace(values["sso.oidc.redirect_url"]); redirect != "" && !strings.HasPrefix(redirect, "/") {
 		u, err := url.Parse(redirect)
 		if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil {
-			return fmt.Errorf("OIDC redirect URL must be a relative path or HTTP(S) URL")
+			return fmt.Errorf("redirect URL for OIDC must be a relative path or HTTP(S) URL")
 		}
 	}
 	for _, domain := range strings.Split(values["sso.oidc.allowed_domains"], ",") {
@@ -65,7 +65,7 @@ func validateOIDCSettings(values map[string]string) error {
 		}
 	}
 	if values["sso.oidc.enabled"] == "true" && (issuer == "" || values["sso.oidc.client_id"] == "" || values["sso.oidc.client_secret"] == "") {
-		return fmt.Errorf("OIDC issuer, client ID, and client secret are required when OIDC is enabled")
+		return fmt.Errorf("issuer, client ID, and client secret are required when OIDC is enabled")
 	}
 	return nil
 }
