@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -23,6 +24,10 @@ type oidcClaims struct {
 	Name          string `json:"name"`
 	PreferredName string `json:"preferred_username"`
 	Picture       string `json:"picture"`
+}
+
+func oidcSubjectID(issuer, subject string) string {
+	return url.QueryEscape(strings.TrimRight(issuer, "/")) + ":" + url.QueryEscape(subject)
 }
 
 func (h *SSOHandler) oidcProvider(ctx context.Context) (*oidc.Provider, *oauth2.Config, error) {
@@ -125,7 +130,7 @@ func (h *SSOHandler) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		name = claims.PreferredName
 	}
 	autoProvision, _ := h.store.GetSetting("sso.oidc.auto_provision")
-	user, err := h.store.FindOrCreateSSOUser("oidc", claims.Subject, claims.Email, name, claims.Picture, autoProvision != "false")
+	user, err := h.store.FindOrCreateSSOUser("oidc", oidcSubjectID(idToken.Issuer, claims.Subject), claims.Email, name, claims.Picture, autoProvision != "false")
 	if err != nil {
 		switch err {
 		case db.ErrUserNotFound:

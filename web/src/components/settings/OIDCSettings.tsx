@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -18,9 +24,14 @@ export function OIDCSettings() {
     const [allowedDomains, setAllowedDomains] = useState("");
     const [autoProvision, setAutoProvision] = useState(true);
     const [secretConfigured, setSecretConfigured] = useState(false);
-    const callbackUrl = useMemo(() => `${window.location.origin}/api/auth/sso/oidc/callback`, []);
+    const callbackUrl = useMemo(
+        () => `${window.location.origin}/api/auth/sso/oidc/callback`,
+        [],
+    );
 
-    useEffect(() => { fetchSettings(); }, [fetchSettings]);
+    useEffect(() => {
+        fetchSettings();
+    }, [fetchSettings]);
     useEffect(() => {
         setEnabled(settings["sso.oidc.enabled"] === "true");
         setIssuerUrl(settings["sso.oidc.issuer_url"] || "");
@@ -42,25 +53,115 @@ export function OIDCSettings() {
         };
         if (clientSecret) values["sso.oidc.client_secret"] = clientSecret;
         await updateSettings(values);
-        if (clientSecret) { setClientSecret(""); setSecretConfigured(true); }
+        if (clientSecret) {
+            setClientSecret("");
+            setSecretConfigured(true);
+        }
         toast({ title: "OIDC settings saved" });
         await fetchSettings();
     };
 
-    const canEnable = issuerUrl && clientId && (secretConfigured || clientSecret);
-    return <Card>
-        <CardHeader><CardTitle>Generic OpenID Connect</CardTitle><CardDescription>Connect Keycloak, Authentik, Authelia, Dex, Okta, Entra ID, or any standards-compliant OIDC provider.</CardDescription></CardHeader>
-        <CardContent className="space-y-5">
-            <div className="flex items-center justify-between"><div><Label>Enable OIDC</Label><p className="text-sm text-muted-foreground">Show a generic SSO button on the login page.</p></div><Switch checked={enabled} onCheckedChange={setEnabled} disabled={!canEnable} /></div>
-            <div className="grid gap-2"><Label>Provider name</Label><Input value={providerName} onChange={e => setProviderName(e.target.value)} placeholder="Company SSO" /></div>
-            <div className="grid gap-2"><Label>Issuer URL</Label><Input type="url" value={issuerUrl} onChange={e => setIssuerUrl(e.target.value)} placeholder="https://auth.example.com/application/o/warden/" /><p className="text-xs text-muted-foreground">Warden discovers the authorization, token, and signing-key endpoints from this issuer.</p></div>
-            <div className="grid gap-2"><Label>Client ID</Label><Input value={clientId} onChange={e => setClientId(e.target.value)} /></div>
-            <div className="grid gap-2"><Label>Client Secret</Label><Input type="password" value={clientSecret} onChange={e => setClientSecret(e.target.value)} placeholder={secretConfigured ? "Configured — enter a new value to replace" : "Client secret"} /></div>
-            <div className="grid gap-2"><Label>Redirect URI</Label><Input readOnly value={callbackUrl} className="font-mono text-xs" /></div>
-            <div className="grid gap-2"><Label>Allowed email domains (optional)</Label><Input value={allowedDomains} onChange={e => setAllowedDomains(e.target.value)} placeholder="example.com, company.org" /></div>
-            <div className="flex items-center justify-between"><div><Label>Auto-provision users</Label><p className="text-sm text-muted-foreground">New verified identities become viewers.</p></div><Switch checked={autoProvision} onCheckedChange={setAutoProvision} /></div>
-            <p className="text-xs text-muted-foreground">LDAP is supported through an OIDC identity provider such as Keycloak or Authentik; Warden does not bind directly to LDAP.</p>
-            <Button onClick={save}>Save OIDC Settings</Button>
-        </CardContent>
-    </Card>;
+    const canEnable =
+        issuerUrl && clientId && (secretConfigured || clientSecret);
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle>Generic OpenID Connect</CardTitle>
+                <CardDescription>
+                    Connect Keycloak, Authentik, Authelia, Dex, Okta, Entra ID,
+                    or any standards-compliant OIDC provider.
+                </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <Label>Enable OIDC</Label>
+                        <p className="text-sm text-muted-foreground">
+                            Show a generic SSO button on the login page.
+                        </p>
+                    </div>
+                    <Switch
+                        checked={enabled}
+                        onCheckedChange={setEnabled}
+                        disabled={!canEnable}
+                    />
+                </div>
+                <div className="grid gap-2">
+                    <Label>Provider name</Label>
+                    <Input
+                        value={providerName}
+                        onChange={(e) => setProviderName(e.target.value)}
+                        placeholder="Company SSO"
+                    />
+                </div>
+                <div className="grid gap-2">
+                    <Label>Issuer URL</Label>
+                    <Input
+                        type="url"
+                        value={issuerUrl}
+                        onChange={(e) => setIssuerUrl(e.target.value)}
+                        placeholder="https://auth.example.com/application/o/warden/"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                        Warden discovers the authorization, token, and
+                        signing-key endpoints from this issuer.
+                    </p>
+                </div>
+                <div className="grid gap-2">
+                    <Label>Client ID</Label>
+                    <Input
+                        value={clientId}
+                        onChange={(e) => setClientId(e.target.value)}
+                    />
+                </div>
+                <div className="grid gap-2">
+                    <Label>Client Secret</Label>
+                    <Input
+                        type="password"
+                        value={clientSecret}
+                        onChange={(e) => setClientSecret(e.target.value)}
+                        placeholder={
+                            secretConfigured
+                                ? "Configured — enter a new value to replace"
+                                : "Client secret"
+                        }
+                    />
+                </div>
+                <div className="grid gap-2">
+                    <Label>Redirect URI</Label>
+                    <Input
+                        readOnly
+                        value={callbackUrl}
+                        className="font-mono text-xs"
+                    />
+                </div>
+                <div className="grid gap-2">
+                    <Label>Allowed email domains (optional)</Label>
+                    <Input
+                        value={allowedDomains}
+                        onChange={(e) => setAllowedDomains(e.target.value)}
+                        placeholder="example.com, company.org"
+                    />
+                </div>
+                <div className="flex items-center justify-between">
+                    <div>
+                        <Label>Auto-provision users</Label>
+                        <p className="text-sm text-muted-foreground">
+                            New verified identities become viewers.
+                        </p>
+                    </div>
+                    <Switch
+                        checked={autoProvision}
+                        onCheckedChange={setAutoProvision}
+                    />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                    LDAP is supported through an OIDC identity provider such as
+                    Keycloak or Authentik; Warden does not bind directly to
+                    LDAP.
+                </p>
+                <Button onClick={save}>Save OIDC Settings</Button>
+            </CardContent>
+        </Card>
+    );
 }
