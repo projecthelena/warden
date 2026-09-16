@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SystemTab } from "./SystemTab";
 import { SSOSettings } from "./SSOSettings";
+import { OIDCSettings } from "./OIDCSettings";
 import { APIKeysView } from "./APIKeysView";
 
 import { UsersView } from "./UsersView";
@@ -933,7 +934,7 @@ export function SettingsView() {
                 {isAdmin && (
                     <TabsContent value="security" className="space-y-6 mt-6">
                         <APIKeysView />
-                        <SSOSettings />
+                        <div className="space-y-6"><SSOSettings /><OIDCSettings /></div>
                     </TabsContent>
                 )}
 

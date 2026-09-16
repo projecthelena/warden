@@ -148,6 +148,14 @@ export interface Settings {
     "sso.google.redirect_url"?: string;
     "sso.google.allowed_domains"?: string;
     "sso.google.auto_provision"?: string;
+    "sso.oidc.enabled"?: string;
+    "sso.oidc.issuer_url"?: string;
+    "sso.oidc.client_id"?: string;
+    "sso.oidc.secret_configured"?: string;
+    "sso.oidc.redirect_url"?: string;
+    "sso.oidc.provider_name"?: string;
+    "sso.oidc.allowed_domains"?: string;
+    "sso.oidc.auto_provision"?: string;
     // Allow any string key for flexibility
     [key: string]: string | undefined;
 }
@@ -1271,12 +1279,16 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
 
     updateSettings: async (newSettings: Partial<Settings>) => {
         try {
-            await fetch('/api/settings', {
+            const res = await fetch('/api/settings', {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(newSettings),
                 credentials: 'include'
             });
+            if (!res.ok) {
+                const payload = await res.json().catch(() => null) as { error?: string } | null;
+                throw new Error(payload?.error || `Failed to update settings (${res.status})`);
+            }
             set((state) => ({
                 settings: {
                     ...(state.settings || { latency_threshold: "1000", data_retention_days: "365" }),
@@ -1285,6 +1297,7 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
             }));
         } catch (error) {
             console.error('Failed to update settings:', error);
+            throw error;
         }
     },
 

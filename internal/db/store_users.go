@@ -261,7 +261,8 @@ func (s *Store) GetUserByEmail(email string) (*User, error) {
 }
 
 // FindOrCreateSSOUser finds a user by SSO provider and ID, or creates a new one.
-// If a user with the same email exists, it links the SSO credentials to that account.
+// An account with the same email is linked only when it is already SSO-only; password
+// accounts require an explicit linking flow, which Warden does not currently expose.
 // If autoProvision is false and no existing user is found, returns ErrUserNotFound.
 // SECURITY: This function uses a transaction to prevent race conditions during account linking.
 func (s *Store) FindOrCreateSSOUser(provider, ssoID, email, name, avatarURL string, autoProvision bool) (*User, error) {
@@ -313,7 +314,7 @@ func (s *Store) FindOrCreateSSOUser(provider, ssoID, email, name, avatarURL stri
 		var passwordHash string
 		_ = tx.QueryRow(s.rebind("SELECT COALESCE(password_hash, '') FROM users WHERE id = ?"), existingUser.ID).Scan(&passwordHash)
 		if passwordHash != "" {
-			// Account has a password - require explicit linking through settings
+			// Account has a password - require a future explicit account-linking flow.
 			return nil, ErrAccountLinkingNeed
 		}
 		// Account is SSO-only (no password) - safe to link new SSO provider
