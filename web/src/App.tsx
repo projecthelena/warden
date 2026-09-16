@@ -76,7 +76,7 @@ function MonitorGroup({ group }: { group: Group }) {
           {canEdit && group.id !== 'default' && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" data-testid="delete-group-trigger">
+                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" data-testid="delete-group-trigger" aria-label={`Delete ${group.name}`}>
                   <Trash2 className="w-4 h-4" />
                 </Button>
               </AlertDialogTrigger>

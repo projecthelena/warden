@@ -542,6 +542,7 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                                                     variant="ghost"
                                                     size="sm"
                                                     className="h-8 w-8 p-0 shrink-0"
+                                                    aria-label="Remove header"
                                                     onClick={() => setCustomHeaders(customHeaders.filter((_, j) => j !== i))}
                                                 >
                                                     <X className="w-3 h-3" />
@@ -567,7 +568,7 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                     </div>
                     <SheetFooter className="mt-4">
                         <SheetClose asChild>
-                            <Button variant="outline" className="mr-2">Cancel</Button>
+                            <Button variant="outline">Cancel</Button>
                         </SheetClose>
                         <Button type="submit" disabled={createMonitor.isPending || createGroup.isPending} data-testid="create-monitor-submit-btn">
                             {createMonitor.isPending ? "Creating..." : "Create Monitor"}

@@ -187,6 +187,7 @@ export function StatusPageConfigSheet({ page, open, onOpenChange }: StatusPageCo
                                         variant="outline"
                                         size="icon"
                                         title="Remove logo"
+                                        aria-label="Remove logo"
                                         onClick={() => { setLogoUrl(""); setLogoError(false); }}
                                     >
                                         <X className="w-4 h-4" />
@@ -235,6 +236,7 @@ export function StatusPageConfigSheet({ page, open, onOpenChange }: StatusPageCo
                                         variant="outline"
                                         size="icon"
                                         title="Remove favicon"
+                                        aria-label="Remove favicon"
                                         onClick={() => { setFaviconUrl(""); setFaviconError(false); }}
                                     >
                                         <X className="w-4 h-4" />

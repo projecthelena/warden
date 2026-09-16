@@ -112,13 +112,13 @@ export function CreateAPIKeySheet() {
                                 <code className="flex-1 p-3 bg-muted rounded border font-mono text-sm break-all">
                                     {createdKey}
                                 </code>
-                                <Button size="icon" variant="outline" onClick={() => copyToClipboard(createdKey)}>
+                                <Button size="icon" variant="outline" aria-label="Copy API key" onClick={() => copyToClipboard(createdKey)}>
                                     <Copy className="w-4 h-4" />
                                 </Button>
                             </div>
                         </div>
                         <SheetFooter className="mt-4">
-                            <Button onClick={closeSheet} className="w-full">Done</Button>
+                            <Button onClick={closeSheet}>Done</Button>
                         </SheetFooter>
                     </div>
                 )}
