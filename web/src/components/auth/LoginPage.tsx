@@ -19,18 +19,20 @@ function GoogleIcon({ className }: { className?: string }) {
 }
 
 const SSO_ERROR_MESSAGES: Record<string, string> = {
-    sso_not_configured: "Google SSO is not configured. Please contact your administrator.",
+    sso_not_configured: "Single sign-on is not configured. Please contact your administrator.",
     invalid_state: "Invalid session state. Please try again.",
-    oauth_denied: "Google sign-in was cancelled or denied.",
+    oauth_denied: "Single sign-on was cancelled or denied.",
     missing_code: "Authorization code missing. Please try again.",
     token_exchange_failed: "Failed to complete sign-in. Please try again.",
     userinfo_failed: "Failed to retrieve user information from Google.",
     userinfo_read_failed: "Failed to read user information.",
     userinfo_parse_failed: "Failed to process user information.",
-    invalid_user_data: "Invalid user data received from Google.",
+    invalid_user_data: "Invalid user data received from the identity provider.",
     email_not_verified: "Your Google email address is not verified. Please verify your email and try again.",
     domain_not_allowed: "Your email domain is not allowed. Please contact your administrator.",
     user_not_found: "No account found for this email. Please contact your administrator.",
+    account_exists_link_required: "An account with this email already exists and must be linked by an administrator.",
+    invalid_token: "The identity provider returned an invalid sign-in token. Please try again.",
     user_creation_failed: "Failed to create account. Please try again.",
     session_error: "Failed to create session. Please try again.",
     internal_error: "An internal error occurred. Please try again.",
@@ -45,6 +47,8 @@ export function LoginPage() {
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [googleSSOEnabled, setGoogleSSOEnabled] = useState(false);
+    const [oidcSSOEnabled, setOIDCSSOEnabled] = useState(false);
+    const [oidcProviderName, setOIDCProviderName] = useState("SSO");
 
     // Check for SSO errors in URL params
     useEffect(() => {
@@ -61,6 +65,8 @@ export function LoginPage() {
             .then(res => res.json())
             .then(data => {
                 setGoogleSSOEnabled(data.google === true);
+                setOIDCSSOEnabled(data.oidc === true);
+                if (data.oidcProviderName) setOIDCProviderName(data.oidcProviderName);
             })
             .catch(() => {
                 setGoogleSSOEnabled(false);
@@ -162,7 +168,7 @@ export function LoginPage() {
                             )}
                         </Button>
 
-                        {googleSSOEnabled && (
+                        {(googleSSOEnabled || oidcSSOEnabled) && (
                             <>
                                 <div className="relative w-full">
                                     <div className="absolute inset-0 flex items-center">
@@ -175,7 +181,7 @@ export function LoginPage() {
                                     </div>
                                 </div>
 
-                                <Button
+                                {googleSSOEnabled && <Button
                                     type="button"
                                     variant="outline"
                                     className="w-full"
@@ -184,7 +190,8 @@ export function LoginPage() {
                                 >
                                     <GoogleIcon className="mr-2 h-4 w-4" />
                                     Sign in with Google
-                                </Button>
+                                </Button>}
+                                {oidcSSOEnabled && <Button type="button" variant="outline" className="w-full" onClick={() => { window.location.href = "/api/auth/sso/oidc"; }} data-testid="oidc-sso-btn">Sign in with {oidcProviderName}</Button>}
                             </>
                         )}
                     </div>

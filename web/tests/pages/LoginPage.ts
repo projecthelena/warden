@@ -11,7 +11,7 @@ export class LoginPage {
         this.page = page;
         this.usernameInput = page.getByLabel('Username');
         this.passwordInput = page.getByLabel('Password');
-        this.submitBtn = page.getByRole('button', { name: 'Sign in' });
+        this.submitBtn = page.getByTestId('login-submit-btn');
         this.header = page.getByTestId('login-header');
     }
 
