@@ -34,6 +34,9 @@ function truncate(value: string): string {
 // tells two channels of the same type apart. Recipients come first because an email
 // channel has no URL to show.
 export function channelDisplayValue(config: NotificationChannel["config"]): string {
+    if (config.chatId) {
+        return truncate(config.chatId);
+    }
     if (config.to) {
         return truncate(config.to);
     }

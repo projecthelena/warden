@@ -35,6 +35,7 @@ export function NotificationsView() {
             case 'webhook': return <Webhook className="h-4 w-4" />;
             case 'email': return <Mail className="h-4 w-4" />;
             case 'discord': return <MessageCircle className="h-4 w-4" />;
+            case 'telegram': return <MessageCircle className="h-4 w-4" />;
             default: return <Webhook className="h-4 w-4" />;
         }
     }
@@ -45,6 +46,7 @@ export function NotificationsView() {
             case 'webhook': return 'Webhook';
             case 'email': return 'Email';
             case 'discord': return 'Discord';
+            case 'telegram': return 'Telegram';
             default: return type;
         }
     }

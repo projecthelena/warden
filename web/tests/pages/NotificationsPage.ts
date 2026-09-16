@@ -12,6 +12,8 @@ export class NotificationsPage {
     readonly smtpHostInput: Locator;
     readonly smtpFromInput: Locator;
     readonly smtpToInput: Locator;
+    readonly telegramTokenInput: Locator;
+    readonly telegramChatInput: Locator;
     readonly submitBtn: Locator;
 
     constructor(page: Page) {
@@ -24,6 +26,8 @@ export class NotificationsPage {
         this.smtpHostInput = page.getByTestId('channel-smtp-host-input');
         this.smtpFromInput = page.getByTestId('channel-smtp-from-input');
         this.smtpToInput = page.getByTestId('channel-smtp-to-input');
+        this.telegramTokenInput = page.getByTestId('channel-telegram-token-input');
+        this.telegramChatInput = page.getByTestId('channel-telegram-chat-input');
         this.submitBtn = page.getByTestId('create-channel-submit');
     }
 
@@ -65,6 +69,17 @@ export class NotificationsPage {
         await this.page.getByTestId('channel-type-discord').click();
         await this.nameInput.fill(name);
         await this.webhookInput.fill(webhook);
+    }
+
+    async openTelegramForm(name: string, token: string, chatId: string) {
+        await expect(this.page.getByText('Wait ...')).toBeHidden();
+        await expect(this.addChannelTrigger).toBeVisible();
+        await this.addChannelTrigger.click();
+        await this.typeSelect.click();
+        await this.page.getByTestId('channel-type-telegram').click();
+        await this.nameInput.fill(name);
+        await this.telegramTokenInput.fill(token);
+        await this.telegramChatInput.fill(chatId);
     }
 
     // Opens the create sheet and fills the fields every email channel needs, stopping short

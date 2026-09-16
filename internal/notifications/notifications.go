@@ -125,6 +125,8 @@ func (s *Service) sendToChannel(channel db.NotificationChannel, event Notificati
 		notifier = NewEmailNotifier(channel.Config)
 	case "discord":
 		notifier = NewDiscordNotifier(channel.Config)
+	case "telegram":
+		notifier = NewTelegramNotifier(channel.Config)
 	default:
 		log.Printf("Unknown channel type: %s", channel.Type)
 		return
@@ -256,6 +258,8 @@ func SendDirect(channelType, configJSON string, event NotificationEvent) error {
 		notifier = NewEmailNotifier(configJSON)
 	case "discord":
 		notifier = NewDiscordNotifier(configJSON)
+	case "telegram":
+		notifier = NewTelegramNotifier(configJSON)
 	default:
 		return fmt.Errorf("unsupported channel type: %s", channelType)
 	}
@@ -493,6 +497,11 @@ func (s *Service) SendDigest(events []db.DigestEvent) {
 			n := NewDiscordNotifier(ch.Config)
 			if err := n.sendDigest(summary); err != nil {
 				log.Printf("Digest: failed to send to Discord (%s): %v", ch.Name, err)
+			}
+		case "telegram":
+			n := NewTelegramNotifier(ch.Config)
+			if err := n.sendDigest(summary); err != nil {
+				log.Printf("Digest: failed to send to Telegram (%s): %v", ch.Name, err)
 			}
 		}
 	}

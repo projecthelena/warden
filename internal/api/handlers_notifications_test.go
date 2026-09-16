@@ -346,6 +346,27 @@ func TestDiscordChannelRequiresHTTPS(t *testing.T) {
 	}
 }
 
+func TestTelegramChannelValidation(t *testing.T) {
+	tests := []struct {
+		name   string
+		config map[string]interface{}
+		valid  bool
+	}{
+		{name: "valid group", config: map[string]interface{}{"botToken": "123456:abc_DEF-123", "chatId": "-100123"}, valid: true},
+		{name: "invalid token", config: map[string]interface{}{"botToken": "secret", "chatId": "123"}},
+		{name: "non numeric chat", config: map[string]interface{}{"botToken": "123456:abc", "chatId": "@warden"}},
+		{name: "whitespace", config: map[string]interface{}{"botToken": " 123456:abc", "chatId": "123"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateChannelConfig("telegram", test.config)
+			if (err == nil) != test.valid {
+				t.Fatalf("validateChannelConfig() error = %v, valid = %v", err, test.valid)
+			}
+		})
+	}
+}
+
 func TestTestChannel_Success(t *testing.T) {
 	// Spin up a fake webhook receiver
 	received := false
