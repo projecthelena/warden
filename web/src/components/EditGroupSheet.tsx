@@ -61,7 +61,7 @@ export function EditGroupSheet({ group, open, onOpenChange, onSave }: EditGroupS
                         />
                     </div>
                     <SheetFooter className="mt-4">
-                        <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="mr-2">
+                        <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                             Cancel
                         </Button>
                         <Button type="submit">

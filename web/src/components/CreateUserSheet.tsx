@@ -143,7 +143,7 @@ export function CreateUserSheet() {
                     </div>
                     <SheetFooter className="mt-4">
                         <SheetClose asChild>
-                            <Button variant="outline" className="mr-2">Cancel</Button>
+                            <Button variant="outline">Cancel</Button>
                         </SheetClose>
                         <Button type="submit" disabled={isSubmitting} data-testid="create-user-submit-btn">
                             {isSubmitting ? "Creating..." : "Create User"}

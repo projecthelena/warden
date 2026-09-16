@@ -756,6 +756,7 @@ export function MonitorDetailsSheet({ monitor, groupId, open, onOpenChange }: Mo
                                                     variant="ghost"
                                                     size="sm"
                                                     className="h-8 w-8 p-0 shrink-0"
+                                                    aria-label="Remove header"
                                                     onClick={() => setCustomHeaders(customHeaders.filter((_, j) => j !== i))}
                                                 >
                                                     <X className="w-3 h-3" />
@@ -777,9 +778,11 @@ export function MonitorDetailsSheet({ monitor, groupId, open, onOpenChange }: Mo
                                 </div>
                             </div>
                             )}
-                            <Button onClick={handleSave} className="w-full" data-testid="monitor-edit-save-btn">
-                                <Save className="w-4 h-4 mr-2" /> Save Changes
-                            </Button>
+                            <div className="flex justify-end">
+                                <Button size="sm" onClick={handleSave} data-testid="monitor-edit-save-btn">
+                                    <Save className="w-4 h-4 mr-2" /> Save Changes
+                                </Button>
+                            </div>
                         </div>
 
                         <div className="pt-6 border-t border-border">
@@ -791,7 +794,7 @@ export function MonitorDetailsSheet({ monitor, groupId, open, onOpenChange }: Mo
                             </p>
                             <Button
                                 variant={isPaused ? "default" : "secondary"}
-                                className="w-full"
+                                size="sm"
                                 onClick={() => {
                                     if (isPaused) {
                                         resumeMonitor(monitor.id);
@@ -821,7 +824,7 @@ export function MonitorDetailsSheet({ monitor, groupId, open, onOpenChange }: Mo
                             </p>
                             <Button
                                 variant={monitor.alertsMuted ? "default" : "secondary"}
-                                className="w-full"
+                                size="sm"
                                 data-testid="monitor-mute-alerts-btn"
                                 onClick={() => setMonitorAlertsMuted(monitor.id, !monitor.alertsMuted)}
                             >
@@ -844,7 +847,7 @@ export function MonitorDetailsSheet({ monitor, groupId, open, onOpenChange }: Mo
                             </p>
                             <AlertDialog>
                                 <AlertDialogTrigger asChild>
-                                    <Button variant="destructive" className="w-full" data-testid="delete-monitor-trigger">
+                                    <Button variant="destructive" size="sm" data-testid="delete-monitor-trigger">
                                         <Trash2 className="w-4 h-4 mr-2" /> Delete Monitor
                                     </Button>
                                 </AlertDialogTrigger>

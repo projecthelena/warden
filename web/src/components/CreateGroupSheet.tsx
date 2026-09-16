@@ -66,7 +66,7 @@ export function CreateGroupSheet({ onCreate }: CreateGroupSheetProps) {
                     </div>
                     <SheetFooter className="mt-4">
                         <SheetClose asChild>
-                            <Button variant="outline" className="mr-2">Cancel</Button>
+                            <Button variant="outline">Cancel</Button>
                         </SheetClose>
                         <Button type="submit" data-testid="create-group-submit-btn">
                             Create Group

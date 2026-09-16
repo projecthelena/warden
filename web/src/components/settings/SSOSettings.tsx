@@ -155,7 +155,7 @@ export function SSOSettings() {
                         </ol>
                         <div className="flex items-center gap-2 mt-2 p-2 bg-background rounded border">
                             <code className="text-xs flex-1 break-all">{callbackUrl}</code>
-                            <Button variant="ghost" size="sm" onClick={copyCallbackUrl} className="h-6 w-6 p-0">
+                            <Button variant="ghost" size="sm" onClick={copyCallbackUrl} className="h-6 w-6 p-0" aria-label="Copy callback URL">
                                 <Copy className="h-3 w-3" />
                             </Button>
                         </div>

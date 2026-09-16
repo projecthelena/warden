@@ -129,6 +129,7 @@ export function StatusPagesView() {
                                     size="icon"
                                     className="h-8 w-8 mr-[-0.5rem]"
                                     onClick={() => openConfig(page)}
+                                    aria-label={`Configure ${page.title}`}
                                     data-testid={`status-page-config-${page.slug}`}
                                 >
                                     <Settings className="h-4 w-4" />

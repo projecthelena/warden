@@ -223,7 +223,7 @@ export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSh
                     </div>
 
                     <SheetFooter className="mt-4">
-                        <Button type="submit" className="w-full" data-testid="create-maintenance-submit">Schedule Maintenance</Button>
+                        <Button type="submit" data-testid="create-maintenance-submit">Schedule Maintenance</Button>
                     </SheetFooter>
                 </form>
             </SheetContent>
