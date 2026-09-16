@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Bell, Slack, Webhook, Mail, Loader2, Send } from "lucide-react";
+import { Plus, Bell, Slack, Webhook, Mail, Loader2, Send, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -102,6 +102,11 @@ export function CreateChannelSheet({ onCreate }: { onCreate?: (c: any) => void }
                                 <SelectItem value="email" data-testid="channel-type-email">
                                     <div className="flex items-center gap-2"><Mail className="w-4 h-4" /> Email</div>
                                 </SelectItem>
+                                <SelectItem value="discord" data-testid="channel-type-discord">
+                                    <div className="flex items-center gap-2">
+                                        <MessageCircle className="w-4 h-4" /> Discord
+                                    </div>
+                                </SelectItem>
                             </SelectContent>
                         </Select>
                     </div>
@@ -121,17 +126,17 @@ export function CreateChannelSheet({ onCreate }: { onCreate?: (c: any) => void }
                             <Input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} required
                                 type="url"
                                 className="font-mono text-xs"
-                                placeholder={type === 'slack' ? "https://hooks.slack.com/services/..." : "https://your-endpoint.com/webhook"}
+                                placeholder={type === 'slack' ? "https://hooks.slack.com/services/..." : type === 'discord' ? "https://discord.com/api/webhooks/..." : "https://your-endpoint.com/webhook"}
                                 data-testid="channel-webhook-input" />
                             <p className="text-[0.8rem] text-muted-foreground">
-                                {type === 'slack'
-                                    ? "Incoming Webhook URL from your Slack App."
+                                {type === 'slack' || type === 'discord'
+                                    ? `Incoming Webhook URL from your ${type === 'slack' ? 'Slack App' : 'Discord channel'}.`
                                     : "Any HTTP endpoint that accepts POST requests with JSON."}
                             </p>
                         </div>
                     )}
 
-                    {isEmail ? <EmailPreview /> : type === 'slack' ? <SlackPreview /> : <WebhookPayloadPreview />}
+                    {isEmail ? <EmailPreview /> : type === 'slack' ? <SlackPreview /> : type === 'webhook' ? <WebhookPayloadPreview /> : null}
 
                     <SheetFooter className="mt-4 gap-2">
                         <Button

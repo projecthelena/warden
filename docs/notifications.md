@@ -8,6 +8,7 @@ Three types are available:
 | :-- | :-- | :-- |
 | Slack | A Slack channel, as a formatted attachment | An incoming webhook URL |
 | Webhook | Any HTTP endpoint, as JSON | A URL that accepts `POST` |
+| Discord | A Discord channel, as an embed | An incoming webhook URL |
 | Email | One or more mailboxes | An SMTP server |
 
 ## Email

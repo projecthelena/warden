@@ -336,6 +336,16 @@ func TestCreateChannel_WebhookValidation(t *testing.T) {
 	}
 }
 
+func TestDiscordChannelRequiresHTTPS(t *testing.T) {
+	err := validateChannelConfig("discord", map[string]interface{}{"webhookUrl": "http://discord.com/api/webhooks/123/token"})
+	if err == nil || !strings.Contains(err.Error(), "HTTPS") {
+		t.Fatalf("expected HTTPS validation error, got %v", err)
+	}
+	if err := validateChannelConfig("discord", map[string]interface{}{"webhookUrl": "https://discord.com/api/webhooks/123/token"}); err != nil {
+		t.Fatalf("valid Discord URL was rejected: %v", err)
+	}
+}
+
 func TestTestChannel_Success(t *testing.T) {
 	// Spin up a fake webhook receiver
 	received := false
