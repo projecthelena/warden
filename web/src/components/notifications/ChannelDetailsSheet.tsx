@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Trash2, Save, Bell, Slack, Webhook, Mail, Loader2, Send, MessageCircle } from "lucide-react";
+import { Trash2, Save, Bell, Loader2, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,6 +26,7 @@ import { WebhookPayloadPreview } from "./WebhookPayloadPreview";
 import { EmailPreview } from "./EmailPreview";
 import { EmailChannelFields } from "./EmailChannelFields";
 import { EmailConfig, emailConfigFromChannel, isEmailConfigured } from "@/lib/emailChannel";
+import { ChannelIcon } from "./ChannelIcon";
 
 interface ChannelDetailsSheetProps {
     channel: NotificationChannel;
@@ -103,23 +104,19 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="slack">
-                                    <div className="flex items-center gap-2"><Slack className="w-4 h-4" /> Slack</div>
+                                    <div className="flex items-center gap-2"><ChannelIcon type="slack" /> Slack</div>
                                 </SelectItem>
                                 <SelectItem value="webhook">
-                                    <div className="flex items-center gap-2"><Webhook className="w-4 h-4" /> Webhook</div>
+                                    <div className="flex items-center gap-2"><ChannelIcon type="webhook" /> Webhook</div>
                                 </SelectItem>
                                 <SelectItem value="email">
-                                    <div className="flex items-center gap-2"><Mail className="w-4 h-4" /> Email</div>
+                                    <div className="flex items-center gap-2"><ChannelIcon type="email" /> Email</div>
                                 </SelectItem>
                                 <SelectItem value="discord">
-                                    <div className="flex items-center gap-2">
-                                        <MessageCircle className="w-4 h-4" /> Discord
-                                    </div>
+                                    <div className="flex items-center gap-2"><ChannelIcon type="discord" /> Discord</div>
                                 </SelectItem>
                                 <SelectItem value="telegram">
-                                    <div className="flex items-center gap-2">
-                                        <MessageCircle className="w-4 h-4" /> Telegram
-                                    </div>
+                                    <div className="flex items-center gap-2"><ChannelIcon type="telegram" /> Telegram</div>
                                 </SelectItem>
                             </SelectContent>
                         </Select>
@@ -181,23 +178,30 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
 
                 <Separator className="my-4" />
 
-                <SheetFooter className="flex-col sm:flex-row gap-2">
-                    <Button variant="destructive" onClick={handleDelete} className="w-full sm:w-auto" data-testid="delete-channel-btn">
-                        <Trash2 className="w-4 h-4 mr-2" /> Delete Channel
+                <SheetFooter className="gap-2 sm:items-center sm:justify-between sm:space-x-0">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleDelete}
+                        className="self-start text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        data-testid="delete-channel-btn"
+                    >
+                        <Trash2 /> Delete
                     </Button>
-                    <div className="flex gap-2 w-full sm:w-auto sm:ml-auto">
+                    <div className="grid grid-cols-2 gap-2 sm:flex">
                         <Button
                             type="button"
                             variant="outline"
+                            size="sm"
                             disabled={!canTest || testing}
                             onClick={handleTest}
                             data-testid="test-channel-btn"
                         >
-                            {testing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
+                            {testing ? <Loader2 className="animate-spin" /> : <Send />}
                             Send Test
                         </Button>
-                        <Button onClick={handleSave} data-testid="save-channel-btn">
-                            <Save className="w-4 h-4 mr-2" /> Save Changes
+                        <Button size="sm" onClick={handleSave} data-testid="save-channel-btn">
+                            <Save /> Save
                         </Button>
                     </div>
                 </SheetFooter>

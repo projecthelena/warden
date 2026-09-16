@@ -55,13 +55,54 @@ Warden disables mentions in Discord messages, so monitor-controlled text cannot 
 
 ## Telegram
 
-1. Create a bot with [BotFather](https://core.telegram.org/bots/features#botfather) and copy its token.
-2. Add the bot to the destination chat, group, or channel. For a channel, grant it permission to post messages.
-3. Obtain the destination's numeric chat ID. Group and channel IDs are commonly negative; preserve the leading minus sign.
-4. In Warden, select **Telegram**, enter a friendly name, the **Bot Token**, and the numeric **Chat ID**.
-5. Select **Send Test**, verify the message in Telegram, and save the channel.
+The simplest setup is a private Telegram group. Everyone you add to the group can see the same Warden alerts.
 
-The bot token grants control of the bot and must be treated as a secret. Warden splits alerts that exceed Telegram's per-message length limit while preserving their order.
+### 1. Create the bot
+
+1. Open [BotFather](https://t.me/BotFather) in Telegram and send `/newbot`.
+2. Follow its prompts to choose a name and username for the bot.
+3. Copy the bot token that BotFather gives you. It looks like `123456789:AA...`.
+
+### 2. Create the alert group
+
+1. Create a new private group in Telegram, for example **Warden Alerts**.
+2. Add the people who should receive alerts.
+3. Add the bot you just created to the group.
+4. Send `/start` in the group. If Telegram does not offer the bot command, send `/start@your_bot_username` instead.
+
+### 3. Find the group chat ID
+
+Open this URL in a browser, replacing `<BOT_TOKEN>` with the token from BotFather:
+
+```text
+https://api.telegram.org/bot<BOT_TOKEN>/getUpdates
+```
+
+Find the message from your group in the response. Its `chat.id` is the value Warden needs:
+
+```json
+{
+  "message": {
+    "chat": {
+      "id": -123456789,
+      "title": "Warden Alerts",
+      "type": "group"
+    }
+  }
+}
+```
+
+Copy the complete `id`, including its leading minus sign. If the response contains `"result": []`, send a new `/start@your_bot_username` command in the group and refresh the URL.
+
+### 4. Connect it to Warden
+
+1. Open **Settings → Notifications → Add Channel** and choose **Telegram**.
+2. Enter any descriptive **Friendly Name**, such as `Warden Alerts`.
+3. Paste the token from BotFather into **Bot Token** and the numeric group ID into **Chat ID**.
+4. Select **Send Test** and confirm that the test alert appears in the group.
+5. Save the channel.
+
+The bot token grants control of the bot and must be treated as a secret. Do not share the `getUpdates` URL because it contains the token. Warden splits alerts that exceed Telegram's per-message length limit while preserving their order.
 
 ## Email
 

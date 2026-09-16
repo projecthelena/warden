@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Bell, Slack, Webhook, Mail, Loader2, Send, MessageCircle } from "lucide-react";
+import { Plus, Bell, Loader2, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,6 +25,7 @@ import { WebhookPayloadPreview } from "./WebhookPayloadPreview";
 import { EmailPreview } from "./EmailPreview";
 import { EmailChannelFields } from "./EmailChannelFields";
 import { EmailConfig, emptyEmailConfig, isEmailConfigured } from "@/lib/emailChannel";
+import { ChannelIcon } from "./ChannelIcon";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function CreateChannelSheet({ onCreate }: { onCreate?: (c: any) => void }) {
@@ -99,21 +100,19 @@ export function CreateChannelSheet({ onCreate }: { onCreate?: (c: any) => void }
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="slack" data-testid="channel-type-slack">
-                                    <div className="flex items-center gap-2"><Slack className="w-4 h-4" /> Slack</div>
+                                    <div className="flex items-center gap-2"><ChannelIcon type="slack" /> Slack</div>
                                 </SelectItem>
                                 <SelectItem value="webhook" data-testid="channel-type-webhook">
-                                    <div className="flex items-center gap-2"><Webhook className="w-4 h-4" /> Webhook</div>
+                                    <div className="flex items-center gap-2"><ChannelIcon type="webhook" /> Webhook</div>
                                 </SelectItem>
                                 <SelectItem value="email" data-testid="channel-type-email">
-                                    <div className="flex items-center gap-2"><Mail className="w-4 h-4" /> Email</div>
+                                    <div className="flex items-center gap-2"><ChannelIcon type="email" /> Email</div>
                                 </SelectItem>
                                 <SelectItem value="discord" data-testid="channel-type-discord">
-                                    <div className="flex items-center gap-2">
-                                        <MessageCircle className="w-4 h-4" /> Discord
-                                    </div>
+                                    <div className="flex items-center gap-2"><ChannelIcon type="discord" /> Discord</div>
                                 </SelectItem>
                                 <SelectItem value="telegram" data-testid="channel-type-telegram">
-                                    <div className="flex items-center gap-2"><MessageCircle className="w-4 h-4" /> Telegram</div>
+                                    <div className="flex items-center gap-2"><ChannelIcon type="telegram" /> Telegram</div>
                                 </SelectItem>
                             </SelectContent>
                         </Select>
