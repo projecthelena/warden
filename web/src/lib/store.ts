@@ -17,7 +17,7 @@ export interface MonitorEvent {
 
 export interface NotificationChannel {
     id: string;
-    type: 'slack' | 'webhook' | 'email';
+    type: 'slack' | 'webhook' | 'email' | 'discord';
     name: string;
     config: {
         webhookUrl?: string;

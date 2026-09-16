@@ -57,6 +57,16 @@ export class NotificationsPage {
         await expect(this.page.getByText(name)).toBeVisible();
     }
 
+    async openDiscordForm(name: string, webhook: string) {
+        await expect(this.page.getByText('Wait ...')).toBeHidden();
+        await expect(this.addChannelTrigger).toBeVisible();
+        await this.addChannelTrigger.click();
+        await this.typeSelect.click();
+        await this.page.getByTestId('channel-type-discord').click();
+        await this.nameInput.fill(name);
+        await this.webhookInput.fill(webhook);
+    }
+
     // Opens the create sheet and fills the fields every email channel needs, stopping short
     // of submitting so a caller can add credentials first.
     async openEmailForm(name: string, from: string, to: string) {

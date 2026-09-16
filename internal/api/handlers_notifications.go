@@ -203,9 +203,18 @@ func validateWebhookURL(rawURL string) (string, error) {
 // alone — the notifier reports the failure at send time.
 func validateChannelConfig(channelType string, config map[string]interface{}) error {
 	switch channelType {
-	case "slack", "webhook":
-		_, err := validateWebhookURL(extractWebhookURL(config))
-		return err
+	case "slack", "webhook", "discord":
+		rawURL, err := validateWebhookURL(extractWebhookURL(config))
+		if err != nil {
+			return err
+		}
+		if channelType == "discord" {
+			parsedURL, _ := url.Parse(rawURL)
+			if parsedURL.Scheme != "https" {
+				return fmt.Errorf("discord webhook URL must use HTTPS")
+			}
+		}
+		return nil
 	case "email":
 		encoded, err := json.Marshal(config)
 		if err != nil {

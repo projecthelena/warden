@@ -123,6 +123,8 @@ func (s *Service) sendToChannel(channel db.NotificationChannel, event Notificati
 		notifier = NewWebhookNotifier(channel.Config)
 	case "email":
 		notifier = NewEmailNotifier(channel.Config)
+	case "discord":
+		notifier = NewDiscordNotifier(channel.Config)
 	default:
 		log.Printf("Unknown channel type: %s", channel.Type)
 		return
@@ -252,6 +254,8 @@ func SendDirect(channelType, configJSON string, event NotificationEvent) error {
 		notifier = NewWebhookNotifier(configJSON)
 	case "email":
 		notifier = NewEmailNotifier(configJSON)
+	case "discord":
+		notifier = NewDiscordNotifier(configJSON)
 	default:
 		return fmt.Errorf("unsupported channel type: %s", channelType)
 	}
@@ -484,6 +488,11 @@ func (s *Service) SendDigest(events []db.DigestEvent) {
 			n := NewEmailNotifier(ch.Config)
 			if err := n.sendDigest(summary); err != nil {
 				log.Printf("Digest: failed to send to email (%s): %v", ch.Name, err)
+			}
+		case "discord":
+			n := NewDiscordNotifier(ch.Config)
+			if err := n.sendDigest(summary); err != nil {
+				log.Printf("Digest: failed to send to Discord (%s): %v", ch.Name, err)
 			}
 		}
 	}

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useMonitorStore, NotificationChannel } from "@/lib/store";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Slack, Webhook, Mail, BellOff, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { Slack, Webhook, Mail, BellOff, MoreHorizontal, Pencil, Trash2, MessageCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -34,6 +34,7 @@ export function NotificationsView() {
             case 'slack': return <Slack className="h-4 w-4" />;
             case 'webhook': return <Webhook className="h-4 w-4" />;
             case 'email': return <Mail className="h-4 w-4" />;
+            case 'discord': return <MessageCircle className="h-4 w-4" />;
             default: return <Webhook className="h-4 w-4" />;
         }
     }
@@ -43,6 +44,7 @@ export function NotificationsView() {
             case 'slack': return 'Slack';
             case 'webhook': return 'Webhook';
             case 'email': return 'Email';
+            case 'discord': return 'Discord';
             default: return type;
         }
     }

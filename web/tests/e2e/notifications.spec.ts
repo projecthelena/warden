@@ -174,3 +174,22 @@ test.describe('Email channel credentials', () => {
         await expect(page.getByText(/connecting to 127\.0\.0\.1:1/)).toBeVisible({ timeout: 10000 });
     });
 });
+
+test.describe('Discord channel', () => {
+    test('test send reaches the backend and reports a safe failure', async ({ page }) => {
+        const notifications = await openNotifications(page);
+        const webhook = 'https://127.0.0.1:1/api/webhooks/123/super-secret-token';
+        await notifications.openDiscordForm(`Discord ${Date.now()}`, webhook);
+
+        const tested = page.waitForResponse(
+            resp => resp.url().includes('/api/notifications/channels/test') && resp.request().method() === 'POST',
+        );
+        await page.getByTestId('test-channel-btn').click();
+        const response = await tested;
+
+        expect(response.status()).toBe(502);
+        const body = await response.text();
+        expect(body).not.toContain('super-secret-token');
+        await expect(page.getByTestId('toast-title').first()).toHaveText('Test Failed');
+    });
+});
