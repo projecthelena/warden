@@ -7,7 +7,7 @@ Use this page as the starting point for installing, operating, and understanding
 - [Database configuration](database.md) — run Warden with SQLite or PostgreSQL.
 - [Application configuration](configuration.md) — configure the listener, database, cookies, and reverse proxy handling.
 - [Monitor types](monitor-types.md) — configure HTTP, TCP, ping, and DNS checks.
-- [Notifications](notifications.md) — deliver alerts through Slack, webhooks, or email.
+- [Notifications](notifications.md) — deliver alerts through Slack, Discord, Telegram, webhooks, or email.
 - [Password recovery](recovery.md) — regain access to an installation.
 
 ## Understand Warden
