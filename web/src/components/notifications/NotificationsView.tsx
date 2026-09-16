@@ -57,7 +57,7 @@ export function NotificationsView() {
                 <div className="flex items-center justify-between">
                     <div>
                         <CardTitle>Notification Channels</CardTitle>
-                        <CardDescription>Manage where alerts are delivered.</CardDescription>
+                        <CardDescription>Every enabled channel receives every alert and daily digest.</CardDescription>
                     </div>
                     <CreateChannelSheet />
                 </div>

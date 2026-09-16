@@ -12,6 +12,47 @@ Five types are available:
 | Telegram | A Telegram chat, group, or channel | A bot token and numeric chat ID |
 | Email | One or more mailboxes | An SMTP server |
 
+## Delivery behavior
+
+Warden sends each alert independently to every enabled channel. If Slack, email, Discord, and Telegram are enabled, all four receive the alert. One slow or failing destination does not block the others.
+
+Channels are global and are not attached to individual monitors. Deleting a channel stops future delivery to that destination and does not modify any monitor. Disable a channel instead when you may want to turn it back on later.
+
+Routing selected monitors to selected channels is intentionally outside the current channel model. It can be added later as a separate notification-policy feature without changing how provider credentials are stored.
+
+## Choose which alerts are sent
+
+The **Event Types** controls under **Settings → Notifications** apply globally. Enable or disable immediate notifications for **Down**, **Recovered**, **Degraded**, **Flapping**, **Stabilized**, and **SSL Expiring** events, then save the settings. Disabled event types remain in Warden's history but are not sent to any channel.
+
+The daily digest has its own switch, delivery time, and event-type selection. Its selection controls what appears in the digest; it does not route an event to a different channel. Monitor-specific confirmation and cooldown settings control when an alert is ready to send, but every enabled channel still receives the same alert once it is ready.
+
+## Add and verify a channel
+
+1. Open **Settings → Notifications** and select **Add Channel**.
+2. Choose the channel type, give it a **Friendly Name**, and enter the provider details described below.
+3. Select **Send Test** before saving. Confirm that the message actually arrived at the intended destination; a success message in Warden alone is not enough.
+4. Save the channel. New channels are enabled immediately.
+
+Use **Edit** to send another test or disable a channel temporarily. A disabled channel receives neither immediate alerts nor daily digests. **Delete** permanently removes only that destination; it does not delete or change any monitor.
+
+For final production validation, create a temporary monitor for an endpoint you control and let it generate one real down alert and one recovery alert. This tests monitor evaluation, notification timing, and delivery together. **Send Test** validates only the provider connection and message formatting.
+
+## Slack
+
+1. Create an [incoming webhook in Slack](https://api.slack.com/messaging/webhooks) and choose its destination channel.
+2. In Warden, select **Slack**, enter a friendly name, and paste the HTTPS **Webhook URL**.
+3. Select **Send Test**, verify the formatted message in Slack, and save the channel.
+
+Treat the webhook URL as a secret: anyone who has it can post to that Slack destination. Rotate it in Slack and update Warden if it is exposed.
+
+## Discord
+
+1. Create a webhook from the Discord channel's **Integrations → Webhooks** settings and copy its URL. Discord's [webhook guide](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks) covers the provider-side steps.
+2. In Warden, select **Discord**, enter a friendly name, and paste the HTTPS **Webhook URL**.
+3. Select **Send Test**, verify the embed in Discord, and save the channel.
+
+Warden disables mentions in Discord messages, so monitor-controlled text cannot notify `@everyone`, roles, or users. The webhook URL is still a credential and should not be committed or shared.
+
 ## Telegram
 
 1. Create a bot with [BotFather](https://core.telegram.org/bots/features#botfather) and copy its token.
@@ -83,7 +124,9 @@ Use **Send Test** on the channel — it delivers a sample alert through the same
 - _"connecting to …: i/o timeout"_ — the port is blocked. Several hosting providers block outbound port 25 by default; use 587 or 465.
 - Mail is accepted but never arrives — check that the **From** address belongs to a domain the provider is allowed to send for. Most will accept the message and then drop it.
 
-## Webhook payload
+## Generic webhook
+
+Select **Webhook**, enter a friendly name, and provide an HTTP or HTTPS endpoint that accepts `POST` requests. Use **Send Test** to inspect a sample request at the receiving service before saving. Use HTTPS for any endpoint outside a trusted private network.
 
 Webhook channels receive a `POST` with this body:
 
