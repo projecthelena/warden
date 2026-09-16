@@ -7,6 +7,7 @@ import {
     Sheet,
     SheetContent,
     SheetDescription,
+    SheetFooter,
     SheetHeader,
     SheetTitle,
 } from "@/components/ui/sheet";
@@ -177,7 +178,7 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
 
                 <Separator className="my-4" />
 
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <SheetFooter className="gap-2 sm:items-center sm:justify-between sm:space-x-0">
                     <Button
                         variant="ghost"
                         size="sm"
@@ -203,7 +204,7 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
                             <Save /> Save
                         </Button>
                     </div>
-                </div>
+                </SheetFooter>
             </SheetContent>
         </Sheet>
     );
