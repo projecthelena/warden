@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -17,6 +18,11 @@ import (
 type NotificationChannelsHandler struct {
 	store *db.Store
 }
+
+var (
+	telegramTokenPattern = regexp.MustCompile(`^[0-9]+:[A-Za-z0-9_-]+$`)
+	telegramChatPattern  = regexp.MustCompile(`^-?[0-9]+$`)
+)
 
 func NewNotificationChannelsHandler(store *db.Store) *NotificationChannelsHandler {
 	return &NotificationChannelsHandler{store: store}
@@ -223,6 +229,25 @@ func validateChannelConfig(channelType string, config map[string]interface{}) er
 		// Parsed by the notifier itself so that the form and the send path agree on what
 		// counts as valid, instead of drifting into two different sets of rules.
 		return notifications.ValidateEmailConfig(string(encoded))
+	case "telegram":
+		botToken, _ := config["botToken"].(string)
+		chatID, _ := config["chatId"].(string)
+		if botToken == "" {
+			return fmt.Errorf("bot token is required")
+		}
+		if chatID == "" {
+			return fmt.Errorf("chat ID is required")
+		}
+		if len(botToken) > 256 || len(chatID) > 128 {
+			return fmt.Errorf("telegram configuration is too long")
+		}
+		if !telegramTokenPattern.MatchString(botToken) {
+			return fmt.Errorf("invalid Telegram bot token")
+		}
+		if !telegramChatPattern.MatchString(chatID) {
+			return fmt.Errorf("telegram chat ID must be numeric")
+		}
+		return nil
 	default:
 		return nil
 	}

@@ -38,19 +38,24 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
     const [name, setName] = useState(channel.name);
     const [type, setType] = useState<NotificationChannel['type']>(channel.type);
     const [webhookUrl, setWebhookUrl] = useState(channel.config.webhookUrl || "");
+    const [botToken, setBotToken] = useState(channel.config.botToken || "");
+    const [chatId, setChatId] = useState(channel.config.chatId || "");
     const [email, setEmail] = useState<EmailConfig>(emailConfigFromChannel(channel.config));
     const [enabled, setEnabled] = useState(channel.enabled);
     const [testing, setTesting] = useState(false);
 
     const isEmail = type === "email";
-    const config: Record<string, string | boolean> = isEmail ? { ...email } : { webhookUrl };
-    const canTest = isEmail ? isEmailConfigured(email) : webhookUrl !== "";
+    const isTelegram = type === "telegram";
+    const config: Record<string, string | boolean> = isEmail ? { ...email } : isTelegram ? { botToken, chatId } : { webhookUrl };
+    const canTest = isEmail ? isEmailConfigured(email) : isTelegram ? botToken !== "" && chatId !== "" : webhookUrl !== "";
 
     // Reset state when channel changes
     useEffect(() => {
         setName(channel.name);
         setType(channel.type);
         setWebhookUrl(channel.config.webhookUrl || "");
+        setBotToken(channel.config.botToken || "");
+        setChatId(channel.config.chatId || "");
         setEmail(emailConfigFromChannel(channel.config));
         setEnabled(channel.enabled);
     }, [channel, open]);
@@ -111,6 +116,11 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
                                         <MessageCircle className="w-4 h-4" /> Discord
                                     </div>
                                 </SelectItem>
+                                <SelectItem value="telegram">
+                                    <div className="flex items-center gap-2">
+                                        <MessageCircle className="w-4 h-4" /> Telegram
+                                    </div>
+                                </SelectItem>
                             </SelectContent>
                         </Select>
                     </div>
@@ -138,6 +148,17 @@ export function ChannelDetailsSheet({ channel, open, onOpenChange }: ChannelDeta
 
                     {isEmail ? (
                         <EmailChannelFields config={email} onChange={setEmail} />
+                    ) : isTelegram ? (
+                        <div className="grid gap-4">
+                            <div className="grid gap-2">
+                                <Label>Bot Token</Label>
+                                <Input value={botToken} onChange={e => setBotToken(e.target.value)} type="password" />
+                            </div>
+                            <div className="grid gap-2">
+                                <Label>Chat ID</Label>
+                                <Input value={chatId} onChange={e => setChatId(e.target.value)} />
+                            </div>
+                        </div>
                     ) : (
                         <div className="grid gap-2">
                             <Label>Webhook URL</Label>

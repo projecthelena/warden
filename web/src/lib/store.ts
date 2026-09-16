@@ -17,10 +17,12 @@ export interface MonitorEvent {
 
 export interface NotificationChannel {
     id: string;
-    type: 'slack' | 'webhook' | 'email' | 'discord';
+    type: 'slack' | 'webhook' | 'email' | 'discord' | 'telegram';
     name: string;
     config: {
         webhookUrl?: string;
+        botToken?: string;
+        chatId?: string;
         // Email channels talk SMTP instead of posting to a URL.
         host?: string;
         port?: string;

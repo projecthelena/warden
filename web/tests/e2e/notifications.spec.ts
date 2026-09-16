@@ -193,3 +193,21 @@ test.describe('Discord channel', () => {
         await expect(page.getByTestId('toast-title').first()).toHaveText('Test Failed');
     });
 });
+
+test.describe('Telegram channel', () => {
+    test('invalid credentials reach the test endpoint without exposing the token', async ({ page }) => {
+        const notifications = await openNotifications(page);
+        const token = 'super-secret-token';
+        await notifications.openTelegramForm(`Telegram ${Date.now()}`, token, '-100123');
+
+        const tested = page.waitForResponse(
+            resp => resp.url().includes('/api/notifications/channels/test') && resp.request().method() === 'POST',
+        );
+        await page.getByTestId('test-channel-btn').click();
+        const response = await tested;
+
+        expect(response.status()).toBe(400);
+        expect(await response.text()).not.toContain(token);
+        await expect(page.getByTestId('toast-title').first()).toHaveText('Test Failed');
+    });
+});

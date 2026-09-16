@@ -2,14 +2,25 @@
 
 Warden delivers alerts through channels you configure in **Settings → Notifications**. A channel is a destination, not a rule: every enabled channel receives every alert the [fatigue rules](notification-fatigue.md) let through, plus the daily digest.
 
-Three types are available:
+Five types are available:
 
 | Type | Goes to | Needs |
 | :-- | :-- | :-- |
 | Slack | A Slack channel, as a formatted attachment | An incoming webhook URL |
 | Webhook | Any HTTP endpoint, as JSON | A URL that accepts `POST` |
 | Discord | A Discord channel, as an embed | An incoming webhook URL |
+| Telegram | A Telegram chat, group, or channel | A bot token and numeric chat ID |
 | Email | One or more mailboxes | An SMTP server |
+
+## Telegram
+
+1. Create a bot with [BotFather](https://core.telegram.org/bots/features#botfather) and copy its token.
+2. Add the bot to the destination chat, group, or channel. For a channel, grant it permission to post messages.
+3. Obtain the destination's numeric chat ID. Group and channel IDs are commonly negative; preserve the leading minus sign.
+4. In Warden, select **Telegram**, enter a friendly name, the **Bot Token**, and the numeric **Chat ID**.
+5. Select **Send Test**, verify the message in Telegram, and save the channel.
+
+The bot token grants control of the bot and must be treated as a secret. Warden splits alerts that exceed Telegram's per-message length limit while preserving their order.
 
 ## Email
 

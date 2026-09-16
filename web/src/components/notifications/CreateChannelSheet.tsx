@@ -32,13 +32,16 @@ export function CreateChannelSheet({ onCreate }: { onCreate?: (c: any) => void }
     const [name, setName] = useState("");
     const [type, setType] = useState<NotificationChannel['type']>("slack");
     const [webhookUrl, setWebhookUrl] = useState("");
+    const [botToken, setBotToken] = useState("");
+    const [chatId, setChatId] = useState("");
     const [email, setEmail] = useState<EmailConfig>(emptyEmailConfig);
     const [open, setOpen] = useState(false);
     const [testing, setTesting] = useState(false);
 
     const isEmail = type === "email";
-    const config: Record<string, string | boolean> = isEmail ? { ...email } : { webhookUrl };
-    const canTest = isEmail ? isEmailConfigured(email) : webhookUrl !== "";
+    const isTelegram = type === "telegram";
+    const config: Record<string, string | boolean> = isEmail ? { ...email } : isTelegram ? { botToken, chatId } : { webhookUrl };
+    const canTest = isEmail ? isEmailConfigured(email) : isTelegram ? botToken !== "" && chatId !== "" : webhookUrl !== "";
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -59,6 +62,8 @@ export function CreateChannelSheet({ onCreate }: { onCreate?: (c: any) => void }
         setOpen(false);
         setName("");
         setWebhookUrl("");
+        setBotToken("");
+        setChatId("");
         setEmail(emptyEmailConfig);
     };
 
@@ -107,6 +112,9 @@ export function CreateChannelSheet({ onCreate }: { onCreate?: (c: any) => void }
                                         <MessageCircle className="w-4 h-4" /> Discord
                                     </div>
                                 </SelectItem>
+                                <SelectItem value="telegram" data-testid="channel-type-telegram">
+                                    <div className="flex items-center gap-2"><MessageCircle className="w-4 h-4" /> Telegram</div>
+                                </SelectItem>
                             </SelectContent>
                         </Select>
                     </div>
@@ -120,6 +128,18 @@ export function CreateChannelSheet({ onCreate }: { onCreate?: (c: any) => void }
 
                     {isEmail ? (
                         <EmailChannelFields config={email} onChange={setEmail} />
+                    ) : isTelegram ? (
+                        <div className="grid gap-4">
+                            <div className="grid gap-2">
+                                <Label>Bot Token</Label>
+                                <Input value={botToken} onChange={e => setBotToken(e.target.value)} type="password" required data-testid="channel-telegram-token-input" />
+                            </div>
+                            <div className="grid gap-2">
+                                <Label>Chat ID</Label>
+                                <Input value={chatId} onChange={e => setChatId(e.target.value)} required placeholder="-1001234567890" data-testid="channel-telegram-chat-input" />
+                                <p className="text-[0.8rem] text-muted-foreground">Add the bot to the destination chat, then use its numeric chat ID.</p>
+                            </div>
+                        </div>
                     ) : (
                         <div className="grid gap-2">
                             <Label>Webhook URL</Label>
