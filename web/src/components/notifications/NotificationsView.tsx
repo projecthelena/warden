@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useMonitorStore, NotificationChannel } from "@/lib/store";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Slack, Webhook, Mail, BellOff, MoreHorizontal, Pencil, Trash2, MessageCircle } from "lucide-react";
+import { BellOff, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { ChannelDetailsSheet } from "./ChannelDetailsSheet";
 import { CreateChannelSheet } from "./CreateChannelSheet";
 import { channelDisplayValue } from "@/lib/channelConfig";
+import { ChannelIcon } from "./ChannelIcon";
 
 export function NotificationsView() {
     const { channels, fetchChannels, deleteChannel } = useMonitorStore();
@@ -28,17 +29,6 @@ export function NotificationsView() {
         setSelectedChannel(channel);
         setDetailsOpen(true);
     };
-
-    const getIcon = (type: string) => {
-        switch (type) {
-            case 'slack': return <Slack className="h-4 w-4" />;
-            case 'webhook': return <Webhook className="h-4 w-4" />;
-            case 'email': return <Mail className="h-4 w-4" />;
-            case 'discord': return <MessageCircle className="h-4 w-4" />;
-            case 'telegram': return <MessageCircle className="h-4 w-4" />;
-            default: return <Webhook className="h-4 w-4" />;
-        }
-    }
 
     const getTypeLabel = (type: string) => {
         switch (type) {
@@ -84,7 +74,7 @@ export function NotificationsView() {
                                     <TableCell className="font-medium">{channel.name}</TableCell>
                                     <TableCell>
                                         <div className="flex items-center gap-2 text-muted-foreground">
-                                            {getIcon(channel.type)}
+                                            <ChannelIcon type={channel.type} />
                                             <span>{getTypeLabel(channel.type)}</span>
                                         </div>
                                     </TableCell>
