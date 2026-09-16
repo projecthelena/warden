@@ -72,6 +72,63 @@ func TestService_Dispatch(t *testing.T) {
 	// We can't easily verification without Refactoring SlackNotifier to accept a custom HTTP client.
 }
 
+func TestServiceDispatchesToEveryEnabledChannel(t *testing.T) {
+	store := newTestStore(t)
+	svc := NewService(store)
+	first := make(chan struct{}, 2)
+	second := make(chan struct{}, 2)
+	newReceiver := func(delivered chan<- struct{}) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			delivered <- struct{}{}
+			w.WriteHeader(http.StatusOK)
+		}))
+	}
+	firstServer := newReceiver(first)
+	defer firstServer.Close()
+	secondServer := newReceiver(second)
+	defer secondServer.Close()
+
+	channels := []db.NotificationChannel{
+		{ID: "first", Type: "webhook", Name: "First", Config: `{"webhookUrl":"` + firstServer.URL + `"}`, Enabled: true},
+		{ID: "second", Type: "webhook", Name: "Second", Config: `{"webhookUrl":"` + secondServer.URL + `"}`, Enabled: true},
+		{ID: "disabled", Type: "webhook", Name: "Disabled", Config: `{"webhookUrl":"` + firstServer.URL + `"}`, Enabled: false},
+	}
+	for _, channel := range channels {
+		if err := store.CreateNotificationChannel(channel); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	svc.dispatch(sampleEvent())
+	waitForChannelDelivery(t, first)
+	waitForChannelDelivery(t, second)
+	select {
+	case <-first:
+		t.Fatal("disabled channel also received the alert")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	if err := store.DeleteNotificationChannel("first"); err != nil {
+		t.Fatal(err)
+	}
+	svc.dispatch(sampleEvent())
+	waitForChannelDelivery(t, second)
+	select {
+	case <-first:
+		t.Fatal("deleted channel received a later alert")
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func waitForChannelDelivery(t *testing.T, delivered <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-delivered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("notification was not delivered")
+	}
+}
+
 func sampleEvent() NotificationEvent {
 	return NotificationEvent{
 		MonitorID:   "mon-123",
