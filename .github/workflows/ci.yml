@@ -15,6 +15,27 @@ env:
   GOVULNCHECK_VERSION: "v1.1.4"
 
 jobs:
+  conventional-commits:
+    name: Conventional commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Validate pull request title
+        if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if ! grep -qE '^(feat|fix|perf|refactor|docs|test|build|ci|chore|revert)(\([a-zA-Z0-9._/-]+\))?!?: .+' <<< "$PR_TITLE"; then
+            echo "::error::PR title must follow Conventional Commits, for example: feat(api): add monitor filters"
+            exit 1
+          fi
+
+      - name: Test semantic version calculation
+        run: python3 .github/scripts/test_next_version.py
+
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
