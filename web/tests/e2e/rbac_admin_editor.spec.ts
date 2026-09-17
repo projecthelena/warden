@@ -523,9 +523,10 @@ test.describe('RBAC - Admin vs Editor Boundary', () => {
         await page.getByText('Editor Group').first().click();
         await expect(page).toHaveURL(/.*groups\//, { timeout: 15000 });
 
-        // Click on the monitor
-        await page.getByText('Editor Monitor').first().click();
-        await expect(page).toHaveURL(/.*monitors\//, { timeout: 10000 });
+        const monitorHref = await page.locator('[data-testid^="monitor-card-"]').filter({ hasText: 'Editor Monitor' }).getAttribute('href');
+        expect(monitorHref).toBeTruthy();
+        await page.goto(monitorHref!);
+        await expect(page.getByTestId('monitor-page')).toBeVisible({ timeout: 15000 });
 
         // Editor SHOULD see Settings tab (unlike viewer)
         await expect(page.getByTestId('monitor-settings-tab')).toBeVisible({ timeout: 10000 });
