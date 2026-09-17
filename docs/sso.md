@@ -107,5 +107,3 @@ Keep a working administrator session open while testing in a private browser win
 8. Verify the administrator's local password login still works.
 
 Testing discovery does not validate the complete login. A production smoke test must follow the browser redirect, authenticate at the provider, return through the callback, and create a Warden session.
-
-Never commit real hostnames, client credentials, test-user emails, passwords, or copied identity-provider configuration to this repository. Use generated values, a secret manager, and environment-specific callback URLs.

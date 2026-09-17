@@ -111,6 +111,12 @@ Playwright tests in `web/tests/e2e/` use page object models from `web/tests/page
 
 ## Code Review Rules
 
+### Repository workflow
+
+- Public documentation is for Warden users and operators. Do not put instructions for coding agents or maintainers in `docs/`, the README, or other published documentation; keep those instructions in `AGENTS.md`.
+- Never include real hostnames, client credentials, test-user emails, passwords, or copied identity-provider configuration in the repository. Use generated examples, a secret manager, and environment-specific callback URLs.
+- Never merge a pull request without the repository owner's explicit approval for that specific merge. Creating or updating a pull request is not approval to merge it.
+
 ### Database compatibility
 
 - Flag migrations that are not implemented equivalently for SQLite and PostgreSQL.
