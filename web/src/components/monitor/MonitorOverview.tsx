@@ -1,6 +1,7 @@
 /* Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app */
 import { useEffect, useMemo, useState } from "react";
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, CartesianGrid, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { useReducedMotion } from "framer-motion";
 import { Activity, Clock3, Gauge, Waves } from "lucide-react";
 import { Monitor } from "@/lib/store";
 import { formatDate } from "@/lib/utils";
@@ -11,21 +12,29 @@ import { UptimeHistory } from "@/components/ui/monitor-visuals";
 import { InsightsCard } from "@/components/InsightsCard";
 import { Tooltip as UiTooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatUptimeDetail, formatUptimeSummary, uptimeSummaryTone, type UptimeSummary } from "@/lib/uptime";
+import {
+    averageSuccessfulLatency,
+    bucketDuration,
+    chartDomain,
+    toChartData,
+    type LatencyChartPoint,
+    type LatencyRange,
+    type RenderedLatencyPoint,
+} from "./latencyChart";
 
-type Range = "1h" | "24h" | "7d" | "30d";
 type UptimeStats = {
     windows: { last24Hours: UptimeSummary; last7Days: UptimeSummary; last30Days: UptimeSummary };
 };
-type LatencyPoint = { timestamp: string; latency: number | null; failed?: boolean };
 
-const ranges: Range[] = ["1h", "24h", "7d", "30d"];
+const ranges: LatencyRange[] = ["1h", "24h", "7d", "30d"];
 
 export function MonitorOverview({ monitor, timezone }: { monitor: Monitor; timezone?: string }) {
-    const [range, setRange] = useState<Range>("1h");
+    const [range, setRange] = useState<LatencyRange>("24h");
     const [stats, setStats] = useState<UptimeStats | null>(null);
-    const [latency, setLatency] = useState<LatencyPoint[]>([]);
+    const [latency, setLatency] = useState<LatencyChartPoint[]>([]);
     const [statsLoading, setStatsLoading] = useState(true);
     const [latencyLoading, setLatencyLoading] = useState(true);
+    const reduceMotion = useReducedMotion();
 
     useEffect(() => {
         const controller = new AbortController();
@@ -55,15 +64,11 @@ export function MonitorOverview({ monitor, timezone }: { monitor: Monitor; timez
         return () => controller.abort();
     }, [monitor.id, range]);
 
-    const chartData = useMemo(() => latency.map(point => ({
-        ...point,
-        timestampMs: new Date(point.timestamp).getTime(),
-    })).sort((a, b) => a.timestampMs - b.timestampMs), [latency]);
+    const chartData = useMemo(() => toChartData(latency), [latency]);
 
-    const averageLatency = useMemo(() => {
-        const values = latency.flatMap(point => typeof point.latency === "number" ? [point.latency] : []);
-        return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : null;
-    }, [latency]);
+    const averageLatency = useMemo(() => averageSuccessfulLatency(latency), [latency]);
+    const domain = useMemo(() => chartDomain(chartData, range), [chartData, range]);
+    const step = bucketDuration(range);
 
     const tick = (value: number) => new Intl.DateTimeFormat("en-US", range === "1h" || range === "24h"
         ? { hour: "numeric", minute: "2-digit", timeZone: timezone || "UTC" }
@@ -104,7 +109,8 @@ export function MonitorOverview({ monitor, timezone }: { monitor: Monitor; timez
                     {latencyLoading ? <Skeleton className="h-72 w-full" /> : chartData.length === 0 ? (
                         <div className="grid h-72 place-items-center text-sm text-muted-foreground">No response-time data for this range.</div>
                     ) : (
-                        <div className="h-72 w-full" aria-label={`Response time over ${range}`}>
+                        <div className="h-72 w-full" role="img" aria-label={`Response time over ${range}. Missing data is blank; failed checks are marked in red and mixed buckets in amber.`}
+                            data-testid="response-time-chart" data-motion={reduceMotion ? "reduced" : "animated"}>
                             <ResponsiveContainer width="100%" height="100%">
                                 <AreaChart data={chartData} margin={{ top: 12, right: 12, left: -12, bottom: 0 }}>
                                     <defs>
@@ -112,20 +118,34 @@ export function MonitorOverview({ monitor, timezone }: { monitor: Monitor; timez
                                             <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
                                             <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0} />
                                         </linearGradient>
+                                        <pattern id="monitorNoData" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                                            <line x1="0" y1="0" x2="0" y2="6" stroke="hsl(var(--muted-foreground))" strokeOpacity="0.16" strokeWidth="2" />
+                                        </pattern>
                                     </defs>
                                     <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeDasharray="3 3" />
-                                    <XAxis dataKey="timestampMs" type="number" scale="time" domain={["dataMin", "dataMax"]} tickFormatter={tick}
+                                    {chartData.map(point => point.state === "up" ? null : (
+                                        <ReferenceArea key={`${point.timestamp}-${point.state}`} x1={point.timestampMs} x2={point.timestampMs + step}
+                                            fill={point.state === "down" ? "hsl(var(--destructive))" : point.state === "mixed" ? "hsl(var(--chart-3))" : "url(#monitorNoData)"}
+                                            fillOpacity={point.state === "no_data" ? 1 : 0.14} strokeOpacity={0} />
+                                    ))}
+                                    <XAxis dataKey="timestampMs" type="number" scale="time" domain={domain} tickFormatter={tick}
                                         stroke="hsl(var(--muted-foreground))" fontSize={10} minTickGap={42} tickLine={false} axisLine={false} />
                                     <YAxis width={48} tickFormatter={value => `${value}ms`} stroke="hsl(var(--muted-foreground))"
                                         fontSize={10} tickLine={false} axisLine={false} />
-                                    <Tooltip labelFormatter={value => formatDate(value, timezone)} formatter={(value) => [`${value} ms`, "Latency"]}
-                                        contentStyle={{ background: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: "0.5rem" }} />
+                                    <Tooltip content={<LatencyTooltip timezone={timezone} />} filterNull={false} />
                                     <Area type="monotone" dataKey="latency" stroke="hsl(var(--primary))" strokeWidth={2}
-                                        fill="url(#monitorLatency)" isAnimationActive={false} connectNulls={false} />
+                                        fill="url(#monitorLatency)" connectNulls={false} isAnimationActive={!reduceMotion}
+                                        animationDuration={500} animationEasing="ease-out" />
                                 </AreaChart>
                             </ResponsiveContainer>
                         </div>
                     )}
+                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground" aria-label="Chart legend">
+                        <ChartKey className="bg-primary" label="Successful response" />
+                        <ChartKey className="bg-destructive" label="Failed checks" />
+                        <ChartKey className="bg-[hsl(var(--chart-3))]" label="Mixed result" />
+                        <ChartKey className="border border-muted-foreground/30 bg-muted/30" label="No data" />
+                    </div>
                 </CardContent>
             </Card>
 
@@ -137,6 +157,32 @@ export function MonitorOverview({ monitor, timezone }: { monitor: Monitor; timez
             </Card>
 
             <InsightsCard monitorId={monitor.id} />
+        </div>
+    );
+}
+
+function ChartKey({ className, label }: { className: string; label: string }) {
+    return <span className="inline-flex items-center gap-1.5"><span className={`h-2 w-2 rounded-sm ${className}`} aria-hidden="true" />{label}</span>;
+}
+
+function LatencyTooltip({ active, payload, timezone }: {
+    active?: boolean;
+    payload?: Array<{ payload: RenderedLatencyPoint }>;
+    timezone?: string;
+}) {
+    const point = payload?.[0]?.payload;
+    if (!active || !point) return null;
+    const status = point.state === "no_data" ? "No data collected"
+        : point.state === "down" ? "All checks failed"
+            : point.state === "mixed" ? "Some checks failed"
+                : "All checks succeeded";
+
+    return (
+        <div className="rounded-md border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-lg">
+            <div className="font-medium">{formatDate(point.timestampMs, timezone)}</div>
+            <div className="mt-1 text-muted-foreground">{status}</div>
+            {point.latency != null && <div className="mt-1 tabular-nums">Successful responses: {point.latency} ms average</div>}
+            {point.totalChecks > 0 && <div className="mt-1 tabular-nums text-muted-foreground">{point.successfulChecks} succeeded · {point.failedChecks} failed</div>}
         </div>
     );
 }

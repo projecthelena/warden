@@ -140,6 +140,18 @@ type LatencyPoint struct {
 	Failed    bool      `json:"failed"`
 }
 
+// LatencyChartPoint is one fixed-width bucket in the monitor response-time chart.
+// A nil latency means there was no successful response in the bucket. State keeps
+// outages distinct from periods where Warden itself collected no data.
+type LatencyChartPoint struct {
+	Timestamp        time.Time `json:"timestamp"`
+	Latency          *int64    `json:"latency"`
+	TotalChecks      int       `json:"totalChecks"`
+	SuccessfulChecks int       `json:"successfulChecks"`
+	FailedChecks     int       `json:"failedChecks"`
+	State            string    `json:"state"`
+}
+
 // Monitor CRUD
 
 func (s *Store) CreateMonitor(m Monitor) error {
@@ -1266,6 +1278,109 @@ func (s *Store) GetLatencyStats(monitorID string, hours int) ([]LatencyPoint, er
 			p.Timestamp, _ = time.Parse("2006-01-02 15:04:05", tsStr)
 		}
 		points = append(points, p)
+	}
+	return points, nil
+}
+
+// GetLatencyChart returns a complete UTC timeline for the requested range. Missing
+// buckets are included as no_data so charting clients never draw across an interval
+// in which Warden was not collecting checks.
+func (s *Store) GetLatencyChart(monitorID string, hours int, now time.Time) ([]LatencyChartPoint, error) {
+	if hours < 1 || hours > 8760 {
+		return nil, fmt.Errorf("invalid hours: must be between 1 and 8760")
+	}
+
+	now = now.UTC()
+	step := time.Hour
+	groupBy := "strftime('%Y-%m-%d %H:00:00', timestamp)"
+	if hours <= 1 {
+		step = time.Minute
+		groupBy = "strftime('%Y-%m-%d %H:%M:00', timestamp)"
+	} else if hours > 168 {
+		step = 24 * time.Hour
+		groupBy = "strftime('%Y-%m-%d 00:00:00', timestamp)"
+	}
+	if s.IsPostgres() {
+		switch {
+		case hours <= 1:
+			groupBy = "TO_CHAR(timestamp, 'YYYY-MM-DD HH24:MI:00')"
+		case hours <= 168:
+			groupBy = "TO_CHAR(timestamp, 'YYYY-MM-DD HH24:00:00')"
+		default:
+			groupBy = "TO_CHAR(timestamp, 'YYYY-MM-DD 00:00:00')"
+		}
+	}
+
+	start := now.Add(-time.Duration(hours) * time.Hour)
+	query := fmt.Sprintf(`
+		SELECT %s AS ts_group,
+		       CAST(AVG(CASE WHEN status = 'up' THEN latency END) AS INTEGER) AS avg_latency,
+		       COUNT(*) AS total_checks,
+		       SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END) AS successful_checks,
+		       SUM(CASE WHEN status != 'up' THEN 1 ELSE 0 END) AS failed_checks
+		FROM monitor_checks
+		WHERE monitor_id = ? AND timestamp >= ? AND timestamp <= ?
+		GROUP BY ts_group
+		ORDER BY ts_group ASC`, groupBy)
+	if !s.IsPostgres() {
+		query = fmt.Sprintf(`
+			SELECT %s AS ts_group,
+			       CAST(AVG(CASE WHEN status = 'up' THEN latency END) AS INTEGER) AS avg_latency,
+			       COUNT(*) AS total_checks,
+			       SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END) AS successful_checks,
+			       SUM(CASE WHEN status != 'up' THEN 1 ELSE 0 END) AS failed_checks
+			FROM monitor_checks
+			WHERE monitor_id = ? AND datetime(timestamp) >= datetime(?) AND datetime(timestamp) <= datetime(?)
+			GROUP BY ts_group
+			ORDER BY ts_group ASC`, groupBy)
+	}
+
+	rows, err := s.db.Query(s.rebind(query), monitorID, start, now)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	observed := make(map[time.Time]LatencyChartPoint)
+	for rows.Next() {
+		var tsStr string
+		var latency sql.NullInt64
+		var point LatencyChartPoint
+		if err := rows.Scan(&tsStr, &latency, &point.TotalChecks, &point.SuccessfulChecks, &point.FailedChecks); err != nil {
+			return nil, err
+		}
+		timestamp, err := time.Parse("2006-01-02 15:04:05", tsStr)
+		if err != nil {
+			return nil, fmt.Errorf("parse latency chart bucket %q: %w", tsStr, err)
+		}
+		point.Timestamp = timestamp.UTC()
+		if latency.Valid {
+			value := latency.Int64
+			point.Latency = &value
+		}
+		switch {
+		case point.FailedChecks == 0:
+			point.State = "up"
+		case point.SuccessfulChecks == 0:
+			point.State = "down"
+		default:
+			point.State = "mixed"
+		}
+		observed[point.Timestamp] = point
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	first := start.Truncate(step)
+	last := now.Truncate(step)
+	points := make([]LatencyChartPoint, 0, int(last.Sub(first)/step)+1)
+	for timestamp := first; !timestamp.After(last); timestamp = timestamp.Add(step) {
+		if point, ok := observed[timestamp]; ok {
+			points = append(points, point)
+			continue
+		}
+		points = append(points, LatencyChartPoint{Timestamp: timestamp, State: "no_data"})
 	}
 	return points, nil
 }
