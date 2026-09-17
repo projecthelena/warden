@@ -126,8 +126,8 @@ func TestEvaluateAlerts_SkipsDisabledEventType(t *testing.T) {
 	}
 }
 
-// A paused monitor keeps its outage open on purpose, but nobody is checking it, so it has
-// nothing new to say. Without this guard a monitor paused mid-outage alerts forever.
+// A missing monitor can still have a legacy or inconsistent outage row, but the evaluator
+// must not alert for something the manager is not checking.
 func TestEvaluateAlerts_SkipsUnregisteredMonitor(t *testing.T) {
 	m, store := newAlertTestManager(t)
 	o := openOutage(t, store, "down", "Monitor is down")

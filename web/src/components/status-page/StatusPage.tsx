@@ -2,7 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Activity, AlertTriangle, ArrowDownCircle, CheckCircle2, ChevronDown, ChevronUp, Lock, Minus, RefreshCw, Rss, ShieldX, Wrench, XCircle } from "lucide-react";
+import { Activity, AlertTriangle, ArrowDownCircle, CheckCircle2, ChevronDown, ChevronUp, Lock, Minus, PauseCircle, RefreshCw, Rss, ShieldX, Wrench, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { useMonitorStore, Group, Incident, Monitor, StatusPageConfig } from "@/lib/store";
@@ -45,7 +45,7 @@ function getMaintenanceState(incidents: Incident[]) {
     return { maintenanceIncidents, activeMaintenance, maintenanceGroupIds };
 }
 
-function getOverallStatus(groups: StatusGroup[], incidents: Incident[], maintenanceGroupIds: Set<string>) {
+export function getOverallStatus(groups: StatusGroup[], incidents: Incident[], maintenanceGroupIds: Set<string>) {
     const effectiveIncidents = (incidents || []).filter((i) => {
         if (i.type !== "incident" || i.status === "resolved") return false;
         if (!i.affectedGroups || i.affectedGroups.length === 0) return true;
@@ -59,6 +59,8 @@ function getOverallStatus(groups: StatusGroup[], incidents: Incident[], maintena
     const hasDegraded = groups.some(
         (g) => !maintenanceGroupIds.has(g.id) && g.monitors.some((m) => m.status === "degraded")
     );
+    const monitors = groups.flatMap((g) => g.monitors);
+    const allMonitorsPaused = monitors.length > 0 && monitors.every((m) => m.status === "paused");
     const isUnderMaintenance = maintenanceGroupIds.size > 0;
 
     if (isUnderMaintenance && !hasActiveOutage && !hasDown) {
@@ -83,6 +85,14 @@ function getOverallStatus(groups: StatusGroup[], incidents: Incident[], maintena
             label: "Partially Degraded Service",
             description: "Some monitors are reporting degraded performance.",
             color: "yellow" as const,
+        };
+    }
+    if (allMonitorsPaused) {
+        return {
+            icon: PauseCircle,
+            label: "Monitoring Paused",
+            description: "Health checks are temporarily paused.",
+            color: "gray" as const,
         };
     }
     return {
@@ -117,6 +127,12 @@ const statusColorMap = {
         icon: "text-blue-500",
         iconBg: "bg-blue-500/10",
         dot: "bg-blue-500",
+    },
+    gray: {
+        banner: "bg-gradient-to-r from-slate-500/10 via-slate-500/5 to-transparent border-slate-500/30",
+        icon: "text-slate-400",
+        iconBg: "bg-slate-500/10",
+        dot: "bg-slate-500",
     },
 };
 

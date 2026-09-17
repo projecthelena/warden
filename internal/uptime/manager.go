@@ -906,7 +906,9 @@ func (m *Manager) Sync() {
 		for _, outage := range activeOutages {
 			mon, exists := m.monitors[outage.MonitorID]
 			if !exists {
-				// Monitor is paused or deleted — preserve outage
+				// SetMonitorActive closes outages when pausing. A missing monitor here is
+				// deleted or belongs to legacy/inconsistent data, which Sync cannot safely
+				// classify as recovered.
 				continue
 			}
 			isUp, _, hasHistory, lastDegraded := mon.GetLastStatus()
@@ -1080,7 +1082,7 @@ func (m *Manager) openOutage(monitorID, kind, summary string) {
 		if err := m.store.CloseOutage(monitorID); err != nil {
 			log.Printf("Failed to close the previous outage for %s: %v", monitorID, err)
 		}
-		if err := m.store.CreateOutage(monitorID, kind, summary); err != nil {
+		if err := m.store.CreateOutageIfMonitorActive(monitorID, kind, summary); err != nil {
 			log.Printf("ALERTING: failed to open the %s outage for %s, so no alert will be sent for it: %v",
 				kind, monitorID, err)
 		}

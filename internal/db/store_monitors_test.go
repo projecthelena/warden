@@ -872,6 +872,52 @@ func TestSetMonitorActive_PausePreservesOtherFields(t *testing.T) {
 	}
 }
 
+func TestSetMonitorActive_PauseClosesOutageAndBlocksInFlightResult(t *testing.T) {
+	RunTestWithBothDBs(t, "pause closes active outage", func(t *testing.T, s *Store) {
+		if err := s.CreateGroup(Group{ID: "g-pause", Name: "Pause"}); err != nil {
+			t.Fatalf("CreateGroup: %v", err)
+		}
+		if err := s.CreateMonitor(Monitor{
+			ID: "m-pause", GroupID: "g-pause", Name: "Paused monitor",
+			URL: "https://example.com", Active: true, Interval: 60,
+		}); err != nil {
+			t.Fatalf("CreateMonitor: %v", err)
+		}
+		if err := s.CreateOutage("m-pause", "down", "Monitor is down"); err != nil {
+			t.Fatalf("CreateOutage: %v", err)
+		}
+
+		if err := s.SetMonitorActive("m-pause", false); err != nil {
+			t.Fatalf("SetMonitorActive(false): %v", err)
+		}
+		active, err := s.GetActiveOutages()
+		if err != nil {
+			t.Fatalf("GetActiveOutages: %v", err)
+		}
+		if len(active) != 0 {
+			t.Fatalf("pause left %d active outages", len(active))
+		}
+		resolved, err := s.GetResolvedOutages(time.Time{})
+		if err != nil {
+			t.Fatalf("GetResolvedOutages: %v", err)
+		}
+		if len(resolved) != 1 || resolved[0].MonitorID != "m-pause" {
+			t.Fatalf("closed outage was not preserved as history: %+v", resolved)
+		}
+
+		if err := s.CreateOutageIfMonitorActive("m-pause", "down", "late result"); err != nil {
+			t.Fatalf("CreateOutageIfMonitorActive: %v", err)
+		}
+		active, err = s.GetActiveOutages()
+		if err != nil {
+			t.Fatalf("GetActiveOutages after stale result: %v", err)
+		}
+		if len(active) != 0 {
+			t.Fatalf("in-flight result reopened an outage after pause: %+v", active)
+		}
+	})
+}
+
 // ============== DAILY UPTIME STATS TESTS ==============
 
 func TestGetDailyUptimeStats_Empty(t *testing.T) {

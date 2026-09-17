@@ -190,7 +190,13 @@ func (s *Store) DeleteMonitor(id string) error {
 }
 
 func (s *Store) SetMonitorActive(id string, active bool) error {
-	res, err := s.db.Exec(s.rebind("UPDATE monitors SET active = ? WHERE id = ?"), active, id)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin monitor active status update: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	res, err := tx.Exec(s.rebind("UPDATE monitors SET active = ? WHERE id = ?"), active, id)
 	if err != nil {
 		return fmt.Errorf("failed to update monitor active status: %w", err)
 	}
@@ -200,6 +206,22 @@ func (s *Store) SetMonitorActive(id string, active bool) error {
 	}
 	if rows == 0 {
 		return ErrMonitorNotFound
+	}
+
+	// Pausing ends the period Warden can truthfully call an outage active. Keep the
+	// outage as history, but do not leave it driving alerts and public status forever.
+	// This is deliberately not CloseOutageReport: paused is not recovered, so no
+	// recovery notification should be sent.
+	if !active {
+		if _, err := tx.Exec(s.rebind(
+			"UPDATE monitor_outages SET end_time = ? WHERE monitor_id = ? AND end_time IS NULL"),
+			time.Now().UTC(), id); err != nil {
+			return fmt.Errorf("failed to close monitor outages while pausing: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit monitor active status update: %w", err)
 	}
 	return nil
 }
@@ -312,6 +334,19 @@ func (s *Store) CreateEventWithDetails(monitorID, eventType, message string, d *
 func (s *Store) CreateOutage(monitorID, eventType, summary string) error {
 	_, err := s.db.Exec(s.rebind("INSERT INTO monitor_outages (monitor_id, type, summary, start_time) VALUES (?, ?, ?, ?)"),
 		monitorID, eventType, summary, time.Now().UTC())
+	return err
+}
+
+// CreateOutageIfMonitorActive is the result processor's race-safe variant. A check may
+// already be in flight when its monitor is paused; the SQL guard prevents that stale
+// result from reopening an outage after SetMonitorActive closed it.
+func (s *Store) CreateOutageIfMonitorActive(monitorID, eventType, summary string) error {
+	_, err := s.db.Exec(s.rebind(`
+		INSERT INTO monitor_outages (monitor_id, type, summary, start_time)
+		SELECT ?, ?, ?, ?
+		FROM monitors
+		WHERE id = ? AND active = ?`),
+		monitorID, eventType, summary, time.Now().UTC(), monitorID, true)
 	return err
 }
 

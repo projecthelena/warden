@@ -165,8 +165,8 @@ func (m *Manager) partitionOutages(outages []db.OpenOutage, filter NotificationE
 	for _, o := range outages {
 		mon := m.GetMonitor(o.MonitorID)
 		if mon == nil {
-			// Paused or not yet synced. Its outage stays open on purpose (see Sync), but a
-			// monitor nobody is checking has nothing new to say.
+			// Deleted, legacy, or not yet synced. A paused monitor normally has no open
+			// outage because SetMonitorActive closes it.
 			continue
 		}
 		if o.AlertsMuted {
