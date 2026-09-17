@@ -16,7 +16,7 @@ Latency rises steadily for hours and then drops straight back to normal. The sig
 
 Warden cannot tell you which. It can tell you the shape is there, how steep it is and how often it repeats, which is the part that otherwise costs you an afternoon:
 
-> homedepot-nucleus-prod-3 climbs and resets: 9 ramps in 14 days, rising about 130ms/h from a normal of 254ms to as much as 758ms, then dropping straight back.
+> Checkout API climbs and resets: 9 ramps in 14 days, rising about 130ms/h from a normal of 254ms to as much as 758ms, then dropping straight back.
 
 The fall matters as much as the climb. A service that climbs and stays up is drift, not a sawtooth, and gets reported as drift instead.
 

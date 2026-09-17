@@ -1,6 +1,7 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -178,6 +179,19 @@ func (h *UserHandler) ResetUserPassword(w http.ResponseWriter, r *http.Request) 
 	targetID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid user ID")
+		return
+	}
+	targetUser, err := h.store.GetUser(targetID)
+	if err != nil {
+		if errors.Is(err, db.ErrUserNotFound) || errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "user not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to load user")
+		return
+	}
+	if targetUser.SSOProvider != "" {
+		writeError(w, http.StatusBadRequest, "password is managed by the user's SSO provider")
 		return
 	}
 

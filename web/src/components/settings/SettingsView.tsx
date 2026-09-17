@@ -799,6 +799,7 @@ export function SettingsView() {
     const { isAdmin, canEdit } = useRole();
     const [isLoading, setIsLoading] = useState(false);
     const [searchParams, setSearchParams] = useSearchParams();
+    const isSSOUser = Boolean(user?.ssoProvider);
 
     const tabParam = searchParams.get("tab") as SettingsTab | null;
     // Enforce role-based tab access: viewers can only see "general"
@@ -896,21 +897,30 @@ export function SettingsView() {
 
                                 <Separator />
 
-                                <div className="grid gap-2">
-                                    <Label>Change Password</Label>
-                                    <Input
-                                        name="currentPassword"
-                                        type="password"
-                                        placeholder="Current Password (Required)"
-                                        className="max-w-md"
-                                    />
-                                    <Input
-                                        name="password"
-                                        type="password"
-                                        placeholder="New Password"
-                                        className="max-w-md mt-2"
-                                    />
-                                </div>
+                                {isSSOUser ? (
+                                    <div className="rounded-lg border border-border/50 bg-muted/30 p-4">
+                                        <Label className="text-sm font-medium">Single sign-on account</Label>
+                                        <p className="text-sm text-muted-foreground mt-1">
+                                            Your password is managed by {user?.ssoProvider === "google" ? "Google" : "your OpenID Connect provider"}. Change it there, not in Warden.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="grid gap-2">
+                                        <Label>Change Password</Label>
+                                        <Input
+                                            name="currentPassword"
+                                            type="password"
+                                            placeholder="Current Password (Required)"
+                                            className="max-w-md"
+                                        />
+                                        <Input
+                                            name="password"
+                                            type="password"
+                                            placeholder="New Password"
+                                            className="max-w-md mt-2"
+                                        />
+                                    </div>
+                                )}
 
                                 <Button type="submit" disabled={isLoading}>
                                     {isLoading ? "Saving..." : "Save Changes"}
@@ -961,7 +971,7 @@ export function SettingsView() {
                         <div className="flex items-center justify-between">
                             <div>
                                 <h4 className="text-sm font-medium">User Management</h4>
-                                <p className="text-sm text-muted-foreground">Create and manage users and their roles.</p>
+                                <p className="text-sm text-muted-foreground">Create local accounts, review SSO identities, and manage roles.</p>
                             </div>
                             <CreateUserSheet />
                         </div>

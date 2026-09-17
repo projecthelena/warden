@@ -16,6 +16,74 @@ If several upstream directories must share one button, use an identity broker su
 
 Each Warden user currently has one SSO identity. Do not expect the same Warden account to be linked independently to both Google and the generic OIDC provider.
 
+## Account ownership and roles
+
+Warden deliberately keeps local and SSO accounts separate:
+
+- **Local accounts** are created by a Warden administrator with a username, password, and role. Their passwords are changed or reset in Warden.
+- **SSO accounts** are created on the first successful identity-provider login when auto-provisioning is enabled. They start as viewers, and a Warden administrator can promote them to editor or administrator afterward.
+- Warden does not create an SSO identity or set its password. Passwords, MFA, disabling the identity, and other authentication policy belong to Google or the configured OIDC provider.
+- Warden therefore hides password-change and password-reset controls for SSO accounts, and its API rejects attempts to add a local password to one.
+
+The **New Local User** action only creates password-based accounts. There is currently no invitation or pre-provisioning flow for SSO identities because Warden links them using the stable subject identifier received in a verified provider token, not an administrator-entered email address. If auto-provisioning is disabled, only SSO identities that completed a previous successful login remain able to sign in.
+
+### Exactly what happens on an SSO login
+
+Authentication and authorization are separate:
+
+1. Google or the generic OIDC provider authenticates the person and returns a signed identity token.
+2. Warden verifies the token, issuer, audience, nonce, expiry, and verified email.
+3. If this provider identity is already linked to a Warden user, Warden signs in that existing user with the role already stored in Warden.
+4. If the identity is new and **Auto-provision users** is enabled, Warden creates it with the `viewer` role. It never becomes an administrator merely because the identity provider accepted it.
+5. To grant more access, an existing Warden administrator opens **Settings → Users** and changes the user from Viewer to Editor or Admin. The new role is stored in Warden and applies on subsequent authenticated requests; signing in through SSO does not overwrite it.
+6. If the identity is new and auto-provisioning is disabled, Warden rejects the login. The current release has no SSO invitation or administrator-driven pre-provisioning flow.
+
+The identity provider currently does not choose the Warden role. Warden does not consume group or role claims and does not map Google groups, Dex groups, Entra groups, or other provider claims to `admin`, `editor`, `viewer`, or `status_viewer`.
+
+| Warden role | Access |
+| --- | --- |
+| `admin` | Full access, including security settings, user creation, and role assignment |
+| `editor` | Can create and modify operational resources, but cannot administer security or users |
+| `viewer` | Read-only access to the dashboard; this is the default for every new SSO identity |
+| `status_viewer` | Can only access the status pages explicitly assigned by an administrator |
+
+Promoting an SSO user does not create a Warden password. The user continues signing in through the same identity provider, but Warden loads the locally assigned role after validating the session. At least one existing administrator must therefore complete the first promotion.
+
+### What happens when the email already exists
+
+Warden does not treat a matching email as sufficient proof that two login methods belong to the same person:
+
+| Existing Warden account | Incoming SSO login | Result |
+| --- | --- | --- |
+| Same provider and same provider subject | Any role | Warden signs in the existing user and preserves its Warden role |
+| Local account with a password and the same email | Google or generic OIDC | Login is rejected with `account_linking_required`; Warden does not merge or create a duplicate |
+| SSO-only account with the same email but a different provider identity | Another configured SSO provider | The current implementation re-links that SSO-only account to the new provider; only one provider identity is stored at a time |
+| No matching provider identity or email | Auto-provision on | Warden creates a new viewer |
+| No matching provider identity or email | Auto-provision off | Login is rejected |
+
+Rejecting automatic linkage to a password account prevents an attacker who controls an external identity with a matching email from taking over the local account. Warden does not currently provide a user-confirmed account-linking flow. Administrators should therefore avoid pre-creating a local account for someone expected to use SSO; let the person complete the first SSO login and then assign the desired Warden role.
+
+Because only one SSO provider identity can be stored per user, using Google and generic OIDC interchangeably with the same email is not a supported account-linking strategy. Pick one provider per person until Warden has an explicit multi-provider linking model.
+
+## Configure Google
+
+Create an OAuth 2.0 client in Google Cloud as a **Web application**. If the OAuth consent screen is still in testing mode, add every account that will exercise the flow as a test user. Register this exact redirect URI, replacing the hostname with the public Warden hostname:
+
+```text
+https://warden.example.com/api/auth/sso/google/callback
+```
+
+In **Settings → Security → Single Sign-On (SSO)**:
+
+1. Enter the Google client ID and client secret.
+2. Leave **Redirect URL** empty to use the callback above. Only set an override when the externally visible callback really differs from Warden's origin.
+3. Optionally restrict **Allowed email domains** and choose whether to **Auto-provision users**.
+4. Save, then enable Google SSO and save again.
+
+The **Test Configuration** button only checks that the stored values have a plausible shape. It does not contact Google or validate a login. The complete test is signing in through a private browser window and returning successfully to Warden.
+
+## Configure a generic OpenID Connect provider
+
 Configure the provider with this redirect URI:
 
 ```text
@@ -35,6 +103,70 @@ Save the settings, enable OIDC, sign out, and verify the provider button from a 
 Warden discovers the authorization, token, and signing-key endpoints from the issuer URL. It requests the `openid`, `profile`, and `email` scopes and requires a verified email claim. The authorization-code flow uses state, nonce, and PKCE; the returned ID token must have a valid signature, issuer, audience, expiry, and matching nonce before Warden creates a session.
 
 Keep at least one working administrator login until the OIDC flow has been verified. Disabling OIDC removes its button from the login page but does not delete users or invalidate existing sessions.
+
+## Reproducible Dex test setup
+
+Dex is useful for testing the complete generic OIDC flow without depending on Google or a production identity platform. It is a test identity provider, not part of Warden and not required in a normal deployment.
+
+One simple layout runs both services behind the same public hostname:
+
+- Warden: `https://warden.example.com`
+- Dex issuer: `https://warden.example.com/dex`
+
+Configure the reverse proxy to route `/dex` to Dex and the remaining paths to Warden. The `/dex` path is part of the issuer identity and must appear exactly in the Dex configuration and in Warden.
+
+Use values like these, replacing every example with credentials and hostnames generated for the test environment:
+
+| Setting       | Value                                                   |
+| ------------- | ------------------------------------------------------- |
+| Provider name | `Test Dex`                                              |
+| Issuer URL    | `https://warden.example.com/dex`                        |
+| Redirect URI  | `https://warden.example.com/api/auth/sso/oidc/callback` |
+| Client ID     | `warden-test`                                           |
+| Client secret | A newly generated secret shared by Dex and Warden       |
+| Test email    | `test-user@example.com`                                 |
+
+Generate a client secret and a test password for each environment. Put the client secret and the bcrypt password hash in the secret manager used by the deployment. Store the plaintext test password in a password manager or local Keychain, never in Git. For example, a macOS Keychain entry can be read without hard-coding its value:
+
+```bash
+security find-generic-password -w -s warden-dex-test -a test-user@example.com | pbcopy
+```
+
+To exercise the deployment:
+
+1. Keep an administrator session open in one browser window.
+2. Open `https://warden.example.com/login` in a private window.
+3. Choose **Sign in with Test Dex**.
+4. Enter the generated test identity and password on Dex's login page, then grant access if Dex shows its approval screen.
+5. Confirm that the browser returns to `/dashboard`. On the first successful login, Warden creates a `viewer` user when auto-provisioning is enabled.
+6. In the administrator session, open **Settings → Users** and confirm the user's role and SSO provider.
+
+The flow validates discovery, authorization-code exchange, state, nonce, PKCE, signed ID-token verification, verified email handling, user provisioning, session creation, and the final role-based redirect. Opening Dex's discovery document is a useful connectivity check, but it does not replace the browser flow:
+
+```bash
+curl -fsS https://warden.example.com/dex/.well-known/openid-configuration
+```
+
+The Dex static client's redirect URI and Warden's callback URI must be byte-for-byte identical. Generate new credentials for every environment and never copy credentials from another installation.
+
+## Test each control deliberately
+
+Google and generic OIDC have separate **Enable** switches, credentials, domain allowlists, and auto-provision controls. Turning one off does not affect the other. Saving an empty secret field preserves the already stored secret; disabling a provider hides its login button but preserves its configuration and existing Warden users.
+
+Use this matrix while learning or validating a deployment:
+
+| Test | Configuration | Expected result |
+| --- | --- | --- |
+| Generic OIDC happy path | OIDC on, correct Dex values, auto-provision on | Dex returns to Warden and a new identity becomes a viewer |
+| OIDC off | Disable OIDC and save | The generic provider button disappears; local and Google login are unaffected |
+| Domain rejected | Set an allowlist that does not contain the test email's domain | Warden rejects the callback and creates no session |
+| Existing identity | Auto-provision off, use an identity that was linked previously | Login still succeeds |
+| Unknown identity | Auto-provision off, use a second Dex identity never seen by Warden | Login is rejected |
+| Google only | Google on and OIDC off | Only the Google SSO button appears alongside password login |
+| Both providers | Google on and OIDC on | Both buttons appear and each flow completes independently |
+| Recovery | Test the existing administrator password | Local login remains available if either identity provider fails |
+
+After a negative test, restore the original domain allowlist and enable state from the administrator session. A single existing Dex user can prove the happy path, domain rejection, disabling, and existing-identity behavior. Testing unknown-identity rejection requires adding a second static Dex user or using another OIDC provider account that has never signed in to Warden.
 
 ## Access policies, groups, and password login
 

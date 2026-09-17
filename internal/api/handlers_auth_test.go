@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestAuthLogin(t *testing.T) {
@@ -72,6 +73,33 @@ func TestAuthLogin(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestUpdateUserRejectsPasswordForSSOAccount(t *testing.T) {
+	_, _, _, router, store := setupTest(t)
+	user, err := store.FindOrCreateSSOUser("oidc", "issuer|subject", "sso@example.com", "SSO User", "", true)
+	if err != nil {
+		t.Fatalf("FindOrCreateSSOUser: %v", err)
+	}
+	if err := store.CreateSession(user.ID, "sso-session", time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]string{
+		"password":        "NewPassword123!",
+		"currentPassword": "irrelevant",
+	})
+	req := httptest.NewRequest("PATCH", "/api/auth/me", bytes.NewBuffer(body))
+	req.AddCookie(&http.Cookie{Name: "auth_token", Value: "sso-session"})
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if got := w.Body.String(); got != "{\"error\":\"password is managed by your SSO provider\"}\n" {
+		t.Fatalf("unexpected response: %s", got)
 	}
 }
 
