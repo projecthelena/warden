@@ -47,13 +47,13 @@ export const StatusBadge = ({ status, isMaintenance }: { status: Monitor['status
     );
 };
 
-export const UptimeHistory = ({ history, interval, isPaused }: { history: Monitor['history'], interval?: number, isPaused?: boolean }) => {
+export const UptimeHistory = ({ history, interval, isPaused, className }: { history: Monitor['history'], interval?: number, isPaused?: boolean, className?: string }) => {
     const displaySlots = useMemo(() => {
         return buildTimeSlots(history, interval);
     }, [history, interval]);
 
     return (
-        <div className="flex gap-1 h-6 items-end w-full max-w-[500px]">
+        <div className={cn("flex gap-1 h-6 items-end w-full max-w-[500px]", className)}>
             {displaySlots.map((slot, i) => (
                 <Tooltip key={i}>
                     <TooltipTrigger asChild>

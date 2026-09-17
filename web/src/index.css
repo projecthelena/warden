@@ -86,10 +86,19 @@
   body {
     @apply font-sans;
     min-height: 100vh;
+    overflow-x: clip;
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
     -webkit-font-smoothing: antialiased;
   }
+}
+
+html {
+  overflow-x: clip;
+}
+
+[data-radix-scroll-area-viewport] {
+  scrollbar-gutter: stable;
 }
 
 

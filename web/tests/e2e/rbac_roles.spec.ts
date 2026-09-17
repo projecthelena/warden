@@ -240,23 +240,17 @@ test.describe('RBAC Roles - Viewer, Status Viewer, and Admin Permissions', () =>
         await page.getByText('Test Group').first().click();
         await expect(page).toHaveURL(/.*groups\//, { timeout: 15000 });
 
-        // Click on the monitor to open details sheet
-        await page.getByText('Test Monitor').first().click();
-
-        // Wait for sheet to open
-        await expect(page.locator('[data-state="open"].fixed.inset-0')).toBeVisible({ timeout: 10000 });
-
-        // Metrics is the only tab a viewer gets — Settings is editor-only, and the
-        // activity log moved out of the sheet onto the dedicated monitor page.
-        await expect(page.getByRole('tab', { name: 'Metrics' })).toBeVisible({ timeout: 10000 });
-
-        // Follow "Open full view" and check the viewer can read the incident rollups there
-        await page.getByTestId('monitor-open-full-view').click();
-        await expect(page).toHaveURL(/.*monitors\//, { timeout: 15000 });
+        // Open the canonical monitor workspace.
+        const monitorHref = await page.locator('[data-testid^="monitor-card-"]').filter({ hasText: 'Test Monitor' }).getAttribute('href');
+        expect(monitorHref).toBeTruthy();
+        await page.goto(monitorHref!);
+        await expect(page.getByTestId('monitor-page')).toBeVisible({ timeout: 15000 });
+        await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 10000 });
+        await page.goto(`${monitorHref}?tab=incidents`);
         await expect(page.getByRole('heading', { name: /Incidents/ })).toBeVisible({ timeout: 15000 });
     });
 
-    test('Viewer does NOT see Settings tab in monitor details sheet', async ({ page }) => {
+    test('Viewer does NOT see Settings in the monitor workspace', async ({ page }) => {
         await page.goto('/login');
         await expect(page.getByTestId('login-header')).toBeVisible({ timeout: 15000 });
         await page.getByLabel('Username').fill(VIEWER_USER);
@@ -271,8 +265,10 @@ test.describe('RBAC Roles - Viewer, Status Viewer, and Admin Permissions', () =>
         await expect(page).toHaveURL(/.*groups\//, { timeout: 15000 });
 
         // Click on monitor
-        await page.getByText('Test Monitor').first().click();
-        await expect(page.locator('[data-state="open"].fixed.inset-0')).toBeVisible({ timeout: 10000 });
+        const monitorHref = await page.locator('[data-testid^="monitor-card-"]').filter({ hasText: 'Test Monitor' }).getAttribute('href');
+        expect(monitorHref).toBeTruthy();
+        await page.goto(monitorHref!);
+        await expect(page.getByTestId('monitor-page')).toBeVisible({ timeout: 15000 });
 
         // Settings tab should NOT be visible (only editors+ see it)
         await expect(page.getByTestId('monitor-settings-tab')).toHaveCount(0);

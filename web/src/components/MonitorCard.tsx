@@ -1,13 +1,12 @@
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
+import { Link } from "react-router-dom";
 import { useMonitorStore, Monitor } from "@/lib/store";
 import { formatDate } from "@/lib/utils";
 import { StatusBadge, UptimeHistory } from "@/components/ui/monitor-visuals";
-import { MonitorDetailsSheet } from "@/components/MonitorDetailsSheet";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 export function MonitorCard({ monitor, groupId }: { monitor: Monitor, groupId: string }) {
-    const [detailsOpen, setDetailsOpen] = useState(false);
     const { user, incidents } = useMonitorStore();
     const isPaused = monitor.status === 'paused';
 
@@ -39,11 +38,11 @@ export function MonitorCard({ monitor, groupId }: { monitor: Monitor, groupId: s
 
 
     return (
-        <>
-            <div
-                onClick={() => setDetailsOpen(true)}
+            <Link
+                to={`/monitors/${monitor.id}`}
+                data-testid={`monitor-card-${monitor.id}`}
                 className={cn(
-                    "flex flex-col sm:flex-row items-center justify-between p-4 border border-border rounded-lg bg-card hover:bg-accent/50 transition-all gap-4 cursor-pointer group w-full",
+                    "flex flex-col sm:flex-row items-center justify-between p-4 border border-border rounded-lg bg-card hover:bg-accent/50 transition-colors gap-4 cursor-pointer group w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                     isMaintenance && "border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10",
                     isPaused && "opacity-60"
                 )}
@@ -84,8 +83,6 @@ export function MonitorCard({ monitor, groupId }: { monitor: Monitor, groupId: s
                     )}
                     <StatusBadge status={monitor.status} isMaintenance={isMaintenance} />
                 </div>
-            </div>
-            <MonitorDetailsSheet monitor={monitor} groupId={groupId} open={detailsOpen} onOpenChange={setDetailsOpen} />
-        </>
+            </Link>
     )
 }

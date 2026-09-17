@@ -7,7 +7,7 @@ test.describe.configure({ mode: 'serial' });
 
 test.describe('Per-Monitor Latency Threshold', () => {
 
-    test('Create monitor with custom latency threshold and verify in edit sheet', async ({ page }) => {
+    test('Create monitor with custom latency threshold and verify in settings', async ({ page }) => {
         const dashboard = new DashboardPage(page);
         const login = new LoginPage(page);
 
@@ -19,7 +19,7 @@ test.describe('Per-Monitor Latency Threshold', () => {
 
         // 2. Create Group
         const groupName = `LT Group ${Date.now()}`;
-        await dashboard.createGroup(groupName);
+        const groupPath = await dashboard.createGroup(groupName);
 
         // 3. Open New Monitor sheet
         await dashboard.createMonitorTrigger.click();
@@ -48,16 +48,9 @@ test.describe('Per-Monitor Latency Threshold', () => {
         const toast = page.getByText(`Monitor "${monitorName}" active and checking.`).first();
         await expect(toast).toBeVisible({ timeout: 15000 });
 
-        // 8. Verify the value persisted by opening the edit sheet
-        await page.waitForTimeout(1000);
-        await page.getByText(monitorName).first().click();
-
-        // Wait for sheet to open
-        await expect(page.locator('[data-state="open"].fixed.inset-0')).toBeVisible({ timeout: 5000 });
-
-        // Switch to Settings tab
-        await page.getByRole('tab', { name: 'Settings' }).click();
-        await page.waitForTimeout(500);
+        // 8. Verify the value persisted in the monitor workspace
+        await dashboard.openMonitorSettings(monitorName);
+        await page.getByRole('button', { name: /Alerting/ }).click();
 
         // Verify the latency threshold is persisted
         const latencyInput = page.getByLabel('Latency Threshold (ms)');
@@ -69,41 +62,24 @@ test.describe('Per-Monitor Latency Threshold', () => {
         await latencyInput.fill('5000');
 
         // Save
-        await page.getByRole('button', { name: 'Save' }).click();
-        await page.waitForTimeout(1000);
+        const updated = page.waitForResponse(resp => resp.url().includes('/api/monitors/') && resp.request().method() === 'PUT');
+        await page.getByRole('button', { name: 'Save changes' }).click();
+        expect((await updated).status()).toBe(200);
 
-        // 10. Re-open and verify updated value
-        // Close the sheet first
-        await page.keyboard.press('Escape');
-        await page.waitForTimeout(500);
-
-        await page.getByText(monitorName).first().click();
-        await expect(page.locator('[data-state="open"].fixed.inset-0')).toBeVisible({ timeout: 5000 });
-        await page.getByRole('tab', { name: 'Settings' }).click();
-        await page.waitForTimeout(500);
-
+        // 10. Verify the updated value remains in the canonical settings view
         await expect(page.getByLabel('Latency Threshold (ms)')).toHaveValue('5000');
 
         // 11. Clear the threshold (back to global default)
         await page.getByLabel('Latency Threshold (ms)').clear();
-        await page.getByRole('button', { name: 'Save' }).click();
-        await page.waitForTimeout(1000);
-
-        // Close and reopen
-        await page.keyboard.press('Escape');
-        await page.waitForTimeout(500);
-
-        await page.getByText(monitorName).first().click();
-        await expect(page.locator('[data-state="open"].fixed.inset-0')).toBeVisible({ timeout: 5000 });
-        await page.getByRole('tab', { name: 'Settings' }).click();
-        await page.waitForTimeout(500);
+        const cleared = page.waitForResponse(resp => resp.url().includes('/api/monitors/') && resp.request().method() === 'PUT');
+        await page.getByRole('button', { name: 'Save changes' }).click();
+        expect((await cleared).status()).toBe(200);
 
         // Should be empty (global default)
         await expect(page.getByLabel('Latency Threshold (ms)')).toHaveValue('');
 
         // 12. Cleanup
-        await page.keyboard.press('Escape');
-        await page.waitForTimeout(500);
+        await page.goto(groupPath);
         await dashboard.deleteMonitor(monitorName);
         await dashboard.deleteGroup(groupName);
 

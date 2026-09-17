@@ -508,7 +508,7 @@ test.describe('RBAC - Admin vs Editor Boundary', () => {
         await expect(page.getByTestId('create-group-trigger')).toBeVisible({ timeout: 10000 });
     });
 
-    test('Editor UI: can see Settings tab in monitor details sheet', async ({ page }) => {
+    test('Editor UI: can see Settings in the monitor workspace', async ({ page }) => {
         await page.goto('/login');
         await expect(page.getByTestId('login-header')).toBeVisible({ timeout: 15000 });
         await page.getByLabel('Username').fill(EDITOR_USER);
@@ -523,9 +523,10 @@ test.describe('RBAC - Admin vs Editor Boundary', () => {
         await page.getByText('Editor Group').first().click();
         await expect(page).toHaveURL(/.*groups\//, { timeout: 15000 });
 
-        // Click on the monitor
-        await page.getByText('Editor Monitor').first().click();
-        await expect(page.locator('[data-state="open"].fixed.inset-0')).toBeVisible({ timeout: 10000 });
+        const monitorHref = await page.locator('[data-testid^="monitor-card-"]').filter({ hasText: 'Editor Monitor' }).getAttribute('href');
+        expect(monitorHref).toBeTruthy();
+        await page.goto(monitorHref!);
+        await expect(page.getByTestId('monitor-page')).toBeVisible({ timeout: 15000 });
 
         // Editor SHOULD see Settings tab (unlike viewer)
         await expect(page.getByTestId('monitor-settings-tab')).toBeVisible({ timeout: 10000 });
