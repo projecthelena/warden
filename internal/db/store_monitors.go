@@ -24,6 +24,8 @@ type RequestConfig struct {
 	// DNS-only options.
 	DNSRecordType string `json:"dnsRecordType,omitempty"` // A, AAAA, MX, NS, TXT (default A)
 	DNSResolver   string `json:"dnsResolver,omitempty"`   // resolver to query, host or host:port (default system)
+
+	DockerHostID string `json:"dockerHostId,omitempty"` // Docker host used to inspect the container
 }
 
 // IsEmpty returns true if all fields are at their zero/default values.
@@ -31,15 +33,16 @@ func (rc *RequestConfig) IsEmpty() bool {
 	return rc.Method == "" && len(rc.Headers) == 0 && rc.Body == "" &&
 		rc.TimeoutSeconds == 0 && rc.FollowRedirects == nil &&
 		rc.AcceptedStatusCodes == "" && rc.RetryCount == 0 &&
-		rc.DNSRecordType == "" && rc.DNSResolver == ""
+		rc.DNSRecordType == "" && rc.DNSResolver == "" && rc.DockerHostID == ""
 }
 
 // Check types a monitor can run against its target.
 const (
-	MonitorTypeHTTP = "http" // GET/POST an URL and inspect the status code
-	MonitorTypeTCP  = "tcp"  // open a TCP connection to host:port
-	MonitorTypePing = "ping" // ICMP echo request to a host
-	MonitorTypeDNS  = "dns"  // resolve a name, optionally against a specific resolver
+	MonitorTypeHTTP   = "http"   // GET/POST an URL and inspect the status code
+	MonitorTypeTCP    = "tcp"    // open a TCP connection to host:port
+	MonitorTypePing   = "ping"   // ICMP echo request to a host
+	MonitorTypeDNS    = "dns"    // resolve a name, optionally against a specific resolver
+	MonitorTypeDocker = "docker" // inspect a container through the Docker Engine API
 )
 
 // NormalizeMonitorType fills in the default for monitors stored before check types
@@ -54,7 +57,7 @@ func NormalizeMonitorType(t string) string {
 // IsValidMonitorType reports whether t is a check type Warden knows how to run.
 func IsValidMonitorType(t string) bool {
 	switch t {
-	case MonitorTypeHTTP, MonitorTypeTCP, MonitorTypePing, MonitorTypeDNS:
+	case MonitorTypeHTTP, MonitorTypeTCP, MonitorTypePing, MonitorTypeDNS, MonitorTypeDocker:
 		return true
 	}
 	return false
@@ -927,10 +930,10 @@ func (s *Store) GetDailyUptimeStats(monitorID string, days int) ([]DailyUptimeSt
 
 // GetDailyUptimeStatsForMonitors returns per-day uptime for each monitor, read from the
 // precomputed rollup table in one query. The public status page calls this on every load,
-// so it reads the rollup instead of aggregating raw checks. Each id gets a filled slice,
-// one entry per day oldest to newest; a day with no rollup row (no checks that day) is
-// marked -1. Today's row is refreshed by the rollup worker, so it can trail by that
-// worker's interval.
+// so historical days come from the rollup instead of aggregating raw checks. Today's row
+// is overlaid from raw checks so a new monitor appears immediately rather than waiting for
+// the rollup worker. Each id gets a filled slice, one entry per day oldest to newest; a day
+// without checks is marked -1.
 func (s *Store) GetDailyUptimeStatsForMonitors(ids []string, days int) (map[string][]DailyUptimeStat, error) {
 	if days < 1 || days > 365 {
 		return nil, fmt.Errorf("invalid days: must be between 1 and 365")
@@ -978,6 +981,54 @@ func (s *Store) GetDailyUptimeStatsForMonitors(ids []string, days int) (map[stri
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	// The rollup worker runs periodically, which is fine for immutable historical days but
+	// made a newly created monitor show an empty bar on its public status page. Refresh only
+	// today's bucket from raw checks; this keeps the request bounded while making the page
+	// reflect the first check immediately.
+	today := now.Format("2006-01-02")
+	var todayQuery string
+	if s.IsPostgres() {
+		todayQuery = fmt.Sprintf(`SELECT monitor_id, COUNT(*), SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END)
+			FROM monitor_checks
+			WHERE monitor_id IN (%s) AND TO_CHAR(timestamp, 'YYYY-MM-DD') = ?
+			GROUP BY monitor_id`, strings.Join(placeholders, ", "))
+	} else {
+		todayQuery = fmt.Sprintf(`SELECT monitor_id, COUNT(*), SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END)
+			FROM monitor_checks
+			WHERE monitor_id IN (%s) AND DATE(timestamp) = ?
+			GROUP BY monitor_id`, strings.Join(placeholders, ", "))
+	}
+	todayArgs := make([]interface{}, 0, len(ids)+1)
+	for _, id := range ids {
+		todayArgs = append(todayArgs, id)
+	}
+	todayArgs = append(todayArgs, today)
+	todayRows, err := s.db.Query(s.rebind(todayQuery), todayArgs...)
+	if err != nil {
+		return nil, err
+	}
+	for todayRows.Next() {
+		var monitorID string
+		stat := DailyUptimeStat{Date: today}
+		if err := todayRows.Scan(&monitorID, &stat.Total, &stat.Up); err != nil {
+			_ = todayRows.Close()
+			return nil, err
+		}
+		stat.UptimePercent = (float64(stat.Up) / float64(stat.Total)) * 100.0
+		if byMonitor[monitorID] == nil {
+			byMonitor[monitorID] = make(map[string]DailyUptimeStat)
+		}
+		byMonitor[monitorID][today] = stat
+	}
+	if err := todayRows.Err(); err != nil {
+		_ = todayRows.Close()
+		return nil, err
+	}
+	_ = todayRows.Close()
 
 	// Every requested id gets an entry, even one with no rollup rows in the window.
 	out := make(map[string][]DailyUptimeStat, len(ids))

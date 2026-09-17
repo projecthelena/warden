@@ -88,6 +88,28 @@ func TestRollupDailyUptime_MatchesLiveAndEdges(t *testing.T) {
 	})
 }
 
+func TestGetDailyUptimeStatsForMonitors_IncludesTodayBeforeRollup(t *testing.T) {
+	RunTestWithBothDBs(t, "current day before rollup", func(t *testing.T, s *Store) {
+		_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+		_ = s.CreateMonitor(Monitor{ID: "new-monitor", GroupID: "g1", Name: "New monitor", Interval: 60})
+		if err := s.BatchInsertChecks([]CheckResult{
+			checkAt("new-monitor", "up", 0),
+			checkAt("new-monitor", "down", 0),
+		}); err != nil {
+			t.Fatalf("BatchInsertChecks: %v", err)
+		}
+
+		got, err := s.GetDailyUptimeStatsForMonitors([]string{"new-monitor"}, 7)
+		if err != nil {
+			t.Fatalf("GetDailyUptimeStatsForMonitors: %v", err)
+		}
+		today, ok := findDay(got["new-monitor"], dayStr(0))
+		if !ok || today.Total != 2 || today.Up != 1 || today.UptimePercent != 50 {
+			t.Fatalf("today before rollup want 1/2 (50%%), got %+v (ok=%v)", today, ok)
+		}
+	})
+}
+
 func TestRollupDailyUptime_Idempotent(t *testing.T) {
 	s := newTestStore(t)
 	_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})

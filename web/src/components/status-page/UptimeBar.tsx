@@ -1,5 +1,6 @@
 import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { formatDowntime } from "./uptimeCalculations";
 
 interface DayData {
     date: string;
@@ -13,13 +14,20 @@ interface BarBucket {
     dayCount: number;
     uptimePercent: number;
     totalChecks: number;
+    failedChecks: number;
     hasData: boolean;
 }
 
 interface UptimeBarProps {
     days: DayData[];
     overallUptime: number;
+    intervalSeconds: number;
     showPercentage?: boolean;
+}
+
+function failedChecks(day: DayData): number {
+    if (day.uptimePercent < 0 || day.totalChecks === 0) return 0;
+    return Math.round(day.totalChecks * (1 - day.uptimePercent / 100));
 }
 
 function aggregateDays(days: DayData[], targetBars: number): BarBucket[] {
@@ -30,6 +38,7 @@ function aggregateDays(days: DayData[], targetBars: number): BarBucket[] {
             dayCount: 1,
             uptimePercent: d.uptimePercent,
             totalChecks: d.totalChecks,
+            failedChecks: failedChecks(d),
             hasData: d.uptimePercent >= 0,
         }));
     }
@@ -48,6 +57,7 @@ function aggregateDays(days: DayData[], targetBars: number): BarBucket[] {
             dayCount: chunk.length,
             uptimePercent: hasData ? Math.min(...withData.map((d) => d.uptimePercent)) : -1,
             totalChecks: chunk.reduce((sum, d) => sum + d.totalChecks, 0),
+            failedChecks: chunk.reduce((sum, d) => sum + failedChecks(d), 0),
             hasData,
         });
     }
@@ -107,21 +117,10 @@ function formatOverallUptime(pct: number): string {
     return pct.toFixed(2) + "%";
 }
 
-function formatDowntime(uptimePercent: number, dayCount: number): string | null {
-    if (uptimePercent < 0 || uptimePercent >= 100) return null;
-    const totalMinutes = (1 - uptimePercent / 100) * dayCount * 24 * 60;
-    if (totalMinutes < 1) return null;
-    const roundedMinutes = Math.round(totalMinutes);
-    const hours = Math.floor(roundedMinutes / 60);
-    const mins = roundedMinutes % 60;
-    if (hours > 0) return `~${hours}h ${mins}m downtime`;
-    return `~${mins}m downtime`;
-}
-
 const NO_DATA_PATTERN =
     "repeating-linear-gradient(-45deg, hsl(var(--muted) / 0.15), hsl(var(--muted) / 0.15) 2px, transparent 2px, transparent 5px)";
 
-export function UptimeBar({ days, overallUptime, showPercentage = true }: UptimeBarProps) {
+export function UptimeBar({ days, overallUptime, intervalSeconds, showPercentage = true }: UptimeBarProps) {
     const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
     const [tooltipVisible, setTooltipVisible] = useState(false);
     const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number; align: "left" | "center" | "right" } | null>(null);
@@ -346,7 +345,7 @@ export function UptimeBar({ days, overallUptime, showPercentage = true }: Uptime
                                 )}
                             </div>
                             {(() => {
-                                const dt = formatDowntime(hoveredBucket.uptimePercent, hoveredBucket.dayCount);
+                                const dt = formatDowntime(hoveredBucket.failedChecks, intervalSeconds);
                                 return dt ? (
                                     <div className="text-muted-foreground/70 mt-0.5">{dt}</div>
                                 ) : null;

@@ -21,6 +21,7 @@ type Job struct {
 	Type          string // check type; empty means http
 	URL           string
 	RequestConfig *db.RequestConfig
+	DockerHost    *db.DockerHost
 }
 
 type CheckResult struct {
@@ -855,6 +856,7 @@ func (m *Manager) Sync() {
 			// A monitor that has been moved to another group keeps running; only the
 			// maintenance window and outage cluster it belongs to change.
 			existing.SetGroupID(dbM.GroupID)
+			existing.SetDockerHost(m.dockerHostFor(dbM))
 
 			// Check for changes (URL, Type, Interval, or RequestConfig)
 			needRestart := existing.GetTargetURL() != dbM.URL ||
@@ -873,6 +875,7 @@ func (m *Manager) Sync() {
 		if _, exists := m.monitors[dbM.ID]; !exists {
 			// Start new monitor
 			mon := NewMonitor(dbM.ID, dbM.Type, dbM.GroupID, dbM.Name, dbM.URL, interval, m.jobQueue, dbM.CreatedAt, dbM.RequestConfig)
+			mon.SetDockerHost(m.dockerHostFor(dbM))
 			mon.ApplyConfig(cfg)
 			mon.SetLatencyThreshold(monLatencyThresh)
 			mon.SetAlertsMuted(dbM.AlertsMuted)
@@ -940,6 +943,17 @@ func (m *Manager) Sync() {
 			log.Printf("Stopped monitor: %s", id)
 		}
 	}
+}
+
+func (m *Manager) dockerHostFor(monitor db.Monitor) *db.DockerHost {
+	if db.NormalizeMonitorType(monitor.Type) != db.MonitorTypeDocker || monitor.RequestConfig == nil || monitor.RequestConfig.DockerHostID == "" {
+		return nil
+	}
+	host, err := m.store.GetDockerHost(monitor.RequestConfig.DockerHostID)
+	if err != nil {
+		return nil
+	}
+	return &host
 }
 
 // loadNotificationConfig reads global notification fatigue settings from the database.

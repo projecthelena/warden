@@ -63,9 +63,10 @@ export interface RequestConfig {
     retryCount?: number;
     dnsRecordType?: string;
     dnsResolver?: string;
+    dockerHostId?: string;
 }
 
-export const MONITOR_TYPES = ['http', 'tcp', 'ping', 'dns'] as const;
+export const MONITOR_TYPES = ['http', 'tcp', 'ping', 'dns', 'docker'] as const;
 export type MonitorType = typeof MONITOR_TYPES[number];
 
 export const DNS_RECORD_TYPES = ['A', 'AAAA', 'MX', 'NS', 'TXT'] as const;

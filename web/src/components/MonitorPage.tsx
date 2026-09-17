@@ -59,9 +59,7 @@ export function MonitorPage() {
                             <StatusBadge status={monitor.status} />
                             {monitor.alertsMuted && <span className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-300"><BellOff className="h-3 w-3" />Alerts muted</span>}
                         </div>
-                        <a href={monitor.url} target="_blank" rel="noopener noreferrer" className="inline-flex max-w-full items-center gap-1.5 font-mono text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                            <span className="truncate">{monitor.url}</span><ExternalLink className="h-3.5 w-3.5 shrink-0" />
-                        </a>
+                        {monitor.type === "docker" ? <p className="inline-flex max-w-full items-center gap-1.5 font-mono text-xs text-muted-foreground"><span className="truncate">{monitor.url}</span></p> : <a href={monitor.url} target="_blank" rel="noopener noreferrer" className="inline-flex max-w-full items-center gap-1.5 font-mono text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><span className="truncate">{monitor.url}</span><ExternalLink className="h-3.5 w-3.5 shrink-0" /></a>}
                         <dl className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-muted-foreground">
                             <Meta label="Type" value={monitor.type.toUpperCase()} /><Meta label="Group" value={group.name} />
                             <Meta label="Frequency" value={monitor.interval < 60 ? `${monitor.interval}s` : `${monitor.interval / 60}m`} />

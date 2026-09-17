@@ -117,6 +117,7 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 	statusPageH := NewStatusPageHandler(store, manager, authH)
 	notifH := NewNotificationChannelsHandler(store)
 	userH := NewUserHandler(store)
+	dockerHostH := NewDockerHostHandler(store, manager)
 
 	// Kubernetes health probes (unauthenticated, no rate limiting)
 	r.Get("/healthz", Healthz)
@@ -197,6 +198,14 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 				dashboard.Get("/monitors/{id}/latency", uptimeH.GetMonitorLatency)
 				dashboard.Get("/monitors/{id}/events", uptimeH.GetMonitorEvents)
 				dashboard.Get("/monitors/{id}/insights", insightH.GetMonitorInsights)
+
+				// Reusable Docker Engine connections and container discovery.
+				dashboard.Get("/docker/hosts", dockerHostH.List)
+				dashboard.Post("/docker/hosts", dockerHostH.Create)
+				dashboard.Put("/docker/hosts/{id}", dockerHostH.Update)
+				dashboard.Delete("/docker/hosts/{id}", dockerHostH.Delete)
+				dashboard.Post("/docker/hosts/{id}/test", dockerHostH.Test)
+				dashboard.Get("/docker/hosts/{id}/containers", dockerHostH.Containers)
 
 				// Incidents
 				dashboard.Get("/incidents", incidentH.GetIncidents)

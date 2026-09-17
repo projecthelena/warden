@@ -29,6 +29,7 @@ import { DNS_RECORD_TYPES, Group, MONITOR_TYPES, MonitorType, RequestConfig } fr
 import { MONITOR_TYPE_INFO, isValidTarget } from "@/lib/monitorTypes";
 import { useCreateGroupMutation, useCreateMonitorMutation } from "@/hooks/useMonitors";
 import { useToast } from "@/components/ui/use-toast";
+import { DockerTargetFields } from "@/components/docker/DockerTargetFields";
 
 interface CreateMonitorSheetProps {
     groups: Group[];
@@ -73,6 +74,7 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
     const [requestBody, setRequestBody] = useState("");
     const [dnsRecordType, setDnsRecordType] = useState("A");
     const [dnsResolver, setDnsResolver] = useState("");
+    const [dockerHostId, setDockerHostId] = useState("");
 
     const typeInfo = MONITOR_TYPE_INFO[monitorType];
 
@@ -98,7 +100,7 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!name || !url) return;
+        if (!name) return;
 
         let finalGroupId = selectedGroupId;
 
@@ -107,6 +109,10 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
             // 1. Validate target for the selected check type. Targets get pasted, and a
             // stray space would only be forgiven by the URL parser, not by the others.
             const target = url.trim();
+            if (monitorType === "docker" && !dockerHostId) {
+                toast({ title: "Docker host required", description: "Choose the Docker host that runs this container.", variant: "destructive" });
+                return;
+            }
             if (!isValidTarget(monitorType, target)) {
                 setUrlError(true);
                 toast({
@@ -173,6 +179,8 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                 if (dnsResolver) config.dnsResolver = dnsResolver;
             }
 
+            if (monitorType === "docker") config.dockerHostId = dockerHostId;
+
             const requestConfig: RequestConfig | undefined =
                 Object.keys(config).length > 0 ? config : undefined;
 
@@ -184,7 +192,7 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                 interval,
                 confirmationThreshold: confirmThreshold ? parseInt(confirmThreshold) : undefined,
                 notificationCooldownMinutes: cooldownMins ? parseInt(cooldownMins) : undefined,
-                latencyThreshold: latencyThreshold ? parseInt(latencyThreshold) : undefined,
+                latencyThreshold: monitorType !== "docker" && latencyThreshold ? parseInt(latencyThreshold) : undefined,
                 requestConfig,
             });
 
@@ -219,6 +227,7 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
             setRequestBody("");
             setDnsRecordType("A");
             setDnsResolver("");
+            setDockerHostId("");
             setOpen(false);
 
             // Redirect to the group page
@@ -271,7 +280,7 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                     </div>
                     <div className="grid gap-2">
                         <Label htmlFor="type">Check Type</Label>
-                        <Select onValueChange={(v) => setMonitorType(v as MonitorType)} value={monitorType}>
+                        <Select onValueChange={(v) => { setMonitorType(v as MonitorType); setUrl(""); setDockerHostId(""); }} value={monitorType}>
                             <SelectTrigger data-testid="create-monitor-type-select">
                                 <SelectValue />
                             </SelectTrigger>
@@ -285,18 +294,10 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                         </Select>
                         <p className="text-[0.8rem] text-muted-foreground">{typeInfo.hint}</p>
                     </div>
-                    <div className="grid gap-2">
+                    {monitorType === "docker" ? <DockerTargetFields hostId={dockerHostId} container={url} onHostChange={setDockerHostId} onContainerChange={setUrl} /> : <div className="grid gap-2">
                         <Label htmlFor="url">{typeInfo.targetLabel}</Label>
-                        <Input
-                            id="url"
-                            placeholder={typeInfo.placeholder}
-                            className={cn("font-mono text-sm", urlError && "border-red-500 focus-visible:ring-red-500")}
-                            value={url}
-                            onChange={(e) => setUrl(e.target.value)}
-                            required
-                            data-testid="create-monitor-url-input"
-                        />
-                    </div>
+                        <Input id="url" placeholder={typeInfo.placeholder} className={cn("font-mono text-sm", urlError && "border-red-500 focus-visible:ring-red-500")} value={url} onChange={(e) => setUrl(e.target.value)} required data-testid="create-monitor-url-input" />
+                    </div>}
                     <div className="grid gap-2">
                         <Label htmlFor="interval">Check Frequency</Label>
                         <Select onValueChange={(v) => setInterval(Number(v))} value={interval.toString()}>
@@ -397,7 +398,7 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                                             onChange={(e) => setCooldownMins(e.target.value)}
                                         />
                                     </div>
-                                    <div className="grid gap-1.5 col-span-2">
+                                    {monitorType !== "docker" && <div className="grid gap-1.5 col-span-2">
                                         <Label htmlFor="create-latency" className="text-xs">Latency Threshold (ms)</Label>
                                         <Input
                                             id="create-latency"
@@ -407,7 +408,7 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                                             value={latencyThreshold}
                                             onChange={(e) => setLatencyThreshold(e.target.value)}
                                         />
-                                    </div>
+                                    </div>}
                                     <p className="col-span-2 text-xs text-muted-foreground">
                                         Override global notification settings for this monitor. Leave empty to use global defaults.
                                     </p>

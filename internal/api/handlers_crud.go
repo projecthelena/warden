@@ -199,7 +199,7 @@ type CreatedMonitor struct {
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        body body object{name=string,type=string,url=string,groupId=string,interval=int} true "Monitor payload. type is one of http, tcp, ping, dns (default http)"
+// @Param        body body object{name=string,type=string,url=string,groupId=string,interval=int} true "Monitor payload. type is one of http, tcp, ping, dns, docker (default http)"
 // @Success      201  {object} CreatedMonitor
 // @Failure      400  {string} string "Validation error"
 // @Failure      404  {string} string "Group not found"
@@ -335,7 +335,7 @@ func (h *CRUDHandler) UpdateMonitor(w http.ResponseWriter, r *http.Request) {
 		monitorType = h.storedMonitorType(id)
 	}
 	if !db.IsValidMonitorType(monitorType) {
-		http.Error(w, "type must be one of http, tcp, ping, dns", http.StatusBadRequest)
+		http.Error(w, "type must be one of http, tcp, ping, dns, docker", http.StatusBadRequest)
 		return
 	}
 	if err := validateTarget(monitorType, req.URL); err != nil {
@@ -358,6 +358,10 @@ func (h *CRUDHandler) UpdateMonitor(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := validateRequestConfig(req.RequestConfig); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := h.validateDockerMonitor(monitorType, req.RequestConfig); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -664,8 +668,12 @@ func validateTarget(monitorType, target string) error {
 		if net.ParseIP(target) != nil {
 			return fmt.Errorf("dns target must be a hostname, not an IP address")
 		}
+	case db.MonitorTypeDocker:
+		if len(target) > 255 || !dockerContainerNameRe.MatchString(target) {
+			return fmt.Errorf("docker target must be a container name")
+		}
 	default:
-		return fmt.Errorf("type must be one of http, tcp, ping, dns")
+		return fmt.Errorf("type must be one of http, tcp, ping, dns, docker")
 	}
 
 	return nil
@@ -711,6 +719,7 @@ func isValidHost(host string) bool {
 // serves compose service names that contain them, and Warden ships as a container that
 // people point at exactly those names.
 var hostLabelRe = regexp.MustCompile(`^[a-zA-Z0-9_]([a-zA-Z0-9_-]*[a-zA-Z0-9_])?$`)
+var dockerContainerNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]*$`)
 
 // isValidResolver accepts a DNS resolver address with or without an explicit port.
 func isValidResolver(addr string) bool {

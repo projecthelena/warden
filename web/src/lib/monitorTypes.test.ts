@@ -68,4 +68,11 @@ describe("isValidTarget", () => {
     expect(isValidTarget("ping", "example.com:80")).toBe(false);
     expect(isValidTarget("dns", "example.com/zone")).toBe(false);
   });
+
+  it("accepts stable Docker container names and rejects IDs or paths", () => {
+    expect(isValidTarget("docker", "warden-api-1")).toBe(true);
+    expect(isValidTarget("docker", "project_worker.1")).toBe(true);
+    expect(isValidTarget("docker", "/warden-api-1")).toBe(false);
+    expect(isValidTarget("docker", "warden/api")).toBe(false);
+  });
 });

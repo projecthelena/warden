@@ -40,7 +40,7 @@ func (h *CRUDHandler) AddMonitor(in MonitorInput) (db.Monitor, error) {
 	}
 
 	if in.Type != "" && !db.IsValidMonitorType(in.Type) {
-		return db.Monitor{}, fmt.Errorf("%w: type must be one of http, tcp, ping, dns", ErrMonitorInvalid)
+		return db.Monitor{}, fmt.Errorf("%w: type must be one of http, tcp, ping, dns, docker", ErrMonitorInvalid)
 	}
 	if err := validateTarget(in.Type, in.URL); err != nil {
 		return db.Monitor{}, fmt.Errorf("%w: %s", ErrMonitorInvalid, err)
@@ -54,6 +54,9 @@ func (h *CRUDHandler) AddMonitor(in MonitorInput) (db.Monitor, error) {
 	}
 	if err := validateRequestConfig(in.RequestConfig); err != nil {
 		return db.Monitor{}, fmt.Errorf("%w: %s", ErrMonitorInvalid, err)
+	}
+	if err := h.validateDockerMonitor(in.Type, in.RequestConfig); err != nil {
+		return db.Monitor{}, err
 	}
 
 	if err := h.requireGroup(in.GroupID); err != nil {
@@ -88,6 +91,25 @@ func (h *CRUDHandler) AddMonitor(in MonitorInput) (db.Monitor, error) {
 
 	h.manager.Sync()
 	return m, nil
+}
+
+func (h *CRUDHandler) validateDockerMonitor(monitorType string, cfg *db.RequestConfig) error {
+	if db.NormalizeMonitorType(monitorType) != db.MonitorTypeDocker {
+		if cfg != nil && cfg.DockerHostID != "" {
+			return fmt.Errorf("%w: dockerHostId is only valid for Docker monitors", ErrMonitorInvalid)
+		}
+		return nil
+	}
+	if cfg == nil || cfg.DockerHostID == "" {
+		return fmt.Errorf("%w: dockerHostId is required for Docker monitors", ErrMonitorInvalid)
+	}
+	if _, err := h.store.GetDockerHost(cfg.DockerHostID); err != nil {
+		if errors.Is(err, db.ErrDockerHostNotFound) {
+			return fmt.Errorf("%w: Docker host not found", ErrMonitorInvalid)
+		}
+		return fmt.Errorf("failed to validate Docker host: %w", err)
+	}
+	return nil
 }
 
 // requireGroup fails unless the group exists. group_id is a foreign key, so without this

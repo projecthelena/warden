@@ -31,6 +31,7 @@ type Monitor struct {
 	stopOnce      sync.Once
 	jobQueue      chan<- Job
 	requestConfig *db.RequestConfig
+	dockerHost    *db.DockerHost
 
 	// Notification fatigue state (protected by mu)
 	confirmationThreshold int   // effective threshold (resolved from per-monitor or global)
@@ -146,6 +147,12 @@ func (m *Monitor) ApplyConfig(cfg MonitorConfig) {
 	}
 }
 
+func (m *Monitor) SetDockerHost(host *db.DockerHost) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.dockerHost = host
+}
+
 // alignDelay computes the duration until the next tick aligned to createdAt.
 // Checks should fire at createdAt, createdAt+interval, createdAt+2*interval, ...
 // At time now, the next aligned tick is interval - ((now - createdAt) mod interval).
@@ -216,9 +223,10 @@ func (m *Monitor) schedule() {
 	}()
 	m.mu.RLock()
 	cfg := m.requestConfig
+	dockerHost := m.dockerHost
 	m.mu.RUnlock()
 	select {
-	case m.jobQueue <- Job{MonitorID: m.id, Type: m.monitorType, URL: m.url, RequestConfig: cfg}:
+	case m.jobQueue <- Job{MonitorID: m.id, Type: m.monitorType, URL: m.url, RequestConfig: cfg, DockerHost: dockerHost}:
 		// Scheduled
 	default:
 		// Queue full, skip this tick to avoid blocking scheduler

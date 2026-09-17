@@ -518,6 +518,7 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 	type MonitorDTO struct {
 		ID            string               `json:"id"`
 		Name          string               `json:"name"`
+		Interval      int                  `json:"interval"`
 		Status        string               `json:"status"`
 		Latency       int64                `json:"latency"`
 		History       []HistoryPoint       `json:"history"`
@@ -626,6 +627,7 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 			monitorDTOs = append(monitorDTOs, MonitorDTO{
 				ID:            meta.ID,
 				Name:          meta.Name,
+				Interval:      meta.Interval,
 				Status:        statusStr,
 				Latency:       latency,
 				History:       historyPoints,
