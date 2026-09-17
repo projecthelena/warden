@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getOverallStatus } from "./StatusPage";
+import { getOverallStatus } from "./statusPageStatus";
 
 function groupsWithStatuses(...statuses: Array<"up" | "down" | "degraded" | "paused">) {
     return [{
