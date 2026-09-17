@@ -25,20 +25,10 @@ import {
     SidebarMenuItem,
 } from "@/components/ui/sidebar"
 import { Group, OverviewGroup, useMonitorStore } from "@/lib/store"
-import { useRole } from "@/hooks/useRole"
 
 export function AppSidebar({ groups, ...props }: React.ComponentProps<typeof Sidebar> & { groups: (Group | OverviewGroup)[] }) {
     const { user } = useMonitorStore();
     const { pathname } = useLocation();
-    const { isAdmin, canEdit } = useRole();
-
-    const settingsItems = [
-        { title: "General", url: "/settings" },
-        ...(canEdit ? [{ title: "Notifications", url: "/settings?tab=notifications" }] : []),
-        ...(isAdmin ? [{ title: "Security", url: "/settings?tab=security" }] : []),
-        ...(isAdmin ? [{ title: "System", url: "/settings?tab=system" }] : []),
-        ...(isAdmin ? [{ title: "Users", url: "/settings?tab=users" }] : []),
-    ];
 
     const data = {
         user: {
@@ -77,7 +67,7 @@ export function AppSidebar({ groups, ...props }: React.ComponentProps<typeof Sid
                 title: "Settings",
                 url: "/settings",
                 icon: Settings2,
-                items: settingsItems,
+                isActive: pathname.startsWith("/settings"),
             },
         ],
         navSecondary: [

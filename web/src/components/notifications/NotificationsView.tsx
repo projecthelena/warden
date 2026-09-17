@@ -44,10 +44,10 @@ export function NotificationsView() {
     return (
         <Card>
             <CardHeader>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                        <CardTitle>Notification Channels</CardTitle>
-                        <CardDescription>Every enabled channel receives every alert and daily digest.</CardDescription>
+                        <CardTitle>Channels</CardTitle>
+                        <CardDescription>Where Warden sends alerts and summaries.</CardDescription>
                     </div>
                     <CreateChannelSheet />
                 </div>
@@ -78,8 +78,8 @@ export function NotificationsView() {
                                             <span>{getTypeLabel(channel.type)}</span>
                                         </div>
                                     </TableCell>
-                                    <TableCell>
-                                        <span className="text-muted-foreground font-mono text-xs">
+                                    <TableCell className="max-w-48">
+                                        <span className="block truncate text-muted-foreground font-mono text-xs">
                                             {channelDisplayValue(channel.config)}
                                         </span>
                                     </TableCell>
@@ -121,10 +121,10 @@ export function NotificationsView() {
                         </TableBody>
                     </Table>
                 ) : (
-                    <div className="flex flex-col items-center justify-center p-12 border border-dashed border-border rounded-lg text-muted-foreground">
-                        <BellOff className="w-12 h-12 mb-4 opacity-50" />
-                        <h3 className="text-lg font-medium text-foreground mb-1">No Notification Channels</h3>
-                        <p className="text-sm">Add a channel to receive alerts when monitors go down.</p>
+                    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border p-8 text-center text-muted-foreground">
+                        <BellOff className="mb-3 h-8 w-8 opacity-50" />
+                        <h3 className="mb-1 text-sm font-medium text-foreground">No channels yet</h3>
+                        <p className="text-sm">Add one to receive alerts.</p>
                     </div>
                 )}
             </CardContent>

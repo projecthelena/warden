@@ -24,10 +24,9 @@ test.describe('Settings & API Keys', () => {
             await expect(page).toHaveURL(/.*dashboard/);
         }
 
-        // 2. Navigate via SPA (Sidebar)
-        // Expand Settings (Robust selector)
-        await page.locator('button:has(span:text-is("Settings"))').click();
-        await page.getByRole('link', { name: 'Security' }).click();
+        // 2. Navigate via the single Settings entry, then use the local tabs.
+        await page.getByRole('link', { name: 'Settings' }).click();
+        await page.getByRole('tab', { name: 'Security' }).click();
 
         // Verify URL
         await expect(page).toHaveURL(/.*settings\?tab=security/);

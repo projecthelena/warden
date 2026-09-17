@@ -85,46 +85,6 @@ function ResetDatabaseDialog() {
     );
 }
 
-function AppearanceSettings() {
-    const { theme, setTheme } = useTheme();
-
-    return (
-        <Card>
-            <CardHeader>
-                <CardTitle>Appearance</CardTitle>
-                <CardDescription>Customize the look of your dashboard.</CardDescription>
-            </CardHeader>
-            <CardContent>
-                <div className="grid gap-2">
-                    <Label>Theme</Label>
-                    <Select value={theme} onValueChange={(v) => setTheme(v as "light" | "dark" | "system")}>
-                        <SelectTrigger className="max-w-[200px]">
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="light">
-                                <span className="flex items-center gap-2">
-                                    <Sun className="h-4 w-4" /> Light
-                                </span>
-                            </SelectItem>
-                            <SelectItem value="dark">
-                                <span className="flex items-center gap-2">
-                                    <Moon className="h-4 w-4" /> Dark
-                                </span>
-                            </SelectItem>
-                            <SelectItem value="system">
-                                <span className="flex items-center gap-2">
-                                    <Monitor className="h-4 w-4" /> System
-                                </span>
-                            </SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
-            </CardContent>
-        </Card>
-    );
-}
-
 function GeneralSettings() {
     const { settings, fetchSettings, updateSettings } = useMonitorStore();
     const { toast } = useToast();
@@ -155,43 +115,32 @@ function GeneralSettings() {
     return (
         <Card>
             <CardHeader>
-                <CardTitle>General Settings</CardTitle>
-                <CardDescription>Global configuration for your monitors.</CardDescription>
+                <CardTitle>Monitoring defaults</CardTitle>
+                <CardDescription>Fallbacks used when a monitor does not have its own setting.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-                <div className="grid gap-2">
-                    <Label htmlFor="latency">Latency Threshold (ms)</Label>
-                    <div className="text-sm text-muted-foreground mb-2">
-                        Response times higher than this value will mark the service as "Degraded".
+            <CardContent className="space-y-5">
+                <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid gap-2">
+                        <Label htmlFor="latency">Slow after</Label>
+                        <div className="relative max-w-xs">
+                            <Input id="latency" type="number" value={threshold} onChange={(e) => setThreshold(e.target.value)} className="pr-24" />
+                            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">milliseconds</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">Marks the monitor as degraded.</p>
                     </div>
-                    <Input
-                        id="latency"
-                        type="number"
-                        value={threshold}
-                        onChange={(e) => setThreshold(e.target.value)}
-                        className="max-w-[200px]"
-                    />
-                </div>
-                <div className="grid gap-2">
-                    <Label htmlFor="retention">Data Retention (Days)</Label>
-                    <div className="text-sm text-muted-foreground mb-2">
-                        Monitor checks and events older than this will be automatically deleted. Incident history is kept.
+                    <div className="grid gap-2">
+                        <Label htmlFor="retention">Keep check data for</Label>
+                        <div className="relative max-w-xs">
+                            <Input id="retention" type="number" value={retention} onChange={(e) => setRetention(e.target.value)} className="pr-16" />
+                            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">days</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">Incident history is always kept.</p>
                     </div>
-                    <Input
-                        id="retention"
-                        type="number"
-                        value={retention}
-                        onChange={(e) => setRetention(e.target.value)}
-                        className="max-w-[200px]"
-                    />
                 </div>
-                <div className="rounded-lg border border-border/50 bg-muted/30 p-4">
-                    <Label className="text-sm font-medium">SSL Certificate Warnings</Label>
-                    <p className="text-sm text-muted-foreground mt-1">
-                        Notifications are sent at 30, 14, 7, and 1 days before certificate expiry (at mid-day in your configured timezone).
-                    </p>
+                <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm text-muted-foreground">SSL expiry alerts are sent 30, 14, 7, and 1 days before expiry.</p>
+                    <Button onClick={handleSave} className="w-fit whitespace-nowrap">Save defaults</Button>
                 </div>
-                <Button onClick={handleSave} className="w-fit">Save Settings</Button>
             </CardContent>
         </Card>
     );
@@ -235,6 +184,7 @@ function NotificationIntelligence() {
     // requires the admin role; hiding the field prevents editors from staging a value
     // and losing the rest of their edits to a 403.
     const { isAdmin } = useRole();
+    const [settingsReady, setSettingsReady] = useState(Boolean(settings));
 
     const [confirmThreshold, setConfirmThreshold] = useState(settings?.["notification.confirmation_threshold"] || "3");
     const [cooldownMins, setCooldownMins] = useState(settings?.["notification.cooldown_minutes"] || "30");
@@ -304,6 +254,7 @@ function NotificationIntelligence() {
             const types = settings["notification.digest.event_types"] || "degraded,flapping,stabilized,ssl_expiring";
             setDigestEventTypes(new Set(types.split(",").map(t => t.trim()).filter(Boolean)));
             setAppUrl(settings["app_url"] || "");
+            setSettingsReady(true);
         }
     }, [settings]);
 
@@ -363,163 +314,124 @@ function NotificationIntelligence() {
         });
     };
 
+    if (!settingsReady) {
+        return (
+            <Card>
+                <CardContent className="py-8 text-sm text-muted-foreground">Loading notification settings…</CardContent>
+            </Card>
+        );
+    }
+
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle>Notification Intelligence</CardTitle>
-                <CardDescription>
-                    Control when and how notifications are sent.
-                </CardDescription>
-            </CardHeader>
-            <CardContent>
-                <TooltipProvider>
-                    <div className="space-y-6">
-                        {/* Event Types — always visible */}
-                        <div className="space-y-3">
-                            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Event Types</h3>
-                            <div className="grid grid-cols-2 gap-3">
-                                {EVENT_TOGGLES.map(({ key, label }) => (
-                                    <div key={key} className="flex items-center justify-between">
-                                        <Label className="text-sm">{label}</Label>
+        <TooltipProvider>
+            <div className="space-y-6">
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Alert rules</CardTitle>
+                        <CardDescription>Choose what reaches your channels and when. Every event stays in history.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                        <section className="space-y-3" aria-labelledby="alert-events-heading">
+                            <div>
+                                <h3 id="alert-events-heading" className="text-sm font-medium">Send an alert for</h3>
+                                <p className="mt-1 text-sm text-muted-foreground">Turn off anything that does not need your attention.</p>
+                            </div>
+                            <div className="grid gap-2 sm:grid-cols-2">
+                                {EVENT_TOGGLES.map(({ key, label, description }) => (
+                                    <div key={key} className="flex min-h-14 items-center justify-between gap-4 rounded-md border px-3 py-2.5">
+                                        <div className="min-w-0">
+                                            <Label htmlFor={key} className="text-sm">{label}</Label>
+                                            <p className="truncate text-xs text-muted-foreground">{description}</p>
+                                        </div>
                                         <Switch
+                                            id={key}
                                             checked={eventToggles[key] ?? true}
-                                            onCheckedChange={(checked) =>
-                                                setEventToggles(prev => ({ ...prev, [key]: checked }))
-                                            }
+                                            onCheckedChange={(checked) => setEventToggles(prev => ({ ...prev, [key]: checked }))}
                                         />
                                     </div>
                                 ))}
                             </div>
-                            <p className="text-xs text-muted-foreground">Disabled events are still logged.</p>
-                        </div>
+                        </section>
 
                         <Separator />
 
-                        {/* Accordion sections */}
-                        <Accordion type="multiple" className="space-y-2">
-                            {/* Alerting Thresholds */}
-                            <AccordionItem value="thresholds" className="border-none">
-                                <AccordionTrigger className="hover:no-underline text-sm font-semibold text-muted-foreground uppercase tracking-wider py-2">
-                                    Alerting Thresholds
+                        <section className="space-y-4" aria-labelledby="outage-timing-heading" data-testid="alert-ladder">
+                            <div>
+                                <h3 id="outage-timing-heading" className="text-sm font-medium">Outage timing</h3>
+                                <p className="mt-1 text-sm text-muted-foreground">Wait through brief blips, then keep the team informed until recovery.</p>
+                            </div>
+                            <div className="grid gap-4 sm:grid-cols-3">
+                                <div className="grid gap-2">
+                                    <Label htmlFor="alert-sustained">Alert after</Label>
+                                    <div className="relative">
+                                        <Input id="alert-sustained" data-testid="alert-sustained" type="number" min={0} max={86400} value={alertSustained} onChange={(e) => setAlertSustained(e.target.value)} className="pr-20" />
+                                        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">seconds</span>
+                                    </div>
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="alert-reminder">First reminder</Label>
+                                    <div className="relative">
+                                        <Input id="alert-reminder" data-testid="alert-reminder" type="number" min={0} max={10080} value={alertReminder} onChange={(e) => setAlertReminder(e.target.value)} className="pr-20" />
+                                        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">minutes</span>
+                                    </div>
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="alert-repeat">Repeat every</Label>
+                                    <div className="relative">
+                                        <Input id="alert-repeat" data-testid="alert-repeat" type="number" min={0} max={10080} value={alertRepeat} onChange={(e) => setAlertRepeat(e.target.value)} className="pr-20" />
+                                        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">minutes</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground">Use 0 to alert immediately or turn reminders off.</p>
+                        </section>
+
+                        <Separator />
+
+                        <Accordion type="multiple">
+                            <AccordionItem value="advanced-delivery">
+                                <AccordionTrigger className="hover:no-underline">
+                                    <span className="text-left">
+                                        <span className="block text-sm font-medium">Advanced delivery</span>
+                                        <span className="mt-1 block text-xs font-normal text-muted-foreground">Failure confirmation, recovery confirmation, and cooldown.</span>
+                                    </span>
                                 </AccordionTrigger>
                                 <AccordionContent>
-                                    <div className="space-y-2 pt-2 pb-4" data-testid="alert-ladder">
-                                        <div className="text-sm font-medium">When an outage is announced</div>
-                                        <div className="text-sm text-muted-foreground">
-                                            A monitor that goes down opens an outage silently. It is announced only if it is still
-                                            down after the delay below, so short blips are recorded without interrupting you.
-                                        </div>
-                                        <div className="grid grid-cols-3 gap-4 pt-2">
-                                            <div className="grid gap-2">
-                                                <Label htmlFor="alert-sustained">
-                                                    Announce after (sec)
-                                                    <HelpTip text="How long a monitor must stay down or degraded before the alert goes out. 0 sends it the moment the outage opens." />
-                                                </Label>
-                                                <Input
-                                                    id="alert-sustained"
-                                                    data-testid="alert-sustained"
-                                                    type="number"
-                                                    min={0}
-                                                    max={86400}
-                                                    value={alertSustained}
-                                                    onChange={(e) => setAlertSustained(e.target.value)}
-                                                />
-                                            </div>
-                                            <div className="grid gap-2">
-                                                <Label htmlFor="alert-reminder">
-                                                    First reminder (min)
-                                                    <HelpTip text="Minutes after the alert before the first reminder that it is still down. 0 turns reminders off." />
-                                                </Label>
-                                                <Input
-                                                    id="alert-reminder"
-                                                    data-testid="alert-reminder"
-                                                    type="number"
-                                                    min={0}
-                                                    max={10080}
-                                                    value={alertReminder}
-                                                    onChange={(e) => setAlertReminder(e.target.value)}
-                                                />
-                                            </div>
-                                            <div className="grid gap-2">
-                                                <Label htmlFor="alert-repeat">
-                                                    Then every (min)
-                                                    <HelpTip text="Cadence of the reminders that follow the first one, for as long as the outage lasts. 0 sends only one reminder." />
-                                                </Label>
-                                                <Input
-                                                    id="alert-repeat"
-                                                    data-testid="alert-repeat"
-                                                    type="number"
-                                                    min={0}
-                                                    max={10080}
-                                                    value={alertRepeat}
-                                                    onChange={(e) => setAlertRepeat(e.target.value)}
-                                                />
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="grid grid-cols-3 gap-4 pt-2">
+                                    <div className="grid gap-4 pt-2 sm:grid-cols-3">
                                         <div className="grid gap-2">
-                                            <Label htmlFor="confirm-threshold">
-                                                Confirmation
-                                                <HelpTip text="Consecutive failures before alerting. 1 = immediate." />
-                                            </Label>
-                                            <Input
-                                                id="confirm-threshold"
-                                                type="number"
-                                                min={1}
-                                                max={100}
-                                                value={confirmThreshold}
-                                                onChange={(e) => setConfirmThreshold(e.target.value)}
-                                            />
+                                            <Label htmlFor="confirm-threshold">Failures before alert <HelpTip text="Consecutive failed checks required before Warden changes the monitor state." /></Label>
+                                            <Input id="confirm-threshold" type="number" min={1} max={100} value={confirmThreshold} onChange={(e) => setConfirmThreshold(e.target.value)} />
                                         </div>
                                         <div className="grid gap-2">
-                                            <Label htmlFor="cooldown-mins">
-                                                Cooldown (min)
-                                                <HelpTip text="Minutes to suppress repeat flapping and stabilized alerts. Down and degraded no longer use this — the reminder interval above governs how often an ongoing outage repeats. 0 = disabled." />
-                                            </Label>
-                                            <Input
-                                                id="cooldown-mins"
-                                                type="number"
-                                                min={0}
-                                                max={1440}
-                                                value={cooldownMins}
-                                                onChange={(e) => setCooldownMins(e.target.value)}
-                                            />
+                                            <Label htmlFor="recovery-checks">Successes before recovery <HelpTip text="Consecutive successful checks required before Warden announces recovery." /></Label>
+                                            <Input id="recovery-checks" type="number" min={1} max={20} value={recoveryChecks} onChange={(e) => setRecoveryChecks(e.target.value)} />
                                         </div>
                                         <div className="grid gap-2">
-                                            <Label htmlFor="recovery-checks">
-                                                Recovery
-                                                <HelpTip text="Consecutive successes before recovery notification. 1 = immediate." />
-                                            </Label>
-                                            <Input
-                                                id="recovery-checks"
-                                                type="number"
-                                                min={1}
-                                                max={20}
-                                                value={recoveryChecks}
-                                                onChange={(e) => setRecoveryChecks(e.target.value)}
-                                            />
+                                            <Label htmlFor="cooldown-mins">Flap cooldown <HelpTip text="Minutes to suppress repeat flapping and stabilized alerts. 0 disables the cooldown." /></Label>
+                                            <Input id="cooldown-mins" type="number" min={0} max={1440} value={cooldownMins} onChange={(e) => setCooldownMins(e.target.value)} />
                                         </div>
                                     </div>
                                 </AccordionContent>
                             </AccordionItem>
 
-                            {/* Flap Detection */}
                             <AccordionItem value="flap-detection" className="border-none">
-                                <AccordionTrigger className="hover:no-underline text-sm font-semibold text-muted-foreground uppercase tracking-wider py-2">
-                                    Flap Detection
+                                <AccordionTrigger className="hover:no-underline">
+                                    <span className="text-left">
+                                        <span className="block text-sm font-medium">Flap detection</span>
+                                        <span className="mt-1 block text-xs font-normal text-muted-foreground">Detect monitors that rapidly alternate between healthy and unhealthy.</span>
+                                    </span>
                                 </AccordionTrigger>
                                 <AccordionContent>
                                     <div className="space-y-4 pt-2">
                                         <div className="flex items-center justify-between">
-                                            <Label>Enabled</Label>
+                                            <Label>Detect flapping</Label>
                                             <Switch
                                                 checked={flapEnabled}
                                                 onCheckedChange={setFlapEnabled}
                                             />
                                         </div>
                                         {flapEnabled && (
-                                            <div className="grid grid-cols-2 gap-4">
+                                            <div className="grid gap-4 sm:grid-cols-2">
                                                 <div className="grid gap-2">
                                                     <Label htmlFor="flap-window">
                                                         Window (checks)
@@ -554,10 +466,12 @@ function NotificationIntelligence() {
                                 </AccordionContent>
                             </AccordionItem>
 
-                            {/* Latency baseline */}
                             <AccordionItem value="latency-baseline" className="border-none">
-                                <AccordionTrigger className="hover:no-underline text-sm font-semibold text-muted-foreground uppercase tracking-wider py-2">
-                                    High Latency
+                                <AccordionTrigger className="hover:no-underline">
+                                    <span className="text-left">
+                                        <span className="block text-sm font-medium">High latency</span>
+                                        <span className="mt-1 block text-xs font-normal text-muted-foreground">Let each monitor learn its normal response time.</span>
+                                    </span>
                                 </AccordionTrigger>
                                 <AccordionContent>
                                     <div className="space-y-4 pt-2">
@@ -578,7 +492,7 @@ function NotificationIntelligence() {
                                         </div>
                                         {adaptiveLatency && (
                                             <div className="space-y-4">
-                                                <div className="grid grid-cols-2 gap-4">
+                                                <div className="grid gap-4 sm:grid-cols-2">
                                                     <div className="grid gap-2">
                                                         <Label htmlFor="latency-factor">
                                                             Slow at (% of p95)
@@ -609,7 +523,7 @@ function NotificationIntelligence() {
                                                     </div>
                                                 </div>
                                                 {isAdmin && (
-                                                    <div className="flex items-center justify-between rounded-md border p-4">
+                                                    <div className="flex flex-col gap-4 rounded-md border p-4 sm:flex-row sm:items-center sm:justify-between">
                                                         <div className="pr-4">
                                                             <Label>Moved Warden?</Label>
                                                             <div className="text-sm text-muted-foreground mt-1">
@@ -652,140 +566,87 @@ function NotificationIntelligence() {
                                 </AccordionContent>
                             </AccordionItem>
 
-                            {/* Weekly patterns */}
-                            <AccordionItem value="weekly-patterns" className="border-none">
-                                <AccordionTrigger className="hover:no-underline text-sm font-semibold text-muted-foreground uppercase tracking-wider py-2">
-                                    Weekly Patterns
-                                </AccordionTrigger>
-                                <AccordionContent>
-                                    <div className="space-y-4 pt-2">
-                                        <div className="flex items-center justify-between">
-                                            <div className="pr-4">
-                                                <Label>Send a weekly summary of what Warden noticed</Label>
-                                                <div className="text-sm text-muted-foreground mt-1">
-                                                    Latency that climbs and resets, trouble that clusters at one time of
-                                                    day, monitors that always fail together, and slowdowns that never
-                                                    crossed a threshold. Nothing is sent on a week with nothing to report.
-                                                </div>
-                                            </div>
-                                            <Switch
-                                                checked={weeklyInsights}
-                                                onCheckedChange={setWeeklyInsights}
-                                                data-testid="weekly-insights-switch"
-                                            />
-                                        </div>
-                                        {weeklyInsights && (
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div className="grid gap-2">
-                                                    <Label htmlFor="weekly-insights-day">Send on</Label>
-                                                    <select
-                                                        id="weekly-insights-day"
-                                                        value={weeklyInsightsDay}
-                                                        onChange={(e) => setWeeklyInsightsDay(e.target.value)}
-                                                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-                                                    >
-                                                        {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
-                                                            .map((label, i) => (
-                                                                <option key={label} value={String(i)}>{label}</option>
-                                                            ))}
-                                                    </select>
-                                                </div>
-                                                <div className="grid gap-2">
-                                                    <Label htmlFor="weekly-insights-time">
-                                                        At
-                                                        <HelpTip text="Uses your configured timezone, same as the daily digest." />
-                                                    </Label>
-                                                    <Input
-                                                        id="weekly-insights-time"
-                                                        type="time"
-                                                        value={weeklyInsightsTime}
-                                                        onChange={(e) => setWeeklyInsightsTime(e.target.value)}
-                                                    />
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </AccordionContent>
-                            </AccordionItem>
-
-                            {/* Daily Digest */}
-                            <AccordionItem value="daily-digest" className="border-none">
-                                <AccordionTrigger className="hover:no-underline text-sm font-semibold text-muted-foreground uppercase tracking-wider py-2">
-                                    Daily Digest
-                                </AccordionTrigger>
-                                <AccordionContent>
-                                    <div className="space-y-4 pt-2">
-                                        <div className="flex items-center justify-between">
-                                            <Label>Enabled</Label>
-                                            <Switch
-                                                checked={digestEnabled}
-                                                onCheckedChange={setDigestEnabled}
-                                                data-testid="digest-enabled"
-                                            />
-                                        </div>
-                                        {digestEnabled && (
-                                            <>
-                                                <div className="grid gap-2">
-                                                    <Label htmlFor="digest-time">
-                                                        Send at
-                                                        <HelpTip text="Uses your configured timezone." />
-                                                    </Label>
-                                                    <Input
-                                                        id="digest-time"
-                                                        type="time"
-                                                        value={digestTime}
-                                                        onChange={(e) => setDigestTime(e.target.value)}
-                                                        className="max-w-[160px]"
-                                                    />
-                                                </div>
-                                                <div className="grid gap-2">
-                                                    <Label>
-                                                        Include in the digest
-                                                        <HelpTip text="What the daily summary covers. This no longer affects immediate alerts: an event can appear in the digest and still reach you the moment it happens. To stop an immediate alert, turn that event off under Event Types." />
-                                                    </Label>
-                                                    <div className="text-sm text-muted-foreground -mt-1" data-testid="digest-scope-note">
-                                                        What the daily summary covers. Immediate alerts are controlled separately, under Event Types.
-                                                    </div>
-                                                    <div className="grid grid-cols-2 gap-2">
-                                                        {DIGEST_EVENT_OPTIONS.map(({ value, label }) => (
-                                                            <div key={value} className="flex items-center gap-2">
-                                                                <Switch
-                                                                    checked={digestEventTypes.has(value)}
-                                                                    onCheckedChange={() => toggleDigestEventType(value)}
-                                                                />
-                                                                <Label className="text-sm font-normal">{label}</Label>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                                {isAdmin && (
-                                                    <div className="grid gap-2">
-                                                        <Label htmlFor="digest-app-url">
-                                                            Dashboard URL
-                                                            <HelpTip text="Public base URL of this Warden install (e.g. https://warden.example.com). When set, the daily digest message becomes clickable: the header links to the full report and each monitor name links to its day-specific drill-down. Leave empty to keep messages plain-text." />
-                                                        </Label>
-                                                        <Input
-                                                            id="digest-app-url"
-                                                            type="url"
-                                                            placeholder="https://warden.example.com"
-                                                            value={appUrl}
-                                                            onChange={(e) => setAppUrl(e.target.value)}
-                                                            className="max-w-md font-mono text-xs"
-                                                        />
-                                                    </div>
-                                                )}
-                                            </>
-                                        )}
-                                    </div>
-                                </AccordionContent>
-                            </AccordionItem>
                         </Accordion>
+                    </CardContent>
+                </Card>
 
-                        <Button onClick={handleSave} className="w-fit" data-testid="save-notification-settings">Save Settings</Button>
-                    </div>
-                </TooltipProvider>
-            </CardContent>
-        </Card>
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Summaries</CardTitle>
+                        <CardDescription>Optional reports for context that does not need an immediate alert.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                        <section className="space-y-4" aria-labelledby="daily-digest-heading">
+                            <div className="flex items-start justify-between gap-4">
+                                <div>
+                                    <Label id="daily-digest-heading" htmlFor="digest-enabled">Daily digest</Label>
+                                    <p className="mt-1 text-sm text-muted-foreground">One daily recap of the event types you choose.</p>
+                                </div>
+                                <Switch id="digest-enabled" checked={digestEnabled} onCheckedChange={setDigestEnabled} data-testid="digest-enabled" />
+                            </div>
+                            {digestEnabled && (
+                                <div className="space-y-4 rounded-md border p-4">
+                                    <div className="grid gap-4 sm:grid-cols-[10rem_minmax(0,1fr)]">
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="digest-time">Send at</Label>
+                                            <Input id="digest-time" type="time" value={digestTime} onChange={(e) => setDigestTime(e.target.value)} />
+                                        </div>
+                                        <div className="grid gap-2">
+                                            <Label>Include</Label>
+                                            <div className="grid gap-2 sm:grid-cols-3">
+                                                {DIGEST_EVENT_OPTIONS.map(({ value, label }) => (
+                                                    <label key={value} className="flex items-center gap-2 text-sm">
+                                                        <Switch checked={digestEventTypes.has(value)} onCheckedChange={() => toggleDigestEventType(value)} />
+                                                        {label}
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground" data-testid="digest-scope-note">Immediate alerts are controlled separately above.</p>
+                                    {isAdmin && (
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="digest-app-url">Dashboard URL <HelpTip text="Adds links back to Warden from the digest. Leave empty for plain text." /></Label>
+                                            <Input id="digest-app-url" type="url" placeholder="https://warden.example.com" value={appUrl} onChange={(e) => setAppUrl(e.target.value)} className="max-w-md font-mono text-xs" />
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </section>
+
+                        <Separator />
+
+                        <section className="space-y-4" aria-labelledby="weekly-patterns-heading">
+                            <div className="flex items-start justify-between gap-4">
+                                <div>
+                                    <Label id="weekly-patterns-heading" htmlFor="weekly-insights">Weekly patterns</Label>
+                                    <p className="mt-1 text-sm text-muted-foreground">A weekly note when Warden finds recurring slowdowns or related failures.</p>
+                                </div>
+                                <Switch id="weekly-insights" checked={weeklyInsights} onCheckedChange={setWeeklyInsights} data-testid="weekly-insights-switch" />
+                            </div>
+                            {weeklyInsights && (
+                                <div className="grid gap-4 rounded-md border p-4 sm:grid-cols-2">
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="weekly-insights-day">Send on</Label>
+                                        <select id="weekly-insights-day" value={weeklyInsightsDay} onChange={(e) => setWeeklyInsightsDay(e.target.value)} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm">
+                                            {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((label, i) => <option key={label} value={String(i)}>{label}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="weekly-insights-time">At</Label>
+                                        <Input id="weekly-insights-time" type="time" value={weeklyInsightsTime} onChange={(e) => setWeeklyInsightsTime(e.target.value)} />
+                                    </div>
+                                </div>
+                            )}
+                        </section>
+                    </CardContent>
+                </Card>
+
+                <div className="flex justify-end">
+                    <Button onClick={handleSave} className="w-full whitespace-nowrap sm:w-auto" data-testid="save-notification-settings">Save notification settings</Button>
+                </div>
+            </div>
+        </TooltipProvider>
     );
 }
 
@@ -798,6 +659,7 @@ export function SettingsView() {
     const { isAdmin, canEdit } = useRole();
     const [isLoading, setIsLoading] = useState(false);
     const [searchParams, setSearchParams] = useSearchParams();
+    const { theme, setTheme } = useTheme();
     const isSSOUser = Boolean(user?.ssoProvider);
 
     const tabParam = searchParams.get("tab") as SettingsTab | null;
@@ -852,7 +714,7 @@ export function SettingsView() {
     };
 
     return (
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
             <div>
                 <h3 className="text-lg font-medium">Settings</h3>
                 <p className="text-sm text-muted-foreground">
@@ -860,9 +722,9 @@ export function SettingsView() {
                 </p>
             </div>
 
-            <Tabs value={activeTab} onValueChange={handleTabChange}>
+            <Tabs value={activeTab} onValueChange={handleTabChange} className="min-w-0">
                 <div className="flex items-center justify-between">
-                    <TabsList>
+                    <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:inline-flex sm:w-auto">
                         <TabsTrigger value="general">General</TabsTrigger>
                         {canEdit && <TabsTrigger value="notifications">Notifications</TabsTrigger>}
                         {isAdmin && <TabsTrigger value="security">Security</TabsTrigger>}
@@ -874,24 +736,37 @@ export function SettingsView() {
                 <TabsContent value="general" className="space-y-6 mt-6">
                     <Card>
                         <CardHeader>
-                            <CardTitle>Account Settings</CardTitle>
-                            <CardDescription>
-                                Manage your account preferences and security.
-                            </CardDescription>
+                            <CardTitle>Profile and preferences</CardTitle>
+                            <CardDescription>Your identity, timezone, and dashboard appearance.</CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-4">
                             <form onSubmit={handleUpdateProfile} className="space-y-4">
-                                <div className="grid gap-2">
-                                    <Label>Username</Label>
-                                    <Input value={user?.username || user?.name || ''} disabled className="max-w-md" />
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                    <div className="grid gap-2">
+                                        <Label>Username</Label>
+                                        <Input value={user?.username || user?.name || ''} disabled />
+                                    </div>
+                                    <div className="grid gap-2">
+                                        <Label>Timezone</Label>
+                                        <input type="hidden" name="timezone" value={selectedTimezone} />
+                                        <SelectTimezone value={selectedTimezone} onValueChange={setSelectedTimezone} />
+                                    </div>
                                 </div>
+
+                                <Separator />
+
                                 <div className="grid gap-2">
-                                    <Label>Timezone</Label>
-                                    <input type="hidden" name="timezone" value={selectedTimezone} />
-                                    <SelectTimezone
-                                        value={selectedTimezone}
-                                        onValueChange={setSelectedTimezone}
-                                    />
+                                    <Label>Theme</Label>
+                                    <Select value={theme} onValueChange={(value) => setTheme(value as "light" | "dark" | "system")}>
+                                        <SelectTrigger className="max-w-[200px]">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="light"><span className="flex items-center gap-2"><Sun className="h-4 w-4" /> Light</span></SelectItem>
+                                            <SelectItem value="dark"><span className="flex items-center gap-2"><Moon className="h-4 w-4" /> Dark</span></SelectItem>
+                                            <SelectItem value="system"><span className="flex items-center gap-2"><Monitor className="h-4 w-4" /> System</span></SelectItem>
+                                        </SelectContent>
+                                    </Select>
                                 </div>
 
                                 <Separator />
@@ -904,19 +779,18 @@ export function SettingsView() {
                                         </p>
                                     </div>
                                 ) : (
-                                    <div className="grid gap-2">
-                                        <Label>Change Password</Label>
+                                    <div className="grid max-w-md gap-2">
+                                        <Label>Change password</Label>
                                         <Input
                                             name="currentPassword"
                                             type="password"
                                             placeholder="Current Password (Required)"
-                                            className="max-w-md"
                                         />
                                         <Input
                                             name="password"
                                             type="password"
                                             placeholder="New Password"
-                                            className="max-w-md mt-2"
+                                            className="mt-2"
                                         />
                                     </div>
                                 )}
@@ -927,8 +801,6 @@ export function SettingsView() {
                             </form>
                         </CardContent>
                     </Card>
-
-                    <AppearanceSettings />
 
                     {isAdmin && <GeneralSettings />}
                 </TabsContent>

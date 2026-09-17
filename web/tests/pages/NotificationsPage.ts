@@ -43,7 +43,7 @@ export class NotificationsPage {
         await expect(this.page).toHaveURL(/.*notifications/);
 
         // Check if View content is visible
-        await expect(this.page.getByRole('heading', { name: /Notification/i }).first()).toBeVisible({ timeout: 5000 });
+        await expect(this.page.getByText('Channels', { exact: true })).toBeVisible({ timeout: 5000 });
         console.log('View Header Visible!');
 
         await expect(this.addChannelTrigger).toBeVisible();
@@ -87,7 +87,7 @@ export class NotificationsPage {
     async openEmailForm(name: string, from: string, to: string) {
         await expect(this.page.getByText('Wait ...')).toBeHidden();
         await expect(this.page).toHaveURL(/.*notifications/);
-        await expect(this.page.getByRole('heading', { name: /Notification/i }).first()).toBeVisible({ timeout: 5000 });
+        await expect(this.page.getByText('Channels', { exact: true })).toBeVisible({ timeout: 5000 });
 
         await expect(this.addChannelTrigger).toBeVisible();
         await this.addChannelTrigger.click();

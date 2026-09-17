@@ -102,8 +102,7 @@ test.describe('RBAC - Role-Based Access Control', () => {
         await expect(dashboard.createGroupTrigger).toBeVisible();
 
         // Navigate to Settings
-        await page.locator('button:has(span:text-is("Settings"))').click();
-        await page.getByRole('link', { name: 'General' }).click();
+        await page.getByRole('link', { name: 'Settings' }).click();
         await expect(page).toHaveURL(/.*settings/);
 
         // Verify all tabs are visible for admin

@@ -557,7 +557,7 @@ test.describe('RBAC - Admin vs Editor Boundary', () => {
         await expect(tabsList.getByText('Users')).toHaveCount(0);
     });
 
-    test('Editor UI: sidebar Settings shows General + Notifications sub-items only', async ({ page }) => {
+    test('Editor UI: sidebar has one direct Settings link', async ({ page }) => {
         await page.goto('/login');
         await expect(page.getByTestId('login-header')).toBeVisible({ timeout: 15000 });
         await page.getByLabel('Username').fill(EDITOR_USER);
@@ -568,15 +568,12 @@ test.describe('RBAC - Admin vs Editor Boundary', () => {
         await expect(page.getByTestId('loading-spinner')).toHaveCount(0, { timeout: 15000 });
         await expect(page.getByText('Wait ...')).toBeHidden({ timeout: 15000 });
 
-        // Expand Settings in sidebar
         const sidebar = page.locator('[data-sidebar="sidebar"]');
-        await sidebar.getByText('Settings').first().click();
-
-        // Editor sees General + Notifications
-        await expect(sidebar.getByText('General')).toBeVisible({ timeout: 10000 });
-        await expect(sidebar.getByText('Notifications')).toBeVisible({ timeout: 10000 });
-
-        // Editor does NOT see Security, System, Users
+        const settingsLink = sidebar.getByRole('link', { name: 'Settings' });
+        await expect(settingsLink).toBeVisible({ timeout: 10000 });
+        await expect(settingsLink).toHaveAttribute('href', '/settings');
+        await expect(sidebar.getByText('General')).toHaveCount(0);
+        await expect(sidebar.getByText('Notifications')).toHaveCount(0);
         await expect(sidebar.getByText('Security')).toHaveCount(0);
         await expect(sidebar.getByText('System')).toHaveCount(0);
         await expect(sidebar.getByText('Users')).toHaveCount(0);
@@ -636,7 +633,7 @@ test.describe('RBAC - Admin vs Editor Boundary', () => {
         await expect(tabsList.getByText('Users')).toBeVisible({ timeout: 10000 });
     });
 
-    test('Admin UI: sidebar Settings shows ALL sub-items', async ({ page }) => {
+    test('Admin UI: sidebar keeps Settings as one direct link', async ({ page }) => {
         await page.context().clearCookies();
 
         const login = new LoginPage(page);
@@ -652,13 +649,14 @@ test.describe('RBAC - Admin vs Editor Boundary', () => {
         await dashboard.waitForLoad();
 
         const sidebar = page.locator('[data-sidebar="sidebar"]');
-        await sidebar.getByText('Settings').first().click();
-
-        await expect(sidebar.getByText('General')).toBeVisible({ timeout: 10000 });
-        await expect(sidebar.getByText('Notifications')).toBeVisible({ timeout: 10000 });
-        await expect(sidebar.getByText('Security')).toBeVisible({ timeout: 10000 });
-        await expect(sidebar.getByText('System')).toBeVisible({ timeout: 10000 });
-        await expect(sidebar.getByText('Users')).toBeVisible({ timeout: 10000 });
+        const settingsLink = sidebar.getByRole('link', { name: 'Settings' });
+        await expect(settingsLink).toBeVisible({ timeout: 10000 });
+        await expect(settingsLink).toHaveAttribute('href', '/settings');
+        await expect(sidebar.getByText('General')).toHaveCount(0);
+        await expect(sidebar.getByText('Notifications')).toHaveCount(0);
+        await expect(sidebar.getByText('Security')).toHaveCount(0);
+        await expect(sidebar.getByText('System')).toHaveCount(0);
+        await expect(sidebar.getByText('Users')).toHaveCount(0);
     });
 
     // ─── Cleanup ───────────────────────────────────────────────────────────
