@@ -1120,10 +1120,17 @@ func TestManager_PauseDuringActiveOutage(t *testing.T) {
 		t.Error("Paused monitor should not be running")
 	}
 
-	// Outage record should still exist in DB (historical data)
+	// The outage remains as history, but is no longer active after monitoring stops.
 	outages, _ = store.GetActiveOutages()
-	if len(outages) != 1 {
-		t.Errorf("Outage should still exist after pause, got %d", len(outages))
+	if len(outages) != 0 {
+		t.Errorf("Paused monitor should have no active outage, got %d", len(outages))
+	}
+	history, err := store.GetResolvedOutages(time.Time{})
+	if err != nil {
+		t.Fatalf("GetResolvedOutages failed: %v", err)
+	}
+	if len(history) != 1 || history[0].MonitorID != "m-outage-pause" {
+		t.Errorf("Paused monitor outage should remain in history, got %+v", history)
 	}
 }
 

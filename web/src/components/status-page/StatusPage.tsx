@@ -9,6 +9,7 @@ import { useMonitorStore, Group, Incident, Monitor, StatusPageConfig } from "@/l
 import { cn, formatDate, hexToHSL, sanitizeImageUrl } from "@/lib/utils";
 import { UptimeBar } from "./UptimeBar";
 import { PastIncidentsSection } from "./PastIncidentsSection";
+import { getOverallStatus } from "./statusPageStatus";
 import { IncidentTimeline } from "@/components/incidents/IncidentTimeline";
 
 // ---------- Types ----------
@@ -45,54 +46,6 @@ function getMaintenanceState(incidents: Incident[]) {
     return { maintenanceIncidents, activeMaintenance, maintenanceGroupIds };
 }
 
-function getOverallStatus(groups: StatusGroup[], incidents: Incident[], maintenanceGroupIds: Set<string>) {
-    const effectiveIncidents = (incidents || []).filter((i) => {
-        if (i.type !== "incident" || i.status === "resolved") return false;
-        if (!i.affectedGroups || i.affectedGroups.length === 0) return true;
-        return !i.affectedGroups.some((gId) => maintenanceGroupIds.has(gId));
-    });
-
-    const hasActiveOutage = effectiveIncidents.length > 0;
-    const hasDown = groups.some(
-        (g) => !maintenanceGroupIds.has(g.id) && g.monitors.some((m) => m.status === "down")
-    );
-    const hasDegraded = groups.some(
-        (g) => !maintenanceGroupIds.has(g.id) && g.monitors.some((m) => m.status === "degraded")
-    );
-    const isUnderMaintenance = maintenanceGroupIds.size > 0;
-
-    if (isUnderMaintenance && !hasActiveOutage && !hasDown) {
-        return {
-            icon: RefreshCw,
-            label: "System Under Maintenance",
-            description: "Scheduled maintenance is currently in progress.",
-            color: "blue" as const,
-        };
-    }
-    if (hasActiveOutage || hasDown) {
-        return {
-            icon: XCircle,
-            label: "System Outage",
-            description: "Some systems are experiencing issues.",
-            color: "red" as const,
-        };
-    }
-    if (hasDegraded) {
-        return {
-            icon: AlertTriangle,
-            label: "Partially Degraded Service",
-            description: "Some monitors are reporting degraded performance.",
-            color: "yellow" as const,
-        };
-    }
-    return {
-        icon: CheckCircle2,
-        label: "All Systems Operational",
-        description: "All monitors are running normally.",
-        color: "green" as const,
-    };
-}
-
 const statusColorMap = {
     green: {
         banner: "bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-transparent border-emerald-500/30",
@@ -117,6 +70,12 @@ const statusColorMap = {
         icon: "text-blue-500",
         iconBg: "bg-blue-500/10",
         dot: "bg-blue-500",
+    },
+    gray: {
+        banner: "bg-gradient-to-r from-slate-500/10 via-slate-500/5 to-transparent border-slate-500/30",
+        icon: "text-slate-400",
+        iconBg: "bg-slate-500/10",
+        dot: "bg-slate-500",
     },
 };
 
