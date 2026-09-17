@@ -297,7 +297,12 @@ function MonitorRow({
 
             {/* Uptime bar (full width, below name) */}
             {showUptimeBars && uptimeDays.length > 0 && (
-                <UptimeBar days={uptimeDays} overallUptime={overallUptime} showPercentage={showUptimePercentage} />
+                <UptimeBar
+                    days={uptimeDays}
+                    overallUptime={overallUptime}
+                    intervalSeconds={monitor.interval}
+                    showPercentage={showUptimePercentage}
+                />
             )}
         </div>
     );

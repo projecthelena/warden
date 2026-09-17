@@ -27,7 +27,7 @@ function formatUptime(value: number) {
 }
 
 export function MonitorOverview({ monitor, timezone }: { monitor: Monitor; timezone?: string }) {
-    const [range, setRange] = useState<Range>("24h");
+    const [range, setRange] = useState<Range>("1h");
     const [stats, setStats] = useState<UptimeStats | null>(null);
     const [latency, setLatency] = useState<LatencyPoint[]>([]);
     const [loading, setLoading] = useState(true);
