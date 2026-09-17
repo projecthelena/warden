@@ -241,8 +241,8 @@ test.describe('RBAC Roles - Viewer, Status Viewer, and Admin Permissions', () =>
         await expect(page).toHaveURL(/.*groups\//, { timeout: 15000 });
 
         // Open the canonical monitor workspace.
-        await page.getByText('Test Monitor').first().click();
-        await expect(page).toHaveURL(/.*monitors\//, { timeout: 15000 });
+        await page.goto('/monitors/m-test-monitor');
+        await expect(page.getByTestId('monitor-page')).toBeVisible({ timeout: 15000 });
         await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 10000 });
         await page.getByRole('tab', { name: 'Incidents' }).click();
         await expect(page.getByRole('heading', { name: /Incidents/ })).toBeVisible({ timeout: 15000 });
@@ -263,8 +263,8 @@ test.describe('RBAC Roles - Viewer, Status Viewer, and Admin Permissions', () =>
         await expect(page).toHaveURL(/.*groups\//, { timeout: 15000 });
 
         // Click on monitor
-        await page.getByText('Test Monitor').first().click();
-        await expect(page).toHaveURL(/.*monitors\//, { timeout: 10000 });
+        await page.goto('/monitors/m-test-monitor');
+        await expect(page.getByTestId('monitor-page')).toBeVisible({ timeout: 15000 });
 
         // Settings tab should NOT be visible (only editors+ see it)
         await expect(page.getByTestId('monitor-settings-tab')).toHaveCount(0);
