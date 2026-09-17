@@ -87,7 +87,10 @@ export function MonitorSettings({ monitor, groupId }: { monitor: Monitor; groupI
     return (
         <div className="space-y-5" data-testid="monitor-settings">
             <Card className="border-border bg-card shadow-none">
-                <CardHeader><CardTitle className="text-base">General</CardTitle><CardDescription>What Warden checks and how often.</CardDescription></CardHeader>
+                <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+                    <div><CardTitle className="text-base">General</CardTitle><CardDescription className="mt-1">What Warden checks and how often.</CardDescription></div>
+                    <Button onClick={save} disabled={saving} data-testid="monitor-edit-save-btn" className="shrink-0 whitespace-nowrap"><Save className="mr-2 h-4 w-4" />{saving ? "Saving…" : "Save changes"}</Button>
+                </CardHeader>
                 <CardContent className="grid gap-5 sm:grid-cols-2">
                     <Field label="Display name" className="sm:col-span-2"><Input value={name} onChange={event => setName(event.target.value)} data-testid="monitor-edit-name-input" /></Field>
                     <Field label="Check type">
@@ -112,7 +115,7 @@ export function MonitorSettings({ monitor, groupId }: { monitor: Monitor; groupI
                             <AccordionTrigger className="hover:no-underline">
                                 <SectionLabel icon={<BellRing />} title="Alerting" summary="Confirmation, cooldown and latency threshold" />
                             </AccordionTrigger>
-                            <AccordionContent className="grid gap-5 pt-2 sm:grid-cols-2">
+                            <AccordionContent className="grid gap-5 px-1 pt-2 sm:grid-cols-2">
                                 <Field label="Confirmation checks"><Input type="number" min={1} placeholder="Global default" value={confirmation} onChange={event => setConfirmation(event.target.value)} /></Field>
                                 <Field label="Cooldown (minutes)"><Input type="number" min={0} placeholder="Global default" value={cooldown} onChange={event => setCooldown(event.target.value)} /></Field>
                                 <Field label="Latency threshold (ms)" className="sm:col-span-2"><Input type="number" min={1} placeholder="Global default" value={latencyThreshold} onChange={event => setLatencyThreshold(event.target.value)} /></Field>
@@ -123,7 +126,7 @@ export function MonitorSettings({ monitor, groupId }: { monitor: Monitor; groupI
                             <AccordionTrigger className="hover:no-underline">
                                 <SectionLabel icon={<TimerReset />} title="Failure handling" summary={`${timeout || 5}s timeout · ${Number(retries) === 0 ? "no retries" : `${retries} retries`}`} />
                             </AccordionTrigger>
-                            <AccordionContent className="grid gap-5 pt-2 sm:grid-cols-2">
+                            <AccordionContent className="grid gap-5 px-1 pt-2 sm:grid-cols-2">
                                 <Field label="Timeout (seconds)"><Input type="number" min={1} max={120} placeholder="5" value={timeout} onChange={event => setTimeoutValue(event.target.value)} /></Field>
                                 <Field label="Retry on failure"><Select value={retries} onValueChange={setRetries}><SelectTrigger data-testid="request-retry-select"><SelectValue /></SelectTrigger><SelectContent>{[0, 1, 2, 3, 4, 5].map(value => <SelectItem key={value} value={value.toString()}>{value === 0 ? "No retry" : `${value} ${value === 1 ? "retry" : "retries"}`}</SelectItem>)}</SelectContent></Select></Field>
                             </AccordionContent>
@@ -133,7 +136,7 @@ export function MonitorSettings({ monitor, groupId }: { monitor: Monitor; groupI
                             <AccordionTrigger className="hover:no-underline">
                                 <SectionLabel icon={<Globe2 />} title="HTTP request" summary={`${method} · ${acceptedCodes || "200–399"} · ${followRedirects ? "follows redirects" : "does not follow redirects"}`} />
                             </AccordionTrigger>
-                            <AccordionContent className="space-y-5 pt-2">
+                            <AccordionContent className="space-y-5 px-1 pt-2">
                                 <div className="grid gap-5 sm:grid-cols-2">
                                     <Field label="Method"><Select value={method} onValueChange={setMethod}><SelectTrigger data-testid="request-method-select"><SelectValue /></SelectTrigger><SelectContent>{["GET", "HEAD", "POST", "PUT", "DELETE"].map(item => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
                                     <Field label="Accepted status codes"><Input placeholder="200-399" value={acceptedCodes} onChange={event => setAcceptedCodes(event.target.value)} /></Field>
@@ -149,15 +152,11 @@ export function MonitorSettings({ monitor, groupId }: { monitor: Monitor; groupI
 
                         {type === "dns" && <AccordionItem value="request">
                             <AccordionTrigger className="hover:no-underline"><SectionLabel icon={<Globe2 />} title="DNS query" summary={`${recordType} record · ${resolver || "system resolver"}`} /></AccordionTrigger>
-                            <AccordionContent className="grid gap-5 pt-2 sm:grid-cols-2"><Field label="Record type"><Select value={recordType} onValueChange={setRecordType}><SelectTrigger data-testid="dns-record-type-select"><SelectValue /></SelectTrigger><SelectContent>{DNS_RECORD_TYPES.map(item => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field><Field label="Resolver"><Input value={resolver} onChange={event => setResolver(event.target.value)} placeholder="System default" data-testid="dns-resolver-input" /></Field></AccordionContent>
+                            <AccordionContent className="grid gap-5 px-1 pt-2 sm:grid-cols-2"><Field label="Record type"><Select value={recordType} onValueChange={setRecordType}><SelectTrigger data-testid="dns-record-type-select"><SelectValue /></SelectTrigger><SelectContent>{DNS_RECORD_TYPES.map(item => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field><Field label="Resolver"><Input value={resolver} onChange={event => setResolver(event.target.value)} placeholder="System default" data-testid="dns-resolver-input" /></Field></AccordionContent>
                         </AccordionItem>}
                     </Accordion>
                 </CardContent>
             </Card>
-
-            <div className="sticky bottom-3 z-10 flex justify-end rounded-xl border border-border bg-background/90 p-3 shadow-lg backdrop-blur">
-                <Button onClick={save} disabled={saving} data-testid="monitor-edit-save-btn"><Save className="mr-2 h-4 w-4" />{saving ? "Saving…" : "Save changes"}</Button>
-            </div>
 
             <Accordion type="single" collapsible className="rounded-xl border border-destructive/30 bg-destructive/5 px-5">
                 <AccordionItem value="danger" className="border-0">
