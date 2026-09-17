@@ -65,5 +65,8 @@ junit.xml
 # Claude Code internal worktrees + local settings
 .claude/
 
+# Local design-audit state
+.hallmark/
+
 # Locally-built tooling binary at repo root
 /faketarget

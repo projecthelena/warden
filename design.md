@@ -70,4 +70,3 @@ Use the named 4-point scale from `tokens.css`. Dense controls may use the compac
 - Incidents answers what failed and when.
 - Settings answers how the check behaves, and is visible only to editors and admins.
 - Pause, mute and delete remain separate actions because their consequences differ.
-
