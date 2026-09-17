@@ -1,9 +1,7 @@
 import { Page, Locator, expect } from '@playwright/test';
 
-// AlertingSettingsPage drives the Notifications tab of Settings, where the sustained-alert
-// ladder lives. The controls sit inside a collapsed accordion, so every helper opens its
-// section first — a field that is merely present but collapsed is not something a user can
-// set, and Playwright will happily fill one that nobody can see.
+// AlertingSettingsPage drives the Notifications tab of Settings. Common controls stay
+// visible; only specialist detection settings live in accordions.
 export class AlertingSettingsPage {
     readonly page: Page;
     readonly sustained: Locator;
@@ -34,7 +32,7 @@ export class AlertingSettingsPage {
     }
 
     async openLadder() {
-        await this.openSection('Alerting Thresholds', this.page.getByTestId('alert-ladder'));
+        await expect(this.page.getByTestId('alert-ladder')).toBeVisible({ timeout: 10000 });
     }
 
     async openLatency() {
@@ -42,11 +40,11 @@ export class AlertingSettingsPage {
     }
 
     async openWeeklyPatterns() {
-        await this.openSection('Weekly Patterns', this.page.getByTestId('weekly-insights-switch'));
+        await expect(this.page.getByTestId('weekly-insights-switch')).toBeVisible({ timeout: 10000 });
     }
 
     async openDigest() {
-        await this.openSection('Daily Digest', this.page.getByTestId('digest-enabled'));
+        await expect(this.page.getByTestId('digest-enabled')).toBeVisible({ timeout: 10000 });
     }
 
     async readLadder() {

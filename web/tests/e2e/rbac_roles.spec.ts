@@ -591,7 +591,7 @@ test.describe('RBAC Roles - Viewer, Status Viewer, and Admin Permissions', () =>
         await expect(tabsList.getByText('Users')).toBeVisible({ timeout: 10000 });
     });
 
-    test('Admin sidebar Settings shows all sub-items', async ({ page }) => {
+    test('Admin sidebar keeps Settings as one direct link', async ({ page }) => {
         await page.context().clearCookies();
 
         const login = new LoginPage(page);
@@ -606,16 +606,15 @@ test.describe('RBAC Roles - Viewer, Status Viewer, and Admin Permissions', () =>
 
         await dashboard.waitForLoad();
 
-        // Expand Settings collapsible in sidebar
         const sidebar = page.locator('[data-sidebar="sidebar"]');
-        await sidebar.getByText('Settings').first().click();
-
-        // Verify all sub-items are visible
-        await expect(sidebar.getByText('General')).toBeVisible({ timeout: 10000 });
-        await expect(sidebar.getByText('Notifications')).toBeVisible({ timeout: 10000 });
-        await expect(sidebar.getByText('Security')).toBeVisible({ timeout: 10000 });
-        await expect(sidebar.getByText('System')).toBeVisible({ timeout: 10000 });
-        await expect(sidebar.getByText('Users')).toBeVisible({ timeout: 10000 });
+        const settingsLink = sidebar.getByRole('link', { name: 'Settings' });
+        await expect(settingsLink).toBeVisible({ timeout: 10000 });
+        await expect(settingsLink).toHaveAttribute('href', '/settings');
+        await expect(sidebar.getByText('General')).toHaveCount(0);
+        await expect(sidebar.getByText('Notifications')).toHaveCount(0);
+        await expect(sidebar.getByText('Security')).toHaveCount(0);
+        await expect(sidebar.getByText('System')).toHaveCount(0);
+        await expect(sidebar.getByText('Users')).toHaveCount(0);
     });
 
     test('Admin can toggle status page switches', async ({ page }) => {

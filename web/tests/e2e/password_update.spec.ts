@@ -36,7 +36,7 @@ test.describe('Password Update Flow', () => {
 
         // Go to Settings
         await page.goto('/settings');
-        await expect(page.getByText('Account Settings')).toBeVisible();
+        await expect(page.getByText('Profile and preferences')).toBeVisible();
 
         // 1. Try to change password without current password
         await page.fill('input[name="password"]', NEW_PASS);

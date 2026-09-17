@@ -103,7 +103,7 @@ test.describe('Sustained alert ladder', () => {
 
         await expect(note).toBeVisible({ timeout: 5000 });
         await expect(note).toContainText('Immediate alerts are controlled separately');
-        await expect(page.getByText('Include in the digest')).toBeVisible();
+        await expect(page.getByText('Include', { exact: true })).toBeVisible();
         await expect(page.getByText('stop sending immediate alerts')).toHaveCount(0);
         await expect(page.getByText('Batched Events')).toHaveCount(0);
     });

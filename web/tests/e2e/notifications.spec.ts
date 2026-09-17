@@ -16,8 +16,8 @@ async function openNotifications(page: Page) {
     await notifications.goto();
     if (await login.isVisible()) {
         await login.login();
-        await page.getByRole('button', { name: 'Settings' }).click();
-        await page.getByRole('link', { name: 'Notifications' }).click();
+        await page.getByRole('link', { name: 'Settings' }).click();
+        await page.getByRole('tab', { name: 'Notifications' }).click();
     }
     return notifications;
 }
