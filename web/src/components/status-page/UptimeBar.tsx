@@ -224,7 +224,6 @@ export function UptimeBar({ days, overallUptime, showPercentage = true }: Uptime
     }, []);
 
     const uptimeDisplay = useMemo(() => {
-        if (overallUptime >= 100) return "100%";
         return overallUptime.toFixed(2) + "%";
     }, [overallUptime]);
 
@@ -290,7 +289,9 @@ export function UptimeBar({ days, overallUptime, showPercentage = true }: Uptime
 
                 {/* Overall uptime */}
                 {showPercentage && (
-                    <div className={`text-sm font-mono font-bold tabular-nums whitespace-nowrap ${uptimeColor}`}>
+                    <div
+                        className={`w-[7ch] shrink-0 text-right text-sm font-mono font-bold tabular-nums whitespace-nowrap ${uptimeColor}`}
+                    >
                         {uptimeDisplay}
                     </div>
                 )}
