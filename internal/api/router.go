@@ -134,12 +134,10 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 			auth.Get("/setup/status", apiRouter.CheckSetup)
 			auth.Post("/setup", apiRouter.PerformSetup)
 
-			// SSO routes (public)
-			auth.Get("/auth/sso/status", ssoH.GetSSOStatus)
-			auth.Get("/auth/sso/google", ssoH.GoogleLogin)
-			auth.Get("/auth/sso/google/callback", ssoH.GoogleCallback)
-			auth.Get("/auth/sso/oidc", ssoH.OIDCLogin)
-			auth.Get("/auth/sso/oidc/callback", ssoH.OIDCCallback)
+			// Identity provider discovery and callback routes.
+			auth.Get("/auth/sso/providers", ssoH.PublicProviders)
+			auth.Get("/auth/sso/{id}", ssoH.ProviderLogin)
+			auth.Get("/auth/sso/{id}/callback", ssoH.ProviderCallback)
 		})
 
 		// Public Status Pages
@@ -224,8 +222,13 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 				dashboard.Patch("/settings", settingsH.UpdateSettings)
 				dashboard.Post("/settings/latency-baselines/relearn", settingsH.RelearnLatencyBaselines)
 
-				// SSO Settings (admin only)
-				dashboard.Post("/settings/sso/test", ssoH.TestSSOConfig)
+				// Identity providers (admin only; handlers enforce the role).
+				dashboard.Get("/sso/providers", ssoH.ListProviders)
+				dashboard.Post("/sso/providers", ssoH.CreateProvider)
+				dashboard.Put("/sso/providers/order", ssoH.ReorderProviders)
+				dashboard.Put("/sso/providers/{id}", ssoH.UpdateProvider)
+				dashboard.Delete("/sso/providers/{id}", ssoH.DeleteProvider)
+				dashboard.Post("/sso/providers/{id}/test", ssoH.TestProvider)
 
 				// API Keys
 				dashboard.Get("/api-keys", apiKeyH.ListKeys)

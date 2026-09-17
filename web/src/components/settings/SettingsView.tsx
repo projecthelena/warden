@@ -7,7 +7,6 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SystemTab } from "./SystemTab";
 import { SSOSettings } from "./SSOSettings";
-import { OIDCSettings } from "./OIDCSettings";
 import { APIKeysView } from "./APIKeysView";
 
 import { UsersView } from "./UsersView";
@@ -901,7 +900,7 @@ export function SettingsView() {
                                     <div className="rounded-lg border border-border/50 bg-muted/30 p-4">
                                         <Label className="text-sm font-medium">Single sign-on account</Label>
                                         <p className="text-sm text-muted-foreground mt-1">
-                                            Your password is managed by {user?.ssoProvider === "google" ? "Google" : "your OpenID Connect provider"}. Change it there, not in Warden.
+                                            Your password is managed by your identity provider. Change it there, not in Warden.
                                         </p>
                                     </div>
                                 ) : (
@@ -944,7 +943,7 @@ export function SettingsView() {
                 {isAdmin && (
                     <TabsContent value="security" className="space-y-6 mt-6">
                         <APIKeysView />
-                        <div className="space-y-6"><SSOSettings /><OIDCSettings /></div>
+                        <SSOSettings />
                     </TabsContent>
                 )}
 

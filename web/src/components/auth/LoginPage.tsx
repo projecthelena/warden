@@ -46,9 +46,7 @@ export function LoginPage() {
     const [password, setPassword] = useState("");
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
-    const [googleSSOEnabled, setGoogleSSOEnabled] = useState(false);
-    const [oidcSSOEnabled, setOIDCSSOEnabled] = useState(false);
-    const [oidcProviderName, setOIDCProviderName] = useState("SSO");
+    const [ssoProviders, setSSOProviders] = useState<Array<{ id: string; template: "google" | "oidc"; name: string }>>([]);
 
     // Check for SSO errors in URL params
     useEffect(() => {
@@ -59,23 +57,12 @@ export function LoginPage() {
         }
     }, [searchParams]);
 
-    // Check if Google SSO is enabled
     useEffect(() => {
-        fetch("/api/auth/sso/status")
+        fetch("/api/auth/sso/providers")
             .then(res => res.json())
-            .then(data => {
-                setGoogleSSOEnabled(data.google === true);
-                setOIDCSSOEnabled(data.oidc === true);
-                if (data.oidcProviderName) setOIDCProviderName(data.oidcProviderName);
-            })
-            .catch(() => {
-                setGoogleSSOEnabled(false);
-            });
+            .then(data => setSSOProviders(Array.isArray(data.providers) ? data.providers : []))
+            .catch(() => setSSOProviders([]));
     }, []);
-
-    const handleGoogleLogin = () => {
-        window.location.href = "/api/auth/sso/google";
-    };
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -168,7 +155,7 @@ export function LoginPage() {
                             )}
                         </Button>
 
-                        {(googleSSOEnabled || oidcSSOEnabled) && (
+                        {ssoProviders.length > 0 && (
                             <>
                                 <div className="relative w-full">
                                     <div className="absolute inset-0 flex items-center">
@@ -181,17 +168,17 @@ export function LoginPage() {
                                     </div>
                                 </div>
 
-                                {googleSSOEnabled && <Button
+                                {ssoProviders.map(provider => <Button
+                                    key={provider.id}
                                     type="button"
                                     variant="outline"
                                     className="w-full"
-                                    onClick={handleGoogleLogin}
-                                    data-testid="google-sso-btn"
+                                    onClick={() => { window.location.href = `/api/auth/sso/${provider.id}`; }}
+                                    data-testid={`sso-provider-${provider.id}`}
                                 >
-                                    <GoogleIcon className="mr-2 h-4 w-4" />
-                                    Sign in with Google
-                                </Button>}
-                                {oidcSSOEnabled && <Button type="button" variant="outline" className="w-full" onClick={() => { window.location.href = "/api/auth/sso/oidc"; }} data-testid="oidc-sso-btn">Sign in with {oidcProviderName}</Button>}
+                                    {provider.template === "google" && <GoogleIcon className="mr-2 h-4 w-4" />}
+                                    Sign in with {provider.name}
+                                </Button>)}
                             </>
                         )}
                     </div>
