@@ -126,14 +126,12 @@ test.describe('Monitor Type Editing', () => {
         await expect(page.getByText(`Monitor "${monitorName}" active and checking.`).first())
             .toBeVisible({ timeout: 15000 });
 
-        // Open the card itself, not the toast that still carries the same name.
+        // Open the canonical settings page.
         await dashboard.verifyMonitorStatus('Operational');
-        await page.locator('div.rounded-lg.bg-card').filter({ hasText: monitorName }).first().click();
-        await expect(page.locator('[data-state="open"].fixed.inset-0')).toBeVisible({ timeout: 5000 });
-        await page.getByTestId('monitor-settings-tab').click();
+        await dashboard.openMonitorSettings(monitorName);
 
         // Switch to TCP but leave the HTTP URL in place, which is what a hurried edit
-        // looks like. The sheet has to say so instead of closing and dropping the edits.
+        // looks like. The page has to say so instead of dropping the edits.
         await page.getByTestId('monitor-edit-type-select').click();
         await page.getByRole('option', { name: 'TCP Port' }).click();
         await page.getByTestId('monitor-edit-save-btn').click();

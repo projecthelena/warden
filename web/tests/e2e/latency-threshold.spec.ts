@@ -49,12 +49,8 @@ test.describe('Per-Monitor Latency Threshold', () => {
         await expect(toast).toBeVisible({ timeout: 15000 });
 
         // 8. Verify the value persisted in the monitor workspace
-        await page.waitForTimeout(1000);
-        await page.getByText(monitorName).first().click();
-        await expect(page).toHaveURL(/\/monitors\//, { timeout: 10000 });
-        await page.getByRole('tab', { name: 'Settings' }).click();
+        await dashboard.openMonitorSettings(monitorName);
         await page.getByRole('button', { name: /Alerting/ }).click();
-        await page.waitForTimeout(500);
 
         // Verify the latency threshold is persisted
         const latencyInput = page.getByLabel('Latency Threshold (ms)');
@@ -66,16 +62,18 @@ test.describe('Per-Monitor Latency Threshold', () => {
         await latencyInput.fill('5000');
 
         // Save
+        const updated = page.waitForResponse(resp => resp.url().includes('/api/monitors/') && resp.request().method() === 'PUT');
         await page.getByRole('button', { name: 'Save changes' }).click();
-        await page.waitForTimeout(1000);
+        expect((await updated).status()).toBe(200);
 
         // 10. Verify the updated value remains in the canonical settings view
         await expect(page.getByLabel('Latency Threshold (ms)')).toHaveValue('5000');
 
         // 11. Clear the threshold (back to global default)
         await page.getByLabel('Latency Threshold (ms)').clear();
+        const cleared = page.waitForResponse(resp => resp.url().includes('/api/monitors/') && resp.request().method() === 'PUT');
         await page.getByRole('button', { name: 'Save changes' }).click();
-        await page.waitForTimeout(1000);
+        expect((await cleared).status()).toBe(200);
 
         // Should be empty (global default)
         await expect(page.getByLabel('Latency Threshold (ms)')).toHaveValue('');

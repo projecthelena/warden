@@ -25,9 +25,9 @@ async function monitorFromApi(page: import('@playwright/test').Page, name: strin
 // Opens the monitor's canonical workspace. Operational actions remain in the header so
 // the operator does not have to hunt through configuration to pause or mute a check.
 async function openMonitorSettings(page: import('@playwright/test').Page, name: string) {
-    await page.getByText(name).first().click();
-    await expect(page).toHaveURL(/\/monitors\//, { timeout: 10000 });
-    await expect(page.getByTestId('monitor-page')).toBeVisible({ timeout: 10000 });
+    const monitor = await monitorFromApi(page, name);
+    await page.goto(`/monitors/${monitor.id}?tab=settings`);
+    await expect(page.getByTestId('monitor-settings')).toBeVisible({ timeout: 10000 });
 }
 
 test.describe('Per-monitor alert mute', () => {
@@ -69,6 +69,9 @@ test.describe('Per-monitor alert mute', () => {
         await dashboard.createMonitorSubmit.click();
         const createResp = await created;
         expect(createResp.status(), await createResp.text()).toBe(201);
+        await expect(dashboard.createMonitorName).toBeHidden({ timeout: 10000 });
+        await expect(page.getByText(`Monitor "${monitorName}" active and checking.`).first())
+            .toBeVisible({ timeout: 15000 });
 
         // A new monitor starts audible.
         await expect.poll(async () => (await monitorFromApi(page, monitorName)).alertsMuted,
@@ -91,7 +94,7 @@ test.describe('Per-monitor alert mute', () => {
 
         // The button now offers the opposite action and the header exposes the muted state.
         await expect(muteBtn).toContainText('Unmute Alerts', { timeout: 10000 });
-        await expect(page.getByText('Alerts muted')).toBeVisible();
+        await expect(page.getByTestId('monitor-page').getByText('Alerts muted', { exact: true })).toBeVisible();
 
         // It survives a full reload rather than living only in the sheet's state. Go back
         // to the board explicitly: creating the group navigated away, and reloading

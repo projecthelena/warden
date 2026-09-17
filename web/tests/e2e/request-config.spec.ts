@@ -91,13 +91,12 @@ test.describe('Request Configuration', () => {
         await expect(page.getByText(monitorName).first()).toBeVisible();
 
         // 9. Open the canonical monitor workspace
-        await page.getByText(monitorName).first().click();
-        await expect(page).toHaveURL(/\/monitors\//, { timeout: 10000 });
+        await dashboard.openMonitorSettings(monitorName);
 
-        // 10. Go to Settings tab
-        await page.getByTestId('monitor-settings-tab').click();
+        // 10. Open HTTP settings
         await expect(page.getByText('HTTP request')).toBeVisible({ timeout: 5000 });
         await page.getByRole('button', { name: /HTTP request/ }).click();
+        await page.getByRole('button', { name: /Failure handling/ }).click();
 
         // 11. Verify request config values in settings
 
@@ -122,11 +121,7 @@ test.describe('Request Configuration', () => {
         await expect(page.getByPlaceholder('Value')).toHaveValue('Warden/1.0');
 
         // 11g. Body shows '{"check": true}'
-        await expect(page.getByPlaceholder('{"status": "ok"}')).toHaveValue('{"check": true}');
-
-        // Close the sheet
-        await page.getByRole('button', { name: 'Close' }).click();
-        await expect(page.locator('[data-state="open"].fixed.inset-0')).toHaveCount(0, { timeout: 5000 });
+        await expect(page.getByPlaceholder('{"status":"ok"}')).toHaveValue('{"check": true}');
 
         // 12. Clean up
         console.log(`Deleting Monitor: ${monitorName}`);

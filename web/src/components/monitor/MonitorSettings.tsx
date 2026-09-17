@@ -74,7 +74,7 @@ export function MonitorSettings({ monitor, groupId }: { monitor: Monitor; groupI
         }
 
         setSaving(true);
-        updateMonitor(monitor.id, {
+        await updateMonitor(monitor.id, {
             name: name.trim(), type, url: normalizedTarget, interval,
             confirmationThreshold: confirmation ? Number(confirmation) : undefined,
             notificationCooldownMinutes: cooldown ? Number(cooldown) : undefined,
@@ -116,9 +116,9 @@ export function MonitorSettings({ monitor, groupId }: { monitor: Monitor; groupI
                                 <SectionLabel icon={<BellRing />} title="Alerting" summary="Confirmation, cooldown and latency threshold" />
                             </AccordionTrigger>
                             <AccordionContent className="grid gap-5 px-1 pt-2 sm:grid-cols-2">
-                                <Field label="Confirmation checks"><Input type="number" min={1} placeholder="Global default" value={confirmation} onChange={event => setConfirmation(event.target.value)} /></Field>
-                                <Field label="Cooldown (minutes)"><Input type="number" min={0} placeholder="Global default" value={cooldown} onChange={event => setCooldown(event.target.value)} /></Field>
-                                <Field label="Latency threshold (ms)" className="sm:col-span-2"><Input type="number" min={1} placeholder="Global default" value={latencyThreshold} onChange={event => setLatencyThreshold(event.target.value)} /></Field>
+                                <Field label="Confirmation checks"><Input aria-label="Confirmation checks" type="number" min={1} placeholder="Global default" value={confirmation} onChange={event => setConfirmation(event.target.value)} /></Field>
+                                <Field label="Cooldown (minutes)"><Input aria-label="Cooldown (minutes)" type="number" min={0} placeholder="Global default" value={cooldown} onChange={event => setCooldown(event.target.value)} /></Field>
+                                <Field label="Latency threshold (ms)" className="sm:col-span-2"><Input aria-label="Latency threshold (ms)" type="number" min={1} placeholder="Global default" value={latencyThreshold} onChange={event => setLatencyThreshold(event.target.value)} /></Field>
                             </AccordionContent>
                         </AccordionItem>
 
@@ -127,7 +127,7 @@ export function MonitorSettings({ monitor, groupId }: { monitor: Monitor; groupI
                                 <SectionLabel icon={<TimerReset />} title="Failure handling" summary={`${timeout || 5}s timeout · ${Number(retries) === 0 ? "no retries" : `${retries} retries`}`} />
                             </AccordionTrigger>
                             <AccordionContent className="grid gap-5 px-1 pt-2 sm:grid-cols-2">
-                                <Field label="Timeout (seconds)"><Input type="number" min={1} max={120} placeholder="5" value={timeout} onChange={event => setTimeoutValue(event.target.value)} /></Field>
+                                <Field label="Timeout (seconds)"><Input aria-label="Timeout (seconds)" type="number" min={1} max={120} placeholder="5" value={timeout} onChange={event => setTimeoutValue(event.target.value)} /></Field>
                                 <Field label="Retry on failure"><Select value={retries} onValueChange={setRetries}><SelectTrigger data-testid="request-retry-select"><SelectValue /></SelectTrigger><SelectContent>{[0, 1, 2, 3, 4, 5].map(value => <SelectItem key={value} value={value.toString()}>{value === 0 ? "No retry" : `${value} ${value === 1 ? "retry" : "retries"}`}</SelectItem>)}</SelectContent></Select></Field>
                             </AccordionContent>
                         </AccordionItem>

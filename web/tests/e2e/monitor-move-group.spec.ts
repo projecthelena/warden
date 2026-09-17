@@ -76,6 +76,7 @@ test.describe('Move monitor between groups', () => {
         expect(await dashboard.moveMonitorToGroup(monitorName, target)).toBe(200);
 
         // Gone from the group it left...
+        await dashboard.openGroup(sourcePath!);
         await expect(page.getByText(monitorName)).toHaveCount(0, { timeout: 10000 });
 
         // ...present in the one it landed in...

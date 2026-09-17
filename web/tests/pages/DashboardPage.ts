@@ -82,11 +82,7 @@ export class DashboardPage {
     }
 
     async deleteMonitor(monitorName: string) {
-        // Open Monitor Details
-        await this.page.getByText(monitorName).first().click();
-
-        // Click Settings Tab
-        await this.page.getByTestId('monitor-settings-tab').click();
+        await this.openMonitorSettings(monitorName);
 
         // Wait for settings tab content to load
         await this.page.getByRole('button', { name: /Danger zone/ }).click();
@@ -101,24 +97,16 @@ export class DashboardPage {
         // Confirm deletion
         await this.page.getByTestId('delete-monitor-confirm').click();
 
-        // Wait for sheet/dialog to close (this indicates the action completed)
-        await expect(this.page.locator('[data-state="open"].fixed.inset-0')).toHaveCount(0, { timeout: 15000 });
-
-        // Wait for React Query to refetch and update UI
-        await this.page.waitForTimeout(1500);
+        await expect(this.page).toHaveURL(/\/groups\//, { timeout: 15000 });
 
         // Verify the monitor card is gone by checking the monitor list area specifically
         // Use a more targeted approach - wait for the element to be detached
-        const monitorCard = this.page.locator('button.rounded-lg.bg-card').filter({ hasText: monitorName });
+        const monitorCard = this.page.locator('a.rounded-lg.bg-card').filter({ hasText: monitorName });
         await expect(monitorCard).toHaveCount(0, { timeout: 15000 });
     }
 
     async editMonitor(oldName: string, newName: string) {
-        // Open Monitor Details
-        await this.page.getByText(oldName).first().click();
-
-        // Click Settings Tab
-        await this.page.getByTestId('monitor-settings-tab').click();
+        await this.openMonitorSettings(oldName);
 
         // Wait for settings content to load
         await expect(this.page.getByTestId('monitor-edit-name-input')).toBeVisible({ timeout: 5000 });
@@ -175,9 +163,15 @@ export class DashboardPage {
     }
 
     async openMonitorSettings(monitorName: string) {
-        await this.page.getByText(monitorName).first().click();
-        await expect(this.page).toHaveURL(/\/monitors\//, { timeout: 10000 });
-        await this.page.getByTestId('monitor-settings-tab').click();
+        const response = await this.page.request.get('/api/uptime');
+        expect(response.ok(), 'GET /api/uptime should be authorised').toBeTruthy();
+        const payload = await response.json();
+        const monitor = payload.groups
+            ?.flatMap((group: { monitors?: Array<{ id: string; name: string }> }) => group.monitors ?? [])
+            .find((item: { name: string }) => item.name === monitorName);
+        expect(monitor, `monitor ${monitorName} should exist`).toBeTruthy();
+
+        await this.page.goto(`/monitors/${monitor.id}?tab=settings`);
         await expect(this.page.getByTestId('monitor-settings')).toBeVisible({ timeout: 5000 });
     }
 
@@ -213,20 +207,19 @@ export class DashboardPage {
 
     async verifyMonitorPaused(monitorName: string) {
         // Verify the monitor card shows "Paused" badge
-        const monitorCard = this.page.locator('button.rounded-lg.bg-card').filter({ hasText: monitorName });
+        const monitorCard = this.page.locator('a.rounded-lg.bg-card').filter({ hasText: monitorName });
         await expect(monitorCard.getByText('Paused')).toBeVisible({ timeout: 15000 });
     }
 
     async verifyMonitorOperational(monitorName: string) {
         // Verify the monitor card shows "Operational" badge
-        const monitorCard = this.page.locator('button.rounded-lg.bg-card').filter({ hasText: monitorName });
+        const monitorCard = this.page.locator('a.rounded-lg.bg-card').filter({ hasText: monitorName });
         await expect(monitorCard.getByText('Operational')).toBeVisible({ timeout: 15000 });
     }
 
     async pauseMonitorViaSettings(monitorName: string) {
-        await this.page.getByText(monitorName).first().click();
-        await expect(this.page).toHaveURL(/\/monitors\//, { timeout: 10000 });
-        const pauseBtn = this.page.getByRole('button', { name: 'Pause Monitor' });
+        await this.openMonitorSettings(monitorName);
+        const pauseBtn = this.page.getByRole('button', { name: 'Pause Monitor', exact: true });
         await expect(pauseBtn).toBeVisible({ timeout: 10000 });
         await expect(pauseBtn).toBeEnabled({ timeout: 5000 });
 
@@ -242,9 +235,8 @@ export class DashboardPage {
     }
 
     async resumeMonitorViaSettings(monitorName: string) {
-        await this.page.getByText(monitorName).first().click();
-        await expect(this.page).toHaveURL(/\/monitors\//, { timeout: 10000 });
-        const resumeBtn = this.page.getByRole('button', { name: 'Resume Monitor' });
+        await this.openMonitorSettings(monitorName);
+        const resumeBtn = this.page.getByRole('button', { name: 'Resume Monitor', exact: true });
         await expect(resumeBtn).toBeVisible({ timeout: 10000 });
         await expect(resumeBtn).toBeEnabled({ timeout: 5000 });
 
