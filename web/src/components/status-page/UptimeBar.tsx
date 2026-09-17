@@ -98,6 +98,15 @@ function formatUptime(pct: number): string {
     return pct.toFixed(2) + "%";
 }
 
+function formatOverallUptime(pct: number): string {
+    if (pct >= 100) return "100%";
+    if (pct > 99.99) {
+        const rounded = Math.round(pct * 1_000) / 1_000;
+        return Math.min(rounded, 99.999).toFixed(3) + "%";
+    }
+    return pct.toFixed(2) + "%";
+}
+
 function formatDowntime(uptimePercent: number, dayCount: number): string | null {
     if (uptimePercent < 0 || uptimePercent >= 100) return null;
     const totalMinutes = (1 - uptimePercent / 100) * dayCount * 24 * 60;
@@ -223,9 +232,7 @@ export function UptimeBar({ days, overallUptime, showPercentage = true }: Uptime
         return () => window.removeEventListener("touchstart", handler);
     }, []);
 
-    const uptimeDisplay = useMemo(() => {
-        return overallUptime.toFixed(2) + "%";
-    }, [overallUptime]);
+    const uptimeDisplay = useMemo(() => formatOverallUptime(overallUptime), [overallUptime]);
 
     const uptimeColor = useMemo(() => {
         if (overallUptime >= 99.9) return "text-emerald-500";
