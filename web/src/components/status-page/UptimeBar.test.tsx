@@ -17,8 +17,12 @@ const days = [{
 
 describe("UptimeBar", () => {
     it.each([
-        [100, "100.00%"],
+        [100, "100%"],
         [99.9, "99.90%"],
+        [99.99, "99.99%"],
+        [99.991234, "99.991%"],
+        [99.997685, "99.998%"],
+        [99.999999, "99.999%"],
     ])("reserves a fixed-width percentage column for %s%% uptime", (uptime, label) => {
         render(<UptimeBar days={days} overallUptime={uptime} />);
 
