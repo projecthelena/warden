@@ -97,10 +97,10 @@ export function AppSidebar({ groups, ...props }: React.ComponentProps<typeof Sid
                         <SidebarMenuButton size="lg" asChild>
                             <Link to="/dashboard">
                                 <div className="grid flex-1 text-left text-sm leading-tight">
-                                    <span className="truncate font-display font-bold tracking-tight">
+                                    <span className="truncate font-bold tracking-tight">
                                         Project <span className="font-normal text-muted-foreground">Helena</span>
                                     </span>
-                                    <span className="truncate text-xs font-mono font-medium text-cyan-500">WARDEN</span>
+                                    <span className="truncate text-xs font-medium text-cyan-500 tracking-widest">WARDEN</span>
                                 </div>
                             </Link>
                         </SidebarMenuButton>

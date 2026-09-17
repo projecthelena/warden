@@ -141,7 +141,7 @@ function MaintenanceCard({ incident, groups, onEdit, onDelete, onEndNow }: { inc
                         </div>
                     </div>
                     {incident.status && (
-                        <span className="text-[10px] uppercase tracking-wider font-mono text-muted-foreground/40">
+                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground/40">
                             {incident.status.replace('_', ' ')}
                         </span>
                     )}

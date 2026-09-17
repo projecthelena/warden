@@ -100,10 +100,10 @@ export function LoginPage() {
                     {/* Branding */}
                     <div className="flex flex-col items-center gap-2 text-center">
                         <div className="flex flex-col items-center">
-                            <span className="text-xl font-display font-bold tracking-tight">
+                            <span className="text-xl font-bold tracking-tight">
                                 Project <span className="font-normal text-muted-foreground">Helena</span>
                             </span>
-                            <span className="text-sm font-mono font-medium text-cyan-500 tracking-widest">WARDEN</span>
+                            <span className="text-sm font-medium text-cyan-500 tracking-widest">WARDEN</span>
                         </div>
                         <p className="text-sm text-muted-foreground" data-testid="login-header">
                             Sign in to your account

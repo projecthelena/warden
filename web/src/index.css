@@ -84,7 +84,7 @@
   }
 
   body {
-    font-family: 'DM Sans', system-ui, sans-serif;
+    @apply font-sans;
     min-height: 100vh;
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
