@@ -3,19 +3,14 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
-      release_type:
-        description: 'Release type'
+      channel:
+        description: 'What do you want to publish?'
         required: true
-        default: 'patch'
+        default: 'release candidate'
         type: choice
         options:
-        - patch
-        - minor
-        - major
-      custom_version:
-        description: 'Custom version (e.g. v1.2.3). Overrides release type.'
-        required: false
-        type: string
+        - release candidate
+        - release
 
 jobs:
   release:
@@ -33,58 +28,21 @@ jobs:
       - name: Determine Next Version
         id: version
         run: |
-          # Bump from the last stable tag, ignoring pre-releases: a v0.4.0-rc.1 left around
-          # would otherwise mis-parse as the base (patch "0-rc.1") and produce a wrong bump.
-          LATEST_TAG=$(git tag --sort=-v:refname | grep -vF -e '-' | head -n 1)
-          LATEST_TAG=${LATEST_TAG:-v0.0.0}
-          echo "Current version: $LATEST_TAG"
-
-          if [ -n "${{ inputs.custom_version }}" ]; then
-            NEW_TAG="${{ inputs.custom_version }}"
-          else
-            # Extract major, minor, patch
-            # Remove 'v' prefix if present
-            VERSION=${LATEST_TAG#v}
-            IFS='.' read -r major minor patch <<< "$VERSION"
-            
-            # Default to 0 if empty (handling cases like v1 or v1.0)
-            major=${major:-0}
-            minor=${minor:-0}
-            patch=${patch:-0}
-
-            case "${{ inputs.release_type }}" in
-              major)
-                major=$((major + 1))
-                minor=0
-                patch=0
-                ;;
-              minor)
-                minor=$((minor + 1))
-                patch=0
-                ;;
-              patch)
-                patch=$((patch + 1))
-                ;;
-            esac
-            NEW_TAG="v$major.$minor.$patch"
+          CHANNEL=stable
+          if [ "${{ inputs.channel }}" = "release candidate" ]; then
+            CHANNEL=rc
           fi
+          python3 .github/scripts/next_version.py --channel "$CHANNEL" --github-output "$GITHUB_OUTPUT"
 
-          # Reject a malformed custom_version before it becomes a tag. Without this a typo
-          # like "0.4.0rc1" would tag verbatim and, having no hyphen, ship as a stable
-          # release that moves :latest.
-          if ! echo "$NEW_TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
-            echo "::error::Invalid version '$NEW_TAG'. Use vMAJOR.MINOR.PATCH, optionally -prerelease (e.g. v0.4.0 or v0.4.0-rc.1)."
-            exit 1
-          fi
-
-          # Fail early and clearly if the tag already exists, instead of a cryptic git push error.
-          if git rev-parse "$NEW_TAG" >/dev/null 2>&1; then
-            echo "::error::Tag $NEW_TAG already exists. Pick a new version (e.g. bump the rc number)."
-            exit 1
-          fi
-
-          echo "New version: $NEW_TAG"
-          echo "tag=$NEW_TAG" >> $GITHUB_OUTPUT
+      - name: Summarize Version
+        run: |
+          {
+            echo "## ${{ steps.version.outputs.tag }}"
+            echo
+            echo "Calculated automatically from Conventional Commits since ${{ steps.version.outputs.stable }}."
+            echo
+            echo "Semantic bump: **${{ steps.version.outputs.bump }}**"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Create Tag
         run: |
