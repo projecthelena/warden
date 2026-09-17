@@ -89,6 +89,7 @@ export class DashboardPage {
         await this.page.getByTestId('monitor-settings-tab').click();
 
         // Wait for settings tab content to load
+        await this.page.getByRole('button', { name: /Danger zone/ }).click();
         await expect(this.page.getByTestId('delete-monitor-trigger')).toBeVisible({ timeout: 5000 });
 
         // Click Delete

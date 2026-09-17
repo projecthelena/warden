@@ -132,7 +132,7 @@ export function MonitorOverview({ monitor, timezone }: { monitor: Monitor; timez
             <Card className="border-border bg-card shadow-none">
                 <CardHeader className="pb-3"><CardTitle className="text-base">Recent checks</CardTitle></CardHeader>
                 <CardContent className="overflow-x-auto">
-                    <UptimeHistory history={monitor.history} interval={monitor.interval} isPaused={monitor.status === "paused"} />
+                    <UptimeHistory className="max-w-none" history={monitor.history} interval={monitor.interval} isPaused={monitor.status === "paused"} />
                 </CardContent>
             </Card>
 

@@ -11,7 +11,8 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Save, Trash2, X } from "lucide-react";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { BellRing, Globe2, Save, TimerReset, Trash2, X } from "lucide-react";
 
 export function MonitorSettings({ monitor, groupId }: { monitor: Monitor; groupId: string }) {
     const navigate = useNavigate();
@@ -104,51 +105,66 @@ export function MonitorSettings({ monitor, groupId }: { monitor: Monitor; groupI
             </Card>
 
             <Card className="border-border bg-card shadow-none">
-                <CardHeader><CardTitle className="text-base">Alerting</CardTitle><CardDescription>Leave fields empty to inherit the global defaults.</CardDescription></CardHeader>
-                <CardContent className="grid gap-5 sm:grid-cols-2">
-                    <Field label="Confirmation checks"><Input type="number" min={1} placeholder="Global default" value={confirmation} onChange={event => setConfirmation(event.target.value)} /></Field>
-                    <Field label="Cooldown (minutes)"><Input type="number" min={0} placeholder="Global default" value={cooldown} onChange={event => setCooldown(event.target.value)} /></Field>
-                    <Field label="Latency threshold (ms)" className="sm:col-span-2"><Input type="number" min={1} placeholder="Global default" value={latencyThreshold} onChange={event => setLatencyThreshold(event.target.value)} /></Field>
+                <CardHeader className="pb-2"><CardTitle className="text-base">Advanced settings</CardTitle><CardDescription>Open only the section you need. Defaults work well for most monitors.</CardDescription></CardHeader>
+                <CardContent>
+                    <Accordion type="multiple" className="w-full">
+                        <AccordionItem value="alerting">
+                            <AccordionTrigger className="hover:no-underline">
+                                <SectionLabel icon={<BellRing />} title="Alerting" summary="Confirmation, cooldown and latency threshold" />
+                            </AccordionTrigger>
+                            <AccordionContent className="grid gap-5 pt-2 sm:grid-cols-2">
+                                <Field label="Confirmation checks"><Input type="number" min={1} placeholder="Global default" value={confirmation} onChange={event => setConfirmation(event.target.value)} /></Field>
+                                <Field label="Cooldown (minutes)"><Input type="number" min={0} placeholder="Global default" value={cooldown} onChange={event => setCooldown(event.target.value)} /></Field>
+                                <Field label="Latency threshold (ms)" className="sm:col-span-2"><Input type="number" min={1} placeholder="Global default" value={latencyThreshold} onChange={event => setLatencyThreshold(event.target.value)} /></Field>
+                            </AccordionContent>
+                        </AccordionItem>
+
+                        <AccordionItem value="behavior">
+                            <AccordionTrigger className="hover:no-underline">
+                                <SectionLabel icon={<TimerReset />} title="Failure handling" summary={`${timeout || 5}s timeout · ${Number(retries) === 0 ? "no retries" : `${retries} retries`}`} />
+                            </AccordionTrigger>
+                            <AccordionContent className="grid gap-5 pt-2 sm:grid-cols-2">
+                                <Field label="Timeout (seconds)"><Input type="number" min={1} max={120} placeholder="5" value={timeout} onChange={event => setTimeoutValue(event.target.value)} /></Field>
+                                <Field label="Retry on failure"><Select value={retries} onValueChange={setRetries}><SelectTrigger data-testid="request-retry-select"><SelectValue /></SelectTrigger><SelectContent>{[0, 1, 2, 3, 4, 5].map(value => <SelectItem key={value} value={value.toString()}>{value === 0 ? "No retry" : `${value} ${value === 1 ? "retry" : "retries"}`}</SelectItem>)}</SelectContent></Select></Field>
+                            </AccordionContent>
+                        </AccordionItem>
+
+                        {type === "http" && <AccordionItem value="request">
+                            <AccordionTrigger className="hover:no-underline">
+                                <SectionLabel icon={<Globe2 />} title="HTTP request" summary={`${method} · ${acceptedCodes || "200–399"} · ${followRedirects ? "follows redirects" : "does not follow redirects"}`} />
+                            </AccordionTrigger>
+                            <AccordionContent className="space-y-5 pt-2">
+                                <div className="grid gap-5 sm:grid-cols-2">
+                                    <Field label="Method"><Select value={method} onValueChange={setMethod}><SelectTrigger data-testid="request-method-select"><SelectValue /></SelectTrigger><SelectContent>{["GET", "HEAD", "POST", "PUT", "DELETE"].map(item => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
+                                    <Field label="Accepted status codes"><Input placeholder="200-399" value={acceptedCodes} onChange={event => setAcceptedCodes(event.target.value)} /></Field>
+                                </div>
+                                <div className="flex min-h-11 items-center justify-between rounded-lg border border-border px-3"><Label htmlFor="follow-redirects">Follow redirects</Label><Switch id="follow-redirects" checked={followRedirects} onCheckedChange={setFollowRedirects} /></div>
+                                <Field label="Custom headers">
+                                    <div className="space-y-2">{headers.map((header, index) => <div key={index} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.75rem] gap-2"><Input aria-label={`Header ${index + 1} name`} placeholder="Header name" value={header.key} onChange={event => setHeaders(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, key: event.target.value } : item))} /><Input aria-label={`Header ${index + 1} value`} placeholder="Value" value={header.value} onChange={event => setHeaders(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))} /><Button type="button" variant="ghost" size="icon" aria-label="Remove header" onClick={() => setHeaders(current => current.filter((_, itemIndex) => itemIndex !== index))}><X className="h-4 w-4" /></Button></div>)}</div>
+                                    <Button type="button" variant="outline" size="sm" onClick={() => setHeaders(current => [...current, { key: "", value: "" }])}>Add header</Button>
+                                </Field>
+                                {(method === "POST" || method === "PUT") && <Field label="Request body"><Textarea value={body} onChange={event => setBody(event.target.value)} placeholder='{"status":"ok"}' className="min-h-28 resize-y font-mono text-xs" /></Field>}
+                            </AccordionContent>
+                        </AccordionItem>}
+
+                        {type === "dns" && <AccordionItem value="request">
+                            <AccordionTrigger className="hover:no-underline"><SectionLabel icon={<Globe2 />} title="DNS query" summary={`${recordType} record · ${resolver || "system resolver"}`} /></AccordionTrigger>
+                            <AccordionContent className="grid gap-5 pt-2 sm:grid-cols-2"><Field label="Record type"><Select value={recordType} onValueChange={setRecordType}><SelectTrigger data-testid="dns-record-type-select"><SelectValue /></SelectTrigger><SelectContent>{DNS_RECORD_TYPES.map(item => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field><Field label="Resolver"><Input value={resolver} onChange={event => setResolver(event.target.value)} placeholder="System default" data-testid="dns-resolver-input" /></Field></AccordionContent>
+                        </AccordionItem>}
+                    </Accordion>
                 </CardContent>
             </Card>
-
-            <Card className="border-border bg-card shadow-none">
-                <CardHeader><CardTitle className="text-base">Check behavior</CardTitle><CardDescription>Control how long Warden waits and whether it retries a failed attempt.</CardDescription></CardHeader>
-                <CardContent className="grid gap-5 sm:grid-cols-2">
-                    <Field label="Timeout (seconds)"><Input type="number" min={1} max={120} placeholder="5" value={timeout} onChange={event => setTimeoutValue(event.target.value)} /></Field>
-                    <Field label="Retry on failure"><Select value={retries} onValueChange={setRetries}><SelectTrigger data-testid="request-retry-select"><SelectValue /></SelectTrigger><SelectContent>{[0, 1, 2, 3, 4, 5].map(value => <SelectItem key={value} value={value.toString()}>{value === 0 ? "No retry" : `${value} ${value === 1 ? "retry" : "retries"}`}</SelectItem>)}</SelectContent></Select></Field>
-                </CardContent>
-            </Card>
-
-            {type === "http" && <Card className="border-border bg-card shadow-none">
-                <CardHeader><CardTitle className="text-base">HTTP request</CardTitle><CardDescription>Customize the request Warden sends to this endpoint.</CardDescription></CardHeader>
-                <CardContent className="space-y-5">
-                    <div className="grid gap-5 sm:grid-cols-2">
-                        <Field label="Method"><Select value={method} onValueChange={setMethod}><SelectTrigger data-testid="request-method-select"><SelectValue /></SelectTrigger><SelectContent>{["GET", "HEAD", "POST", "PUT", "DELETE"].map(item => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
-                        <Field label="Accepted status codes"><Input placeholder="200-399" value={acceptedCodes} onChange={event => setAcceptedCodes(event.target.value)} /></Field>
-                    </div>
-                    <div className="flex min-h-11 items-center justify-between rounded-lg border border-border px-3"><Label htmlFor="follow-redirects">Follow redirects</Label><Switch id="follow-redirects" checked={followRedirects} onCheckedChange={setFollowRedirects} /></div>
-                    <Field label="Custom headers">
-                        <div className="space-y-2">{headers.map((header, index) => <div key={index} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.75rem] gap-2"><Input aria-label={`Header ${index + 1} name`} placeholder="Header name" value={header.key} onChange={event => setHeaders(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, key: event.target.value } : item))} /><Input aria-label={`Header ${index + 1} value`} placeholder="Value" value={header.value} onChange={event => setHeaders(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))} /><Button type="button" variant="ghost" size="icon" aria-label="Remove header" onClick={() => setHeaders(current => current.filter((_, itemIndex) => itemIndex !== index))}><X className="h-4 w-4" /></Button></div>)}</div>
-                        <Button type="button" variant="outline" size="sm" onClick={() => setHeaders(current => [...current, { key: "", value: "" }])}>Add header</Button>
-                    </Field>
-                    {(method === "POST" || method === "PUT") && <Field label="Request body"><Textarea value={body} onChange={event => setBody(event.target.value)} placeholder='{"status":"ok"}' className="min-h-28 resize-y font-mono text-xs" /></Field>}
-                </CardContent>
-            </Card>}
-
-            {type === "dns" && <Card className="border-border bg-card shadow-none">
-                <CardHeader><CardTitle className="text-base">DNS query</CardTitle><CardDescription>Leave the resolver empty to use the system resolver.</CardDescription></CardHeader>
-                <CardContent className="grid gap-5 sm:grid-cols-2"><Field label="Record type"><Select value={recordType} onValueChange={setRecordType}><SelectTrigger data-testid="dns-record-type-select"><SelectValue /></SelectTrigger><SelectContent>{DNS_RECORD_TYPES.map(item => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field><Field label="Resolver"><Input value={resolver} onChange={event => setResolver(event.target.value)} placeholder="System default" data-testid="dns-resolver-input" /></Field></CardContent>
-            </Card>}
 
             <div className="sticky bottom-3 z-10 flex justify-end rounded-xl border border-border bg-background/90 p-3 shadow-lg backdrop-blur">
                 <Button onClick={save} disabled={saving} data-testid="monitor-edit-save-btn"><Save className="mr-2 h-4 w-4" />{saving ? "Saving…" : "Save changes"}</Button>
             </div>
 
-            <Card className="border-destructive/40 bg-destructive/5 shadow-none">
-                <CardHeader><CardTitle className="text-base text-destructive">Danger zone</CardTitle><CardDescription>Deleting this monitor permanently removes its check history.</CardDescription></CardHeader>
-                <CardContent><AlertDialog><AlertDialogTrigger asChild><Button variant="destructive" data-testid="delete-monitor-trigger"><Trash2 className="mr-2 h-4 w-4" />Delete monitor</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Delete {monitor.name}?</AlertDialogTitle><AlertDialogDescription>This action cannot be undone. All history for this monitor will be lost.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction data-testid="delete-monitor-confirm" className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={async () => { await deleteMonitor(monitor.id); navigate(`/groups/${groupId}`); }}>Delete monitor</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></CardContent>
-            </Card>
+            <Accordion type="single" collapsible className="rounded-xl border border-destructive/30 bg-destructive/5 px-5">
+                <AccordionItem value="danger" className="border-0">
+                    <AccordionTrigger className="text-destructive hover:no-underline"><SectionLabel icon={<Trash2 />} title="Danger zone" summary="Permanently delete this monitor and its history" /></AccordionTrigger>
+                    <AccordionContent className="pt-2"><AlertDialog><AlertDialogTrigger asChild><Button variant="destructive" data-testid="delete-monitor-trigger"><Trash2 className="mr-2 h-4 w-4" />Delete monitor</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Delete {monitor.name}?</AlertDialogTitle><AlertDialogDescription>This action cannot be undone. All history for this monitor will be lost.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction data-testid="delete-monitor-confirm" className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={async () => { await deleteMonitor(monitor.id); navigate(`/groups/${groupId}`); }}>Delete monitor</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></AccordionContent>
+                </AccordionItem>
+            </Accordion>
 
             <AlertDialog open={Boolean(pendingGroup)} onOpenChange={open => { if (!open) setPendingGroup(null); }}>
                 <AlertDialogContent>
@@ -162,4 +178,8 @@ export function MonitorSettings({ monitor, groupId }: { monitor: Monitor; groupI
 
 function Field({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) {
     return <div className={`grid min-w-0 gap-2 ${className}`}><Label>{label}</Label>{children}</div>;
+}
+
+function SectionLabel({ icon, title, summary }: { icon: React.ReactElement; title: string; summary: string }) {
+    return <span className="flex min-w-0 items-center gap-3 text-left"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground [&>svg]:h-4 [&>svg]:w-4" aria-hidden="true">{icon}</span><span className="min-w-0"><span className="block text-sm font-medium text-foreground">{title}</span><span className="block truncate text-xs font-normal text-muted-foreground">{summary}</span></span></span>;
 }

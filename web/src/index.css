@@ -97,6 +97,10 @@ html {
   overflow-x: clip;
 }
 
+[data-radix-scroll-area-viewport] {
+  scrollbar-gutter: stable;
+}
+
 
 
 @layer base {

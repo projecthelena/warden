@@ -53,6 +53,7 @@ test.describe('Per-Monitor Latency Threshold', () => {
         await page.getByText(monitorName).first().click();
         await expect(page).toHaveURL(/\/monitors\//, { timeout: 10000 });
         await page.getByRole('tab', { name: 'Settings' }).click();
+        await page.getByRole('button', { name: /Alerting/ }).click();
         await page.waitForTimeout(500);
 
         // Verify the latency threshold is persisted

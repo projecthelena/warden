@@ -97,6 +97,7 @@ test.describe('Request Configuration', () => {
         // 10. Go to Settings tab
         await page.getByTestId('monitor-settings-tab').click();
         await expect(page.getByText('HTTP request')).toBeVisible({ timeout: 5000 });
+        await page.getByRole('button', { name: /HTTP request/ }).click();
 
         // 11. Verify request config values in settings
 
