@@ -293,7 +293,7 @@ func (h *UptimeHandler) GetMonitorUptime(w http.ResponseWriter, r *http.Request)
 // @Security     BearerAuth
 // @Param        id    path  string true  "Monitor ID"
 // @Param        range query string false "Time range: 1h, 24h, 7d, 30d (default 24h)"
-// @Success      200   {array} db.CheckResult
+// @Success      200   {array} db.LatencyChartPoint
 // @Failure      400   {string} string "ID required"
 // @Failure      500   {string} string "Failed to fetch latency stats"
 // @Router       /monitors/{id}/latency [get]
@@ -319,7 +319,7 @@ func (h *UptimeHandler) GetMonitorLatency(w http.ResponseWriter, r *http.Request
 		hours = 24
 	}
 
-	points, err := h.store.GetLatencyStats(id, hours)
+	points, err := h.store.GetLatencyChart(id, hours, time.Now())
 	if err != nil {
 		http.Error(w, "Failed to fetch latency stats: "+err.Error(), http.StatusInternalServerError)
 		return
