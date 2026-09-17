@@ -262,16 +262,24 @@ func (h *UptimeHandler) GetMonitorUptime(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	u24, u7, u30, err := h.store.GetUptimeStats(id)
+	stats, err := h.store.GetUptimeStats(id)
 	if err != nil {
 		http.Error(w, "Failed to calculate stats: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	resp := map[string]float64{
-		"uptime24h": u24,
-		"uptime7d":  u7,
-		"uptime30d": u30,
+	// Keep the percentage fields for API compatibility while exposing the underlying
+	// counts and interval-based downtime used by the dashboard tooltip.
+	resp := struct {
+		Uptime24h float64        `json:"uptime24h"`
+		Uptime7d  float64        `json:"uptime7d"`
+		Uptime30d float64        `json:"uptime30d"`
+		Windows   db.UptimeStats `json:"windows"`
+	}{
+		Uptime24h: stats.Last24Hours.Percent,
+		Uptime7d:  stats.Last7Days.Percent,
+		Uptime30d: stats.Last30Days.Percent,
+		Windows:   stats,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

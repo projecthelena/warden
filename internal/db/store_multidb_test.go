@@ -210,16 +210,17 @@ func TestMultiDB_MonitorChecks(t *testing.T) {
 		}
 
 		// Get uptime stats
-		up24, up7, up30, err := s.GetUptimeStats("m1")
+		stats, err := s.GetUptimeStats("m1")
 		if err != nil {
 			t.Fatalf("GetUptimeStats failed: %v", err)
 		}
 		// With 2 up and 1 down, expect ~66.67% uptime
-		if up24 < 60 || up24 > 70 {
-			t.Errorf("Expected ~66.67%% uptime, got %.2f%%", up24)
+		if stats.Last24Hours.Percent < 60 || stats.Last24Hours.Percent > 70 {
+			t.Errorf("Expected ~66.67%% uptime, got %.2f%%", stats.Last24Hours.Percent)
 		}
-		_ = up7
-		_ = up30
+		if stats.Last24Hours.DownChecks != 1 || stats.Last24Hours.DowntimeSeconds != 60 {
+			t.Errorf("Expected one minute of downtime, got %+v", stats.Last24Hours)
+		}
 	})
 }
 

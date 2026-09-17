@@ -9,48 +9,48 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UptimeHistory } from "@/components/ui/monitor-visuals";
 import { InsightsCard } from "@/components/InsightsCard";
+import { Tooltip as UiTooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { formatUptimeDetail, formatUptimeSummary, uptimeSummaryTone, type UptimeSummary } from "@/lib/uptime";
 
 type Range = "1h" | "24h" | "7d" | "30d";
-type UptimeStats = { uptime24h: number; uptime7d: number; uptime30d: number };
+type UptimeStats = {
+    windows: { last24Hours: UptimeSummary; last7Days: UptimeSummary; last30Days: UptimeSummary };
+};
 type LatencyPoint = { timestamp: string; latency: number | null; failed?: boolean };
 
 const ranges: Range[] = ["1h", "24h", "7d", "30d"];
-
-function uptimeTone(value: number) {
-    if (value >= 99) return "text-emerald-400";
-    if (value >= 95) return "text-amber-400";
-    return "text-rose-400";
-}
-
-function formatUptime(value: number) {
-    return value === 100 ? "100%" : `${value.toFixed(2)}%`;
-}
 
 export function MonitorOverview({ monitor, timezone }: { monitor: Monitor; timezone?: string }) {
     const [range, setRange] = useState<Range>("1h");
     const [stats, setStats] = useState<UptimeStats | null>(null);
     const [latency, setLatency] = useState<LatencyPoint[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [statsLoading, setStatsLoading] = useState(true);
+    const [latencyLoading, setLatencyLoading] = useState(true);
 
     useEffect(() => {
         const controller = new AbortController();
-        setLoading(true);
-        Promise.all([
-            fetch(`/api/monitors/${monitor.id}/uptime`, { credentials: "include", signal: controller.signal }).then(r => {
-                if (!r.ok) throw new Error("Failed to load uptime");
-                return r.json();
-            }),
-            fetch(`/api/monitors/${monitor.id}/latency?range=${range}`, { credentials: "include", signal: controller.signal }).then(r => {
-                if (!r.ok) throw new Error("Failed to load latency");
-                return r.json();
-            }),
-        ]).then(([nextStats, points]) => {
-            setStats(nextStats);
-            setLatency(points);
-        }).catch(error => {
+        setStatsLoading(true);
+        fetch(`/api/monitors/${monitor.id}/uptime`, { credentials: "include", signal: controller.signal }).then(r => {
+            if (!r.ok) throw new Error("Failed to load uptime");
+            return r.json();
+        }).then(setStats).catch(error => {
+            if (error.name !== "AbortError") setStats(null);
+        }).finally(() => {
+            if (!controller.signal.aborted) setStatsLoading(false);
+        });
+        return () => controller.abort();
+    }, [monitor.id]);
+
+    useEffect(() => {
+        const controller = new AbortController();
+        setLatencyLoading(true);
+        fetch(`/api/monitors/${monitor.id}/latency?range=${range}`, { credentials: "include", signal: controller.signal }).then(r => {
+            if (!r.ok) throw new Error("Failed to load latency");
+            return r.json();
+        }).then(setLatency).catch(error => {
             if (error.name !== "AbortError") setLatency([]);
         }).finally(() => {
-            if (!controller.signal.aborted) setLoading(false);
+            if (!controller.signal.aborted) setLatencyLoading(false);
         });
         return () => controller.abort();
     }, [monitor.id, range]);
@@ -73,12 +73,12 @@ export function MonitorOverview({ monitor, timezone }: { monitor: Monitor; timez
     return (
         <div className="space-y-6" data-testid="monitor-overview">
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                {loading && !stats ? [...Array(4)].map((_, index) => <Skeleton key={index} className="h-28 rounded-xl" />) : (
+                {statsLoading && !stats ? [...Array(4)].map((_, index) => <Skeleton key={index} className="h-28 rounded-xl" />) : (
                     <>
                         <Metric label="Current latency" value={monitor.status === "paused" ? "Paused" : `${monitor.latency} ms`} icon={<Gauge />} />
-                        <Metric label="24h uptime" value={formatUptime(stats?.uptime24h ?? 100)} tone={uptimeTone(stats?.uptime24h ?? 100)} icon={<Activity />} />
-                        <Metric label="7d uptime" value={formatUptime(stats?.uptime7d ?? 100)} tone={uptimeTone(stats?.uptime7d ?? 100)} icon={<Waves />} />
-                        <Metric label="30d uptime" value={formatUptime(stats?.uptime30d ?? 100)} tone={uptimeTone(stats?.uptime30d ?? 100)} icon={<Clock3 />} />
+                        <Metric label="24h uptime" value={formatUptimeSummary(stats?.windows?.last24Hours)} detail={formatUptimeDetail(stats?.windows?.last24Hours)} tone={uptimeSummaryTone(stats?.windows?.last24Hours)} icon={<Activity />} />
+                        <Metric label="7d uptime" value={formatUptimeSummary(stats?.windows?.last7Days)} detail={formatUptimeDetail(stats?.windows?.last7Days)} tone={uptimeSummaryTone(stats?.windows?.last7Days)} icon={<Waves />} />
+                        <Metric label="30d uptime" value={formatUptimeSummary(stats?.windows?.last30Days)} detail={formatUptimeDetail(stats?.windows?.last30Days)} tone={uptimeSummaryTone(stats?.windows?.last30Days)} icon={<Clock3 />} />
                     </>
                 )}
             </div>
@@ -101,7 +101,7 @@ export function MonitorOverview({ monitor, timezone }: { monitor: Monitor; timez
                     </div>
                 </CardHeader>
                 <CardContent className="p-2 sm:p-5">
-                    {loading ? <Skeleton className="h-72 w-full" /> : chartData.length === 0 ? (
+                    {latencyLoading ? <Skeleton className="h-72 w-full" /> : chartData.length === 0 ? (
                         <div className="grid h-72 place-items-center text-sm text-muted-foreground">No response-time data for this range.</div>
                     ) : (
                         <div className="h-72 w-full" aria-label={`Response time over ${range}`}>
@@ -141,9 +141,9 @@ export function MonitorOverview({ monitor, timezone }: { monitor: Monitor; timez
     );
 }
 
-function Metric({ label, value, tone = "text-foreground", icon }: { label: string; value: string; tone?: string; icon: React.ReactElement }) {
-    return (
-        <Card className="border-border bg-card shadow-none">
+function Metric({ label, value, detail, tone = "text-foreground", icon }: { label: string; value: string; detail?: string; tone?: string; icon: React.ReactElement }) {
+    const card = (
+        <Card className="border-border bg-card shadow-none" tabIndex={detail ? 0 : undefined}>
             <CardContent className="p-4 sm:p-5">
                 <div className="mb-5 flex items-center justify-between text-muted-foreground">
                     <span className="text-xs font-medium">{label}</span>
@@ -152,5 +152,12 @@ function Metric({ label, value, tone = "text-foreground", icon }: { label: strin
                 <div className={`text-xl font-semibold tabular-nums sm:text-2xl ${tone}`}>{value}</div>
             </CardContent>
         </Card>
+    );
+    if (!detail) return card;
+    return (
+        <UiTooltip>
+            <TooltipTrigger asChild>{card}</TooltipTrigger>
+            <TooltipContent side="top" className="max-w-72 text-xs">{detail}</TooltipContent>
+        </UiTooltip>
     );
 }

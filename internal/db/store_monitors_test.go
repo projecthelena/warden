@@ -2,9 +2,115 @@ package db
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestGetUptimeStatsUsesExactWindowsAndReturnsDowntime(t *testing.T) {
+	s := newTestStore(t)
+	if err := s.CreateGroup(Group{ID: "g-uptime", Name: "Uptime"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateMonitor(Monitor{ID: "m-uptime", GroupID: "g-uptime", Name: "Uptime", URL: "https://example.com", Active: true, Interval: 60}); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().UTC()
+	checks := []CheckResult{
+		{MonitorID: "m-uptime", Status: "down", Timestamp: now.Add(-12 * time.Hour)},
+		{MonitorID: "m-uptime", Status: "up", Timestamp: now.Add(-48 * time.Hour)},
+		{MonitorID: "m-uptime", Status: "up", Timestamp: now.Add(-10 * 24 * time.Hour)},
+		{MonitorID: "m-uptime", Status: "down", Timestamp: now.Add(-40 * 24 * time.Hour)},
+	}
+	if err := s.BatchInsertChecks(checks); err != nil {
+		t.Fatal(err)
+	}
+
+	stats, err := s.GetUptimeStats("m-uptime")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Last24Hours.Percent != 0 || stats.Last24Hours.TotalChecks != 1 {
+		t.Fatalf("unexpected 24h stats: %+v", stats.Last24Hours)
+	}
+	if stats.Last7Days.Percent != 50 || stats.Last7Days.TotalChecks != 2 {
+		t.Fatalf("unexpected 7d stats: %+v", stats.Last7Days)
+	}
+	if stats.Last30Days.TotalChecks != 3 || stats.Last30Days.Percent < 66 || stats.Last30Days.Percent > 67 {
+		t.Fatalf("unexpected 30d stats: %+v", stats.Last30Days)
+	}
+	if stats.Last24Hours.DownChecks != 1 || stats.Last24Hours.DowntimeSeconds != 60 {
+		t.Fatalf("unexpected downtime: %+v", stats.Last24Hours)
+	}
+}
+
+func TestSummarizeDailyUptimeUsesSharedWindowCalculation(t *testing.T) {
+	days := []DailyUptimeStat{
+		{Date: "2026-09-16", Total: 1_440, Up: 1_438},
+		{Date: "2026-09-17", Total: 720, Up: 719},
+	}
+
+	got := SummarizeDailyUptime(days, 60)
+	if got.TotalChecks != 2_160 || got.DownChecks != 3 || got.DowntimeSeconds != 180 {
+		t.Fatalf("unexpected summary: %+v", got)
+	}
+	wantPercent := float64(2_157) / 2_160 * 100
+	if got.Percent != wantPercent {
+		t.Fatalf("percent = %f, want %f", got.Percent, wantPercent)
+	}
+}
+
+func TestNewUptimeWindowEdges(t *testing.T) {
+	tests := []struct {
+		name            string
+		up              int
+		total           int
+		intervalSeconds int
+		maxSeconds      int
+		wantPercent     float64
+		wantDown        int
+		wantDowntime    int
+	}{
+		{name: "no data", intervalSeconds: 60, maxSeconds: 86_400, wantPercent: 100},
+		{name: "perfect", up: 12, total: 12, intervalSeconds: 300, maxSeconds: 86_400, wantPercent: 100},
+		{name: "custom interval", up: 9, total: 12, intervalSeconds: 300, maxSeconds: 86_400, wantPercent: 75, wantDown: 3, wantDowntime: 900},
+		{name: "window cap", up: 0, total: 100, intervalSeconds: 300, maxSeconds: 3_600, wantPercent: 0, wantDown: 100, wantDowntime: 3_600},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NewUptimeWindow(tt.up, tt.total, tt.intervalSeconds, tt.maxSeconds)
+			if got.Percent != tt.wantPercent || got.DownChecks != tt.wantDown || got.DowntimeSeconds != tt.wantDowntime {
+				t.Fatalf("NewUptimeWindow() = %+v", got)
+			}
+		})
+	}
+}
+
+func TestLatencyRangeCanUseCompositeIndex(t *testing.T) {
+	s := newTestStore(t)
+	rows, err := s.db.Query(`EXPLAIN QUERY PLAN
+		SELECT AVG(latency) FROM monitor_checks
+		WHERE monitor_id = ? AND timestamp > datetime('now', '-' || ? || ' hours')`, "m1", 720)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var plan strings.Builder
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		plan.WriteString(detail)
+	}
+	if !strings.Contains(plan.String(), "idx_monitor_checks_monitor_id_ts") || !strings.Contains(plan.String(), "timestamp>?") {
+		t.Fatalf("expected monitor and timestamp range to use the composite index, plan: %s", plan.String())
+	}
+}
 
 func TestMonitorCRUD(t *testing.T) {
 	s := newTestStore(t)

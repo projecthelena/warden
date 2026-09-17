@@ -559,7 +559,50 @@ func (s *Store) PruneMonitorChecks(days int) error {
 	return err
 }
 
-func (s *Store) GetUptimeStats(monitorID string) (float64, float64, float64, error) {
+type UptimeWindow struct {
+	Percent         float64 `json:"percent"`
+	TotalChecks     int     `json:"totalChecks"`
+	DownChecks      int     `json:"downChecks"`
+	DowntimeSeconds int     `json:"downtimeSeconds"`
+}
+
+type UptimeStats struct {
+	Last24Hours UptimeWindow `json:"last24Hours"`
+	Last7Days   UptimeWindow `json:"last7Days"`
+	Last30Days  UptimeWindow `json:"last30Days"`
+}
+
+func NewUptimeWindow(up, total, intervalSeconds, maxSeconds int) UptimeWindow {
+	if total == 0 {
+		return UptimeWindow{Percent: 100}
+	}
+
+	down := total - up
+	downtimeSeconds := down * intervalSeconds
+	if downtimeSeconds > maxSeconds {
+		downtimeSeconds = maxSeconds
+	}
+	return UptimeWindow{
+		Percent:         (float64(up) / float64(total)) * 100,
+		TotalChecks:     total,
+		DownChecks:      down,
+		DowntimeSeconds: downtimeSeconds,
+	}
+}
+
+// SummarizeDailyUptime builds the same check-based uptime contract used by the monitor
+// workspace from precomputed daily rows. Public status pages use this path so their
+// request cost stays proportional to monitors × displayed days, never raw checks.
+func SummarizeDailyUptime(days []DailyUptimeStat, intervalSeconds int) UptimeWindow {
+	var total, up int
+	for _, day := range days {
+		total += day.Total
+		up += day.Up
+	}
+	return NewUptimeWindow(up, total, intervalSeconds, len(days)*24*60*60)
+}
+
+func (s *Store) GetUptimeStats(monitorID string) (UptimeStats, error) {
 	var query string
 	if s.IsPostgres() {
 		query = `
@@ -569,9 +612,12 @@ func (s *Store) GetUptimeStats(monitorID string) (float64, float64, float64, err
 				COUNT(CASE WHEN timestamp > NOW() - INTERVAL '7 days' THEN 1 END) as total_7d,
 				COUNT(CASE WHEN timestamp > NOW() - INTERVAL '7 days' AND status = 'up' THEN 1 END) as up_7d,
 				COUNT(CASE WHEN timestamp > NOW() - INTERVAL '30 days' THEN 1 END) as total_30d,
-				COUNT(CASE WHEN timestamp > NOW() - INTERVAL '30 days' AND status = 'up' THEN 1 END) as up_30d
-			FROM monitor_checks
-			WHERE monitor_id = $1
+				COUNT(CASE WHEN timestamp > NOW() - INTERVAL '30 days' AND status = 'up' THEN 1 END) as up_30d,
+				COALESCE(MAX(m.interval_seconds), 60) as interval_seconds
+			FROM monitor_checks c
+			JOIN monitors m ON m.id = c.monitor_id
+			WHERE c.monitor_id = $1
+			AND timestamp > NOW() - INTERVAL '30 days'
 		`
 	} else {
 		query = `
@@ -581,25 +627,26 @@ func (s *Store) GetUptimeStats(monitorID string) (float64, float64, float64, err
 				COUNT(CASE WHEN timestamp > datetime('now', '-7 days') THEN 1 END) as total_7d,
 				COUNT(CASE WHEN timestamp > datetime('now', '-7 days') AND status = 'up' THEN 1 END) as up_7d,
 				COUNT(CASE WHEN timestamp > datetime('now', '-30 days') THEN 1 END) as total_30d,
-				COUNT(CASE WHEN timestamp > datetime('now', '-30 days') AND status = 'up' THEN 1 END) as up_30d
-			FROM monitor_checks
-			WHERE monitor_id = ?
+				COUNT(CASE WHEN timestamp > datetime('now', '-30 days') AND status = 'up' THEN 1 END) as up_30d,
+				COALESCE(MAX(m.interval_seconds), 60) as interval_seconds
+			FROM monitor_checks c
+			JOIN monitors m ON m.id = c.monitor_id
+			WHERE c.monitor_id = ?
+			AND timestamp > datetime('now', '-30 days')
 		`
 	}
-	var t24, u24, t7, u7, t30, u30 int
-	err := s.db.QueryRow(query, monitorID).Scan(&t24, &u24, &t7, &u7, &t30, &u30)
+	var t24, u24, t7, u7, t30, u30, intervalSeconds int
+	args := []interface{}{monitorID}
+	err := s.db.QueryRow(query, args...).Scan(&t24, &u24, &t7, &u7, &t30, &u30, &intervalSeconds)
 	if err != nil {
-		return 0, 0, 0, err
+		return UptimeStats{}, err
 	}
 
-	calc := func(up, total int) float64 {
-		if total == 0 {
-			return 100.0 // Assume 100% if no data
-		}
-		return (float64(up) / float64(total)) * 100.0
-	}
-
-	return calc(u24, t24), calc(u7, t7), calc(u30, t30), nil
+	return UptimeStats{
+		Last24Hours: NewUptimeWindow(u24, t24, intervalSeconds, 24*60*60),
+		Last7Days:   NewUptimeWindow(u7, t7, intervalSeconds, 7*24*60*60),
+		Last30Days:  NewUptimeWindow(u30, t30, intervalSeconds, 30*24*60*60),
+	}, nil
 }
 
 func (s *Store) GetMonitorEvents(monitorID string, limit int) ([]MonitorEvent, error) {
@@ -856,7 +903,7 @@ func (s *Store) GetActiveSSLWarnings() ([]SSLWarningEvent, error) {
 type DailyUptimeStat struct {
 	Date          string  `json:"date"`
 	Total         int     `json:"totalChecks"`
-	Up            int     `json:"-"`
+	Up            int     `json:"upChecks"`
 	UptimePercent float64 `json:"uptimePercent"`
 }
 
@@ -1186,7 +1233,7 @@ func (s *Store) GetLatencyStats(monitorID string, hours int) ([]LatencyPoint, er
 				MAX(CASE WHEN status != 'up' THEN 1 ELSE 0 END) as failed
 			FROM monitor_checks
 			WHERE monitor_id = ?
-			AND datetime(timestamp) > datetime('now', '-' || ? || ' hours')
+			AND timestamp > datetime('now', '-' || ? || ' hours')
 			GROUP BY ts_group
 			ORDER BY ts_group ASC
 		`, groupBy)
