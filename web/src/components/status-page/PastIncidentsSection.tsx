@@ -76,7 +76,7 @@ function IncidentTimeline({ updates, timezone }: { updates?: IncidentUpdate[]; t
                         <div className="flex items-center gap-2">
                             <Badge
                                 variant="outline"
-                                className="text-[9px] uppercase tracking-wider font-mono px-1 py-0 h-4 border-muted-foreground/30"
+                                className="text-[9px] uppercase tracking-wider px-1 py-0 h-4 border-muted-foreground/30"
                             >
                                 {update.status}
                             </Badge>
@@ -116,7 +116,7 @@ function PastIncidentCard({ incident, timezone }: { incident: PastIncident; time
                                 <Badge
                                     variant="outline"
                                     className={cn(
-                                        "text-[9px] uppercase tracking-wider font-mono px-1 py-0 h-4 shrink-0",
+                                        "text-[9px] uppercase tracking-wider px-1 py-0 h-4 shrink-0",
                                         severity.color
                                     )}
                                 >

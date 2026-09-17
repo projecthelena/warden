@@ -290,7 +290,7 @@ export function UptimeBar({ days, overallUptime, showPercentage = true }: Uptime
                 {/* Overall uptime */}
                 {showPercentage && (
                     <div
-                        className={`w-[7ch] shrink-0 text-right text-sm font-mono font-bold tabular-nums whitespace-nowrap ${uptimeColor}`}
+                        className={`w-[7ch] shrink-0 text-right text-sm font-mono font-medium tabular-nums whitespace-nowrap ${uptimeColor}`}
                     >
                         {uptimeDisplay}
                     </div>

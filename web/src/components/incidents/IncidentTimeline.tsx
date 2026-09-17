@@ -83,7 +83,7 @@ function TimelineEntry({ update, timezone }: { update: IncidentUpdate; timezone?
                     <Badge
                         variant="outline"
                         className={cn(
-                            "text-[10px] uppercase tracking-wider font-mono px-1.5 py-0 h-5",
+                            "text-[10px] uppercase tracking-wider px-1.5 py-0 h-5",
                             config.color
                         )}
                     >

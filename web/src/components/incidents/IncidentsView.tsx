@@ -36,18 +36,18 @@ function ManualIncidentCard({ incident, timezone, onAddUpdate, onToggleVisibilit
                         {isMaintenance ? <Calendar className="w-4 h-4 text-blue-400 shrink-0" /> : <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />}
                         <span className="font-medium text-foreground truncate">{incident.title}</span>
                         <Badge variant="outline" className={cn(
-                            "text-[10px] uppercase tracking-wider font-mono px-1.5 py-0 h-auto border-0 shrink-0",
+                            "text-[10px] uppercase tracking-wider px-1.5 py-0 h-auto border-0 shrink-0",
                             isMaintenance ? "bg-blue-500/10 text-blue-400" : "bg-red-500/10 text-red-500"
                         )}>
                             {incident.status.replace('_', ' ')}
                         </Badge>
                         {incident.public && (
-                            <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-mono px-1.5 py-0 h-auto border-0 bg-emerald-500/10 text-emerald-500 shrink-0">
+                            <Badge variant="outline" className="text-[10px] uppercase tracking-wider px-1.5 py-0 h-auto border-0 bg-emerald-500/10 text-emerald-500 shrink-0">
                                 Public
                             </Badge>
                         )}
                         {incident.source === 'auto' && (
-                            <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-mono px-1.5 py-0 h-auto border-0 bg-purple-500/10 text-purple-500 shrink-0">
+                            <Badge variant="outline" className="text-[10px] uppercase tracking-wider px-1.5 py-0 h-auto border-0 bg-purple-500/10 text-purple-500 shrink-0">
                                 Auto
                             </Badge>
                         )}

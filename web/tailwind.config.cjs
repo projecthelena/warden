@@ -59,11 +59,10 @@ module.exports = {
   				ring: 'hsl(var(--sidebar-ring))'
   			}
   		},
-  		fontFamily: {
-  			sans: ['"DM Sans"', 'system-ui', 'sans-serif'],
-  			display: ['"Instrument Sans"', 'system-ui', 'sans-serif'],
-  			mono: ['"IBM Plex Mono"', 'monospace'],
-  		},
+		fontFamily: {
+			sans: ['"DM Sans"', 'system-ui', 'sans-serif'],
+			mono: ['"IBM Plex Mono"', 'monospace'],
+		},
   		boxShadow: {
   			'cyan-sm': '0 0 10px rgba(6, 182, 212, 0.15)',
   			'cyan-md': '0 0 20px rgba(6, 182, 212, 0.2)',

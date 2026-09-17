@@ -66,10 +66,10 @@ export function MyPagesView() {
             <header className="border-b border-border/40 bg-background/95 backdrop-blur sticky top-0 z-10">
                 <div className="max-w-3xl mx-auto flex items-center justify-between px-4 h-14">
                     <div className="flex items-center gap-2">
-                        <span className="text-lg font-display font-bold tracking-tight">
+                        <span className="text-lg font-bold tracking-tight">
                             Project <span className="font-normal text-muted-foreground">Helena</span>
                         </span>
-                        <span className="text-xs font-mono font-medium text-cyan-500 tracking-widest">WARDEN</span>
+                        <span className="text-xs font-medium text-cyan-500 tracking-widest">WARDEN</span>
                     </div>
                     <Button variant="ghost" size="sm" onClick={handleLogout} className="gap-2">
                         <LogOut className="h-4 w-4" />
