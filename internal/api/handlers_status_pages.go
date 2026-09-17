@@ -17,8 +17,15 @@ var hexColorRegex = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 
 type StatusPageHandler struct {
 	store   *db.Store
-	manager *uptime.Manager
+	manager statusPageMonitorReader
 	auth    *AuthHandler
+}
+
+// statusPageMonitorReader deliberately exposes only the lock-free snapshot API. Keeping
+// the narrow interface here prevents the request path from drifting back to GetMonitor,
+// which waits behind the manager's periodic Sync lock.
+type statusPageMonitorReader interface {
+	GetMonitorSnapshot() map[string]*uptime.Monitor
 }
 
 func NewStatusPageHandler(store *db.Store, manager *uptime.Manager, auth *AuthHandler) *StatusPageHandler {
@@ -558,13 +565,15 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 	}
 
 	groupDTOs := []GroupDTO{}
+	runningMonitors := h.manager.GetMonitorSnapshot()
 
 	for _, g := range targetGroups {
 		monitorDTOs := []MonitorDTO{}
 
 		for _, meta := range groupMap[g.ID] {
-			// Get Live Status from Manager
-			task := h.manager.GetMonitor(meta.ID)
+			// One immutable snapshot keeps this read path independent from the manager's
+			// periodic configuration reconciliation.
+			task := runningMonitors[meta.ID]
 
 			statusStr := "down" // Default if not running
 			latency := int64(0)
@@ -663,8 +672,13 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 
 	activeIncidents := []IncidentResponseDTO{}
 
-	// Fetch all incidents first to build a set of promoted outage IDs
-	allIncidents, _ := h.store.GetIncidents(time.Time{})
+	// Fetch active incidents only. GetIncidents(time.Time{}) would select every historical
+	// incident because every real start time is after Go's year-one zero time.
+	allIncidents, err := h.store.GetActiveIncidents()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load active incidents")
+		return
+	}
 	promotedOutageIDs := make(map[int64]bool)
 	for _, inc := range allIncidents {
 		if inc.OutageID != nil {
@@ -674,29 +688,43 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 
 	// A. Auto-detected Outages (only show if not already promoted to an incident)
 	activeOutages, err := h.store.GetActiveOutages()
-	if err == nil {
-		for _, o := range activeOutages {
-			// Skip outages that have been promoted to an incident
-			if promotedOutageIDs[o.ID] {
-				continue
-			}
-			// Filter by Group if needed
-			if page.GroupID != nil && o.GroupID != *page.GroupID {
-				continue
-			}
-
-			activeIncidents = append(activeIncidents, IncidentResponseDTO{
-				ID:             "auto-" + o.MonitorID, // Temporary ID
-				Title:          "Service Disruption: " + o.MonitorName,
-				Description:    o.Summary,
-				Type:           "incident",
-				Severity:       "critical",
-				Status:         "investigating",
-				StartTime:      o.StartTime,
-				AffectedGroups: []string{o.GroupID},
-				Source:         "auto",
-			})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load active outages")
+		return
+	}
+	for _, o := range activeOutages {
+		// Skip outages that have been promoted to an incident
+		if promotedOutageIDs[o.ID] {
+			continue
 		}
+		// Filter by Group if needed
+		if page.GroupID != nil && o.GroupID != *page.GroupID {
+			continue
+		}
+
+		activeIncidents = append(activeIncidents, IncidentResponseDTO{
+			ID:             "auto-" + o.MonitorID, // Temporary ID
+			Title:          "Service Disruption: " + o.MonitorName,
+			Description:    o.Summary,
+			Type:           "incident",
+			Severity:       "critical",
+			Status:         "investigating",
+			StartTime:      o.StartTime,
+			AffectedGroups: []string{o.GroupID},
+			Source:         "auto",
+		})
+	}
+
+	activeUpdateIDs := make([]string, 0, len(allIncidents))
+	for _, inc := range allIncidents {
+		if inc.Public && inc.Status != "completed" && inc.Status != "resolved" {
+			activeUpdateIDs = append(activeUpdateIDs, inc.ID)
+		}
+	}
+	activeUpdates, err := h.store.GetIncidentUpdatesForIncidents(activeUpdateIDs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load incident updates")
+		return
 	}
 
 	// B. Active Manual/Promoted Incidents (not resolved/completed, must be public)
@@ -735,7 +763,7 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 
 		// Get updates for timeline
 		var updateDTOs []IncidentUpdateDTO
-		updates, _ := h.store.GetIncidentUpdates(inc.ID)
+		updates := activeUpdates[inc.ID]
 		for _, u := range updates {
 			updateDTOs = append(updateDTOs, IncidentUpdateDTO{
 				Status:    u.Status,
@@ -768,75 +796,86 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 	pastIncidents := []IncidentResponseDTO{}
 	since := time.Now().Add(-14 * 24 * time.Hour)
 	publicResolved, err := h.store.GetPublicResolvedIncidents(since)
-	if err == nil {
-		for _, inc := range publicResolved {
-			// Parse Groups
-			var mappedGroups []string
-			if inc.AffectedGroups != "" {
-				_ = json.Unmarshal([]byte(inc.AffectedGroups), &mappedGroups)
-			}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load incident history")
+		return
+	}
+	resolvedIDs := make([]string, 0, len(publicResolved))
+	for _, inc := range publicResolved {
+		resolvedIDs = append(resolvedIDs, inc.ID)
+	}
+	resolvedUpdates, err := h.store.GetIncidentUpdatesForIncidents(resolvedIDs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load incident updates")
+		return
+	}
+	for _, inc := range publicResolved {
+		// Parse Groups
+		var mappedGroups []string
+		if inc.AffectedGroups != "" {
+			_ = json.Unmarshal([]byte(inc.AffectedGroups), &mappedGroups)
+		}
 
-			// Filter by Group if this is a group-specific status page
-			if page.GroupID != nil {
-				affected := false
-				if len(mappedGroups) == 0 {
-					// Global incident - show on all pages
-					affected = true
-				} else {
-					for _, gID := range mappedGroups {
-						if gID == *page.GroupID {
-							affected = true
-							break
-						}
+		// Filter by Group if this is a group-specific status page
+		if page.GroupID != nil {
+			affected := false
+			if len(mappedGroups) == 0 {
+				// Global incident - show on all pages
+				affected = true
+			} else {
+				for _, gID := range mappedGroups {
+					if gID == *page.GroupID {
+						affected = true
+						break
 					}
 				}
-				if !affected {
-					continue
-				}
 			}
-
-			// Get updates for timeline
-			var updateDTOs []IncidentUpdateDTO
-			updates, _ := h.store.GetIncidentUpdates(inc.ID)
-			for _, u := range updates {
-				updateDTOs = append(updateDTOs, IncidentUpdateDTO{
-					Status:    u.Status,
-					Message:   u.Message,
-					CreatedAt: u.CreatedAt,
-				})
+			if !affected {
+				continue
 			}
+		}
 
-			// Calculate duration
-			var duration string
-			if inc.EndTime != nil {
-				d := inc.EndTime.Sub(inc.StartTime)
-				if d < time.Hour {
-					duration = formatDurationMinutes(d)
-				} else {
-					duration = formatDurationHours(d)
-				}
-			}
-
-			source := inc.Source
-			if source == "" {
-				source = "manual"
-			}
-
-			pastIncidents = append(pastIncidents, IncidentResponseDTO{
-				ID:             inc.ID,
-				Title:          inc.Title,
-				Description:    inc.Description,
-				Type:           inc.Type,
-				Severity:       inc.Severity,
-				Status:         inc.Status,
-				StartTime:      inc.StartTime,
-				EndTime:        inc.EndTime,
-				AffectedGroups: mappedGroups,
-				Source:         source,
-				Duration:       duration,
-				Updates:        updateDTOs,
+		// Get updates for timeline
+		var updateDTOs []IncidentUpdateDTO
+		updates := resolvedUpdates[inc.ID]
+		for _, u := range updates {
+			updateDTOs = append(updateDTOs, IncidentUpdateDTO{
+				Status:    u.Status,
+				Message:   u.Message,
+				CreatedAt: u.CreatedAt,
 			})
 		}
+
+		// Calculate duration
+		var duration string
+		if inc.EndTime != nil {
+			d := inc.EndTime.Sub(inc.StartTime)
+			if d < time.Hour {
+				duration = formatDurationMinutes(d)
+			} else {
+				duration = formatDurationHours(d)
+			}
+		}
+
+		source := inc.Source
+		if source == "" {
+			source = "manual"
+		}
+
+		pastIncidents = append(pastIncidents, IncidentResponseDTO{
+			ID:             inc.ID,
+			Title:          inc.Title,
+			Description:    inc.Description,
+			Type:           inc.Type,
+			Severity:       inc.Severity,
+			Status:         inc.Status,
+			StartTime:      inc.StartTime,
+			EndTime:        inc.EndTime,
+			AffectedGroups: mappedGroups,
+			Source:         source,
+			Duration:       duration,
+			Updates:        updateDTOs,
+		})
 	}
 
 	// Build config object for public page. Use the same clamped range that produced the

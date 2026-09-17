@@ -24,6 +24,28 @@ func newTestManager(t *testing.T) (*Manager, *db.Store) {
 	return m, store
 }
 
+func TestManager_GetMonitorSnapshotDoesNotWaitForControlPlaneLock(t *testing.T) {
+	m, _ := newTestManager(t)
+	mon := NewMonitor("m1", db.MonitorTypeHTTP, "g-default", "one", "https://example.com", time.Minute, nil, time.Now(), nil)
+
+	m.mu.Lock()
+	m.monitors[mon.id] = mon
+	m.publishMonitorSnapshotLocked()
+
+	done := make(chan map[string]*Monitor, 1)
+	go func() { done <- m.GetMonitorSnapshot() }()
+
+	select {
+	case snapshot := <-done:
+		if snapshot[mon.id] != mon {
+			t.Fatal("snapshot did not contain the running monitor")
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("GetMonitorSnapshot waited for the manager control-plane lock")
+	}
+	m.mu.Unlock()
+}
+
 func TestManager_Sync(t *testing.T) {
 	m, s := newTestManager(t)
 

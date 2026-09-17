@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -75,9 +76,10 @@ type sslThresholdState struct {
 }
 
 type Manager struct {
-	store    *db.Store
-	monitors map[string]*Monitor // Map id -> Monitor
-	mu       sync.RWMutex
+	store           *db.Store
+	monitors        map[string]*Monitor // Map id -> Monitor
+	mu              sync.RWMutex
+	monitorSnapshot atomic.Value // immutable map[string]*Monitor for read-only consumers
 
 	jobQueue    chan Job
 	resultQueue chan CheckResult
@@ -161,6 +163,7 @@ func NewManager(store *db.Store) *Manager {
 			SSLExpiringEnabled: true,
 		},
 	}
+	m.monitorSnapshot.Store(map[string]*Monitor{})
 
 	// Load settings
 	if val, err := store.GetSetting("latency_threshold"); err == nil {
@@ -248,6 +251,7 @@ func (m *Manager) Reset() {
 		delete(m.monitors, id)
 	}
 	m.sslNotifiedThresholds = make(map[string]*sslThresholdState)
+	m.publishMonitorSnapshotLocked()
 }
 
 func (m *Manager) worker() {
@@ -943,6 +947,7 @@ func (m *Manager) Sync() {
 			log.Printf("Stopped monitor: %s", id)
 		}
 	}
+	m.publishMonitorSnapshotLocked()
 }
 
 func (m *Manager) dockerHostFor(monitor db.Monitor) *db.DockerHost {
@@ -1179,6 +1184,7 @@ func (m *Manager) RemoveMonitor(id string) {
 		mon.Stop()
 		delete(m.monitors, id)
 		delete(m.sslNotifiedThresholds, id)
+		m.publishMonitorSnapshotLocked()
 		log.Printf("Explicitly stopped monitor: %s", wardenlog.Sanitize(id)) // #nosec G706 -- sanitized
 	}
 }
@@ -1195,17 +1201,33 @@ func (m *Manager) GetLatencyThreshold() int64 {
 	return m.latencyThreshold
 }
 
-// GetAll returns all running monitors
+// GetAll returns a copy of all running monitors. Internal control-plane callers use this
+// synchronized view because tests and reconciliation may update the map directly.
 func (m *Manager) GetAll() map[string]*Monitor {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	// Return shallow copy of map to avoid race on iteration?
-	// Or just return atomic snapshot.
-	res := make(map[string]*Monitor)
-	for k, v := range m.monitors {
-		res[k] = v
+	res := make(map[string]*Monitor, len(m.monitors))
+	for id, mon := range m.monitors {
+		res[id] = mon
 	}
 	return res
+}
+
+// GetMonitorSnapshot returns the most recent complete monitor map without waiting for
+// Sync. It is intended for read-only request paths that can safely use the previous
+// snapshot while configuration reconciliation is in progress.
+func (m *Manager) GetMonitorSnapshot() map[string]*Monitor {
+	return m.monitorSnapshot.Load().(map[string]*Monitor)
+}
+
+// publishMonitorSnapshotLocked replaces the immutable read snapshot. Callers must hold
+// m.mu for writing. Monitor values are concurrency-safe; only the map itself is copied.
+func (m *Manager) publishMonitorSnapshotLocked() {
+	snapshot := make(map[string]*Monitor, len(m.monitors))
+	for id, mon := range m.monitors {
+		snapshot[id] = mon
+	}
+	m.monitorSnapshot.Store(snapshot)
 }
 
 // IsGroupInMaintenance checks if a specific group is currently in an active maintenance window
