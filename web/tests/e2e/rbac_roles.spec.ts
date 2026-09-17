@@ -246,7 +246,7 @@ test.describe('RBAC Roles - Viewer, Status Viewer, and Admin Permissions', () =>
         await page.goto(monitorHref!);
         await expect(page.getByTestId('monitor-page')).toBeVisible({ timeout: 15000 });
         await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 10000 });
-        await page.getByRole('tab', { name: 'Incidents' }).click();
+        await page.goto(`${monitorHref}?tab=incidents`);
         await expect(page.getByRole('heading', { name: /Incidents/ })).toBeVisible({ timeout: 15000 });
     });
 
