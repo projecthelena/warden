@@ -90,13 +90,13 @@ test.describe('Request Configuration', () => {
         await expect(toast).toBeVisible({ timeout: 15000 });
         await expect(page.getByText(monitorName).first()).toBeVisible();
 
-        // 9. Open monitor details (click on the monitor card)
+        // 9. Open the canonical monitor workspace
         await page.getByText(monitorName).first().click();
-        await expect(page.locator('[data-state="open"].fixed.inset-0')).toBeVisible({ timeout: 5000 });
+        await expect(page).toHaveURL(/\/monitors\//, { timeout: 10000 });
 
         // 10. Go to Settings tab
         await page.getByTestId('monitor-settings-tab').click();
-        await expect(page.getByText('Request Configuration')).toBeVisible({ timeout: 5000 });
+        await expect(page.getByText('HTTP request')).toBeVisible({ timeout: 5000 });
 
         // 11. Verify request config values in settings
 
