@@ -24,6 +24,8 @@ type RequestConfig struct {
 	// DNS-only options.
 	DNSRecordType string `json:"dnsRecordType,omitempty"` // A, AAAA, MX, NS, TXT (default A)
 	DNSResolver   string `json:"dnsResolver,omitempty"`   // resolver to query, host or host:port (default system)
+
+	DockerHostID string `json:"dockerHostId,omitempty"` // Docker host used to inspect the container
 }
 
 // IsEmpty returns true if all fields are at their zero/default values.
@@ -31,15 +33,16 @@ func (rc *RequestConfig) IsEmpty() bool {
 	return rc.Method == "" && len(rc.Headers) == 0 && rc.Body == "" &&
 		rc.TimeoutSeconds == 0 && rc.FollowRedirects == nil &&
 		rc.AcceptedStatusCodes == "" && rc.RetryCount == 0 &&
-		rc.DNSRecordType == "" && rc.DNSResolver == ""
+		rc.DNSRecordType == "" && rc.DNSResolver == "" && rc.DockerHostID == ""
 }
 
 // Check types a monitor can run against its target.
 const (
-	MonitorTypeHTTP = "http" // GET/POST an URL and inspect the status code
-	MonitorTypeTCP  = "tcp"  // open a TCP connection to host:port
-	MonitorTypePing = "ping" // ICMP echo request to a host
-	MonitorTypeDNS  = "dns"  // resolve a name, optionally against a specific resolver
+	MonitorTypeHTTP   = "http"   // GET/POST an URL and inspect the status code
+	MonitorTypeTCP    = "tcp"    // open a TCP connection to host:port
+	MonitorTypePing   = "ping"   // ICMP echo request to a host
+	MonitorTypeDNS    = "dns"    // resolve a name, optionally against a specific resolver
+	MonitorTypeDocker = "docker" // inspect a container through the Docker Engine API
 )
 
 // NormalizeMonitorType fills in the default for monitors stored before check types
@@ -54,7 +57,7 @@ func NormalizeMonitorType(t string) string {
 // IsValidMonitorType reports whether t is a check type Warden knows how to run.
 func IsValidMonitorType(t string) bool {
 	switch t {
-	case MonitorTypeHTTP, MonitorTypeTCP, MonitorTypePing, MonitorTypeDNS:
+	case MonitorTypeHTTP, MonitorTypeTCP, MonitorTypePing, MonitorTypeDNS, MonitorTypeDocker:
 		return true
 	}
 	return false

@@ -1,6 +1,6 @@
 # Monitor Types
 
-A monitor runs one of four checks against its target. The check type is picked when the monitor is created and can be changed later from the monitor's settings.
+A monitor runs one of five checks against its target. The check type is picked when the monitor is created and can be changed later from the monitor's settings.
 
 Every type shares the same machinery around the check itself — confirmation thresholds, notification cooldowns, flap detection, incidents, the daily digest and retention all work the same way regardless of what is being probed.
 
@@ -10,6 +10,7 @@ Every type shares the same machinery around the check itself — confirmation th
 | `tcp` | `db.example.com:5432` | a TCP connection to that port completes |
 | `ping` | `192.168.1.1` | an ICMP echo request gets a reply |
 | `dns` | `example.com` | the lookup returns at least one record |
+| `docker` | container selected from a Docker host | the container is running and its healthcheck is healthy |
 
 Monitors created before check types existed are `http`, and keep behaving exactly as they did.
 
@@ -135,6 +136,23 @@ Two options live under **DNS Configuration**:
   CNAME is not offered. Looking one up reaches DNS parsing that panics on a malformed SVCB or HTTPS record ([CVE-2026-46600](https://pkg.go.dev/vuln/GO-2026-5942), fixed in Go 1.26.6), and a panic in a check worker stops the whole process, so a hostile resolver could take your monitoring down. It also barely checked anything: a name with no CNAME resolves to itself and reports up.
 
 - **Resolver** — the nameserver to query, as `host` or `host:port` (port 53 is assumed). Leave it empty to use the system resolver. Pointing this at your own nameserver is how you monitor the nameserver itself rather than whoever happens to answer.
+
+## Docker containers
+
+Docker hosts are connected once and reused by every container monitor. When creating a Docker monitor, select a host and Warden discovers its containers automatically. Warden stores the container name rather than its ID, so the monitor keeps working when Compose or another deployment tool recreates the container.
+
+A running container without a Docker `HEALTHCHECK` is up. When a healthcheck exists, `healthy` is up while `starting` and `unhealthy` are failures subject to the monitor's normal confirmation threshold. Stopped, paused, restarting, OOM-killed and missing containers are down, with the Docker state, exit code or latest healthcheck output included in the incident.
+
+For a local Docker Engine, Warden can connect to `unix:///var/run/docker.sock`. A containerized Warden would need the socket mounted:
+
+```yaml
+services:
+  warden:
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+```
+
+Access to the Docker socket is equivalent to powerful control over the host; the `:ro` mount option does not make Docker API calls read-only. A socket proxy that only permits ping, version and container read endpoints is safer and is the recommended production setup. Remote Docker Engines should use an `https://` endpoint with CA, client certificate and client key configured in Warden. Do not expose an unauthenticated Docker API port.
 
 ## API
 

@@ -214,6 +214,7 @@ var allowedResetTables = map[string]bool{
 	"notification_digest_queue": true,
 	"incidents":                 true,
 	"sso_providers":             true,
+	"docker_hosts":              true,
 	"goose_db_version":          true,
 }
 
@@ -236,7 +237,7 @@ func (s *Store) Reset() error {
 		"users", "sessions", "groups", "monitors", "monitor_checks",
 		"monitor_uptime_daily",
 		"monitor_events", "status_pages", "api_keys", "settings", "monitor_outages",
-		"notification_channels", "notification_digest_queue", "incidents", "sso_providers",
+		"notification_channels", "notification_digest_queue", "incidents", "sso_providers", "docker_hosts",
 		"goose_db_version", // Goose migration tracking table
 	}
 

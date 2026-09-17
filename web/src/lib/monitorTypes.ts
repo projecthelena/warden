@@ -32,6 +32,12 @@ export const MONITOR_TYPE_INFO: Record<MonitorType, MonitorTypeInfo> = {
         placeholder: "example.com",
         hint: "Resolves the name. Up when the lookup returns at least one record.",
     },
+    docker: {
+        label: "Docker Container",
+        targetLabel: "Container",
+        placeholder: "api",
+        hint: "Checks that a Docker container is running and healthy.",
+    },
 };
 
 // Underscores are allowed because Docker's embedded resolver serves compose service
@@ -60,6 +66,8 @@ export function isValidTarget(type: MonitorType, target: string): boolean {
         const port = Number(match[2]);
         return port >= 1 && port <= 65535 && isValidHost(match[1]);
     }
+
+    if (type === "docker") return /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(target);
 
     // Resolving an IP literal never queries anything, so a DNS monitor pointed at one
     // would report up forever. It has to be a name.

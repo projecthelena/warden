@@ -150,6 +150,9 @@ definitions:
       dnsResolver:
         description: resolver to query, host or host:port (default system)
         type: string
+      dockerHostId:
+        description: Docker host used to inspect the container
+        type: string
       followRedirects:
         type: boolean
       headers:
@@ -1086,8 +1089,8 @@ paths:
       consumes:
       - application/json
       parameters:
-      - description: Monitor payload. type is one of http, tcp, ping, dns (default
-          http)
+      - description: Monitor payload. type is one of http, tcp, ping, dns, docker
+          (default http)
         in: body
         name: body
         required: true

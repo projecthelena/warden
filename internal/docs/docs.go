@@ -1044,7 +1044,7 @@ const docTemplate = `{
                 "summary": "Create monitor",
                 "parameters": [
                     {
-                        "description": "Monitor payload. type is one of http, tcp, ping, dns (default http)",
+                        "description": "Monitor payload. type is one of http, tcp, ping, dns, docker (default http)",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -2352,6 +2352,10 @@ const docTemplate = `{
                 },
                 "dnsResolver": {
                     "description": "resolver to query, host or host:port (default system)",
+                    "type": "string"
+                },
+                "dockerHostId": {
+                    "description": "Docker host used to inspect the container",
                     "type": "string"
                 },
                 "followRedirects": {

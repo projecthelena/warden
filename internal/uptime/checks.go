@@ -16,6 +16,7 @@ import (
 	"golang.org/x/net/ipv6"
 
 	"github.com/projecthelena/warden/internal/db"
+	"github.com/projecthelena/warden/internal/dockerapi"
 )
 
 const (
@@ -99,9 +100,56 @@ func probe(job Job, timeout time.Duration, transport *http.Transport) checkOutco
 		return probePing(job.URL, timeout)
 	case db.MonitorTypeDNS:
 		return probeDNS(job.URL, job.RequestConfig, timeout)
+	case db.MonitorTypeDocker:
+		return probeDocker(job, timeout)
 	default:
 		return probeHTTP(job, timeout, transport)
 	}
+}
+
+func probeDocker(job Job, timeout time.Duration) checkOutcome {
+	if job.DockerHost == nil {
+		return checkOutcome{err: "Docker host is missing or no longer exists", fatal: true}
+	}
+	client, err := dockerapi.NewClient(*job.DockerHost, timeout)
+	if err != nil {
+		return checkOutcome{err: err.Error(), fatal: true}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	state, err := client.Inspect(ctx, job.URL)
+	if err != nil {
+		return checkOutcome{err: err.Error()}
+	}
+	if state.OOMKilled {
+		return checkOutcome{err: fmt.Sprintf("container was killed because it ran out of memory (exit code %d)", state.ExitCode)}
+	}
+	if state.Paused {
+		return checkOutcome{err: "container is paused"}
+	}
+	if state.Restarting {
+		return checkOutcome{err: fmt.Sprintf("container is restarting (restart count: %d)", state.RestartCount)}
+	}
+	if !state.Running {
+		message := fmt.Sprintf("container is %s (exit code %d)", state.Status, state.ExitCode)
+		if state.Error != "" {
+			message += ": " + state.Error
+		}
+		return checkOutcome{err: message}
+	}
+	if state.Health == "unhealthy" {
+		message := "Docker healthcheck reports unhealthy"
+		if state.HealthOutput != "" {
+			message += ": " + state.HealthOutput
+		}
+		return checkOutcome{err: message}
+	}
+	if state.Health == "starting" {
+		return checkOutcome{err: "Docker healthcheck is still starting"}
+	}
+	// A running container without a HEALTHCHECK is available. Confirmation thresholds
+	// absorb normal healthcheck startup without hiding a container stuck in that state.
+	return checkOutcome{up: true}
 }
 
 // probeHTTP decides on the status code, and picks up the TLS certificate expiry on the

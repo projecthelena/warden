@@ -13,6 +13,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { BellRing, Globe2, Save, TimerReset, Trash2, X } from "lucide-react";
+import { DockerTargetFields } from "@/components/docker/DockerTargetFields";
 
 export function MonitorSettings({ monitor, groupId }: { monitor: Monitor; groupId: string }) {
     const navigate = useNavigate();
@@ -36,6 +37,7 @@ export function MonitorSettings({ monitor, groupId }: { monitor: Monitor; groupI
     const [body, setBody] = useState(monitor.requestConfig?.body ?? "");
     const [recordType, setRecordType] = useState(monitor.requestConfig?.dnsRecordType ?? "A");
     const [resolver, setResolver] = useState(monitor.requestConfig?.dnsResolver ?? "");
+    const [dockerHostId, setDockerHostId] = useState(monitor.requestConfig?.dockerHostId ?? "");
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
@@ -44,12 +46,17 @@ export function MonitorSettings({ monitor, groupId }: { monitor: Monitor; groupI
         setTarget(monitor.url);
         setInterval(monitor.interval || 60);
         setGroup(groupId);
+        setDockerHostId(monitor.requestConfig?.dockerHostId ?? "");
     }, [monitor, groupId]);
 
     const save = async () => {
         const normalizedTarget = target.trim();
         if (!name.trim()) {
             toast({ title: "Name required", description: "Give this monitor a name before saving.", variant: "destructive" });
+            return;
+        }
+        if (type === "docker" && !dockerHostId) {
+            toast({ title: "Docker host required", description: "Choose the Docker host that runs this container.", variant: "destructive" });
             return;
         }
         if (!isValidTarget(type, normalizedTarget)) {
@@ -72,13 +79,14 @@ export function MonitorSettings({ monitor, groupId }: { monitor: Monitor; groupI
             if (recordType !== "A") requestConfig.dnsRecordType = recordType;
             if (resolver) requestConfig.dnsResolver = resolver;
         }
+        if (type === "docker") requestConfig.dockerHostId = dockerHostId;
 
         setSaving(true);
         await updateMonitor(monitor.id, {
             name: name.trim(), type, url: normalizedTarget, interval,
             confirmationThreshold: confirmation ? Number(confirmation) : undefined,
             notificationCooldownMinutes: cooldown ? Number(cooldown) : undefined,
-            latencyThreshold: latencyThreshold ? Number(latencyThreshold) : undefined,
+            latencyThreshold: type !== "docker" && latencyThreshold ? Number(latencyThreshold) : undefined,
             requestConfig: Object.keys(requestConfig).length || monitor.requestConfig ? requestConfig : undefined,
         });
         setSaving(false);
@@ -94,12 +102,12 @@ export function MonitorSettings({ monitor, groupId }: { monitor: Monitor; groupI
                 <CardContent className="grid gap-5 sm:grid-cols-2">
                     <Field label="Display name" className="sm:col-span-2"><Input value={name} onChange={event => setName(event.target.value)} data-testid="monitor-edit-name-input" /></Field>
                     <Field label="Check type">
-                        <Select value={type} onValueChange={value => setType(value as MonitorType)}><SelectTrigger data-testid="monitor-edit-type-select"><SelectValue /></SelectTrigger><SelectContent>{MONITOR_TYPES.map(item => <SelectItem key={item} value={item}>{MONITOR_TYPE_INFO[item].label}</SelectItem>)}</SelectContent></Select>
+                        <Select value={type} onValueChange={value => { setType(value as MonitorType); setTarget(""); setDockerHostId(""); }}><SelectTrigger data-testid="monitor-edit-type-select"><SelectValue /></SelectTrigger><SelectContent>{MONITOR_TYPES.map(item => <SelectItem key={item} value={item}>{MONITOR_TYPE_INFO[item].label}</SelectItem>)}</SelectContent></Select>
                     </Field>
                     <Field label="Check frequency">
                         <Select value={interval.toString()} onValueChange={value => setInterval(Number(value))}><SelectTrigger data-testid="monitor-edit-interval-select"><SelectValue /></SelectTrigger><SelectContent>{[30, 60, 300, 600, 1800, 3600].map(seconds => <SelectItem key={seconds} value={seconds.toString()}>{seconds < 60 ? `${seconds} seconds` : seconds === 60 ? "1 minute" : `${seconds / 60} minutes`}</SelectItem>)}</SelectContent></Select>
                     </Field>
-                    <Field label={MONITOR_TYPE_INFO[type].targetLabel} className="sm:col-span-2"><Input value={target} onChange={event => setTarget(event.target.value)} placeholder={MONITOR_TYPE_INFO[type].placeholder} className="font-mono text-xs" data-testid="monitor-edit-url-input" /></Field>
+                    {type === "docker" ? <div className="sm:col-span-2"><DockerTargetFields hostId={dockerHostId} container={target} onHostChange={setDockerHostId} onContainerChange={setTarget} /></div> : <Field label={MONITOR_TYPE_INFO[type].targetLabel} className="sm:col-span-2"><Input value={target} onChange={event => setTarget(event.target.value)} placeholder={MONITOR_TYPE_INFO[type].placeholder} className="font-mono text-xs" data-testid="monitor-edit-url-input" /></Field>}
                     <Field label="Group" className="sm:col-span-2">
                         <Select value={group} onValueChange={setPendingGroup}><SelectTrigger data-testid="monitor-edit-group-select"><SelectValue /></SelectTrigger><SelectContent>{groups.map(item => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
                         <p className="text-xs text-muted-foreground">Moving is applied separately because it changes which status pages include this monitor.</p>
@@ -113,12 +121,12 @@ export function MonitorSettings({ monitor, groupId }: { monitor: Monitor; groupI
                     <Accordion type="multiple" className="w-full">
                         <AccordionItem value="alerting">
                             <AccordionTrigger className="hover:no-underline">
-                                <SectionLabel icon={<BellRing />} title="Alerting" summary="Confirmation, cooldown and latency threshold" />
+                                <SectionLabel icon={<BellRing />} title="Alerting" summary={type === "docker" ? "Confirmation and cooldown" : "Confirmation, cooldown and latency threshold"} />
                             </AccordionTrigger>
                             <AccordionContent className="grid gap-5 px-1 pt-2 sm:grid-cols-2">
                                 <Field label="Confirmation checks"><Input aria-label="Confirmation checks" type="number" min={1} placeholder="Global default" value={confirmation} onChange={event => setConfirmation(event.target.value)} /></Field>
                                 <Field label="Cooldown (minutes)"><Input aria-label="Cooldown (minutes)" type="number" min={0} placeholder="Global default" value={cooldown} onChange={event => setCooldown(event.target.value)} /></Field>
-                                <Field label="Latency threshold (ms)" className="sm:col-span-2"><Input aria-label="Latency threshold (ms)" type="number" min={1} placeholder="Global default" value={latencyThreshold} onChange={event => setLatencyThreshold(event.target.value)} /></Field>
+                                {type !== "docker" && <Field label="Latency threshold (ms)" className="sm:col-span-2"><Input aria-label="Latency threshold (ms)" type="number" min={1} placeholder="Global default" value={latencyThreshold} onChange={event => setLatencyThreshold(event.target.value)} /></Field>}
                             </AccordionContent>
                         </AccordionItem>
 
