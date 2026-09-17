@@ -95,6 +95,29 @@ func TestResetUserPassword_Rejections(t *testing.T) {
 	}
 }
 
+func TestResetUserPassword_RejectsSSOAccount(t *testing.T) {
+	store, err := db.NewStore(db.NewTestConfig())
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	if err := store.CreateUser("admin1", "OldPass123!", "UTC", "admin"); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	admin, _ := store.Authenticate("admin1", "OldPass123!")
+	ssoUser, err := store.FindOrCreateSSOUser("oidc", "issuer|subject", "sso@example.com", "SSO User", "", true)
+	if err != nil {
+		t.Fatalf("FindOrCreateSSOUser: %v", err)
+	}
+
+	w := resetPasswordReq(t, store, RoleAdmin, admin.ID, ssoUser.ID, map[string]string{"password": "BrandNew123!"})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if got := w.Body.String(); got != "{\"error\":\"password is managed by the user's SSO provider\"}\n" {
+		t.Fatalf("unexpected response: %s", got)
+	}
+}
+
 func TestResetUserPassword_RoleGate(t *testing.T) {
 	store, err := db.NewStore(db.NewTestConfig())
 	if err != nil {

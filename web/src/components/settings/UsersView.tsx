@@ -249,7 +249,7 @@ export function UsersView() {
         <Card>
             <CardHeader>
                 <CardTitle>User Management</CardTitle>
-                <CardDescription>Manage users and their roles.</CardDescription>
+                <CardDescription>SSO users arrive as viewers after their first login. Assign any additional access here.</CardDescription>
             </CardHeader>
             <CardContent>
                 {users.length > 0 ? (
@@ -276,6 +276,11 @@ export function UsersView() {
                                                 {u.email && (
                                                     <span className="text-xs text-muted-foreground">{u.email}</span>
                                                 )}
+                                                <span className="mt-1">
+                                                    <Badge variant="outline" className="text-[10px] font-normal">
+                                                        {u.ssoProvider ? (u.ssoProvider === "google" ? "Google SSO" : "OIDC SSO") : "Local password"}
+                                                    </Badge>
+                                                </span>
                                             </div>
                                         </TableCell>
                                         <TableCell>
@@ -322,13 +327,15 @@ export function UsersView() {
                                                                 Manage Pages
                                                             </DropdownMenuItem>
                                                         )}
-                                                        <DropdownMenuItem
-                                                            data-testid={`reset-password-${u.username}`}
-                                                            onClick={() => { setResetUser(u); setNewPassword(""); }}
-                                                        >
-                                                            <KeyRound className="h-4 w-4 mr-2" />
-                                                            Reset Password
-                                                        </DropdownMenuItem>
+                                                        {!u.ssoProvider && (
+                                                            <DropdownMenuItem
+                                                                data-testid={`reset-password-${u.username}`}
+                                                                onClick={() => { setResetUser(u); setNewPassword(""); }}
+                                                            >
+                                                                <KeyRound className="h-4 w-4 mr-2" />
+                                                                Reset Password
+                                                            </DropdownMenuItem>
+                                                        )}
                                                         <DropdownMenuItem
                                                             className="text-destructive focus:text-destructive"
                                                             onClick={() => setDeleteId(u.id)}

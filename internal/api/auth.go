@@ -242,6 +242,15 @@ func (h *AuthHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	// Verify Current Password if changing password
 	if req.Password != "" {
+		user, err := h.store.GetUser(userID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load user")
+			return
+		}
+		if user.SSOProvider != "" {
+			writeError(w, http.StatusBadRequest, "password is managed by your SSO provider")
+			return
+		}
 		if req.CurrentPassword == "" {
 			writeError(w, http.StatusBadRequest, "current password required to change password")
 			return

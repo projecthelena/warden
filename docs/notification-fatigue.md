@@ -86,8 +86,8 @@ Monitors that fail together are usually one thing failing. When enough of a grou
 "Enough" is a percentage of the group with an absolute floor, so it still means something whether the group has 12 monitors or 200: `max(3, 30% of the group)`.
 
 ```
-19:29  eleven of twelve NodeSource monitors start failing, all with 404
-19:32  ALERT: "11 of 12 monitors in NodeSource are down, for 3m: ..."
+19:29  eleven of twelve production monitors start failing, all with 404
+19:32  ALERT: "11 of 12 monitors in Production APIs are down, for 3m: ..."
 20:02  reminder: one message, not eleven
 ```
 
@@ -97,14 +97,14 @@ Reminders follow the incident, not the monitor: outages announced together share
 
 Warden watches from one place. If **80% of every monitor across at least two groups** goes down at once, the likely explanation is Warden's own network rather than every unrelated service failing simultaneously — so it says that, once, instead of blaming each target.
 
-The two-group requirement matters: a single group going down entirely looks identical from here, and "your NodeSource group is down" is both more specific and safer to be wrong about than "your network is broken".
+The two-group requirement matters: a single group going down entirely looks identical from here, and "your Production APIs group is down" is both more specific and safer to be wrong about than "your network is broken".
 
 ### Repeat-Offender Damping
 
 A monitor that has already interrupted you three times in 24 hours is describing itself, not an event. On the third alert Warden says so explicitly and then stops sending individual alerts for it:
 
 ```
-Dogfood SaaS has alerted 3 times in the last 24h and is down again.
+Checkout API has alerted 3 times in the last 24h and is down again.
 Muting its individual alerts until it settles — it stays in the daily
 digest and on the dashboard.
 ```

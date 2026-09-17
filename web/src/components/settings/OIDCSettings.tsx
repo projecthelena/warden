@@ -168,7 +168,7 @@ export function OIDCSettings() {
                     <div>
                         <Label>Auto-provision users</Label>
                         <p className="text-sm text-muted-foreground">
-                            New verified identities become viewers.
+                            New verified identities become viewers. A Warden admin can promote them after their first login.
                         </p>
                     </div>
                     <Switch

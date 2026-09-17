@@ -79,14 +79,14 @@ export function CreateUserSheet() {
         <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
                 <Button className="gap-2" size="sm" data-testid="create-user-trigger">
-                    <Plus className="w-4 h-4" /> New User
+                    <Plus className="w-4 h-4" /> New Local User
                 </Button>
             </SheetTrigger>
             <SheetContent className="sm:max-w-[450px] overflow-y-auto">
                 <SheetHeader>
-                    <SheetTitle>Create New User</SheetTitle>
+                    <SheetTitle>Create Local User</SheetTitle>
                     <SheetDescription>
-                        Add a new user to the system and assign them a role.
+                        Create a password-based account and assign its role. SSO users are created by their identity provider when they first sign in.
                     </SheetDescription>
                 </SheetHeader>
                 <form onSubmit={handleSubmit} className="grid gap-6 py-6">

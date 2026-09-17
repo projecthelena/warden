@@ -238,7 +238,7 @@ export function SSOSettings() {
                         <div className="space-y-0.5">
                             <Label>Auto-provision Users</Label>
                             <p className="text-sm text-muted-foreground">
-                                Automatically create accounts for new SSO users
+                                Create new verified identities as viewers. A Warden admin can promote them after their first login.
                             </p>
                         </div>
                         <Switch
