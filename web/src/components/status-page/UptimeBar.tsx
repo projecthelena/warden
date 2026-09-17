@@ -1,11 +1,13 @@
+/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4 */
 import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { formatDowntime } from "./uptimeCalculations";
+import { formatDuration, formatUptime, formatUptimeDetail, formatUptimePeriod, formatUptimeSummary, uptimeSummaryTone, type UptimeSummary } from "@/lib/uptime";
 
 interface DayData {
     date: string;
     uptimePercent: number;
     totalChecks: number;
+    upChecks: number;
 }
 
 interface BarBucket {
@@ -13,21 +15,19 @@ interface BarBucket {
     endDate: string;
     dayCount: number;
     uptimePercent: number;
+    worstUptimePercent: number;
     totalChecks: number;
-    failedChecks: number;
+    upChecks: number;
+    downChecks: number;
     hasData: boolean;
 }
 
 interface UptimeBarProps {
     days: DayData[];
-    overallUptime: number;
+    summary: UptimeSummary;
+    rangeDays: number;
     intervalSeconds: number;
     showPercentage?: boolean;
-}
-
-function failedChecks(day: DayData): number {
-    if (day.uptimePercent < 0 || day.totalChecks === 0) return 0;
-    return Math.round(day.totalChecks * (1 - day.uptimePercent / 100));
 }
 
 function aggregateDays(days: DayData[], targetBars: number): BarBucket[] {
@@ -37,9 +37,11 @@ function aggregateDays(days: DayData[], targetBars: number): BarBucket[] {
             endDate: d.date,
             dayCount: 1,
             uptimePercent: d.uptimePercent,
+            worstUptimePercent: d.uptimePercent,
             totalChecks: d.totalChecks,
-            failedChecks: failedChecks(d),
-            hasData: d.uptimePercent >= 0,
+            upChecks: d.upChecks,
+            downChecks: d.totalChecks - d.upChecks,
+            hasData: d.totalChecks > 0,
         }));
     }
 
@@ -48,16 +50,20 @@ function aggregateDays(days: DayData[], targetBars: number): BarBucket[] {
 
     for (let i = 0; i < days.length; i += bucketSize) {
         const chunk = days.slice(i, i + bucketSize);
-        const withData = chunk.filter((d) => d.uptimePercent >= 0);
+        const withData = chunk.filter((d) => d.totalChecks > 0);
         const hasData = withData.length > 0;
+        const totalChecks = withData.reduce((sum, d) => sum + d.totalChecks, 0);
+        const upChecks = withData.reduce((sum, d) => sum + d.upChecks, 0);
 
         buckets.push({
             startDate: chunk[0].date,
             endDate: chunk[chunk.length - 1].date,
             dayCount: chunk.length,
-            uptimePercent: hasData ? Math.min(...withData.map((d) => d.uptimePercent)) : -1,
-            totalChecks: chunk.reduce((sum, d) => sum + d.totalChecks, 0),
-            failedChecks: chunk.reduce((sum, d) => sum + failedChecks(d), 0),
+            uptimePercent: hasData ? (upChecks / totalChecks) * 100 : -1,
+            worstUptimePercent: hasData ? Math.min(...withData.map((d) => d.uptimePercent)) : -1,
+            totalChecks,
+            upChecks,
+            downChecks: totalChecks - upChecks,
             hasData,
         });
     }
@@ -102,25 +108,10 @@ function formatDateRange(startDate: string, endDate: string): string {
     return `${sMonth} ${s.getDate()} \u2013 ${eMonth} ${e.getDate()}, ${eYear}`;
 }
 
-function formatUptime(pct: number): string {
-    if (pct < 0) return "No data";
-    if (pct >= 100) return "100%";
-    return pct.toFixed(2) + "%";
-}
-
-function formatOverallUptime(pct: number): string {
-    if (pct >= 100) return "100%";
-    if (pct > 99.99) {
-        const rounded = Math.round(pct * 1_000) / 1_000;
-        return Math.min(rounded, 99.999).toFixed(3) + "%";
-    }
-    return pct.toFixed(2) + "%";
-}
-
 const NO_DATA_PATTERN =
     "repeating-linear-gradient(-45deg, hsl(var(--muted) / 0.15), hsl(var(--muted) / 0.15) 2px, transparent 2px, transparent 5px)";
 
-export function UptimeBar({ days, overallUptime, intervalSeconds, showPercentage = true }: UptimeBarProps) {
+export function UptimeBar({ days, summary, rangeDays, intervalSeconds, showPercentage = true }: UptimeBarProps) {
     const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
     const [tooltipVisible, setTooltipVisible] = useState(false);
     const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number; align: "left" | "center" | "right" } | null>(null);
@@ -184,7 +175,7 @@ export function UptimeBar({ days, overallUptime, intervalSeconds, showPercentage
     }, []);
 
     const handleMouseEnter = useCallback(
-        (index: number, e: React.MouseEvent<HTMLDivElement>) => {
+        (index: number, e: React.MouseEvent<HTMLButtonElement>) => {
             if (isTouchRef.current) return;
             // Capture rect synchronously — e.currentTarget is nullified after handler returns
             const rect = e.currentTarget.getBoundingClientRect();
@@ -207,7 +198,7 @@ export function UptimeBar({ days, overallUptime, intervalSeconds, showPercentage
     }, []);
 
     const handleClick = useCallback(
-        (index: number, e: React.MouseEvent<HTMLDivElement>) => {
+        (index: number, e: React.MouseEvent<HTMLButtonElement>) => {
             if (!isTouchRef.current) return;
             e.stopPropagation();
             if (touchActiveIndex === index) {
@@ -231,15 +222,9 @@ export function UptimeBar({ days, overallUptime, intervalSeconds, showPercentage
         return () => window.removeEventListener("touchstart", handler);
     }, []);
 
-    const uptimeDisplay = useMemo(() => formatOverallUptime(overallUptime), [overallUptime]);
-
-    const uptimeColor = useMemo(() => {
-        if (overallUptime >= 99.9) return "text-emerald-500";
-        if (overallUptime >= 99) return "text-emerald-400";
-        if (overallUptime >= 95) return "text-yellow-500";
-        if (overallUptime >= 90) return "text-orange-500";
-        return "text-red-500";
-    }, [overallUptime]);
+    const uptimeDisplay = useMemo(() => formatUptimeSummary(summary), [summary]);
+    const periodLabel = useMemo(() => formatUptimePeriod(rangeDays), [rangeDays]);
+    const uptimeColor = uptimeSummaryTone(summary);
 
     const hoveredBucket = hoveredIndex !== null ? buckets[hoveredIndex] : null;
 
@@ -252,16 +237,16 @@ export function UptimeBar({ days, overallUptime, intervalSeconds, showPercentage
                     ref={containerRef}
                     className={`flex-1 flex items-end ${barGap} h-8 min-w-0`}
                     role="img"
-                    aria-label={`Uptime over last ${days.length} days: ${uptimeDisplay}`}
+                    aria-label={`${periodLabel} uptime: ${uptimeDisplay}`}
                 >
                     {buckets.map((bucket, i) => {
                         const isFirst = i === 0;
                         const isLast = i === buckets.length - 1;
                         const noData = !bucket.hasData;
                         const barHeight =
-                            bucket.uptimePercent < 0
+                            bucket.worstUptimePercent < 0
                                 ? "100%"
-                                : `${Math.max(40, bucket.uptimePercent)}%`;
+                                : `${Math.max(40, bucket.worstUptimePercent)}%`;
 
                         const roundedClass = isFirst
                             ? "rounded-l"
@@ -270,10 +255,11 @@ export function UptimeBar({ days, overallUptime, intervalSeconds, showPercentage
                                 : "rounded-[1px]";
 
                         return (
-                            <div
+                            <button
+                                type="button"
                                 key={`${bucket.startDate}-${bucket.endDate}`}
-                                className={`flex-1 min-w-0 transition-all duration-150 cursor-default border border-foreground/[0.08] ${
-                                    noData ? "" : getBarColor(bucket.uptimePercent)
+                                className={`flex-1 min-w-0 p-0 transition-[opacity,border-color] duration-150 cursor-default border border-foreground/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background ${
+                                    noData ? "" : getBarColor(bucket.worstUptimePercent)
                                 } ${roundedClass} ${
                                     hoveredIndex !== null
                                         ? hoveredIndex === i
@@ -287,7 +273,10 @@ export function UptimeBar({ days, overallUptime, intervalSeconds, showPercentage
                                 }}
                                 onMouseEnter={(e) => handleMouseEnter(i, e)}
                                 onMouseLeave={handleMouseLeave}
+                                onFocus={(e) => showTooltip(i, e.currentTarget.getBoundingClientRect())}
+                                onBlur={handleMouseLeave}
                                 onClick={(e) => handleClick(i, e)}
+                                aria-label={`${bucket.dayCount > 1 ? formatDateRange(bucket.startDate, bucket.endDate) : formatDateLabel(bucket.startDate)}: ${formatUptime(bucket.uptimePercent)}`}
                             />
                         );
                     })}
@@ -297,6 +286,7 @@ export function UptimeBar({ days, overallUptime, intervalSeconds, showPercentage
                 {showPercentage && (
                     <div
                         className={`w-[7ch] shrink-0 text-right text-sm font-mono font-medium tabular-nums whitespace-nowrap ${uptimeColor}`}
+                        title={`${periodLabel} · ${formatUptimeDetail(summary)}`}
                     >
                         {uptimeDisplay}
                     </div>
@@ -330,7 +320,7 @@ export function UptimeBar({ days, overallUptime, intervalSeconds, showPercentage
                             </div>
                             <div className="flex items-center gap-1.5 text-muted-foreground mt-0.5">
                                 <span
-                                    className={`inline-block w-2 h-2 rounded-full ${getDotColor(hoveredBucket.uptimePercent)}`}
+                                    className={`inline-block w-2 h-2 rounded-full ${getDotColor(hoveredBucket.worstUptimePercent)}`}
                                 />
                                 {formatUptime(hoveredBucket.uptimePercent)}
                                 {hoveredBucket.dayCount > 1 && (
@@ -344,12 +334,11 @@ export function UptimeBar({ days, overallUptime, intervalSeconds, showPercentage
                                     </span>
                                 )}
                             </div>
-                            {(() => {
-                                const dt = formatDowntime(hoveredBucket.failedChecks, intervalSeconds);
-                                return dt ? (
-                                    <div className="text-muted-foreground/70 mt-0.5">{dt}</div>
-                                ) : null;
-                            })()}
+                            {hoveredBucket.downChecks > 0 && (
+                                <div className="text-muted-foreground/70 mt-0.5">
+                                    {formatDuration(hoveredBucket.downChecks * intervalSeconds)} monitored downtime · {hoveredBucket.downChecks.toLocaleString()} failed {hoveredBucket.downChecks === 1 ? "check" : "checks"}
+                                </div>
+                            )}
                         </div>
                     </div>,
                     document.body

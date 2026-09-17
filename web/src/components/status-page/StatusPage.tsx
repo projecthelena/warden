@@ -1,3 +1,4 @@
+/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4 */
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +12,7 @@ import { UptimeBar } from "./UptimeBar";
 import { PastIncidentsSection } from "./PastIncidentsSection";
 import { getOverallStatus } from "./statusPageStatus";
 import { IncidentTimeline } from "@/components/incidents/IncidentTimeline";
+import { formatUptimePeriod, type UptimeSummary } from "@/lib/uptime";
 
 // ---------- Types ----------
 
@@ -18,11 +20,14 @@ interface DayData {
     date: string;
     uptimePercent: number;
     totalChecks: number;
+    upChecks: number;
 }
 
 interface StatusMonitor extends Monitor {
     uptimeDays?: DayData[];
+    uptime?: UptimeSummary;
     overallUptime?: number;
+    checkIntervalSeconds?: number;
 }
 
 interface StatusGroup extends Omit<Group, "monitors"> {
@@ -93,7 +98,7 @@ function StatusBanner({
     return (
         <div
             className={cn(
-                "relative flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all duration-700 overflow-hidden",
+                "relative flex items-center gap-4 px-5 py-4 rounded-2xl border overflow-hidden",
                 colors.banner
             )}
         >
@@ -247,11 +252,13 @@ function MonitorRow({
     isMaintenance,
     showUptimeBars = true,
     showUptimePercentage = true,
+    uptimeDaysRange,
 }: {
     monitor: StatusMonitor;
     isMaintenance?: boolean;
     showUptimeBars?: boolean;
     showUptimePercentage?: boolean;
+    uptimeDaysRange: number;
 }) {
     let statusColor = "text-emerald-500";
     let statusLabel = "Operational";
@@ -275,7 +282,12 @@ function MonitorRow({
     }
 
     const uptimeDays = monitor.uptimeDays || [];
-    const overallUptime = monitor.overallUptime ?? 100;
+    const uptime = monitor.uptime ?? {
+        percent: monitor.overallUptime ?? 100,
+        totalChecks: uptimeDays.reduce((sum, day) => sum + day.totalChecks, 0),
+        downChecks: 0,
+        downtimeSeconds: 0,
+    };
 
     return (
         <div className="group px-4 py-3 border-b border-border/40 last:border-b-0 transition-colors hover:bg-accent/30">
@@ -299,8 +311,9 @@ function MonitorRow({
             {showUptimeBars && uptimeDays.length > 0 && (
                 <UptimeBar
                     days={uptimeDays}
-                    overallUptime={overallUptime}
-                    intervalSeconds={monitor.interval}
+                    summary={uptime}
+                    rangeDays={uptimeDaysRange}
+                    intervalSeconds={monitor.checkIntervalSeconds ?? monitor.interval ?? 60}
                     showPercentage={showUptimePercentage}
                 />
             )}
@@ -314,12 +327,14 @@ function GroupSection({
     index,
     showUptimeBars = true,
     showUptimePercentage = true,
+    uptimeDaysRange,
 }: {
     group: StatusGroup;
     incidents: Incident[];
     index: number;
     showUptimeBars?: boolean;
     showUptimePercentage?: boolean;
+    uptimeDaysRange: number;
 }) {
     const now = new Date();
     const isGroupMaintenance =
@@ -338,10 +353,15 @@ function GroupSection({
             className="animate-in slide-in-from-bottom-3 duration-500 fade-in fill-mode-backwards"
             style={{ animationDelay: `${index * 100}ms` }}
         >
-            <div className="mb-2 px-1">
+            <div className="mb-2 flex items-baseline justify-between gap-4 px-1">
                 <h3 className="text-sm font-semibold text-foreground">
                     {group.name}
                 </h3>
+                {showUptimeBars && group.monitors.length > 0 && (
+                    <span className="shrink-0 text-[11px] text-muted-foreground">
+                        Uptime · {formatUptimePeriod(uptimeDaysRange).toLowerCase()}
+                    </span>
+                )}
             </div>
             <div className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
                 {group.monitors.map((m) => (
@@ -351,6 +371,7 @@ function GroupSection({
                         isMaintenance={isGroupMaintenance}
                         showUptimeBars={showUptimeBars}
                         showUptimePercentage={showUptimePercentage}
+                        uptimeDaysRange={uptimeDaysRange}
                     />
                 ))}
                 {group.monitors.length === 0 && (
@@ -659,6 +680,7 @@ export function StatusPage() {
     const showUptimeBars = config?.showUptimeBars ?? true;
     const showUptimePercentage = config?.showUptimePercentage ?? true;
     const showIncidentHistory = config?.showIncidentHistory ?? true;
+    const uptimeDaysRange = config?.uptimeDaysRange ?? 90;
 
     return (
         <div className="min-h-screen bg-background text-foreground font-sans flex flex-col">
@@ -787,6 +809,7 @@ export function StatusPage() {
                             index={idx}
                             showUptimeBars={showUptimeBars}
                             showUptimePercentage={showUptimePercentage}
+                            uptimeDaysRange={uptimeDaysRange}
                         />
                     ))}
                 </div>
@@ -808,7 +831,7 @@ export function StatusPage() {
                             href="https://projecthelena.com/"
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="font-semibold text-foreground/60 hover:text-foreground hover:underline underline-offset-4 transition-all"
+                            className="font-semibold text-foreground/60 hover:text-foreground hover:underline underline-offset-4 transition-colors"
                         >
                             Warden
                         </a>

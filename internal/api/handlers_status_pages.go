@@ -516,15 +516,16 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 	// endpoint and the URL can carry internal hostnames, ports, paths, or credentials in the
 	// query string. The public page never renders it.
 	type MonitorDTO struct {
-		ID            string               `json:"id"`
-		Name          string               `json:"name"`
-		Interval      int                  `json:"interval"`
-		Status        string               `json:"status"`
-		Latency       int64                `json:"latency"`
-		History       []HistoryPoint       `json:"history"`
-		LastCheck     string               `json:"lastCheck"`
-		UptimeDays    []db.DailyUptimeStat `json:"uptimeDays"`
-		OverallUptime float64              `json:"overallUptime"`
+		ID                   string               `json:"id"`
+		Name                 string               `json:"name"`
+		Status               string               `json:"status"`
+		Latency              int64                `json:"latency"`
+		History              []HistoryPoint       `json:"history"`
+		LastCheck            string               `json:"lastCheck"`
+		UptimeDays           []db.DailyUptimeStat `json:"uptimeDays"`
+		Uptime               db.UptimeWindow      `json:"uptime"`
+		OverallUptime        float64              `json:"overallUptime"`
+		CheckIntervalSeconds int                  `json:"checkIntervalSeconds"`
 	}
 
 	type GroupDTO struct {
@@ -613,27 +614,19 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 				uptimeDays = []db.DailyUptimeStat{}
 			}
 
-			// Compute overall uptime from the daily stats
-			var totalChecks, totalUp int
-			for _, d := range uptimeDays {
-				totalChecks += d.Total
-				totalUp += d.Up
-			}
-			overallUptime := 100.0
-			if totalChecks > 0 {
-				overallUptime = (float64(totalUp) / float64(totalChecks)) * 100.0
-			}
+			uptime := db.SummarizeDailyUptime(uptimeDays, meta.Interval)
 
 			monitorDTOs = append(monitorDTOs, MonitorDTO{
-				ID:            meta.ID,
-				Name:          meta.Name,
-				Interval:      meta.Interval,
-				Status:        statusStr,
-				Latency:       latency,
-				History:       historyPoints,
-				LastCheck:     lastCheck,
-				UptimeDays:    uptimeDays,
-				OverallUptime: overallUptime,
+				ID:                   meta.ID,
+				Name:                 meta.Name,
+				Status:               statusStr,
+				Latency:              latency,
+				History:              historyPoints,
+				LastCheck:            lastCheck,
+				UptimeDays:           uptimeDays,
+				Uptime:               uptime,
+				OverallUptime:        uptime.Percent,
+				CheckIntervalSeconds: meta.Interval,
 			})
 		}
 
@@ -846,11 +839,8 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	// Build config object for public page
-	uptimeDaysRange := page.UptimeDaysRange
-	if uptimeDaysRange == 0 {
-		uptimeDaysRange = 90
-	}
+	// Build config object for public page. Use the same clamped range that produced the
+	// uptime rows so the visible label can never disagree with the data.
 	config := map[string]any{
 		"description":          page.Description,
 		"logoUrl":              page.LogoURL,
@@ -860,7 +850,7 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 		"showUptimeBars":       page.ShowUptimeBars,
 		"showUptimePercentage": page.ShowUptimePercentage,
 		"showIncidentHistory":  page.ShowIncidentHistory,
-		"uptimeDaysRange":      uptimeDaysRange,
+		"uptimeDaysRange":      daysRange,
 		"headerContent":        page.HeaderContent,
 		"headerAlignment":      page.HeaderAlignment,
 		"headerArrangement":    page.HeaderArrangement,

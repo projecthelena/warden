@@ -199,7 +199,7 @@ func (s *Server) getMonitor(ctx context.Context, _ *mcp.CallToolRequest, in GetM
 	}
 
 	status, latency := s.liveStatus(*m)
-	day, week, month, err := s.store.GetUptimeStats(m.ID)
+	uptimeStats, err := s.store.GetUptimeStats(m.ID)
 	if err != nil {
 		return nil, GetMonitorOutput{}, fmt.Errorf("failed to load uptime stats: %w", err)
 	}
@@ -220,9 +220,9 @@ func (s *Server) getMonitor(ctx context.Context, _ *mcp.CallToolRequest, in GetM
 			Latency: latency,
 		},
 		Interval:     m.Interval,
-		Uptime24h:    day,
-		Uptime7d:     week,
-		Uptime30d:    month,
+		Uptime24h:    uptimeStats.Last24Hours.Percent,
+		Uptime7d:     uptimeStats.Last7Days.Percent,
+		Uptime30d:    uptimeStats.Last30Days.Percent,
 		RecentEvents: summarizeEvents(events),
 	}, nil
 }

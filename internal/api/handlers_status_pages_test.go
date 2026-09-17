@@ -763,6 +763,63 @@ func TestPhase1_ResponseIncludesUptimeDays(t *testing.T) {
 	if _, ok := monitor["overallUptime"]; !ok {
 		t.Error("Expected 'overallUptime' field in monitor response")
 	}
+
+	uptime, ok := monitor["uptime"].(map[string]interface{})
+	if !ok {
+		t.Fatal("Expected shared 'uptime' summary in monitor response")
+	}
+	if uptime["totalChecks"] != float64(0) || uptime["downChecks"] != float64(0) {
+		t.Errorf("Expected an explicit no-data summary, got %#v", uptime)
+	}
+	if monitor["checkIntervalSeconds"] != float64(60) {
+		t.Errorf("Expected check interval for downtime calculations, got %#v", monitor["checkIntervalSeconds"])
+	}
+}
+
+func TestPhase1_ResponseUsesRollupForSharedUptimeSummary(t *testing.T) {
+	store, spH := newStatusPageTestEnv(t)
+
+	seedGroup(t, store, "g-summary", "Summary Group")
+	if err := store.CreateMonitor(db.Monitor{ID: "m-summary", GroupID: "g-summary", Name: "Summary Monitor", URL: "https://example.com", Active: true, Interval: 60}); err != nil {
+		t.Fatal(err)
+	}
+	seedPage(t, store, "summary-test", "Summary Test", nil, true, true)
+	now := time.Now().UTC()
+	if err := store.BatchInsertChecks([]db.CheckResult{
+		{MonitorID: "m-summary", Status: "up", Timestamp: now.Add(-3 * time.Minute)},
+		{MonitorID: "m-summary", Status: "up", Timestamp: now.Add(-2 * time.Minute)},
+		{MonitorID: "m-summary", Status: "down", Timestamp: now.Add(-time.Minute)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RollupDailyUptime(2); err != nil {
+		t.Fatal(err)
+	}
+
+	w := httptest.NewRecorder()
+	spH.GetPublicStatus(w, makeRequest("GET", "/api/s/summary-test", "summary-test", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	body := decodeJSON(t, w)
+	monitor := findMonitorInGroups(body["groups"].([]interface{}), "Summary Monitor")
+	if monitor == nil {
+		t.Fatal("Expected summary monitor")
+	}
+	uptime := monitor["uptime"].(map[string]interface{})
+	if uptime["totalChecks"] != float64(3) || uptime["downChecks"] != float64(1) || uptime["downtimeSeconds"] != float64(60) {
+		t.Fatalf("unexpected uptime summary: %#v", uptime)
+	}
+	if percent := uptime["percent"].(float64); percent < 66 || percent > 67 {
+		t.Fatalf("expected about 66.67%% uptime, got %f", percent)
+	}
+
+	days := monitor["uptimeDays"].([]interface{})
+	today := days[len(days)-1].(map[string]interface{})
+	if today["totalChecks"] != float64(3) || today["upChecks"] != float64(2) {
+		t.Fatalf("unexpected daily rollup payload: %#v", today)
+	}
 }
 
 func TestPhase1_ResponseIncludesMonitorStatus(t *testing.T) {
@@ -1417,6 +1474,10 @@ func TestGetPublicStatus_ClampsBadUptimeRange(t *testing.T) {
 		t.Fatalf("expected 200 (clamped), got %d: %s", w.Code, w.Body.String())
 	}
 	body := decodeJSON(t, w)
+	config := body["config"].(map[string]interface{})
+	if config["uptimeDaysRange"] != float64(365) {
+		t.Errorf("expected visible range to match the 365-day clamp, got %#v", config["uptimeDaysRange"])
+	}
 	for _, gi := range body["groups"].([]interface{}) {
 		for _, mi := range gi.(map[string]interface{})["monitors"].([]interface{}) {
 			days, _ := mi.(map[string]interface{})["uptimeDays"].([]interface{})
