@@ -1239,7 +1239,7 @@ paths:
         name: id
         required: true
         type: string
-      - description: 'Time range: 1h, 24h, 7d, 30d (default 24h)'
+      - description: 'Time range: 1h, 24h, 7d, 30d (default 1h)'
         in: query
         name: range
         type: string

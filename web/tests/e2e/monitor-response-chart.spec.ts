@@ -39,6 +39,7 @@ test("response chart separates missing data and failed checks", async ({ page })
     }));
 
     await page.goto(`/monitors/${monitor.id}`);
+    await expect(page.getByRole("button", { name: "1h", exact: true })).toHaveAttribute("aria-pressed", "true");
     const chart = page.getByTestId("response-time-chart");
     await expect(chart).toBeVisible();
     await expect(chart).toHaveAttribute("data-motion", "animated");

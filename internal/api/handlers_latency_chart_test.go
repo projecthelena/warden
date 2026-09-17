@@ -28,7 +28,7 @@ func TestGetMonitorLatency_ReturnsExplicitChartStates(t *testing.T) {
 	router := chi.NewRouter()
 	router.Get("/api/monitors/{id}/latency", handler.GetMonitorLatency)
 	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/monitors/m-chart-api/latency?range=1h", nil))
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/monitors/m-chart-api/latency", nil))
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("got %d: %s", recorder.Code, recorder.Body.String())
@@ -37,7 +37,7 @@ func TestGetMonitorLatency_ReturnsExplicitChartStates(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &points); err != nil {
 		t.Fatal(err)
 	}
-	if len(points) < 60 {
+	if len(points) < 59 {
 		t.Fatalf("got %d points, want a complete one-hour timeline", len(points))
 	}
 

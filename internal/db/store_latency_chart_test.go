@@ -30,8 +30,14 @@ func TestGetLatencyChart_FillsGapsAndSeparatesFailures(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(points) != 25 {
-			t.Fatalf("got %d buckets, want 25", len(points))
+		if len(points) != 23 {
+			t.Fatalf("got %d buckets, want 23 complete buckets", len(points))
+		}
+		if points[0].Timestamp != now.Add(-23*time.Hour).Truncate(time.Hour) {
+			t.Fatalf("first bucket is partial: %s", points[0].Timestamp)
+		}
+		if points[len(points)-1].Timestamp != now.Add(-time.Hour).Truncate(time.Hour) {
+			t.Fatalf("last bucket is partial: %s", points[len(points)-1].Timestamp)
 		}
 
 		byTime := make(map[time.Time]LatencyChartPoint, len(points))
@@ -57,6 +63,30 @@ func TestGetLatencyChart_FillsGapsAndSeparatesFailures(t *testing.T) {
 		gap := byTime[now.Add(-4*time.Hour).Truncate(time.Hour)]
 		if gap.State != "no_data" || gap.Latency != nil || gap.TotalChecks != 0 {
 			t.Fatalf("missing bucket was not preserved as no data: %+v", gap)
+		}
+	})
+}
+
+func TestGetLatencyChart_IncludesObservedCurrentBucket(t *testing.T) {
+	RunTestWithBothDBs(t, "latency chart current bucket", func(t *testing.T, s *Store) {
+		now := time.Date(2026, 9, 17, 10, 30, 30, 0, time.UTC)
+		if err := s.CreateGroup(Group{ID: "g-chart-current", Name: "Chart"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.CreateMonitor(Monitor{ID: "m-chart-current", GroupID: "g-chart-current", Name: "Chart monitor", URL: "https://example.test", Active: true, Interval: 60}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.BatchInsertChecks([]CheckResult{{MonitorID: "m-chart-current", Status: "up", Latency: 125, Timestamp: now.Add(-5 * time.Second), StatusCode: 200}}); err != nil {
+			t.Fatal(err)
+		}
+
+		points, err := s.GetLatencyChart("m-chart-current", 1, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		last := points[len(points)-1]
+		if last.Timestamp != now.Truncate(time.Minute) || last.State != "up" {
+			t.Fatalf("freshest observed bucket missing: %+v", last)
 		}
 	})
 }
