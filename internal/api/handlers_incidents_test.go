@@ -13,8 +13,7 @@ import (
 
 func TestIncidentHandler(t *testing.T) {
 	s, _ := db.NewStore(db.NewTestConfig())
-	invalidations := 0
-	h := NewIncidentHandler(s, func() { invalidations++ })
+	h := NewIncidentHandler(s)
 
 	// Create Incident
 	payload := map[string]string{
@@ -32,9 +31,6 @@ func TestIncidentHandler(t *testing.T) {
 	h.CreateIncident(w, req)
 	if w.Code != http.StatusCreated {
 		t.Errorf("CreateIncident failed: %d", w.Code)
-	}
-	if invalidations != 1 {
-		t.Fatalf("status page cache invalidations = %d, want 1", invalidations)
 	}
 
 	// List Incidents

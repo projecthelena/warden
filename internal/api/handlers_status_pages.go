@@ -25,10 +25,9 @@ type StatusPageHandler struct {
 	manager statusPageMonitorReader
 	auth    *AuthHandler
 
-	cacheMu         sync.RWMutex
-	cache           map[string]cachedStatusPage
-	cacheGeneration uint64
-	builds          singleflight.Group
+	cacheMu sync.RWMutex
+	cache   map[string]cachedStatusPage
+	builds  singleflight.Group
 }
 
 const statusPageCacheTTL = 15 * time.Second
@@ -106,12 +105,7 @@ func (h *StatusPageHandler) refreshAllStatusPages() {
 }
 
 func (h *StatusPageHandler) buildStatusPage(slug string, knownPage *db.StatusPage) (cachedStatusPage, error) {
-	h.cacheMu.RLock()
-	generation := h.cacheGeneration
-	h.cacheMu.RUnlock()
-	buildKey := fmt.Sprintf("%s:%d", slug, generation)
-
-	value, err, _ := h.builds.Do(buildKey, func() (interface{}, error) {
+	value, err, _ := h.builds.Do(slug, func() (interface{}, error) {
 		page := knownPage
 		if page == nil {
 			var err error
@@ -133,9 +127,7 @@ func (h *StatusPageHandler) buildStatusPage(slug string, knownPage *db.StatusPag
 			generatedAt: time.Now(),
 		}
 		h.cacheMu.Lock()
-		if h.cacheGeneration == generation {
-			h.cache[slug] = entry
-		}
+		h.cache[slug] = entry
 		h.cacheMu.Unlock()
 		return entry, nil
 	})
@@ -150,13 +142,6 @@ func (h *StatusPageHandler) cachedStatusPage(slug string) (cachedStatusPage, boo
 	defer h.cacheMu.RUnlock()
 	entry, ok := h.cache[slug]
 	return entry, ok
-}
-
-func (h *StatusPageHandler) invalidateAll() {
-	h.cacheMu.Lock()
-	h.cache = make(map[string]cachedStatusPage)
-	h.cacheGeneration++
-	h.cacheMu.Unlock()
 }
 
 func serveCachedStatusPage(w http.ResponseWriter, entry cachedStatusPage, state string) {
@@ -562,7 +547,11 @@ func (h *StatusPageHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to update status page")
 		return
 	}
-	h.invalidateAll()
+	go func() {
+		if _, err := h.buildStatusPage(slug, nil); err != nil {
+			log.Printf("ERROR: Failed to refresh an updated status page cache entry: %v", err)
+		}
+	}()
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "updated"})
 }
