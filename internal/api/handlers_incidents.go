@@ -14,11 +14,22 @@ import (
 )
 
 type IncidentHandler struct {
-	store *db.Store
+	store                 *db.Store
+	invalidateStatusPages func()
 }
 
-func NewIncidentHandler(store *db.Store) *IncidentHandler {
-	return &IncidentHandler{store: store}
+func NewIncidentHandler(store *db.Store, invalidators ...func()) *IncidentHandler {
+	h := &IncidentHandler{store: store}
+	if len(invalidators) > 0 {
+		h.invalidateStatusPages = invalidators[0]
+	}
+	return h
+}
+
+func (h *IncidentHandler) incidentChanged() {
+	if h.invalidateStatusPages != nil {
+		h.invalidateStatusPages()
+	}
 }
 
 func generateIncidentID() string {
@@ -134,6 +145,7 @@ func (h *IncidentHandler) CreateIncident(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "Failed to create incident", http.StatusInternalServerError)
 		return
 	}
+	h.incidentChanged()
 
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(incidentToDTO(incident, nil))
@@ -285,6 +297,7 @@ func (h *IncidentHandler) UpdateIncident(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "Failed to update incident", http.StatusInternalServerError)
 		return
 	}
+	h.incidentChanged()
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(incidentToDTO(incident, nil))
@@ -309,6 +322,7 @@ func (h *IncidentHandler) DeleteIncident(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "Failed to delete incident", http.StatusInternalServerError)
 		return
 	}
+	h.incidentChanged()
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -407,6 +421,7 @@ func (h *IncidentHandler) PromoteOutage(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "Failed to create incident", http.StatusInternalServerError)
 		return
 	}
+	h.incidentChanged()
 
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(incidentToDTO(incident, nil))
@@ -455,6 +470,7 @@ func (h *IncidentHandler) SetVisibility(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "Failed to set visibility", http.StatusInternalServerError)
 		return
 	}
+	h.incidentChanged()
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -523,6 +539,7 @@ func (h *IncidentHandler) AddUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = h.store.UpdateIncident(*incident)
 	}
+	h.incidentChanged()
 
 	// Return the latest updates
 	updates, _ := h.store.GetIncidentUpdates(id)
