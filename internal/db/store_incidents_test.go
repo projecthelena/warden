@@ -247,6 +247,62 @@ func TestIncidentUpdates(t *testing.T) {
 	_ = s.DeleteIncident("inc-updates-1")
 }
 
+func TestGetActiveIncidentsExcludesHistory(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now().UTC()
+	for _, incident := range []Incident{
+		{ID: "active", Title: "Active", Type: "incident", Severity: "major", Status: "investigating", StartTime: now},
+		{ID: "resolved", Title: "Resolved", Type: "incident", Severity: "major", Status: "resolved", StartTime: now, EndTime: &now},
+		{ID: "completed", Title: "Completed", Type: "maintenance", Severity: "minor", Status: "completed", StartTime: now, EndTime: &now},
+	} {
+		if err := s.CreateIncident(incident); err != nil {
+			t.Fatalf("CreateIncident(%s): %v", incident.ID, err)
+		}
+	}
+
+	incidents, err := s.GetActiveIncidents()
+	if err != nil {
+		t.Fatalf("GetActiveIncidents: %v", err)
+	}
+	if len(incidents) != 1 || incidents[0].ID != "active" {
+		t.Fatalf("active incidents = %#v, want only active", incidents)
+	}
+}
+
+func TestGetIncidentUpdatesForIncidentsBatchesAndGroups(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now().UTC()
+	for _, id := range []string{"inc-a", "inc-b", "inc-unused"} {
+		if err := s.CreateIncident(Incident{ID: id, Title: id, Type: "incident", Severity: "minor", Status: "investigating", StartTime: now}); err != nil {
+			t.Fatalf("CreateIncident(%s): %v", id, err)
+		}
+	}
+	for _, update := range []struct{ id, status, message string }{
+		{"inc-a", "investigating", "first"},
+		{"inc-b", "identified", "other"},
+		{"inc-a", "resolved", "second"},
+		{"inc-unused", "investigating", "must not leak"},
+	} {
+		if err := s.CreateIncidentUpdate(update.id, update.status, update.message); err != nil {
+			t.Fatalf("CreateIncidentUpdate(%s): %v", update.id, err)
+		}
+	}
+
+	updates, err := s.GetIncidentUpdatesForIncidents([]string{"inc-a", "inc-b"})
+	if err != nil {
+		t.Fatalf("GetIncidentUpdatesForIncidents: %v", err)
+	}
+	if len(updates["inc-a"]) != 2 || updates["inc-a"][0].Message != "first" || updates["inc-a"][1].Message != "second" {
+		t.Fatalf("inc-a updates = %#v", updates["inc-a"])
+	}
+	if len(updates["inc-b"]) != 1 || updates["inc-b"][0].Message != "other" {
+		t.Fatalf("inc-b updates = %#v", updates["inc-b"])
+	}
+	if _, ok := updates["inc-unused"]; ok {
+		t.Fatal("batch returned an incident that was not requested")
+	}
+}
+
 func TestGetPublicResolvedIncidents(t *testing.T) {
 	s := newTestStore(t)
 

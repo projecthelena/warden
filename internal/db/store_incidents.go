@@ -2,6 +2,8 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -16,9 +18,9 @@ type Incident struct {
 	EndTime        *time.Time `json:"endTime,omitempty"`
 	AffectedGroups string     `json:"affectedGroups"` // JSON array
 	CreatedAt      time.Time  `json:"createdAt"`
-	Source         string     `json:"source"`            // "auto" | "manual"
-	OutageID       *int64     `json:"outageId"`          // nullable FK to monitor_outages
-	Public         bool       `json:"public"`            // visible on public status page
+	Source         string     `json:"source"`   // "auto" | "manual"
+	OutageID       *int64     `json:"outageId"` // nullable FK to monitor_outages
+	Public         bool       `json:"public"`   // visible on public status page
 }
 
 type IncidentUpdate struct {
@@ -75,6 +77,46 @@ func (s *Store) GetIncidents(since time.Time) ([]Incident, error) {
 		incidents = append(incidents, i)
 	}
 	return incidents, nil
+}
+
+// GetActiveIncidents returns only incidents that can appear in the current-status section.
+// It is separate from GetIncidents because passing time.Time{} to that history API selects
+// every row ever recorded.
+func (s *Store) GetActiveIncidents() ([]Incident, error) {
+	query := `
+		SELECT id, title, description, type, severity, status, start_time, end_time, affected_groups, created_at,
+		       COALESCE(source, 'manual') as source, outage_id, COALESCE(public, FALSE) as public
+		FROM incidents
+		WHERE status != 'resolved' AND status != 'completed'
+		ORDER BY created_at DESC
+	`
+	return s.scanIncidents(query)
+}
+
+func (s *Store) scanIncidents(query string, args ...interface{}) ([]Incident, error) {
+	rows, err := s.db.Query(s.rebind(query), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var incidents []Incident
+	for rows.Next() {
+		var i Incident
+		var endTime sql.NullTime
+		var outageID sql.NullInt64
+		if err := rows.Scan(&i.ID, &i.Title, &i.Description, &i.Type, &i.Severity, &i.Status, &i.StartTime, &endTime, &i.AffectedGroups, &i.CreatedAt, &i.Source, &outageID, &i.Public); err != nil {
+			return nil, err
+		}
+		if endTime.Valid {
+			i.EndTime = &endTime.Time
+		}
+		if outageID.Valid {
+			i.OutageID = &outageID.Int64
+		}
+		incidents = append(incidents, i)
+	}
+	return incidents, rows.Err()
 }
 
 func (s *Store) GetIncidentByID(id string) (*Incident, error) {
@@ -154,6 +196,37 @@ func (s *Store) GetIncidentUpdates(incidentID string) ([]IncidentUpdate, error) 
 		updates = append(updates, u)
 	}
 	return updates, nil
+}
+
+// GetIncidentUpdatesForIncidents returns updates for all requested incidents in one query.
+func (s *Store) GetIncidentUpdatesForIncidents(ids []string) (map[string][]IncidentUpdate, error) {
+	out := make(map[string][]IncidentUpdate, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	query := fmt.Sprintf(`SELECT id, incident_id, status, message, created_at
+		FROM incident_updates WHERE incident_id IN (%s)
+		ORDER BY incident_id, created_at ASC`, strings.Join(placeholders, ", "))
+	rows, err := s.db.Query(s.rebind(query), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var u IncidentUpdate
+		if err := rows.Scan(&u.ID, &u.IncidentID, &u.Status, &u.Message, &u.CreatedAt); err != nil {
+			return nil, err
+		}
+		out[u.IncidentID] = append(out[u.IncidentID], u)
+	}
+	return out, rows.Err()
 }
 
 // GetPublicResolvedIncidents returns resolved/completed incidents marked as public since the given time.
