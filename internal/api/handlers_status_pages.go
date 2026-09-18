@@ -1,21 +1,16 @@
 package api
 
 import (
-	"bytes"
 	"encoding/json"
-	"fmt"
-	"log"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/projecthelena/warden/internal/db"
 	"github.com/projecthelena/warden/internal/uptime"
-	"golang.org/x/sync/singleflight"
 )
 
 var hexColorRegex = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
@@ -24,36 +19,7 @@ type StatusPageHandler struct {
 	store   *db.Store
 	manager statusPageMonitorReader
 	auth    *AuthHandler
-
-	cacheMu sync.RWMutex
-	cache   map[string]cachedStatusPage
-	builds  singleflight.Group
 }
-
-const statusPageCacheTTL = 15 * time.Second
-
-type cachedStatusPage struct {
-	status      int
-	header      http.Header
-	body        []byte
-	generatedAt time.Time
-}
-
-type bufferedStatusResponse struct {
-	header http.Header
-	body   bytes.Buffer
-	status int
-}
-
-func newBufferedStatusResponse() *bufferedStatusResponse {
-	return &bufferedStatusResponse{header: make(http.Header), status: http.StatusOK}
-}
-
-func (w *bufferedStatusResponse) Header() http.Header { return w.header }
-
-func (w *bufferedStatusResponse) WriteHeader(status int) { w.status = status }
-
-func (w *bufferedStatusResponse) Write(p []byte) (int, error) { return w.body.Write(p) }
 
 // statusPageMonitorReader deliberately exposes only the lock-free snapshot API. Keeping
 // the narrow interface here prevents the request path from drifting back to GetMonitor,
@@ -63,97 +29,7 @@ type statusPageMonitorReader interface {
 }
 
 func NewStatusPageHandler(store *db.Store, manager *uptime.Manager, auth *AuthHandler) *StatusPageHandler {
-	return &StatusPageHandler{store: store, manager: manager, auth: auth, cache: make(map[string]cachedStatusPage)}
-}
-
-// Start precomputes every enabled page and keeps the materialized responses fresh. A page
-// request only performs its authorization check; the expensive assembly happens here.
-func (h *StatusPageHandler) Start() {
-	// Warm synchronously before the router starts accepting traffic. Startup can afford the
-	// materialization cost; the first visitor cannot.
-	h.refreshAllStatusPages()
-	go func() {
-		ticker := time.NewTicker(statusPageCacheTTL)
-		defer ticker.Stop()
-		for range ticker.C {
-			h.refreshAllStatusPages()
-		}
-	}()
-}
-
-func (h *StatusPageHandler) refreshAllStatusPages() {
-	pages, err := h.store.GetStatusPages()
-	if err != nil {
-		log.Printf("ERROR: Failed to list status pages for cache refresh: %v", err)
-		return
-	}
-	var wg sync.WaitGroup
-	for _, page := range pages {
-		if !page.Enabled {
-			continue
-		}
-		page := page
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if _, err := h.buildStatusPage(page.Slug, &page); err != nil {
-				log.Printf("ERROR: Failed to refresh a status page cache entry: %v", err)
-			}
-		}()
-	}
-	wg.Wait()
-}
-
-func (h *StatusPageHandler) buildStatusPage(slug string, knownPage *db.StatusPage) (cachedStatusPage, error) {
-	value, err, _ := h.builds.Do(slug, func() (interface{}, error) {
-		page := knownPage
-		if page == nil {
-			var err error
-			page, err = h.store.GetStatusPageBySlug(slug)
-			if err != nil || page == nil || !page.Enabled {
-				return cachedStatusPage{}, fmt.Errorf("status page unavailable")
-			}
-		}
-
-		buffer := newBufferedStatusResponse()
-		h.renderStatusPage(buffer, page)
-		if buffer.status != http.StatusOK {
-			return cachedStatusPage{}, fmt.Errorf("status page build returned %d", buffer.status)
-		}
-		entry := cachedStatusPage{
-			status:      buffer.status,
-			header:      buffer.header.Clone(),
-			body:        bytes.Clone(buffer.body.Bytes()),
-			generatedAt: time.Now(),
-		}
-		h.cacheMu.Lock()
-		h.cache[slug] = entry
-		h.cacheMu.Unlock()
-		return entry, nil
-	})
-	if err != nil {
-		return cachedStatusPage{}, err
-	}
-	return value.(cachedStatusPage), nil
-}
-
-func (h *StatusPageHandler) cachedStatusPage(slug string) (cachedStatusPage, bool) {
-	h.cacheMu.RLock()
-	defer h.cacheMu.RUnlock()
-	entry, ok := h.cache[slug]
-	return entry, ok
-}
-
-func serveCachedStatusPage(w http.ResponseWriter, entry cachedStatusPage, state string) {
-	for key, values := range entry.header {
-		for _, value := range values {
-			w.Header().Add(key, value)
-		}
-	}
-	w.Header().Set("X-Warden-Status-Cache", state)
-	w.Header().Set("Age", strconv.FormatInt(int64(time.Since(entry.generatedAt).Seconds()), 10))
-	w.WriteHeader(entry.status)
-	_, _ = w.Write(entry.body)
+	return &StatusPageHandler{store: store, manager: manager, auth: auth}
 }
 
 // GetAll returns all status page configurations merged with groups.
@@ -547,11 +423,6 @@ func (h *StatusPageHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to update status page")
 		return
 	}
-	go func() {
-		if _, err := h.buildStatusPage(slug, nil); err != nil {
-			log.Printf("ERROR: Failed to refresh an updated status page cache entry: %v", err)
-		}
-	}()
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "updated"})
 }
@@ -605,24 +476,6 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	if entry, ok := h.cachedStatusPage(slug); ok {
-		state := "hit"
-		if time.Since(entry.generatedAt) >= statusPageCacheTTL {
-			state = "stale"
-		}
-		serveCachedStatusPage(w, entry, state)
-		return
-	}
-
-	entry, err := h.buildStatusPage(slug, page)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to build status page")
-		return
-	}
-	serveCachedStatusPage(w, entry, "miss")
-}
-
-func (h *StatusPageHandler) renderStatusPage(w http.ResponseWriter, page *db.StatusPage) {
 	// 2. Fetch Layout from DB (Groups + Monitors Metadata)
 	groups, err := h.store.GetGroups()
 	if err != nil {
