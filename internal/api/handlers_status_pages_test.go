@@ -121,6 +121,47 @@ func TestGetPublicStatus_EnabledPublic(t *testing.T) {
 	}
 }
 
+func TestGetPublicStatus_ServesPrecomputedResponse(t *testing.T) {
+	store, spH := newStatusPageTestEnv(t)
+	seedGroup(t, store, "g-cache", "Cached")
+	seedMonitor(t, store, "m-cache", "g-cache", "Cached monitor")
+	groupID := "g-cache"
+	seedPage(t, store, "cached", "Cached status", &groupID, true, true)
+
+	if _, err := spH.buildStatusPage("cached", nil); err != nil {
+		t.Fatalf("precompute status page: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	spH.GetPublicStatus(w, makeRequest("GET", "/api/s/cached", "cached", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("X-Warden-Status-Cache"); got != "hit" {
+		t.Fatalf("cache state = %q, want hit", got)
+	}
+}
+
+func TestGetPublicStatus_PrivateCacheStillRequiresAuthentication(t *testing.T) {
+	store, spH := newStatusPageTestEnv(t)
+	seedPage(t, store, "private-cached", "Private cached status", nil, false, true)
+	seedAuthUser(t, store, "cache-admin", "private-cache-token")
+
+	authenticated := makeRequest("GET", "/api/s/private-cached", "private-cached", nil)
+	authenticated.AddCookie(&http.Cookie{Name: "auth_token", Value: "private-cache-token"})
+	prime := httptest.NewRecorder()
+	spH.GetPublicStatus(prime, authenticated)
+	if prime.Code != http.StatusOK {
+		t.Fatalf("failed to prime private cache: %d %s", prime.Code, prime.Body.String())
+	}
+
+	unauthenticated := httptest.NewRecorder()
+	spH.GetPublicStatus(unauthenticated, makeRequest("GET", "/api/s/private-cached", "private-cached", nil))
+	if unauthenticated.Code != http.StatusUnauthorized {
+		t.Fatalf("cached private page returned %d without authentication", unauthenticated.Code)
+	}
+}
+
 func TestGetPublicStatus_EnabledPrivate_Unauthenticated(t *testing.T) {
 	store, spH := newStatusPageTestEnv(t)
 

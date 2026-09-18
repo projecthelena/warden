@@ -115,6 +115,7 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 	eventH := NewEventHandler(store, manager)
 	insightH := NewInsightHandler(store)
 	statusPageH := NewStatusPageHandler(store, manager, authH)
+	statusPageH.Start()
 	notifH := NewNotificationChannelsHandler(store)
 	userH := NewUserHandler(store)
 	dockerHostH := NewDockerHostHandler(store, manager)
