@@ -20,6 +20,17 @@ describe("latency chart model", () => {
 
         expect(data.map(item => item.latency)).toEqual([100, null, 200]);
         expect(data[1].state).toBe("no_data");
+        expect(data.map(item => item.displayLatency)).toEqual([100, 100, 200]);
+    });
+
+    it("only carries latency to the first boundary of a missing run", () => {
+        const data = toChartData([
+            point("2026-09-06T00:00:00Z", 100),
+            point("2026-09-07T00:00:00Z", null, "no_data"),
+            point("2026-09-08T00:00:00Z", null, "no_data"),
+        ]);
+
+        expect(data.map(item => item.displayLatency)).toEqual([100, 100, null]);
     });
 
     it("does not include failures or missing data in average latency", () => {
@@ -31,16 +42,25 @@ describe("latency chart model", () => {
         ])).toBe(200);
     });
 
-    it("extends the domain through the final bucket", () => {
+    it("ends at the freshest successful value without an empty trailing bucket", () => {
         const data = toChartData([
             point("2026-09-17T08:00:00Z", 100),
             point("2026-09-17T09:00:00Z", 120),
         ]);
         expect(chartDomain(data, "24h")).toEqual([
             Date.parse("2026-09-17T08:00:00Z"),
-            Date.parse("2026-09-17T10:00:00Z"),
+            Date.parse("2026-09-17T09:00:00Z"),
         ]);
         expect(bucketDuration("1h")).toBe(60_000);
         expect(bucketDuration("30d")).toBe(86_400_000);
+    });
+
+    it("extends a final no-data bucket so its full region remains visible", () => {
+        const data = toChartData([
+            point("2026-09-16T00:00:00Z", 100),
+            point("2026-09-17T00:00:00Z", null, "no_data"),
+        ]);
+
+        expect(chartDomain(data, "30d")[1]).toBe(Date.parse("2026-09-18T00:00:00Z"));
     });
 });

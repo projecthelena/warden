@@ -29,7 +29,7 @@ type UptimeStats = {
 const ranges: LatencyRange[] = ["1h", "24h", "7d", "30d"];
 
 export function MonitorOverview({ monitor, timezone }: { monitor: Monitor; timezone?: string }) {
-    const [range, setRange] = useState<LatencyRange>("24h");
+    const [range, setRange] = useState<LatencyRange>("1h");
     const [stats, setStats] = useState<UptimeStats | null>(null);
     const [latency, setLatency] = useState<LatencyChartPoint[]>([]);
     const [statsLoading, setStatsLoading] = useState(true);
@@ -133,7 +133,7 @@ export function MonitorOverview({ monitor, timezone }: { monitor: Monitor; timez
                                     <YAxis width={48} tickFormatter={value => `${value}ms`} stroke="hsl(var(--muted-foreground))"
                                         fontSize={10} tickLine={false} axisLine={false} />
                                     <Tooltip content={<LatencyTooltip timezone={timezone} />} filterNull={false} />
-                                    <Area type="monotone" dataKey="latency" stroke="hsl(var(--primary))" strokeWidth={2}
+                                    <Area type="monotone" dataKey="displayLatency" stroke="hsl(var(--primary))" strokeWidth={2}
                                         fill="url(#monitorLatency)" connectNulls={false} isAnimationActive={!reduceMotion}
                                         animationDuration={500} animationEasing="ease-out" />
                                 </AreaChart>

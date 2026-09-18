@@ -1278,7 +1278,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Time range: 1h, 24h, 7d, 30d (default 24h)",
+                        "description": "Time range: 1h, 24h, 7d, 30d (default 1h)",
                         "name": "range",
                         "in": "query"
                     }

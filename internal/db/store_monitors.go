@@ -1372,8 +1372,16 @@ func (s *Store) GetLatencyChart(monitorID string, hours int, now time.Time) ([]L
 		return nil, err
 	}
 
-	first := start.Truncate(step)
-	last := now.Truncate(step)
+	// Only synthesize complete buckets. The partial buckets at either edge do not
+	// represent a full period and showing them as no_data creates false stripes.
+	// Keep the current partial bucket only when it contains a real observation so
+	// the chart still includes the freshest check.
+	first := start.Truncate(step).Add(step)
+	last := now.Truncate(step).Add(-step)
+	current := now.Truncate(step)
+	if _, ok := observed[current]; ok {
+		last = current
+	}
 	points := make([]LatencyChartPoint, 0, int(last.Sub(first)/step)+1)
 	for timestamp := first; !timestamp.After(last); timestamp = timestamp.Add(step) {
 		if point, ok := observed[timestamp]; ok {

@@ -9,13 +9,24 @@ export type LatencyChartPoint = {
     state: "up" | "mixed" | "down" | "no_data";
 };
 
-export type RenderedLatencyPoint = LatencyChartPoint & { timestampMs: number };
+export type RenderedLatencyPoint = LatencyChartPoint & {
+    timestampMs: number;
+    displayLatency: number | null;
+};
 
 export function toChartData(points: LatencyChartPoint[]): RenderedLatencyPoint[] {
-    return points
+    const sorted = points
         .map(point => ({ ...point, timestampMs: new Date(point.timestamp).getTime() }))
         .filter(point => Number.isFinite(point.timestampMs))
         .sort((a, b) => a.timestampMs - b.timestampMs);
+
+    return sorted.map((point, index) => ({
+        ...point,
+        // A latency value describes the bucket beginning at its timestamp. Carry it
+        // to the next bucket boundary so the line meets a following state region
+        // instead of leaving an unexplained visual gap.
+        displayLatency: point.latency ?? (index > 0 ? sorted[index - 1].latency : null),
+    }));
 }
 
 export function averageSuccessfulLatency(points: LatencyChartPoint[]): number | null {
@@ -31,5 +42,9 @@ export function bucketDuration(range: LatencyRange): number {
 
 export function chartDomain(points: RenderedLatencyPoint[], range: LatencyRange): [number, number] {
     if (points.length === 0) return [0, 0];
-    return [points[0].timestampMs, points[points.length - 1].timestampMs + bucketDuration(range)];
+    const last = points[points.length - 1];
+    const end = points.length > 1 && last.state === "up"
+        ? last.timestampMs
+        : last.timestampMs + bucketDuration(range);
+    return [points[0].timestampMs, end];
 }
