@@ -103,6 +103,34 @@ func TestUpdateUserRejectsPasswordForSSOAccount(t *testing.T) {
 	}
 }
 
+func TestUpdateUserAllowsTimezoneForSSOAccount(t *testing.T) {
+	_, _, _, router, store := setupTest(t)
+	user, err := store.FindOrCreateSSOUser("oidc", "issuer|timezone-subject", "timezone@example.com", "SSO User", "", true)
+	if err != nil {
+		t.Fatalf("FindOrCreateSSOUser: %v", err)
+	}
+	if err := store.CreateSession(user.ID, "sso-timezone-session", time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]string{"timezone": "America/Bogota"})
+	req := httptest.NewRequest("PATCH", "/api/auth/me", bytes.NewBuffer(body))
+	req.AddCookie(&http.Cookie{Name: "auth_token", Value: "sso-timezone-session"})
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	updated, err := store.GetUser(user.ID)
+	if err != nil {
+		t.Fatalf("GetUser: %v", err)
+	}
+	if updated.Timezone != "America/Bogota" {
+		t.Fatalf("expected timezone America/Bogota, got %q", updated.Timezone)
+	}
+}
+
 func TestAuthMeIntegration(t *testing.T) {
 	_, _, _, router, s := setupTest(t)
 

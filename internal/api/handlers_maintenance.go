@@ -73,6 +73,10 @@ func (h *MaintenanceHandler) CreateMaintenance(w http.ResponseWriter, r *http.Re
 		http.Error(w, "Invalid end time format", http.StatusBadRequest)
 		return
 	}
+	if !endTime.After(startTime) {
+		http.Error(w, "End time must be after start time", http.StatusBadRequest)
+		return
+	}
 
 	// Ensure UTC storage
 	startTime = startTime.UTC()
@@ -86,7 +90,7 @@ func (h *MaintenanceHandler) CreateMaintenance(w http.ResponseWriter, r *http.Re
 		Description:    req.Description,
 		Type:           "maintenance", // Enforce type
 		Severity:       "minor",       // Default for maintenance
-		Status:         req.Status,
+		Status:         "scheduled",
 		StartTime:      startTime,
 		EndTime:        &endTime,
 		AffectedGroups: string(affectedGroupsJSON),
@@ -186,6 +190,15 @@ func (h *MaintenanceHandler) UpdateMaintenance(w http.ResponseWriter, r *http.Re
 		http.Error(w, "Maintenance ID required", http.StatusBadRequest)
 		return
 	}
+	existing, err := h.store.GetIncidentByID(id)
+	if err != nil {
+		http.Error(w, "Failed to fetch maintenance", http.StatusInternalServerError)
+		return
+	}
+	if existing == nil || existing.Type != "maintenance" {
+		http.Error(w, "Maintenance not found", http.StatusNotFound)
+		return
+	}
 
 	var req struct {
 		Title          string   `json:"title"`
@@ -210,6 +223,10 @@ func (h *MaintenanceHandler) UpdateMaintenance(w http.ResponseWriter, r *http.Re
 	endTime, err := time.Parse(time.RFC3339, req.EndTime)
 	if err != nil {
 		http.Error(w, "Invalid end time format", http.StatusBadRequest)
+		return
+	}
+	if !endTime.After(startTime) {
+		http.Error(w, "End time must be after start time", http.StatusBadRequest)
 		return
 	}
 
@@ -279,6 +296,15 @@ func (h *MaintenanceHandler) DeleteMaintenance(w http.ResponseWriter, r *http.Re
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		http.Error(w, "Maintenance ID required", http.StatusBadRequest)
+		return
+	}
+	existing, err := h.store.GetIncidentByID(id)
+	if err != nil {
+		http.Error(w, "Failed to fetch maintenance", http.StatusInternalServerError)
+		return
+	}
+	if existing == nil || existing.Type != "maintenance" {
+		http.Error(w, "Maintenance not found", http.StatusNotFound)
 		return
 	}
 

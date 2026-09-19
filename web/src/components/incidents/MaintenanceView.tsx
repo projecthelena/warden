@@ -45,6 +45,7 @@ import {
 
 import { Group } from "@/lib/store";
 import { formatDate } from "@/lib/utils";
+import { formatDateTimeLocal, isMaintenanceActive, isMaintenanceFinished, zonedDateTimeToISOString } from "@/lib/maintenance";
 
 import {
     Card,
@@ -54,20 +55,18 @@ import {
     CardTitle,
 } from "@/components/ui/card";
 
-function MaintenanceCard({ incident, groups, onEdit, onDelete, onEndNow }: { incident: Incident; groups: Group[], onEdit?: (i: Incident) => void, onDelete?: (id: string) => void, onEndNow?: (i: Incident) => void }) {
+function MaintenanceCard({ incident, groups, timezone, onEdit, onDelete, onEndNow }: { incident: Incident; groups: Group[], timezone: string, onEdit?: (i: Incident) => void, onDelete?: (id: string) => void, onEndNow?: (i: Incident) => void }) {
     const affectedGroupNames = incident.affectedGroups?.map(id => {
         const g = groups.find(group => group.id === id);
         return g ? g.name : id;
     }) || [];
 
     const now = new Date();
-    const start = new Date(incident.startTime);
-    const end = incident.endTime ? new Date(incident.endTime) : null;
-    const isOngoing = now >= start && (!end || now < end);
-    const isHistory = incident.status === 'completed' || incident.status === 'resolved' || (end && now > end);
+    const isOngoing = isMaintenanceActive(incident, now);
+    const isHistory = isMaintenanceFinished(incident, now);
 
     return (
-        <Card className="hover:shadow-md transition-all duration-200 border-border/40 bg-card/30 hover:bg-card/50">
+        <Card data-testid={`maintenance-card-${incident.id}`} className="hover:shadow-md transition-all duration-200 border-border/40 bg-card/30 hover:bg-card/50">
             <CardHeader className="pb-3 grid grid-cols-[1fr_auto] gap-4 space-y-0">
                 <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
@@ -75,6 +74,10 @@ function MaintenanceCard({ incident, groups, onEdit, onDelete, onEndNow }: { inc
                         {isOngoing ? (
                             <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border-0 px-2 py-0 h-5 text-[10px] animate-pulse">
                                 Ongoing
+                            </Badge>
+                        ) : isHistory ? (
+                            <Badge variant="secondary" className="border-0 px-2 py-0 h-5 text-[10px]">
+                                Completed
                             </Badge>
                         ) : (
                             <Badge variant="secondary" className="bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 border-0 px-2 py-0 h-5 text-[10px]">
@@ -87,29 +90,31 @@ function MaintenanceCard({ incident, groups, onEdit, onDelete, onEndNow }: { inc
                 <div className="flex items-start gap-4">
                     <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono mt-0.5">
                         <Calendar className="w-3.5 h-3.5" />
-                        <span>{formatDate(incident.startTime)}</span>
+                        <span>{formatDate(incident.startTime, timezone)}</span>
                         {incident.endTime && (
                             <>
                                 <span>-</span>
-                                <span>{formatDate(incident.endTime)}</span>
+                                <span>{formatDate(incident.endTime, timezone)}</span>
                             </>
                         )}
                     </div>
 
-                    {!isHistory && onEdit && (
+                    {onDelete && (
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" className="h-8 w-8 p-0">
+                                <Button variant="ghost" className="h-8 w-8 p-0" data-testid={`maintenance-actions-${incident.id}`}>
                                     <span className="sr-only">Open menu</span>
                                     <MoreVertical className="h-4 w-4" />
                                 </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                                 <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                <DropdownMenuItem onClick={() => onEdit?.(incident)}>
-                                    <Pencil className="mr-2 h-4 w-4" />
-                                    Edit Details
-                                </DropdownMenuItem>
+                                {!isHistory && onEdit && (
+                                    <DropdownMenuItem onClick={() => onEdit(incident)}>
+                                        <Pencil className="mr-2 h-4 w-4" />
+                                        Edit Details
+                                    </DropdownMenuItem>
+                                )}
                                 {isOngoing && (
                                     <DropdownMenuItem onClick={() => onEndNow?.(incident)}>
                                         <CheckCircle2 className="mr-2 h-4 w-4" />
@@ -152,7 +157,7 @@ function MaintenanceCard({ incident, groups, onEdit, onDelete, onEndNow }: { inc
 }
 
 export function MaintenanceView() {
-    const { incidents, groups, fetchIncidents } = useMonitorStore();
+    const { incidents, groups, user, fetchIncidents } = useMonitorStore();
     const { canEdit } = useRole();
     const { toast } = useToast();
     const [editingIncident, setEditingIncident] = useState<Incident | null>(null);
@@ -163,6 +168,7 @@ export function MaintenanceView() {
     const [description, setDescription] = useState("");
     const [startTime, setStartTime] = useState("");
     const [endTime, setEndTime] = useState("");
+    const timezone = user?.timezone || "UTC";
     // const [selectedGroups, setSelectedGroups] = useState<string[]>([]); // Simple Multi-select? Or single? API supports array.
     // For simplicity, we might just support "All" or toggle.
     // Let's implement full editing if possible, or minimalistic.
@@ -180,14 +186,8 @@ export function MaintenanceView() {
         setEditingIncident(i);
         setTitle(i.title);
         setDescription(i.description || "");
-        // Format for datetime-local: YYYY-MM-DDTHH:mm
-        const toLocalISO = (d: string) => {
-            const date = new Date(d);
-            date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
-            return date.toISOString().slice(0, 16);
-        };
-        setStartTime(toLocalISO(i.startTime));
-        setEndTime(i.endTime ? toLocalISO(i.endTime) : "");
+        setStartTime(formatDateTimeLocal(i.startTime, timezone));
+        setEndTime(i.endTime ? formatDateTimeLocal(i.endTime, timezone) : "");
     };
 
     const handleDelete = (id: string) => {
@@ -234,6 +234,12 @@ export function MaintenanceView() {
 
     const saveEdit = async () => {
         if (!editingIncident) return;
+        const start = zonedDateTimeToISOString(startTime, timezone);
+        const end = endTime ? zonedDateTimeToISOString(endTime, timezone) : null;
+        if (end && new Date(end) <= new Date(start)) {
+            toast({ variant: "destructive", title: "Invalid time range", description: "End time must be after start time." });
+            return;
+        }
         try {
             const res = await fetch(`/api/maintenance/${editingIncident.id}`, {
                 method: 'PUT',
@@ -242,8 +248,8 @@ export function MaintenanceView() {
                     title,
                     description,
                     status: editingIncident.status, // Keep status unless logic changes it?
-                    startTime: new Date(startTime).toISOString(),
-                    endTime: endTime ? new Date(endTime).toISOString() : null,
+                    startTime: start,
+                    endTime: end,
                     affectedGroups: editingIncident.affectedGroups || [] // Keep groups for now
                 })
             });
@@ -258,8 +264,8 @@ export function MaintenanceView() {
     };
 
     // Filter maintenance
-    const scheduled = incidents.filter(i => i.type === 'maintenance' && i.status !== 'completed');
-    const history = incidents.filter(i => i.type === 'maintenance' && i.status === 'completed');
+    const scheduled = incidents.filter(i => i.type === 'maintenance' && !isMaintenanceFinished(i));
+    const history = incidents.filter(i => i.type === 'maintenance' && isMaintenanceFinished(i));
 
     return (
         <div className="space-y-8 max-w-5xl mx-auto">
@@ -295,14 +301,14 @@ export function MaintenanceView() {
                             <p className="text-xs opacity-70 mt-1">All systems operating normally.</p>
                         </div>
                     )}
-                    {scheduled.map(i => <MaintenanceCard key={i.id} incident={i} groups={groups} onEdit={canEdit ? handleEdit : undefined} onDelete={canEdit ? handleDelete : undefined} onEndNow={canEdit ? handleEndNow : undefined} />)}
+                    {scheduled.map(i => <MaintenanceCard key={i.id} incident={i} groups={groups} timezone={timezone} onEdit={canEdit ? handleEdit : undefined} onDelete={canEdit ? handleDelete : undefined} onEndNow={canEdit ? handleEndNow : undefined} />)}
                 </TabsContent>
 
                 <TabsContent value="history" className="mt-8 space-y-4 focus-visible:outline-none focus-visible:ring-0">
                     {history.length === 0 && (
                         <div className="text-center text-muted-foreground/50 py-16 text-sm">No maintenance history.</div>
                     )}
-                    {history.map(i => <MaintenanceCard key={i.id} incident={i} groups={groups} onEdit={canEdit ? handleEdit : undefined} onDelete={canEdit ? handleDelete : undefined} onEndNow={canEdit ? handleEndNow : undefined} />)}
+                    {history.map(i => <MaintenanceCard key={i.id} incident={i} groups={groups} timezone={timezone} onDelete={canEdit ? handleDelete : undefined} />)}
                 </TabsContent>
             </Tabs>
 
@@ -332,6 +338,7 @@ export function MaintenanceView() {
                                 <Input id="end" type="datetime-local" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
                             </div>
                         </div>
+                        <p className="text-xs text-muted-foreground">Times use your configured timezone: {timezone}</p>
                     </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setEditingIncident(null)}>Cancel</Button>
