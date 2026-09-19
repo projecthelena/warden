@@ -20,6 +20,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { StatusPage } from "@/lib/store";
 import { sanitizeImageUrl } from "@/lib/utils";
 import { Loader2, Image, X } from "lucide-react";
+import { SelectTimezone } from "@/components/ui/select-timezone";
 
 interface StatusPageConfigSheetProps {
     page: StatusPage | null;
@@ -45,6 +46,7 @@ export function StatusPageConfigSheet({ page, open, onOpenChange }: StatusPageCo
     const [headerContent, setHeaderContent] = useState<'logo-title' | 'logo-only' | 'title-only'>("logo-title");
     const [headerAlignment, setHeaderAlignment] = useState<'left' | 'center' | 'right'>("center");
     const [headerArrangement, setHeaderArrangement] = useState<'stacked' | 'inline'>("inline");
+    const [timezone, setTimezone] = useState("UTC");
 
     // Preview state
     const [logoError, setLogoError] = useState(false);
@@ -65,6 +67,7 @@ export function StatusPageConfigSheet({ page, open, onOpenChange }: StatusPageCo
             setHeaderContent(page.headerContent || "logo-title");
             setHeaderAlignment(page.headerAlignment || "center");
             setHeaderArrangement(page.headerArrangement || "inline");
+            setTimezone(page.timezone || "UTC");
             setLogoError(false);
             setFaviconError(false);
         }
@@ -100,6 +103,7 @@ export function StatusPageConfigSheet({ page, open, onOpenChange }: StatusPageCo
                 headerContent,
                 headerAlignment,
                 headerArrangement,
+                timezone,
             });
             toast({
                 title: "Configuration Saved",
@@ -156,6 +160,14 @@ export function StatusPageConfigSheet({ page, open, onOpenChange }: StatusPageCo
                                 className="resize-none"
                                 rows={2}
                             />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Timezone</Label>
+                            <SelectTimezone value={timezone} onValueChange={setTimezone} />
+                            <p className="text-xs text-muted-foreground">
+                                Dates on this public page are shown in this timezone for every visitor.
+                            </p>
                         </div>
                     </div>
 

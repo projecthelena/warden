@@ -40,6 +40,9 @@ func TestStatusPages(t *testing.T) {
 	if !p.Enabled {
 		t.Error("Expected enabled=true")
 	}
+	if p.Timezone != "UTC" {
+		t.Errorf("Expected default timezone UTC, got %q", p.Timezone)
+	}
 
 	// Toggle
 	if err := s.ToggleStatusPage("custom-slug", false); err != nil {
@@ -49,6 +52,27 @@ func TestStatusPages(t *testing.T) {
 	p, _ = s.GetStatusPageBySlug("custom-slug")
 	if p.Public {
 		t.Error("Expected public=false after toggle")
+	}
+}
+
+func TestStatusPageTimezonePersists(t *testing.T) {
+	s := newTestStore(t)
+
+	err := s.UpsertStatusPageFull(StatusPageInput{
+		Slug: "bogota", Title: "Bogota", Public: true, Enabled: true,
+		Theme: "system", ShowUptimeBars: true, ShowUptimePercentage: true,
+		ShowIncidentHistory: true, UptimeDaysRange: 90, Timezone: "America/Bogota",
+	})
+	if err != nil {
+		t.Fatalf("UpsertStatusPageFull failed: %v", err)
+	}
+
+	page, err := s.GetStatusPageBySlug("bogota")
+	if err != nil {
+		t.Fatalf("GetStatusPageBySlug failed: %v", err)
+	}
+	if page.Timezone != "America/Bogota" {
+		t.Errorf("Expected America/Bogota, got %q", page.Timezone)
 	}
 }
 

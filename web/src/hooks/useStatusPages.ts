@@ -28,6 +28,7 @@ export interface StatusPageUpdatePayload {
     headerContent?: 'logo-title' | 'logo-only' | 'title-only';
     headerAlignment?: 'left' | 'center' | 'right';
     headerArrangement?: 'stacked' | 'inline';
+    timezone?: string;
 }
 
 async function toggleStatusPageReq(payload: StatusPageUpdatePayload) {

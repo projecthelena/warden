@@ -47,6 +47,21 @@ test.describe('Status Pages - Enabled/Public Controls', () => {
         await statusPages.expectPublicToggleDisabled('all');
     });
 
+    test('Status page timezone can be selected and is returned publicly', async ({ page }) => {
+        const statusPages = new StatusPagesPage(page);
+        await statusPages.navigateViaSidebar();
+        await statusPages.waitForLoad();
+        await statusPages.openConfigDialog('all');
+        await statusPages.selectConfigTimezone('America/Bogota');
+        await statusPages.saveConfigDialog();
+        await statusPages.enablePublicViaAPI('all');
+
+        const response = await page.request.get('/api/s/all');
+        expect(response.ok()).toBeTruthy();
+        const body = await response.json();
+        expect(body.config.timezone).toBe('America/Bogota');
+    });
+
     test('Enable Global Status page and verify Public badge', async ({ page }) => {
         const statusPages = new StatusPagesPage(page);
         await statusPages.navigateViaSidebar();

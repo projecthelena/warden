@@ -106,7 +106,7 @@ function StatusBanner({
     );
 }
 
-function MaintenanceCard({ incident }: { incident: Incident }) {
+function MaintenanceCard({ incident, timezone }: { incident: Incident; timezone: string }) {
     const start = new Date(incident.startTime);
     const end = incident.endTime ? new Date(incident.endTime) : null;
     const now = new Date();
@@ -143,9 +143,9 @@ function MaintenanceCard({ incident }: { incident: Incident }) {
                 </div>
             </div>
             <div className="text-[11px] text-muted-foreground tabular-nums font-mono whitespace-nowrap hidden sm:block">
-                {formatDate(incident.startTime)}
+                {formatDate(incident.startTime, timezone)}
                 {incident.endTime && (
-                    <> &mdash; {formatDate(incident.endTime)}</>
+                    <> &mdash; {formatDate(incident.endTime, timezone)}</>
                 )}
             </div>
         </div>
@@ -664,6 +664,7 @@ export function StatusPage() {
     const showUptimePercentage = config?.showUptimePercentage ?? true;
     const showIncidentHistory = config?.showIncidentHistory ?? true;
     const uptimeDaysRange = config?.uptimeDaysRange ?? 90;
+    const timezone = config?.timezone || 'UTC';
 
     return (
         <div className="min-h-screen bg-background text-foreground font-sans flex flex-col">
@@ -757,7 +758,7 @@ export function StatusPage() {
                                 </h2>
                                 <div className="space-y-2">
                                     {maintenanceIncidents.map((i) => (
-                                        <MaintenanceCard key={i.id} incident={i} />
+                                        <MaintenanceCard key={i.id} incident={i} timezone={timezone} />
                                     ))}
                                 </div>
                             </div>
@@ -800,7 +801,7 @@ export function StatusPage() {
                 {/* Past Incidents */}
                 {showIncidentHistory && pastIncidents && pastIncidents.length > 0 && (
                     <div className="mt-10">
-                        <PastIncidentsSection incidents={pastIncidents} />
+                        <PastIncidentsSection incidents={pastIncidents} timezone={timezone} />
                     </div>
                 )}
             </main>

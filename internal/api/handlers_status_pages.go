@@ -75,6 +75,7 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		HeaderContent        string  `json:"headerContent"`
 		HeaderAlignment      string  `json:"headerAlignment"`
 		HeaderArrangement    string  `json:"headerArrangement"`
+		Timezone             string  `json:"timezone"`
 	}
 
 	var result []StatusPageDTO
@@ -107,6 +108,7 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		HeaderContent:        "logo-title",
 		HeaderAlignment:      "center",
 		HeaderArrangement:    "stacked",
+		Timezone:             "UTC",
 	}
 	if globalPage != nil {
 		globalDTO.ID = globalPage.ID
@@ -125,6 +127,7 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		globalDTO.HeaderContent = globalPage.HeaderContent
 		globalDTO.HeaderAlignment = globalPage.HeaderAlignment
 		globalDTO.HeaderArrangement = globalPage.HeaderArrangement
+		globalDTO.Timezone = globalPage.Timezone
 		if globalDTO.UptimeDaysRange == 0 {
 			globalDTO.UptimeDaysRange = 90
 		}
@@ -159,6 +162,7 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 			HeaderContent:        "logo-title",
 			HeaderAlignment:      "center",
 			HeaderArrangement:    "stacked",
+			Timezone:             "UTC",
 		}
 
 		if cfg, ok := configMap[g.ID]; ok {
@@ -179,6 +183,7 @@ func (h *StatusPageHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 			dto.HeaderContent = cfg.HeaderContent
 			dto.HeaderAlignment = cfg.HeaderAlignment
 			dto.HeaderArrangement = cfg.HeaderArrangement
+			dto.Timezone = cfg.Timezone
 			if dto.UptimeDaysRange == 0 {
 				dto.UptimeDaysRange = 90
 			}
@@ -235,6 +240,7 @@ func (h *StatusPageHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 		HeaderContent        *string `json:"headerContent"`
 		HeaderAlignment      *string `json:"headerAlignment"`
 		HeaderArrangement    *string `json:"headerArrangement"`
+		Timezone             *string `json:"timezone"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
@@ -316,6 +322,15 @@ func (h *StatusPageHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 	// Get existing page to preserve defaults
 	existing, _ := h.store.GetStatusPageBySlug(slug)
 
+	timezone := "UTC"
+	if req.Timezone != nil && *req.Timezone != "" {
+		if _, err := time.LoadLocation(*req.Timezone); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid timezone")
+			return
+		}
+		timezone = *req.Timezone
+	}
+
 	// Validate uptimeDaysRange if provided
 	uptimeDaysRange := 90
 	if req.UptimeDaysRange != nil {
@@ -359,6 +374,7 @@ func (h *StatusPageHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 		HeaderContent:        headerContent,
 		HeaderAlignment:      headerAlignment,
 		HeaderArrangement:    headerArrangement,
+		Timezone:             timezone,
 	}
 
 	// Apply existing values as defaults
@@ -392,6 +408,12 @@ func (h *StatusPageHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 			input.HeaderArrangement = existing.HeaderArrangement
 			if input.HeaderArrangement == "" {
 				input.HeaderArrangement = "stacked"
+			}
+		}
+		if req.Timezone == nil {
+			input.Timezone = existing.Timezone
+			if input.Timezone == "" {
+				input.Timezone = "UTC"
 			}
 		}
 		input.ShowUptimeBars = existing.ShowUptimeBars
@@ -893,6 +915,7 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 		"headerContent":        page.HeaderContent,
 		"headerAlignment":      page.HeaderAlignment,
 		"headerArrangement":    page.HeaderArrangement,
+		"timezone":             page.Timezone,
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
