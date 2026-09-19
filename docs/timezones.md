@@ -22,15 +22,17 @@ When a maintenance window ends:
 
 ## Public status pages
 
-Public status pages currently display dates in **UTC**. This gives every visitor the same published time, regardless of their device or location.
+Each status page has its own timezone, configured under **Status Pages → Configure Status Page → Timezone**.
 
-A future update will let you choose a timezone for each status page. All visitors will continue to see the same time chosen by the page owner.
+Every visitor sees dates in that page's timezone, regardless of their device or location. For example, if a page uses `America/Bogota`, a visitor in Japan still sees the official Bogotá time.
+
+This keeps maintenance announcements, screenshots, notifications, and support conversations consistent. Warden does not currently show a second conversion to the visitor's local timezone.
 
 ## Notifications and scheduled reports
 
-Warden currently uses the primary administrator's timezone for shared scheduled messages, such as digests and reports.
+Shared schedules use the timezone selected under **Settings → Notifications → Workspace timezone**.
 
-A future update will add a separate workspace timezone for these shared schedules.
+This applies to daily digests and weekly summaries. It is separate from each user's dashboard timezone because these messages are shared by the workspace.
 
 ## Recommended setup
 
@@ -38,5 +40,7 @@ A future update will add a separate workspace timezone for these shared schedule
 2. Select your city or region, for example `America/Bogota`.
 3. Save the changes.
 4. Check the timezone shown when scheduling maintenance.
+5. Choose the official timezone for each public status page.
+6. Choose the workspace timezone for digests and weekly summaries.
 
 Use a city or region instead of a short abbreviation such as `EST`, because regional timezones automatically follow local clock changes.
