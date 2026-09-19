@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getOverallStatus } from "./statusPageStatus";
+import { getMaintenanceState } from "@/lib/maintenance";
 
 function groupsWithStatuses(...statuses: Array<"up" | "down" | "degraded" | "paused">) {
     return [{
@@ -38,5 +39,33 @@ describe("getOverallStatus", () => {
         );
 
         expect(status.label).toBe("System Outage");
+    });
+});
+
+describe("status page maintenance lifecycle", () => {
+    const window = {
+        id: "maintenance-1",
+        title: "Router restart",
+        description: "",
+        type: "maintenance",
+        severity: "minor",
+        status: "scheduled",
+        startTime: "2026-09-15T22:13:00Z",
+        endTime: "2026-09-15T22:18:00Z",
+        affectedGroups: ["g-1"],
+    } as Parameters<typeof getMaintenanceState>[0][number];
+
+    it("marks affected groups only while maintenance is active", () => {
+        const state = getMaintenanceState([window], new Date("2026-09-15T22:15:00Z"));
+
+        expect(state.maintenanceGroupIds).toEqual(new Set(["g-1"]));
+        expect(state.maintenanceIncidents).toHaveLength(1);
+    });
+
+    it("removes expired windows from current status", () => {
+        const state = getMaintenanceState([window], new Date("2026-09-15T22:19:00Z"));
+
+        expect(state.maintenanceGroupIds).toEqual(new Set());
+        expect(state.maintenanceIncidents).toHaveLength(0);
     });
 });

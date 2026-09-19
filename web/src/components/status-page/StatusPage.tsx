@@ -13,6 +13,7 @@ import { PastIncidentsSection } from "./PastIncidentsSection";
 import { getOverallStatus } from "./statusPageStatus";
 import { IncidentTimeline } from "@/components/incidents/IncidentTimeline";
 import { formatUptimePeriod, type UptimeSummary } from "@/lib/uptime";
+import { getMaintenanceState, isMaintenanceActive } from "@/lib/maintenance";
 
 // ---------- Types ----------
 
@@ -35,21 +36,6 @@ interface StatusGroup extends Omit<Group, "monitors"> {
 }
 
 // ---------- Helpers ----------
-
-function getMaintenanceState(incidents: Incident[]) {
-    const now = new Date();
-    const maintenanceIncidents = (incidents || []).filter(
-        (i) => i.type === "maintenance" && i.status !== "completed" && i.status !== "resolved"
-    );
-    const activeMaintenance = maintenanceIncidents.filter(
-        (i) => new Date(i.startTime) <= now && (!i.endTime || new Date(i.endTime) > now)
-    );
-    const maintenanceGroupIds = new Set<string>();
-    activeMaintenance.forEach((i) => {
-        i.affectedGroups?.forEach((gId) => maintenanceGroupIds.add(gId));
-    });
-    return { maintenanceIncidents, activeMaintenance, maintenanceGroupIds };
-}
 
 const statusColorMap = {
     green: {
@@ -341,11 +327,8 @@ function GroupSection({
         incidents &&
         incidents.some(
             (i) =>
-                i.type === "maintenance" &&
-                i.status !== "completed" &&
                 i.affectedGroups?.includes(group.id) &&
-                new Date(i.startTime) <= now &&
-                (!i.endTime || new Date(i.endTime) > now)
+                isMaintenanceActive(i, now)
         );
 
     return (

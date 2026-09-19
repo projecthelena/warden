@@ -26,7 +26,8 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { Incident } from "@/lib/store";
+import { Incident, useMonitorStore } from "@/lib/store";
+import { zonedDateTimeToISOString } from "@/lib/maintenance";
 
 interface CreateMaintenanceSheetProps {
     onCreate: (incident: Omit<Incident, 'id'>) => void;
@@ -34,6 +35,7 @@ interface CreateMaintenanceSheetProps {
 }
 
 export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSheetProps) {
+    const timezone = useMonitorStore(state => state.user?.timezone || "UTC");
     const [title, setTitle] = useState("");
     const [description, setDescription] = useState("");
     const [selectedGroupId, setSelectedGroupId] = useState<string>("");
@@ -59,14 +61,16 @@ export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSh
             return;
         }
 
-        // Combine Date and Time
-        const start = new Date(startDate);
-        const [startH, startM] = startTime.split(':');
-        start.setHours(parseInt(startH), parseInt(startM));
+        const localValue = (date: Date, time: string) =>
+            `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}T${time}`;
 
-        const end = new Date(endDate);
-        const [endH, endM] = endTime.split(':');
-        end.setHours(parseInt(endH), parseInt(endM));
+        const start = zonedDateTimeToISOString(localValue(startDate, startTime), timezone);
+        const end = zonedDateTimeToISOString(localValue(endDate, endTime), timezone);
+
+        if (new Date(end) <= new Date(start)) {
+            alert("End time must be after start time");
+            return;
+        }
 
         onCreate({
             title,
@@ -74,8 +78,8 @@ export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSh
             type: 'maintenance',
             severity: 'minor',
             status: 'scheduled',
-            startTime: start.toISOString(),
-            endTime: end.toISOString(),
+            startTime: start,
+            endTime: end,
             affectedGroups: [selectedGroupId]
         });
 
@@ -209,7 +213,7 @@ export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSh
                             setTime={setEndTime}
                         />
                         <div className="text-xs text-muted-foreground text-right px-1">
-                            Time Zone: {Intl.DateTimeFormat().resolvedOptions().timeZone} ({new Date().toLocaleTimeString('en-US', { timeZoneName: 'short' }).split(' ')[2] || 'Local'})
+                            Time Zone: {timezone}
                         </div>
                     </div>
 

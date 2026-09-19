@@ -5,6 +5,7 @@ import { formatDate } from "@/lib/utils";
 import { StatusBadge, UptimeHistory } from "@/components/ui/monitor-visuals";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { isMaintenanceActive } from "@/lib/maintenance";
 
 export function MonitorCard({ monitor, groupId }: { monitor: Monitor, groupId: string }) {
     const { user, incidents } = useMonitorStore();
@@ -14,12 +15,7 @@ export function MonitorCard({ monitor, groupId }: { monitor: Monitor, groupId: s
 
     // Check for active maintenance
     const isMaintenance = useMemo(() => {
-        return incidents.some(i =>
-            i.type === 'maintenance' &&
-            i.status !== 'completed' &&
-            i.status !== 'resolved' &&
-            i.affectedGroups.includes(groupId)
-        );
+        return incidents.some(i => i.affectedGroups.includes(groupId) && isMaintenanceActive(i));
     }, [incidents, groupId]);
 
     // Format just the time (e.g. 9:41 PM)
