@@ -47,6 +47,12 @@ export class AlertingSettingsPage {
         await expect(this.page.getByTestId('digest-enabled')).toBeVisible({ timeout: 10000 });
     }
 
+    async selectWorkspaceTimezone(timezone: string) {
+        await this.page.getByTestId('timezone-select').click();
+        await this.page.getByPlaceholder('Search timezone...').fill(timezone);
+        await this.page.getByRole('option', { name: timezone, exact: true }).click();
+    }
+
     async readLadder() {
         await this.openLadder();
         return {

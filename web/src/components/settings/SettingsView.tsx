@@ -215,6 +215,7 @@ function NotificationIntelligence() {
     // Digest settings
     const [digestEnabled, setDigestEnabled] = useState(settings?.["notification.digest.enabled"] === "true");
     const [digestTime, setDigestTime] = useState(settings?.["notification.digest.time"] || "09:00");
+    const [workspaceTimezone, setWorkspaceTimezone] = useState(settings?.["workspace.timezone"] || "UTC");
     const [digestEventTypes, setDigestEventTypes] = useState<Set<string>>(() => {
         const types = settings?.["notification.digest.event_types"] || "degraded,flapping,stabilized,ssl_expiring";
         return new Set(types.split(",").map(t => t.trim()).filter(Boolean));
@@ -251,6 +252,7 @@ function NotificationIntelligence() {
 
             setDigestEnabled(settings["notification.digest.enabled"] === "true");
             setDigestTime(settings["notification.digest.time"] || "09:00");
+            setWorkspaceTimezone(settings["workspace.timezone"] || "UTC");
             const types = settings["notification.digest.event_types"] || "degraded,flapping,stabilized,ssl_expiring";
             setDigestEventTypes(new Set(types.split(",").map(t => t.trim()).filter(Boolean)));
             setAppUrl(settings["app_url"] || "");
@@ -278,6 +280,7 @@ function NotificationIntelligence() {
             "notification.digest.enabled": digestEnabled ? "true" : "false",
             "notification.digest.time": digestTime,
             "notification.digest.event_types": Array.from(digestEventTypes).join(","),
+            "workspace.timezone": workspaceTimezone,
         };
         // app_url is admin-only — only include in the patch when the current user has
         // the admin role, so editors don't unintentionally send (and trip backend RBAC).
@@ -576,6 +579,16 @@ function NotificationIntelligence() {
                         <CardDescription>Optional reports for context that does not need an immediate alert.</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-6">
+                        <div className="grid gap-2 max-w-md">
+                            <Label>Workspace timezone</Label>
+                            <SelectTimezone value={workspaceTimezone} onValueChange={setWorkspaceTimezone} />
+                            <p className="text-xs text-muted-foreground">
+                                Daily digests and weekly summaries follow this timezone for everyone.
+                            </p>
+                        </div>
+
+                        <Separator />
+
                         <section className="space-y-4" aria-labelledby="daily-digest-heading">
                             <div className="flex items-start justify-between gap-4">
                                 <div>

@@ -467,6 +467,32 @@ func TestGetSettings_ReportsTheWeeklySummary(t *testing.T) {
 	if response["notification.insights.weekly_time"] != "09:00" {
 		t.Errorf("weekly_time = %q, want 09:00", response["notification.insights.weekly_time"])
 	}
+	if response["workspace.timezone"] != "UTC" {
+		t.Errorf("workspace.timezone = %q, want UTC", response["workspace.timezone"])
+	}
+}
+
+func TestUpdateSettings_ValidatesWorkspaceTimezone(t *testing.T) {
+	s, _ := db.NewStore(db.NewTestConfig())
+	m := uptime.NewManager(s)
+	h := NewSettingsHandler(s, m)
+
+	body, _ := json.Marshal(map[string]string{"workspace.timezone": "America/Bogota"})
+	w := httptest.NewRecorder()
+	h.UpdateSettings(w, withAdminCtx(httptest.NewRequest("PATCH", "/api/settings", bytes.NewReader(body))))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if got, _ := s.GetSetting("workspace.timezone"); got != "America/Bogota" {
+		t.Errorf("workspace.timezone = %q, want America/Bogota", got)
+	}
+
+	body, _ = json.Marshal(map[string]string{"workspace.timezone": "Invalid/Timezone"})
+	w = httptest.NewRecorder()
+	h.UpdateSettings(w, withAdminCtx(httptest.NewRequest("PATCH", "/api/settings", bytes.NewReader(body))))
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
 }
 
 func TestUpdateSettings_PersistsTheWeeklySummary(t *testing.T) {

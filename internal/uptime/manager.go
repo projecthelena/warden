@@ -764,13 +764,13 @@ func (m *Manager) Sync() {
 		}
 	}
 
-	// Load user timezone for notifications (from first/admin user)
+	// Shared schedules use an explicit workspace timezone rather than depending on a user.
 	notifTZ := time.UTC
-	if user, err := m.store.GetUser(1); err == nil && user.Timezone != "" {
-		if loc, err := time.LoadLocation(user.Timezone); err == nil {
+	if timezone, err := m.store.GetSetting("workspace.timezone"); err == nil && timezone != "" {
+		if loc, err := time.LoadLocation(timezone); err == nil {
 			notifTZ = loc
 		} else {
-			log.Printf("Digest: invalid timezone %q for user 1, falling back to UTC: %v", user.Timezone, err)
+			log.Printf("Notifications: invalid workspace timezone %q, falling back to UTC: %v", timezone, err)
 		}
 	}
 

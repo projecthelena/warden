@@ -161,6 +161,10 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	if weeklyInsightsTime == "" {
 		weeklyInsightsTime = "09:00"
 	}
+	workspaceTimezone, _ := h.store.GetSetting("workspace.timezone")
+	if workspaceTimezone == "" {
+		workspaceTimezone = "UTC"
+	}
 
 	// Correlation and repeat-offender damping
 	corrWindow, _ := h.store.GetSetting("notification.correlation.window_seconds")
@@ -235,6 +239,7 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		"notification.insights.weekly_enabled":       weeklyInsights,
 		"notification.insights.weekly_day":           weeklyInsightsDay,
 		"notification.insights.weekly_time":          weeklyInsightsTime,
+		"workspace.timezone":                         workspaceTimezone,
 		"notification.latency.adaptive_enabled":      adaptiveEnabled,
 		"notification.latency.baseline_days":         baselineDays,
 		"notification.latency.min_samples":           baselineMinSamples,
@@ -419,6 +424,18 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 		"notification.digest.time",
 		"notification.insights.weekly_time",
 		"notification.digest.event_types",
+	}
+
+	if val, ok := body["workspace.timezone"]; ok {
+		if _, err := time.LoadLocation(val); err != nil {
+			http.Error(w, "Invalid workspace.timezone", http.StatusBadRequest)
+			return
+		}
+		if err := h.store.SetSetting("workspace.timezone", val); err != nil {
+			http.Error(w, "Failed to save workspace.timezone", http.StatusInternalServerError)
+			return
+		}
+		notifFatigueChanged = true
 	}
 	for _, key := range digestStringKeys {
 		if val, ok := body[key]; ok {

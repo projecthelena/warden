@@ -40,6 +40,21 @@ test.describe('Sustained alert ladder', () => {
         expect(ladder.repeat).toBe('60');
     });
 
+    test('persists the workspace timezone for shared schedules', async ({ page }) => {
+        const settings = new AlertingSettingsPage(page);
+        await settings.goto();
+
+        await settings.selectWorkspaceTimezone('America/Bogota');
+        expect(await settings.saveAndWait()).toBe(200);
+        expect((await serverSettings(page))['workspace.timezone']).toBe('America/Bogota');
+
+        await page.reload();
+        await expect(page.getByTestId('timezone-select')).toContainText('America/Bogota');
+
+        await settings.selectWorkspaceTimezone('UTC');
+        expect(await settings.saveAndWait()).toBe(200);
+    });
+
     test('persists a changed ladder across a reload', async ({ page }) => {
         const settings = new AlertingSettingsPage(page);
         await settings.goto();
