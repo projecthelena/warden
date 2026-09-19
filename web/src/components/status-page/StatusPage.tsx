@@ -14,6 +14,7 @@ import { getOverallStatus } from "./statusPageStatus";
 import { IncidentTimeline } from "@/components/incidents/IncidentTimeline";
 import { formatUptimePeriod, type UptimeSummary } from "@/lib/uptime";
 import { getMaintenanceState, isMaintenanceActive } from "@/lib/maintenance";
+import { MarkdownContent } from "@/components/ui/markdown";
 
 // ---------- Types ----------
 
@@ -137,9 +138,7 @@ function MaintenanceCard({ incident, timezone }: { incident: Incident; timezone:
                             </Badge>
                         )}
                     </div>
-                    {incident.description && (
-                        <p className="text-xs text-muted-foreground truncate mt-0.5">{incident.description}</p>
-                    )}
+                    {incident.description && <MarkdownContent className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{incident.description}</MarkdownContent>}
                 </div>
             </div>
             <div className="text-[11px] text-muted-foreground tabular-nums font-mono whitespace-nowrap hidden sm:block">

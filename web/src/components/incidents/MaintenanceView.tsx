@@ -9,10 +9,7 @@ import { useRole } from "@/hooks/useRole";
 import { ArrowRight, CalendarDays, CheckCircle2, Clock3, MoreVertical, Pencil, Trash2 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { MarkdownContent } from "@/components/ui/markdown";
 import { useState } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -22,7 +19,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 
 import { Group } from "@/lib/store";
 import { formatDate } from "@/lib/utils";
-import { formatDateTimeLocal, isMaintenanceActive, isMaintenanceFinished, zonedDateTimeToISOString } from "@/lib/maintenance";
+import { isMaintenanceActive, isMaintenanceFinished } from "@/lib/maintenance";
+import { CreateMaintenanceSheet } from "./CreateMaintenanceSheet";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -71,7 +69,11 @@ function MaintenanceCard({
                             </Badge>
                         )}
                     </div>
-                    {incident.description && <CardDescription className="max-w-2xl text-sm leading-relaxed">{incident.description}</CardDescription>}
+                    {incident.description && (
+                        <CardDescription>
+                            <MarkdownContent className="max-w-2xl text-muted-foreground">{incident.description}</MarkdownContent>
+                        </CardDescription>
+                    )}
                 </div>
                 <div className="flex items-start justify-between gap-2 sm:justify-end">
                     <div className="grid gap-1.5 text-xs text-muted-foreground sm:min-w-64">
@@ -145,20 +147,7 @@ export function MaintenanceView() {
     const [editingIncident, setEditingIncident] = useState<Incident | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
 
-    // Edit Form State
-    const [title, setTitle] = useState("");
-    const [description, setDescription] = useState("");
-    const [startTime, setStartTime] = useState("");
-    const [endTime, setEndTime] = useState("");
     const timezone = user?.timezone || "UTC";
-    // const [selectedGroups, setSelectedGroups] = useState<string[]>([]); // Simple Multi-select? Or single? API supports array.
-    // For simplicity, we might just support "All" or toggle.
-    // Let's implement full editing if possible, or minimalistic.
-    // Assuming UI simplicity: standard Shadcn doesn't have MultiSelect native. I'll use simple select for single group or "All" logic if needed, or checkboxes.
-    // But existing UI shows badges for multiple groups.
-    // For now, I'll allow *keeping* existing groups or clearing.
-    // Actually, I won't implement group editing in this first pass to keep it simple, or just a simple text area for IDs? No that's bad.
-    // I'll skip group editing for now to minimize complexity, focus on Title/Desc/Time.
 
     useEffect(() => {
         fetchIncidents();
@@ -166,10 +155,6 @@ export function MaintenanceView() {
 
     const handleEdit = (i: Incident) => {
         setEditingIncident(i);
-        setTitle(i.title);
-        setDescription(i.description || "");
-        setStartTime(formatDateTimeLocal(i.startTime, timezone));
-        setEndTime(i.endTime ? formatDateTimeLocal(i.endTime, timezone) : "");
     };
 
     const handleDelete = (id: string) => {
@@ -227,29 +212,18 @@ export function MaintenanceView() {
         }
     };
 
-    const saveEdit = async () => {
-        if (!editingIncident) return;
-        const start = zonedDateTimeToISOString(startTime, timezone);
-        const end = endTime ? zonedDateTimeToISOString(endTime, timezone) : null;
-        if (end && new Date(end) <= new Date(start)) {
-            toast({
-                variant: "destructive",
-                title: "Invalid time range",
-                description: "End time must be after start time.",
-            });
-            return;
-        }
+    const saveEdit = async (updated: Incident) => {
         try {
-            const res = await fetch(`/api/maintenance/${editingIncident.id}`, {
+            const res = await fetch(`/api/maintenance/${updated.id}`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    title,
-                    description,
-                    status: editingIncident.status, // Keep status unless logic changes it?
-                    startTime: start,
-                    endTime: end,
-                    affectedGroups: editingIncident.affectedGroups || [], // Keep groups for now
+                    title: updated.title,
+                    description: updated.description,
+                    status: updated.status,
+                    startTime: updated.startTime,
+                    endTime: updated.endTime,
+                    affectedGroups: updated.affectedGroups || [],
                 }),
             });
             if (!res.ok) throw new Error("Failed to update");
@@ -325,42 +299,7 @@ export function MaintenanceView() {
                 </TabsContent>
             </Tabs>
 
-            {/* Edit Dialog */}
-            <Dialog open={!!editingIncident} onOpenChange={(open) => !open && setEditingIncident(null)}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Edit Maintenance</DialogTitle>
-                        <DialogDescription>Update maintenance details.</DialogDescription>
-                    </DialogHeader>
-                    <div className="grid gap-4 py-4">
-                        <div className="grid gap-2">
-                            <Label htmlFor="title">Title</Label>
-                            <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} />
-                        </div>
-                        <div className="grid gap-2">
-                            <Label htmlFor="desc">Description</Label>
-                            <Textarea id="desc" value={description} onChange={(e) => setDescription(e.target.value)} />
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="grid gap-2">
-                                <Label htmlFor="start">Start Time</Label>
-                                <Input id="start" type="datetime-local" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
-                            </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="end">End Time</Label>
-                                <Input id="end" type="datetime-local" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
-                            </div>
-                        </div>
-                        <p className="text-xs text-muted-foreground">Times use your configured timezone: {timezone}</p>
-                    </div>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setEditingIncident(null)}>
-                            Cancel
-                        </Button>
-                        <Button onClick={saveEdit}>Save Changes</Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+            <CreateMaintenanceSheet groups={groups} incident={editingIncident} open={Boolean(editingIncident)} onOpenChange={(open) => !open && setEditingIncident(null)} onUpdate={saveEdit} />
 
             {/* Delete Confirmation */}
             <AlertDialog open={!!deletingId} onOpenChange={(open) => !open && setDeletingId(null)}>

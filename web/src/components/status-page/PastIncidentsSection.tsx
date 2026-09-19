@@ -4,6 +4,7 @@ import { cn, formatDate } from "@/lib/utils";
 import { Incident, IncidentUpdate } from "@/lib/store";
 import { CheckCircle2, ChevronDown, Clock } from "lucide-react";
 import { useState } from "react";
+import { MarkdownContent } from "@/components/ui/markdown";
 
 interface PastIncident extends Incident {
     updates?: IncidentUpdate[];
@@ -123,11 +124,7 @@ function PastIncidentCard({ incident, timezone }: { incident: PastIncident; time
                                     {severity.label}
                                 </Badge>
                             </div>
-                            {incident.description && (
-                                <p className="text-xs text-muted-foreground truncate pl-6">
-                                    {incident.description}
-                                </p>
-                            )}
+                            {incident.description && <MarkdownContent className="line-clamp-2 pl-6 text-xs text-muted-foreground">{incident.description}</MarkdownContent>}
                         </div>
                         <div className="flex items-center gap-3 shrink-0">
                             {incident.duration && (
