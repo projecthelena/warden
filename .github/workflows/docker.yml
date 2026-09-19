@@ -11,7 +11,7 @@ on:
 
 env:
   GHCR_IMAGE_NAME: ghcr.io/projecthelena/warden
-  DOCKERHUB_IMAGE_NAME: projecthelena/warden
+  DOCKERHUB_IMAGE_NAME: jesuspaz/warden
 
 jobs:
   build:
