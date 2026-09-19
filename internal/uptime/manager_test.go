@@ -431,7 +431,7 @@ func TestSSLThresholdState_TrackNotifiedThresholds(t *testing.T) {
 	}
 }
 
-func TestManager_UserTimezoneLoaded(t *testing.T) {
+func TestManager_WorkspaceTimezoneLoaded(t *testing.T) {
 	// Create a fresh store for this test
 	store, err := db.NewStore(db.NewTestConfig())
 	if err != nil {
@@ -439,21 +439,15 @@ func TestManager_UserTimezoneLoaded(t *testing.T) {
 	}
 	m := NewManager(store)
 
-	// Create a user with a specific timezone
-	if err := store.CreateUser("admin", "password123", "America/New_York", "admin"); err != nil {
-		t.Fatalf("CreateUser failed: %v", err)
+	if err := store.SetSetting("workspace.timezone", "America/New_York"); err != nil {
+		t.Fatalf("SetSetting failed: %v", err)
 	}
 
 	// Sync to load the timezone from user
 	m.Sync()
 
-	// Verify user timezone is set
-	user, err := store.GetUser(1)
-	if err != nil {
-		t.Fatalf("GetUser failed: %v", err)
-	}
-	if user.Timezone != "America/New_York" {
-		t.Errorf("Expected America/New_York, got %s", user.Timezone)
+	if m.notificationTimezone.String() != "America/New_York" {
+		t.Errorf("Expected America/New_York, got %s", m.notificationTimezone)
 	}
 }
 
@@ -473,14 +467,15 @@ func TestManager_InvalidTimezoneHandling(t *testing.T) {
 	}
 	m := NewManager(store)
 
-	// Create user with invalid timezone (edge case - shouldn't normally happen)
-	// The CreateUser doesn't validate timezone, so we test the fallback
-	if err := store.CreateUser("admin", "password123", "Invalid/Timezone", "admin"); err != nil {
-		t.Fatalf("CreateUser failed: %v", err)
+	if err := store.SetSetting("workspace.timezone", "Invalid/Timezone"); err != nil {
+		t.Fatalf("SetSetting failed: %v", err)
 	}
 
 	// Sync should not panic and should fall back to UTC
 	m.Sync()
+	if m.notificationTimezone != time.UTC {
+		t.Errorf("Expected UTC fallback, got %s", m.notificationTimezone)
+	}
 }
 
 func TestManager_RemoveMonitorCleansSSLState(t *testing.T) {
