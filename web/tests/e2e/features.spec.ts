@@ -1,4 +1,4 @@
-import { test } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { LoginPage } from '../pages/LoginPage';
 import { MaintenancePage } from '../pages/MaintenancePage';
 import { DashboardPage } from '../pages/DashboardPage';
@@ -32,7 +32,15 @@ test.describe('System Features', () => {
         console.log(`Scheduling Maintenance: ${title}`);
         await maintenance.createMaintenance(title, groupName);
 
-        // 4. Cleanup (optional, or rely on system reset)
+        // This suite shares one database. Remove the active window so later lifecycle
+        // tests do not correctly interpret it as unrelated global maintenance.
+        const maintenanceResponse = await page.request.get('/api/maintenance');
+        expect(maintenanceResponse.ok()).toBeTruthy();
+        const windows = await maintenanceResponse.json();
+        const created = windows.find((window: { id: string; title: string }) => window.title === title);
+        expect(created).toBeTruthy();
+        const deleteResponse = await page.request.delete(`/api/maintenance/${created.id}`);
+        expect(deleteResponse.ok()).toBeTruthy();
     });
 
 });
