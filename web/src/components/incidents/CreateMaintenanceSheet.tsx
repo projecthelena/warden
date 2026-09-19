@@ -1,13 +1,15 @@
 /* Hallmark · component: maintenance scheduler · genre: modern-minimal · theme: existing Warden tokens
  * Hallmark · pre-emit critique: P5 H4 E4 S5 R5 V4 · contrast: pass · responsive: pass
  */
-import { useState } from "react";
-import { CalendarClock, ChevronDownIcon } from "lucide-react";
+import { useEffect, useState } from "react";
+import { CalendarClock, Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Calendar } from "@/components/ui/calendar";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { MarkdownEditor } from "@/components/ui/markdown";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -88,16 +90,21 @@ function TimePicker({ value, onChange, testId }: { value: string; onChange: (val
 }
 
 interface CreateMaintenanceSheetProps {
-    onCreate: (incident: Omit<Incident, "id">) => void;
+    onCreate?: (incident: Omit<Incident, "id">) => void;
+    onUpdate?: (incident: Incident) => void | Promise<void>;
     groups: { id: string; name: string }[];
+    incident?: Incident | null;
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
 }
 
-export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSheetProps) {
+export function CreateMaintenanceSheet({ onCreate, onUpdate, groups, incident, open: controlledOpen, onOpenChange }: CreateMaintenanceSheetProps) {
     const { toast } = useToast();
     const timezone = useMonitorStore((state) => state.user?.timezone || "UTC");
     const [title, setTitle] = useState("");
     const [description, setDescription] = useState("");
-    const [selectedGroupId, setSelectedGroupId] = useState<string>("");
+    const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
+    const [groupsOpen, setGroupsOpen] = useState(false);
 
     const initialStart = defaultLocalParts(timezone, 0);
     const initialEnd = defaultLocalParts(timezone, 60);
@@ -106,15 +113,40 @@ export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSh
     const [endDate, setEndDate] = useState<Date>(initialEnd.date);
     const [endTime, setEndTime] = useState(initialEnd.time);
 
-    const [open, setOpen] = useState(false);
+    const [internalOpen, setInternalOpen] = useState(false);
+    const open = controlledOpen ?? internalOpen;
+    const isEditing = Boolean(incident);
+
+    const setOpen = (nextOpen: boolean) => {
+        setInternalOpen(nextOpen);
+        onOpenChange?.(nextOpen);
+    };
+
+    useEffect(() => {
+        if (!open || !incident) return;
+        const start = formatDateTimeLocal(incident.startTime, timezone).split("T");
+        const end = formatDateTimeLocal(incident.endTime || incident.startTime, timezone).split("T");
+        const toDate = (date: string) => {
+            const [year, month, day] = date.split("-").map(Number);
+            return new Date(year, month - 1, day);
+        };
+
+        setTitle(incident.title);
+        setDescription(incident.description || "");
+        setSelectedGroupIds(incident.affectedGroups || []);
+        setStartDate(toDate(start[0]));
+        setStartTime(`${start[1]}:00`);
+        setEndDate(toDate(end[0]));
+        setEndTime(`${end[1]}:00`);
+    }, [incident, open, timezone]);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
 
-        if (!selectedGroupId) {
+        if (selectedGroupIds.length === 0) {
             toast({
                 title: "Affected group required",
-                description: "Choose the group covered by this maintenance.",
+                description: "Choose at least one group covered by this maintenance.",
                 variant: "destructive",
             });
             return;
@@ -143,19 +175,25 @@ export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSh
             return;
         }
 
-        onCreate({
+        const values = {
             title,
             description,
             type: "maintenance",
             severity: "minor",
-            status: "scheduled",
+            status: incident?.status || "scheduled",
             startTime: start,
             endTime: end,
-            affectedGroups: [selectedGroupId],
-        });
+            affectedGroups: selectedGroupIds,
+        };
+
+        if (incident) {
+            onUpdate?.({ ...incident, ...values });
+        } else {
+            onCreate?.(values);
+        }
 
         setOpen(false);
-        resetForm();
+        if (!incident) resetForm();
     };
 
     const resetForm = () => {
@@ -163,7 +201,7 @@ export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSh
         const nextEnd = defaultLocalParts(timezone, 60);
         setTitle("");
         setDescription("");
-        setSelectedGroupId("");
+        setSelectedGroupIds([]);
         setStartDate(nextStart.date);
         setStartTime(nextStart.time);
         setEndDate(nextEnd.date);
@@ -182,7 +220,7 @@ export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSh
                         <PopoverTrigger asChild>
                             <Button variant="outline" className={cn("w-full justify-between font-normal", !date && "text-muted-foreground")}>
                                 {date ? date.toLocaleDateString() : "Select date"}
-                                <ChevronDownIcon className="h-4 w-4 opacity-50" />
+                                <ChevronsUpDown className="h-4 w-4 opacity-50" />
                             </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-auto overflow-hidden p-0" align="start">
@@ -242,15 +280,17 @@ export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSh
                 if (!val) resetForm();
             }}
         >
-            <SheetTrigger asChild>
-                <Button size="sm" className="gap-2" data-testid="create-maintenance-trigger">
-                    <CalendarClock className="w-4 h-4" /> Schedule Maintenance
-                </Button>
-            </SheetTrigger>
+            {!isEditing && (
+                <SheetTrigger asChild>
+                    <Button size="sm" className="gap-2" data-testid="create-maintenance-trigger">
+                        <CalendarClock className="w-4 h-4" /> Schedule Maintenance
+                    </Button>
+                </SheetTrigger>
+            )}
             <SheetContent className="sm:max-w-[500px]">
                 <SheetHeader>
-                    <SheetTitle>Schedule Maintenance</SheetTitle>
-                    <SheetDescription>Plan a maintenance window for a specific group.</SheetDescription>
+                    <SheetTitle>{isEditing ? "Edit Maintenance" : "Schedule Maintenance"}</SheetTitle>
+                    <SheetDescription>{isEditing ? "Update the maintenance window and affected groups." : "Plan a maintenance window for one, several, or all groups."}</SheetDescription>
                 </SheetHeader>
                 <form onSubmit={handleSubmit} className="grid gap-6 py-6">
                     <div className="grid gap-2">
@@ -259,19 +299,37 @@ export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSh
                     </div>
 
                     <div className="grid gap-2">
-                        <Label>Affected Group</Label>
-                        <Select value={selectedGroupId} onValueChange={setSelectedGroupId}>
-                            <SelectTrigger data-testid="maintenance-group-select">
-                                <SelectValue placeholder="Select Group" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {groups.map((g) => (
-                                    <SelectItem key={g.id} value={g.id}>
-                                        {g.name}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                        <Label>Affected Groups</Label>
+                        <Popover open={groupsOpen} onOpenChange={setGroupsOpen}>
+                            <PopoverTrigger asChild>
+                                <Button type="button" variant="outline" role="combobox" aria-expanded={groupsOpen} className="w-full justify-between font-normal" data-testid="maintenance-group-select">
+                                    <span className={cn("truncate", selectedGroupIds.length === 0 && "text-muted-foreground")}>
+                                        {selectedGroupIds.length === 0 ? "Select groups" : selectedGroupIds.length === groups.length ? "All groups" : `${selectedGroupIds.length} group${selectedGroupIds.length === 1 ? "" : "s"} selected`}
+                                    </span>
+                                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                                <Command>
+                                    <CommandInput placeholder="Search groups..." />
+                                    <CommandList>
+                                        <CommandEmpty>No groups found.</CommandEmpty>
+                                        <CommandGroup>
+                                            <CommandItem value="all groups" onSelect={() => setSelectedGroupIds(selectedGroupIds.length === groups.length ? [] : groups.map((group) => group.id))}>
+                                                <Check className={cn("mr-2 h-4 w-4", selectedGroupIds.length === groups.length ? "opacity-100" : "opacity-0")} />
+                                                All groups
+                                            </CommandItem>
+                                            {groups.map((group) => (
+                                                <CommandItem key={group.id} value={group.name} onSelect={() => setSelectedGroupIds((current) => current.includes(group.id) ? current.filter((id) => id !== group.id) : [...current, group.id])}>
+                                                    <Check className={cn("mr-2 h-4 w-4", selectedGroupIds.includes(group.id) ? "opacity-100" : "opacity-0")} />
+                                                    {group.name}
+                                                </CommandItem>
+                                            ))}
+                                        </CommandGroup>
+                                    </CommandList>
+                                </Command>
+                            </PopoverContent>
+                        </Popover>
                     </div>
 
                     <div className="grid gap-4">
@@ -281,13 +339,13 @@ export function CreateMaintenanceSheet({ onCreate, groups }: CreateMaintenanceSh
                     </div>
 
                     <div className="grid gap-2">
-                        <Label>Description</Label>
-                        <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Details about the maintenance..." />
+                        <Label htmlFor="maintenance-description">Description</Label>
+                        <MarkdownEditor id="maintenance-description" value={description} onChange={setDescription} placeholder="Add details, impact, or operator instructions..." />
                     </div>
 
                     <SheetFooter className="mt-4">
                         <Button type="submit" data-testid="create-maintenance-submit">
-                            Schedule Maintenance
+                            {isEditing ? "Save Changes" : "Schedule Maintenance"}
                         </Button>
                     </SheetFooter>
                 </form>
