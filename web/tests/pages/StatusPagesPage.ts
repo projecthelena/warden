@@ -13,6 +13,7 @@ export interface StatusPageConfig {
     showUptimePercentage?: boolean;
     showIncidentHistory?: boolean;
     uptimeDaysRange?: number;
+    timezone?: string;
 }
 
 export class StatusPagesPage {
@@ -158,6 +159,7 @@ export class StatusPagesPage {
                 showUptimePercentage: true,
                 showIncidentHistory: true,
                 uptimeDaysRange: 90,
+                timezone: 'UTC',
             }
         });
     }
@@ -207,6 +209,13 @@ export class StatusPagesPage {
         const displayText = { system: 'System', light: 'Light', dark: 'Dark' }[theme];
         await this.getConfigDialog().locator('#theme').click();
         await this.page.getByRole('option', { name: displayText }).click();
+    }
+
+    async selectConfigTimezone(timezone: string) {
+        const dialog = this.getConfigDialog();
+        await dialog.getByTestId('timezone-select').click();
+        await this.page.getByPlaceholder('Search timezone...').fill(timezone);
+        await this.page.getByRole('option', { name: timezone, exact: true }).click();
     }
 
     /** Click "Save Changes" in the config dialog and wait for the PATCH response + dialog close */

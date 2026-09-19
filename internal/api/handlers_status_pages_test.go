@@ -1305,6 +1305,31 @@ func TestPhase3_InvalidThemeRejected(t *testing.T) {
 	}
 }
 
+func TestStatusPageTimezoneValidationAndPersistence(t *testing.T) {
+	store, spH := newStatusPageTestEnv(t)
+	seedPage(t, store, "timezone-test", "Timezone Test", nil, true, true)
+
+	payload := map[string]interface{}{
+		"public": true, "enabled": true, "title": "Timezone Test", "timezone": "America/Bogota",
+	}
+	w := httptest.NewRecorder()
+	spH.Toggle(w, makeRequest("PATCH", "/api/status-pages/timezone-test", "timezone-test", payload))
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	page, _ := store.GetStatusPageBySlug("timezone-test")
+	if page.Timezone != "America/Bogota" {
+		t.Errorf("Expected America/Bogota, got %q", page.Timezone)
+	}
+
+	payload["timezone"] = "Not/A_Timezone"
+	w = httptest.NewRecorder()
+	spH.Toggle(w, makeRequest("PATCH", "/api/status-pages/timezone-test", "timezone-test", payload))
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400 for invalid timezone, got %d", w.Code)
+	}
+}
+
 func TestPhase3_DisplayToggles(t *testing.T) {
 	store, spH := newStatusPageTestEnv(t)
 

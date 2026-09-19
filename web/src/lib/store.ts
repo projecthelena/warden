@@ -166,6 +166,7 @@ export interface StatusPage {
     headerContent?: 'logo-title' | 'logo-only' | 'title-only';
     headerAlignment?: 'left' | 'center' | 'right';
     headerArrangement?: 'stacked' | 'inline';
+    timezone?: string;
 }
 
 export interface StatusPageConfig {
@@ -181,6 +182,7 @@ export interface StatusPageConfig {
     headerContent: 'logo-title' | 'logo-only' | 'title-only';
     headerAlignment: 'left' | 'center' | 'right';
     headerArrangement: 'stacked' | 'inline';
+    timezone: string;
 }
 
 export interface SystemIncident {

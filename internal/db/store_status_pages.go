@@ -24,9 +24,10 @@ type StatusPage struct {
 	ShowUptimePercentage bool      `json:"showUptimePercentage"`
 	ShowIncidentHistory  bool      `json:"showIncidentHistory"`
 	UptimeDaysRange      int       `json:"uptimeDaysRange"`
-	HeaderContent     string `json:"headerContent"`     // 'logo-title', 'logo-only', 'title-only'
-	HeaderAlignment   string `json:"headerAlignment"`   // 'left', 'center', 'right'
-	HeaderArrangement string `json:"headerArrangement"` // 'stacked', 'inline'
+	HeaderContent        string    `json:"headerContent"`     // 'logo-title', 'logo-only', 'title-only'
+	HeaderAlignment      string    `json:"headerAlignment"`   // 'left', 'center', 'right'
+	HeaderArrangement    string    `json:"headerArrangement"` // 'stacked', 'inline'
+	Timezone             string    `json:"timezone"`
 }
 
 // GetStatusPages returns all status page configs
@@ -34,7 +35,7 @@ func (s *Store) GetStatusPages() ([]StatusPage, error) {
 	rows, err := s.db.Query(`SELECT id, slug, title, group_id, public, enabled, created_at,
 		COALESCE(description, ''), COALESCE(logo_url, ''), COALESCE(favicon_url, ''), COALESCE(accent_color, ''), COALESCE(theme, 'system'),
 		COALESCE(show_uptime_bars, TRUE), COALESCE(show_uptime_percentage, TRUE), COALESCE(show_incident_history, TRUE),
-		COALESCE(uptime_days_range, 90), COALESCE(header_content, 'logo-title'), COALESCE(header_alignment, 'center'), COALESCE(header_arrangement, 'inline')
+		COALESCE(uptime_days_range, 90), COALESCE(header_content, 'logo-title'), COALESCE(header_alignment, 'center'), COALESCE(header_arrangement, 'inline'), COALESCE(timezone, 'UTC')
 		FROM status_pages`)
 	if err != nil {
 		return nil, err
@@ -48,7 +49,7 @@ func (s *Store) GetStatusPages() ([]StatusPage, error) {
 		if err := rows.Scan(&p.ID, &p.Slug, &p.Title, &groupID, &p.Public, &p.Enabled, &p.CreatedAt,
 			&p.Description, &p.LogoURL, &p.FaviconURL, &p.AccentColor, &p.Theme,
 			&p.ShowUptimeBars, &p.ShowUptimePercentage, &p.ShowIncidentHistory, &p.UptimeDaysRange,
-			&p.HeaderContent, &p.HeaderAlignment, &p.HeaderArrangement); err != nil {
+			&p.HeaderContent, &p.HeaderAlignment, &p.HeaderArrangement, &p.Timezone); err != nil {
 			return nil, err
 		}
 		if groupID.Valid {
@@ -67,12 +68,12 @@ func (s *Store) GetStatusPageBySlug(slug string) (*StatusPage, error) {
 	err := s.db.QueryRow(s.rebind(`SELECT id, slug, title, group_id, public, enabled, created_at,
 		COALESCE(description, ''), COALESCE(logo_url, ''), COALESCE(favicon_url, ''), COALESCE(accent_color, ''), COALESCE(theme, 'system'),
 		COALESCE(show_uptime_bars, TRUE), COALESCE(show_uptime_percentage, TRUE), COALESCE(show_incident_history, TRUE),
-		COALESCE(uptime_days_range, 90), COALESCE(header_content, 'logo-title'), COALESCE(header_alignment, 'center'), COALESCE(header_arrangement, 'inline')
+		COALESCE(uptime_days_range, 90), COALESCE(header_content, 'logo-title'), COALESCE(header_alignment, 'center'), COALESCE(header_arrangement, 'inline'), COALESCE(timezone, 'UTC')
 		FROM status_pages WHERE slug = ?`), slug).
 		Scan(&p.ID, &p.Slug, &p.Title, &groupID, &p.Public, &p.Enabled, &p.CreatedAt,
 			&p.Description, &p.LogoURL, &p.FaviconURL, &p.AccentColor, &p.Theme,
 			&p.ShowUptimeBars, &p.ShowUptimePercentage, &p.ShowIncidentHistory, &p.UptimeDaysRange,
-			&p.HeaderContent, &p.HeaderAlignment, &p.HeaderArrangement)
+			&p.HeaderContent, &p.HeaderAlignment, &p.HeaderArrangement, &p.Timezone)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -102,9 +103,10 @@ type StatusPageInput struct {
 	ShowUptimePercentage bool
 	ShowIncidentHistory  bool
 	UptimeDaysRange      int
-	HeaderContent     string
-	HeaderAlignment   string
-	HeaderArrangement string
+	HeaderContent        string
+	HeaderAlignment      string
+	HeaderArrangement    string
+	Timezone             string
 }
 
 // UpsertStatusPage creates or updates a status page config
@@ -127,6 +129,7 @@ func (s *Store) UpsertStatusPage(slug, title string, groupID *string, public boo
 		HeaderContent:        "logo-title",
 		HeaderAlignment:      "center",
 		HeaderArrangement:    "stacked",
+		Timezone:             "UTC",
 	})
 }
 
@@ -135,8 +138,8 @@ func (s *Store) UpsertStatusPageFull(input StatusPageInput) error {
 	var err error
 	if s.IsPostgres() {
 		_, err = s.db.Exec(`
-			INSERT INTO status_pages (slug, title, group_id, public, enabled, description, logo_url, favicon_url, accent_color, theme, show_uptime_bars, show_uptime_percentage, show_incident_history, uptime_days_range, header_content, header_alignment, header_arrangement)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+			INSERT INTO status_pages (slug, title, group_id, public, enabled, description, logo_url, favicon_url, accent_color, theme, show_uptime_bars, show_uptime_percentage, show_incident_history, uptime_days_range, header_content, header_alignment, header_arrangement, timezone)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 			ON CONFLICT(slug) DO UPDATE SET
 				title=excluded.title,
 				group_id=excluded.group_id,
@@ -153,20 +156,21 @@ func (s *Store) UpsertStatusPageFull(input StatusPageInput) error {
 				uptime_days_range=excluded.uptime_days_range,
 				header_content=excluded.header_content,
 				header_alignment=excluded.header_alignment,
-				header_arrangement=excluded.header_arrangement
+				header_arrangement=excluded.header_arrangement,
+				timezone=excluded.timezone
 		`, input.Slug, input.Title, input.GroupID, input.Public, input.Enabled,
 			input.Description, input.LogoURL, input.FaviconURL, input.AccentColor, input.Theme,
 			input.ShowUptimeBars, input.ShowUptimePercentage, input.ShowIncidentHistory, input.UptimeDaysRange,
-			input.HeaderContent, input.HeaderAlignment, input.HeaderArrangement)
+			input.HeaderContent, input.HeaderAlignment, input.HeaderArrangement, input.Timezone)
 	} else {
 		// SQLite: INSERT OR REPLACE (slug has UNIQUE constraint)
 		_, err = s.db.Exec(`
-			INSERT OR REPLACE INTO status_pages (slug, title, group_id, public, enabled, description, logo_url, favicon_url, accent_color, theme, show_uptime_bars, show_uptime_percentage, show_incident_history, uptime_days_range, header_content, header_alignment, header_arrangement)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT OR REPLACE INTO status_pages (slug, title, group_id, public, enabled, description, logo_url, favicon_url, accent_color, theme, show_uptime_bars, show_uptime_percentage, show_incident_history, uptime_days_range, header_content, header_alignment, header_arrangement, timezone)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, input.Slug, input.Title, input.GroupID, input.Public, input.Enabled,
 			input.Description, input.LogoURL, input.FaviconURL, input.AccentColor, input.Theme,
 			input.ShowUptimeBars, input.ShowUptimePercentage, input.ShowIncidentHistory, input.UptimeDaysRange,
-			input.HeaderContent, input.HeaderAlignment, input.HeaderArrangement)
+			input.HeaderContent, input.HeaderAlignment, input.HeaderArrangement, input.Timezone)
 	}
 	return err
 }
@@ -187,7 +191,7 @@ func (s *Store) GetStatusPagesByIDs(ids []int64) ([]StatusPage, error) {
 	query := `SELECT id, slug, title, group_id, public, enabled, created_at,
 		COALESCE(description, ''), COALESCE(logo_url, ''), COALESCE(favicon_url, ''), COALESCE(accent_color, ''), COALESCE(theme, 'system'),
 		COALESCE(show_uptime_bars, TRUE), COALESCE(show_uptime_percentage, TRUE), COALESCE(show_incident_history, TRUE),
-		COALESCE(uptime_days_range, 90), COALESCE(header_content, 'logo-title'), COALESCE(header_alignment, 'center'), COALESCE(header_arrangement, 'inline')
+		COALESCE(uptime_days_range, 90), COALESCE(header_content, 'logo-title'), COALESCE(header_alignment, 'center'), COALESCE(header_arrangement, 'inline'), COALESCE(timezone, 'UTC')
 		FROM status_pages WHERE id IN (` + strings.Join(placeholders, ",") + `)`
 
 	rows, err := s.db.Query(s.rebind(query), args...)
@@ -203,7 +207,7 @@ func (s *Store) GetStatusPagesByIDs(ids []int64) ([]StatusPage, error) {
 		if err := rows.Scan(&p.ID, &p.Slug, &p.Title, &groupID, &p.Public, &p.Enabled, &p.CreatedAt,
 			&p.Description, &p.LogoURL, &p.FaviconURL, &p.AccentColor, &p.Theme,
 			&p.ShowUptimeBars, &p.ShowUptimePercentage, &p.ShowIncidentHistory, &p.UptimeDaysRange,
-			&p.HeaderContent, &p.HeaderAlignment, &p.HeaderArrangement); err != nil {
+			&p.HeaderContent, &p.HeaderAlignment, &p.HeaderArrangement, &p.Timezone); err != nil {
 			return nil, err
 		}
 		if groupID.Valid {
