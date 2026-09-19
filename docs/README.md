@@ -16,7 +16,7 @@ Use this page as the starting point for installing, operating, and understanding
 - [Adaptive latency](adaptive-latency.md) — how each monitor learns its normal response time.
 - [Notification fatigue](notification-fatigue.md) — confirmation, reminders, flapping detection, correlation, and alert damping.
 - [Patterns](patterns.md) — recurring behavior and longer-term changes found in monitor history.
-- [Timezone model](timezones.md) — UTC storage, per-user display, public status-page time, and scheduled automation.
+- [Timezones](timezones.md) — choose your timezone and understand how dates appear across Warden.
 - [Roadmap](roadmap.md) — product themes and planned areas of investment.
 
 ## Automate and integrate
