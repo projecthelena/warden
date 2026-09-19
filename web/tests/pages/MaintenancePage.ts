@@ -29,6 +29,7 @@ export class MaintenancePage {
         // The searchable multi-select uses cmdk options in a popover.
         await this.groupSelect.click();
         await this.page.getByRole("option", { name: groupName }).click();
+        await this.page.keyboard.press("Escape");
 
         // Regression: the native time input dropped the second digit when users typed
         // minutes such as 22. The explicit minute picker must preserve the selection.

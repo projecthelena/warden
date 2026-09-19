@@ -280,14 +280,14 @@ export function CreateMaintenanceSheet({ onCreate, onUpdate, groups, incident, o
                 if (!val) resetForm();
             }}
         >
-            {!isEditing && (
+            {onCreate && (
                 <SheetTrigger asChild>
                     <Button size="sm" className="gap-2" data-testid="create-maintenance-trigger">
                         <CalendarClock className="w-4 h-4" /> Schedule Maintenance
                     </Button>
                 </SheetTrigger>
             )}
-            <SheetContent className="sm:max-w-[500px]">
+            <SheetContent className="overflow-y-auto sm:max-w-[500px]">
                 <SheetHeader>
                     <SheetTitle>{isEditing ? "Edit Maintenance" : "Schedule Maintenance"}</SheetTitle>
                     <SheetDescription>{isEditing ? "Update the maintenance window and affected groups." : "Plan a maintenance window for one, several, or all groups."}</SheetDescription>
@@ -300,7 +300,7 @@ export function CreateMaintenanceSheet({ onCreate, onUpdate, groups, incident, o
 
                     <div className="grid gap-2">
                         <Label>Affected Groups</Label>
-                        <Popover open={groupsOpen} onOpenChange={setGroupsOpen}>
+                        <Popover modal open={groupsOpen} onOpenChange={setGroupsOpen}>
                             <PopoverTrigger asChild>
                                 <Button type="button" variant="outline" role="combobox" aria-expanded={groupsOpen} className="w-full justify-between font-normal" data-testid="maintenance-group-select">
                                     <span className={cn("truncate", selectedGroupIds.length === 0 && "text-muted-foreground")}>

@@ -10,7 +10,7 @@ describe("MarkdownContent", () => {
 
         expect(screen.getByText("Bold").tagName).toBe("STRONG");
         expect(screen.getByText("First").tagName).toBe("LI");
-        expect(screen.getByText(/<script>/)).toBeInTheDocument();
+        expect(screen.getByText("<script>alert('no')</script>")).toBeInTheDocument();
         expect(document.querySelector("script")).not.toBeInTheDocument();
     });
 });
