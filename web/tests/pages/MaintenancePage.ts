@@ -1,4 +1,4 @@
-import { Page, Locator, expect } from '@playwright/test';
+import { Page, Locator, expect } from "@playwright/test";
 
 export class MaintenancePage {
     readonly page: Page;
@@ -9,14 +9,14 @@ export class MaintenancePage {
 
     constructor(page: Page) {
         this.page = page;
-        this.createTrigger = page.getByTestId('create-maintenance-trigger');
-        this.titleInput = page.getByTestId('maintenance-title-input');
-        this.groupSelect = page.getByTestId('maintenance-group-select');
-        this.submitBtn = page.getByTestId('create-maintenance-submit');
+        this.createTrigger = page.getByTestId("create-maintenance-trigger");
+        this.titleInput = page.getByTestId("maintenance-title-input");
+        this.groupSelect = page.getByTestId("maintenance-group-select");
+        this.submitBtn = page.getByTestId("create-maintenance-submit");
     }
 
     async goto() {
-        await this.page.goto('/maintenance');
+        await this.page.goto("/maintenance");
         // Do not assert URL/visibility here to allow for login redirects
     }
 
@@ -30,10 +30,14 @@ export class MaintenancePage {
         // We will try to click the item by text.
         // Since we didn't add testid to items (dynamic), we rely on text.
         await this.groupSelect.click();
-        await this.page.getByRole('option', { name: groupName }).click();
+        await this.page.getByRole("option", { name: groupName }).click();
 
-        // We leave dates as default (Current + 1h) for simplicity in E2E
-        // unless specifically testing scheduling logic.
+        // Regression: the native time input dropped the second digit when users typed
+        // minutes such as 22. The explicit minute picker must preserve the selection.
+        const startPicker = this.page.getByTestId("start-time-picker");
+        await startPicker.getByRole("combobox", { name: "Minute" }).click();
+        await this.page.getByRole("option", { name: "22", exact: true }).click();
+        await expect(startPicker.getByRole("combobox", { name: "Minute" })).toContainText("22");
 
         await this.submitBtn.click();
 
@@ -45,7 +49,7 @@ export class MaintenancePage {
         // AdminLayout/App passes "addMaintenance".
         // Let's rely on list appearance with longer timeout, or just reload?
         // No, SPA should update.
-        await expect(this.page.getByTestId('toast-title').first()).toBeVisible();
+        await expect(this.page.getByTestId("toast-title").filter({ hasText: "Maintenance Scheduled" })).toBeVisible();
 
         // Check list
         // List update might be delayed or filtered.
