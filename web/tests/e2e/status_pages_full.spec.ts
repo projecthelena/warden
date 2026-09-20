@@ -270,10 +270,10 @@ test.describe('Status Page - Full E2E Suite', () => {
             await page.goto('/status/all');
             await page.waitForLoadState('networkidle');
 
-            // Should NOT be in active incidents (resolved)
-            // Should appear in past incidents section (if visible)
-            // The "Past Incidents" section shows resolved incidents
-            await expect(page.getByText('Past Incidents')).toBeVisible({ timeout: 10000 });
+            // Resolved incidents leave Overview and move to the dedicated History tab.
+            await expect(page.getByText('E2E Resolved Incident')).toHaveCount(0);
+            await page.getByRole('tab', { name: 'History' }).click();
+            await expect(page.getByText('E2E Resolved Incident')).toBeVisible({ timeout: 10000 });
         });
 
         test('Status banner changes based on active incidents', async ({ page }) => {
@@ -460,10 +460,11 @@ test.describe('Status Page - Full E2E Suite', () => {
             const allPage = data.pages.find((p: { slug: string }) => p.slug === 'all');
             expect(allPage.uptimeDaysRange).toBe(30);
 
-            // Visit public page and verify both the visible period and the accessible bar label.
+            // Uptime histories are lazy: open Services and expand a group before asserting the range.
             await page.goto('/status/all');
             await page.waitForLoadState('networkidle');
-            await expect(page.getByText('Uptime · last 30 days').first()).toBeVisible({ timeout: 10000 });
+            await page.getByRole('tab', { name: 'Services' }).click();
+            await page.locator('button[aria-expanded]').first().click();
             await expect(page.locator('[aria-label^="Last 30 days uptime:"]').first()).toBeVisible({ timeout: 10000 });
         });
 

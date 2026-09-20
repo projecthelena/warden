@@ -63,6 +63,7 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 	r.Use(observability.HTTPMiddleware)
 	r.Use(requestLogger)
 	r.Use(middleware.Recoverer)
+	r.Use(middleware.Compress(5, "application/json", "text/html", "text/css", "application/javascript"))
 
 	// SECURITY: Only trust X-Forwarded-For headers when behind a trusted reverse proxy.
 	// If TrustProxy is false (default), we use the direct connection IP to prevent

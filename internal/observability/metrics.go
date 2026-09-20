@@ -79,6 +79,16 @@ var (
 		Name: "warden_monitors_active",
 		Help: "Number of active monitors managed by this Warden instance.",
 	})
+	StatusPagePhase = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "warden_status_page_phase_duration_seconds",
+		Help:    "Status page response construction time partitioned by bounded phase name.",
+		Buckets: prometheus.DefBuckets,
+	}, []string{"phase"})
+	StatusPagePayloadBytes = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "warden_status_page_payload_bytes",
+		Help:    "Uncompressed status page JSON payload size partitioned by response view.",
+		Buckets: prometheus.ExponentialBuckets(1024, 2, 15),
+	}, []string{"view"})
 )
 
 func init() {
@@ -86,6 +96,7 @@ func init() {
 		httpInFlight, httpRequests, httpDuration,
 		Checks, CheckScheduling, CheckDuration, CheckQueueDepth, ResultQueueDepth,
 		PersistBatchSize, PersistDuration, ActiveMonitors,
+		StatusPagePhase, StatusPagePayloadBytes,
 	)
 }
 

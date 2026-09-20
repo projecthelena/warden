@@ -1,4 +1,7 @@
-/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4 */
+/* Hallmark · genre: modern-minimal · macrostructure: Workbench · theme: Warden locked system · enrichment: none · nav: in-page tabs · footer: Ft2
+ * audience: status-page visitors · use: understand impact and find a service · tone: technical, austere, utilitarian
+ * pre-emit critique: P5 H5 E5 S5 R5 V4
+ */
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,9 +15,12 @@ import { UptimeBar } from "./UptimeBar";
 import { PastIncidentsSection } from "./PastIncidentsSection";
 import { getOverallStatus } from "./statusPageStatus";
 import { IncidentTimeline } from "@/components/incidents/IncidentTimeline";
-import { formatUptimePeriod, type UptimeSummary } from "@/lib/uptime";
+import { type UptimeSummary } from "@/lib/uptime";
 import { getMaintenanceState, isMaintenanceActive } from "@/lib/maintenance";
 import { MarkdownContent } from "@/components/ui/markdown";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { buildStatusMonitorQuery } from "./statusPageMonitors";
 
 // ---------- Types ----------
 
@@ -34,40 +40,52 @@ interface StatusMonitor extends Monitor {
 
 interface StatusGroup extends Omit<Group, "monitors"> {
     monitors: StatusMonitor[];
+    status?: Monitor["status"];
+    monitorCount?: number;
+    counts?: Record<string, number>;
+}
+
+interface GroupMonitorCounts {
+    all: number;
+    operational: number;
+    issues: number;
+    paused: number;
+}
+
+interface GroupPagination {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
 }
 
 // ---------- Helpers ----------
 
 const statusColorMap = {
     green: {
-        banner: "bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-transparent border-emerald-500/30",
+        banner: "bg-emerald-500/5 border-emerald-500/30",
         icon: "text-emerald-500",
         iconBg: "bg-emerald-500/10",
-        dot: "bg-emerald-500",
     },
     yellow: {
-        banner: "bg-gradient-to-r from-yellow-500/10 via-yellow-500/5 to-transparent border-yellow-500/30",
+        banner: "bg-yellow-500/5 border-yellow-500/30",
         icon: "text-yellow-500",
         iconBg: "bg-yellow-500/10",
-        dot: "bg-yellow-500",
     },
     red: {
-        banner: "bg-gradient-to-r from-red-500/10 via-red-500/5 to-transparent border-red-500/30",
+        banner: "bg-red-500/5 border-red-500/30",
         icon: "text-red-500",
         iconBg: "bg-red-500/10",
-        dot: "bg-red-500",
     },
     blue: {
-        banner: "bg-gradient-to-r from-blue-500/10 via-blue-500/5 to-transparent border-blue-500/30",
+        banner: "bg-blue-500/5 border-blue-500/30",
         icon: "text-blue-500",
         iconBg: "bg-blue-500/10",
-        dot: "bg-blue-500",
     },
     gray: {
-        banner: "bg-gradient-to-r from-slate-500/10 via-slate-500/5 to-transparent border-slate-500/30",
+        banner: "bg-slate-500/5 border-slate-500/30",
         icon: "text-slate-400",
         iconBg: "bg-slate-500/10",
-        dot: "bg-slate-500",
     },
 };
 
@@ -89,9 +107,6 @@ function StatusBanner({
                 colors.banner
             )}
         >
-            {/* Decorative blur orb */}
-            <div className={cn("absolute -right-8 -top-8 w-32 h-32 rounded-full blur-3xl opacity-20", colors.dot)} />
-
             <div className={cn("relative flex items-center justify-center w-11 h-11 rounded-xl shrink-0", colors.iconBg)}>
                 <Icon className={cn("h-5 w-5", colors.icon)} />
             </div>
@@ -125,7 +140,7 @@ function MaintenanceCard({ incident, timezone }: { incident: Incident; timezone:
                         {isOngoing ? (
                             <Badge
                                 variant="secondary"
-                                className="bg-blue-500/10 text-blue-500 border-0 rounded-sm px-1.5 py-0 text-[10px] font-bold uppercase tracking-wider h-5 animate-pulse shrink-0"
+                                className="bg-blue-500/10 text-blue-500 border-0 rounded-sm px-1.5 py-0 text-[10px] font-bold uppercase tracking-wider h-5 shrink-0"
                             >
                                 Ongoing
                             </Badge>
@@ -280,11 +295,6 @@ function MonitorRow({
             <div className="flex items-center justify-between gap-3 mb-1">
                 <div className="flex items-center gap-2 min-w-0">
                     <div className="relative flex items-center justify-center shrink-0" role="img" aria-label={statusLabel}>
-                        {monitor.status === "down" && !isMaintenance && (
-                            <span
-                                className="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping bg-red-500"
-                            />
-                        )}
                         <StatusIcon className={cn("relative w-3 h-3", statusColor)} />
                     </div>
                     <span className="font-medium text-sm text-foreground truncate" title={monitor.name}>{monitor.name}</span>
@@ -309,18 +319,36 @@ function MonitorRow({
 function GroupSection({
     group,
     incidents,
-    index,
+    slug,
     showUptimeBars = true,
     showUptimePercentage = true,
     uptimeDaysRange,
 }: {
     group: StatusGroup;
     incidents: Incident[];
-    index: number;
+    slug: string;
     showUptimeBars?: boolean;
     showUptimePercentage?: boolean;
     uptimeDaysRange: number;
 }) {
+    const [expanded, setExpanded] = useState(false);
+    const [monitors, setMonitors] = useState<StatusMonitor[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [loadError, setLoadError] = useState<string | null>(null);
+    const [searchInput, setSearchInput] = useState("");
+    const [search, setSearch] = useState("");
+    const [statusFilter, setStatusFilter] = useState("all");
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(25);
+    const [retryKey, setRetryKey] = useState(0);
+    const total = group.monitorCount ?? 0;
+    const [counts, setCounts] = useState<GroupMonitorCounts>({
+        all: total,
+        operational: group.counts?.up ?? 0,
+        issues: (group.counts?.down ?? 0) + (group.counts?.degraded ?? 0),
+        paused: group.counts?.paused ?? 0,
+    });
+    const [pagination, setPagination] = useState<GroupPagination>({ page: 1, pageSize: 25, total, totalPages: total ? Math.ceil(total / 25) : 0 });
     const now = new Date();
     const isGroupMaintenance =
         incidents &&
@@ -330,23 +358,134 @@ function GroupSection({
                 isMaintenanceActive(i, now)
         );
 
+    useEffect(() => {
+        const timer = window.setTimeout(() => {
+            const nextSearch = searchInput.trim();
+            if (nextSearch !== search) {
+                setPage(1);
+                setSearch(nextSearch);
+            }
+        }, 250);
+        return () => window.clearTimeout(timer);
+    }, [search, searchInput]);
+
+    useEffect(() => {
+        if (!expanded) return;
+        const controller = new AbortController();
+        const loadMonitors = async () => {
+            setLoading(true);
+            setLoadError(null);
+            try {
+                const query = buildStatusMonitorQuery({
+                    group: group.id,
+                    page,
+                    pageSize,
+                    status: statusFilter,
+                    search,
+                });
+                const response = await fetch(`/api/s/${encodeURIComponent(slug)}?${query}`, {
+                    credentials: "include",
+                    signal: controller.signal,
+                });
+                if (!response.ok) throw new Error("Unable to load services");
+                const payload = await response.json();
+                const nextPagination = payload.pagination as GroupPagination;
+                if (nextPagination.totalPages > 0 && page > nextPagination.totalPages) {
+                    setPage(nextPagination.totalPages);
+                    return;
+                }
+                setMonitors((payload.groups?.[0]?.monitors || []) as StatusMonitor[]);
+                setCounts(payload.counts as GroupMonitorCounts);
+                setPagination(nextPagination);
+            } catch (error) {
+                if ((error as Error).name !== "AbortError") {
+                    setLoadError("Services could not be loaded. Try again.");
+                }
+            } finally {
+                if (!controller.signal.aborted) setLoading(false);
+            }
+        };
+        void loadMonitors();
+        return () => controller.abort();
+    }, [expanded, group.id, page, pageSize, retryKey, search, slug, statusFilter]);
+
+    const toggleExpanded = () => {
+        const next = !expanded;
+        setExpanded(next);
+    };
+
+    const showControls = total > 10 || searchInput !== "" || statusFilter !== "all";
+    const firstVisible = pagination.total === 0 ? 0 : (pagination.page - 1) * pagination.pageSize + 1;
+    const lastVisible = Math.min(pagination.page * pagination.pageSize, pagination.total);
+
+    const statusLabel = group.status === "down" ? "Unavailable" : group.status === "degraded" ? "Degraded" : group.status === "paused" ? "Paused" : "Operational";
+    const statusClass = group.status === "down" ? "text-red-500" : group.status === "degraded" ? "text-yellow-500" : group.status === "paused" ? "text-muted-foreground" : "text-emerald-500";
+
     return (
-        <div
-            className="animate-in slide-in-from-bottom-3 duration-500 fade-in fill-mode-backwards"
-            style={{ animationDelay: `${index * 100}ms` }}
-        >
-            <div className="mb-2 flex items-baseline justify-between gap-4 px-1">
-                <h3 className="text-sm font-semibold text-foreground">
-                    {group.name}
-                </h3>
-                {showUptimeBars && group.monitors.length > 0 && (
-                    <span className="shrink-0 text-[11px] text-muted-foreground">
-                        Uptime · {formatUptimePeriod(uptimeDaysRange).toLowerCase()}
-                    </span>
+        <div className="overflow-hidden rounded-xl border border-border bg-card [content-visibility:auto] [contain-intrinsic-size:72px]">
+            <button
+                type="button"
+                onClick={toggleExpanded}
+                aria-expanded={expanded}
+                aria-controls={`status-group-${group.id}`}
+                className="flex min-h-14 w-full items-center justify-between gap-4 px-4 py-3 text-left hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
+            >
+                <div className="min-w-0">
+                    <h3 className="truncate text-sm font-semibold text-foreground">{group.name}</h3>
+                    <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">{total} {total === 1 ? "service" : "services"}</p>
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
+                    <span className={cn("text-xs font-medium", statusClass)}>{statusLabel}</span>
+                    <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", expanded && "rotate-180")} />
+                </div>
+            </button>
+            {expanded && (
+                <div id={`status-group-${group.id}`} className="border-t border-border/60">
+                {showControls && (
+                    <div className="space-y-3 border-b border-border/60 bg-muted/10 p-3 sm:p-4">
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                            <Label htmlFor={`monitor-search-${group.id}`} className="sr-only">Search services in {group.name}</Label>
+                            <Input
+                                id={`monitor-search-${group.id}`}
+                                value={searchInput}
+                                onChange={(event) => setSearchInput(event.target.value)}
+                                placeholder="Search services"
+                                className="h-9 flex-1"
+                            />
+                            <Select value={String(pageSize)} onValueChange={(value) => { setPageSize(Number(value)); setPage(1); }}>
+                                <SelectTrigger aria-label="Services per page" className="h-9 w-full sm:w-[112px]">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="25">25 / page</SelectItem>
+                                    <SelectItem value="50">50 / page</SelectItem>
+                                    <SelectItem value="100">100 / page</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5" aria-label="Filter services by status">
+                            {([
+                                ["all", "All", counts.all],
+                                ["operational", "Operational", counts.operational],
+                                ["issues", "Issues", counts.issues],
+                                ["paused", "Paused", counts.paused],
+                            ] as const).map(([value, label, count]) => (
+                                <Button
+                                    key={value}
+                                    type="button"
+                                    size="sm"
+                                    variant={statusFilter === value ? "secondary" : "ghost"}
+                                    aria-pressed={statusFilter === value}
+                                    className="h-8 whitespace-nowrap px-2.5 text-xs"
+                                    onClick={() => { setStatusFilter(value); setPage(1); }}
+                                >
+                                    {label} <span className="ml-1 tabular-nums text-muted-foreground">{count}</span>
+                                </Button>
+                            ))}
+                        </div>
+                    </div>
                 )}
-            </div>
-            <div className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
-                {group.monitors.map((m) => (
+                {monitors.map((m) => (
                     <MonitorRow
                         key={m.id}
                         monitor={m}
@@ -356,13 +495,31 @@ function GroupSection({
                         uptimeDaysRange={uptimeDaysRange}
                     />
                 ))}
-                {group.monitors.length === 0 && (
-                    <div className="px-5 py-6 text-center text-sm text-muted-foreground">
-                        No monitors configured
+                {loading && <div role="status" aria-live="polite" className="px-5 py-5 text-sm text-muted-foreground">Loading services…</div>}
+                {loadError && (
+                    <div className="flex items-center justify-between gap-3 px-5 py-4 text-sm text-destructive">
+                        <span>{loadError}</span>
+                        <Button variant="outline" size="sm" onClick={() => setRetryKey((value) => value + 1)}>Retry</Button>
                     </div>
                 )}
+                {!loading && !loadError && monitors.length === 0 && (
+                    <div className="px-5 py-8 text-center text-sm text-muted-foreground">
+                        {search || statusFilter !== "all" ? "No services match these filters" : "No services configured"}
+                    </div>
+                )}
+                {!loading && !loadError && pagination.totalPages > 1 && (
+                    <div className="flex flex-col items-center justify-between gap-3 border-t border-border/40 px-4 py-3 sm:flex-row">
+                        <p className="text-xs tabular-nums text-muted-foreground">{firstVisible}–{lastVisible} of {pagination.total}</p>
+                        <div className="flex items-center gap-2">
+                            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Previous</Button>
+                            <span className="min-w-20 text-center text-xs tabular-nums text-muted-foreground">Page {pagination.page} of {pagination.totalPages}</span>
+                            <Button variant="outline" size="sm" disabled={page >= pagination.totalPages} onClick={() => setPage((value) => value + 1)}>Next</Button>
+                        </div>
+                    </div>
+                )}
+                </div>
+            )}
             </div>
-        </div>
     );
 }
 
@@ -472,6 +629,7 @@ export function StatusPage() {
         config?: StatusPageConfig;
     } | null>(null);
     const [secondsToUpdate, setSecondsToUpdate] = useState(60);
+    const [serviceQuery, setServiceQuery] = useState("");
 
     // Apply theme based on config
     const applyTheme = useCallback((config?: StatusPageConfig) => {
@@ -605,7 +763,11 @@ export function StatusPage() {
         if (!data) return null;
         const { groups, incidents = [], pastIncidents = [], config } = data;
         const { maintenanceIncidents, maintenanceGroupIds } = getMaintenanceState(incidents);
-        const status = getOverallStatus(groups, incidents, maintenanceGroupIds);
+        const statusGroups = groups.map((group) => group.monitors?.length ? group : {
+            ...group,
+            monitors: group.monitorCount ? [{ id: `${group.id}-summary`, status: group.status || "up" }] : [],
+        });
+        const status = getOverallStatus(statusGroups, incidents, maintenanceGroupIds);
 
         const incidentItems = (incidents || []).filter((i) => {
             if (i.type !== "incident" || i.status === "resolved") return false;
@@ -628,10 +790,7 @@ export function StatusPage() {
         return (
             <div className="min-h-screen bg-background flex items-center justify-center text-foreground">
                 <div className="text-center space-y-4">
-                    <div className="relative inline-block">
-                        <div className="absolute inset-0 bg-destructive/20 blur-xl rounded-full" />
-                        <ShieldX className="relative w-16 h-16 text-muted-foreground mx-auto" />
-                    </div>
+                    <ShieldX className="w-16 h-16 text-muted-foreground mx-auto" />
                     <h1 className="text-2xl font-bold">Access Denied</h1>
                     <p className="text-muted-foreground">You do not have permission to view this status page.</p>
                     <div className="flex gap-2 justify-center pt-2">
@@ -647,10 +806,7 @@ export function StatusPage() {
         return (
             <div className="min-h-screen bg-background flex items-center justify-center text-foreground">
                 <div className="text-center space-y-4">
-                    <div className="relative inline-block">
-                        <div className="absolute inset-0 bg-destructive/20 blur-xl rounded-full" />
-                        <Activity className="relative w-16 h-16 text-muted-foreground mx-auto" />
-                    </div>
+                    <Activity className="w-16 h-16 text-muted-foreground mx-auto" />
                     <h1 className="text-2xl font-bold">Status Page Unavailable</h1>
                     <p className="text-muted-foreground">{error || "Could not load status information."}</p>
                 </div>
@@ -664,6 +820,8 @@ export function StatusPage() {
     const showIncidentHistory = config?.showIncidentHistory ?? true;
     const uptimeDaysRange = config?.uptimeDaysRange ?? 90;
     const timezone = config?.timezone || 'UTC';
+    const visibleGroups = groups.filter((group) => group.name.toLowerCase().includes(serviceQuery.trim().toLowerCase()));
+    const totalMonitors = groups.reduce((sum, group) => sum + (group.monitorCount ?? group.monitors.length), 0);
 
     return (
         <div className="min-h-screen bg-background text-foreground font-sans flex flex-col">
@@ -682,8 +840,7 @@ export function StatusPage() {
                     const textAlign = alignment === 'left' ? 'text-left' : alignment === 'right' ? 'text-right' : 'text-center';
 
                     const logoElement = showLogo && (
-                        <div className="relative">
-                            <div className="absolute inset-0 bg-primary/15 blur-2xl rounded-full scale-150" />
+                        <div>
                             {hasLogo ? (
                                 <img
                                     src={sanitizeImageUrl(config.logoUrl)}
@@ -738,14 +895,27 @@ export function StatusPage() {
                     );
                 })()}
 
-                {/* Status Banner */}
-                <div className="mb-6 animate-in fade-in duration-500">
+                <div className="mb-6">
                     <StatusBanner status={status} secondsToUpdate={secondsToUpdate} />
                 </div>
 
-                {/* Alerts: Maintenance & Incidents */}
-                {(maintenanceIncidents.length > 0 || incidentItems.length > 0) && (
-                    <div className="mb-8 space-y-6 animate-in slide-in-from-bottom-3 duration-500 fade-in fill-mode-backwards">
+                <Tabs defaultValue="overview" className="w-full">
+                    <TabsList className="mb-8 grid h-11 w-full grid-cols-3 sm:inline-grid sm:w-auto">
+                        <TabsTrigger value="overview">Overview</TabsTrigger>
+                        <TabsTrigger value="services">Services</TabsTrigger>
+                        <TabsTrigger value="history">History</TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="overview" className="mt-0 space-y-8">
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                            <div className="rounded-lg border border-border bg-card p-4"><p className="text-xs text-muted-foreground">Services</p><p className="mt-1 font-mono text-2xl font-medium tabular-nums">{totalMonitors}</p></div>
+                            <div className="rounded-lg border border-border bg-card p-4"><p className="text-xs text-muted-foreground">Operational</p><p className="mt-1 font-mono text-2xl font-medium text-emerald-500 tabular-nums">{groups.reduce((sum, group) => sum + (group.counts?.up || 0), 0)}</p></div>
+                            <div className="rounded-lg border border-border bg-card p-4"><p className="text-xs text-muted-foreground">Degraded</p><p className="mt-1 font-mono text-2xl font-medium text-yellow-500 tabular-nums">{groups.reduce((sum, group) => sum + (group.counts?.degraded || 0), 0)}</p></div>
+                            <div className="rounded-lg border border-border bg-card p-4"><p className="text-xs text-muted-foreground">Unavailable</p><p className="mt-1 font-mono text-2xl font-medium text-red-500 tabular-nums">{groups.reduce((sum, group) => sum + (group.counts?.down || 0), 0)}</p></div>
+                        </div>
+
+                {(maintenanceIncidents.length > 0 || incidentItems.length > 0) ? (
+                    <div className="space-y-6">
                         {maintenanceIncidents.length > 0 && (
                             <div>
                                 <h2 className="text-sm font-semibold text-foreground mb-2 px-1 flex items-center gap-2">
@@ -780,29 +950,36 @@ export function StatusPage() {
                             </div>
                         )}
                     </div>
-                )}
+                ) : <p className="text-sm text-muted-foreground">No active incidents or maintenance.</p>}
+                    </TabsContent>
 
-                {/* Monitor Groups */}
-                <div className="space-y-6">
-                    {groups.map((group, idx) => (
+                    <TabsContent value="services" className="mt-0">
+                        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div><h2 className="text-lg font-semibold">Services &amp; groups</h2><p className="text-sm text-muted-foreground">Expand a group to load its services and uptime history.</p></div>
+                            <Input value={serviceQuery} onChange={(event) => setServiceQuery(event.target.value)} placeholder="Search groups" aria-label="Search groups" className="sm:max-w-xs" />
+                        </div>
+                        <div className="space-y-3">
+                    {visibleGroups.map((group) => (
                         <GroupSection
                             key={group.id}
                             group={group}
                             incidents={incidents}
-                            index={idx}
+                            slug={slug || "all"}
                             showUptimeBars={showUptimeBars}
                             showUptimePercentage={showUptimePercentage}
                             uptimeDaysRange={uptimeDaysRange}
                         />
                     ))}
-                </div>
+                        {visibleGroups.length === 0 && <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">No groups match your search.</div>}
+                        </div>
+                    </TabsContent>
 
-                {/* Past Incidents */}
-                {showIncidentHistory && pastIncidents && pastIncidents.length > 0 && (
-                    <div className="mt-10">
+                    <TabsContent value="history" className="mt-0">
+                {showIncidentHistory && pastIncidents && pastIncidents.length > 0 ? (
                         <PastIncidentsSection incidents={pastIncidents} timezone={timezone} />
-                    </div>
-                )}
+                ) : <div className="rounded-lg border border-border bg-card p-8 text-center"><h2 className="font-semibold">No recent incidents</h2><p className="mt-1 text-sm text-muted-foreground">Resolved incidents from the last 14 days will appear here.</p></div>}
+                    </TabsContent>
+                </Tabs>
             </main>
 
             {/* Footer */}
