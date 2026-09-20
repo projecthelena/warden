@@ -299,6 +299,64 @@ func (s *Store) GetMonitors() ([]Monitor, error) {
 	return monitors, nil
 }
 
+// GetMonitorsByGroup returns monitor metadata for one group, optionally narrowed by a
+// case-insensitive search over name, target and id. Status filtering happens in the
+// uptime handler because the live state belongs to the manager rather than the database.
+func (s *Store) GetMonitorsByGroup(groupID, search string) ([]Monitor, error) {
+	query := `SELECT id, type, group_id, name, url, active, interval_seconds, created_at,
+		confirmation_threshold, notification_cooldown_minutes, latency_threshold, request_config, alerts_muted
+		FROM monitors WHERE group_id = ?`
+	args := []interface{}{groupID}
+	search = strings.ToLower(strings.TrimSpace(search))
+	if search != "" {
+		if s.IsPostgres() {
+			query += ` AND (POSITION(? IN LOWER(name)) > 0 OR POSITION(? IN LOWER(url)) > 0 OR POSITION(? IN LOWER(id)) > 0)`
+		} else {
+			query += ` AND (INSTR(LOWER(name), ?) > 0 OR INSTR(LOWER(url), ?) > 0 OR INSTR(LOWER(id), ?) > 0)`
+		}
+		args = append(args, search, search, search)
+	}
+	query += " ORDER BY LOWER(name) ASC, id ASC"
+
+	rows, err := s.db.Query(s.rebind(query), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	monitors := []Monitor{}
+	for rows.Next() {
+		var m Monitor
+		var confirmThreshold, cooldownMins, latencyThresh sql.NullInt64
+		var reqCfgStr sql.NullString
+		if err := rows.Scan(&m.ID, &m.Type, &m.GroupID, &m.Name, &m.URL, &m.Active, &m.Interval, &m.CreatedAt, &confirmThreshold, &cooldownMins, &latencyThresh, &reqCfgStr, &m.AlertsMuted); err != nil {
+			return nil, err
+		}
+		m.Type = NormalizeMonitorType(m.Type)
+		if confirmThreshold.Valid {
+			v := int(confirmThreshold.Int64)
+			m.ConfirmationThreshold = &v
+		}
+		if cooldownMins.Valid {
+			v := int(cooldownMins.Int64)
+			m.NotificationCooldownMin = &v
+		}
+		if latencyThresh.Valid {
+			v := int(latencyThresh.Int64)
+			m.LatencyThreshold = &v
+		}
+		if reqCfgStr.Valid && reqCfgStr.String != "" {
+			var rc RequestConfig
+			if err := json.Unmarshal([]byte(reqCfgStr.String), &rc); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal request_config for monitor %s: %w", m.ID, err)
+			}
+			m.RequestConfig = &rc
+		}
+		monitors = append(monitors, m)
+	}
+	return monitors, rows.Err()
+}
+
 // Events & Checks
 
 func (s *Store) CreateEvent(monitorID, eventType, message string) error {

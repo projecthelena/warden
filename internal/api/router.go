@@ -183,6 +183,7 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 				dashboard.Get("/overview", uptimeH.GetOverview)
 
 				// Groups
+				dashboard.Get("/groups/{id}/monitors", uptimeH.GetGroupMonitors)
 				dashboard.Post("/groups", crudH.CreateGroup)
 				dashboard.Put("/groups/{id}", crudH.UpdateGroup)
 				dashboard.Delete("/groups/{id}", crudH.DeleteGroup)
