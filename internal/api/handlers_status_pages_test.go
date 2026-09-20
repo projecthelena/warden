@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -118,6 +120,182 @@ func TestGetPublicStatus_EnabledPublic(t *testing.T) {
 	}
 	if body["title"] != "Global Status" {
 		t.Errorf("Expected title='Global Status', got '%v'", body["title"])
+	}
+}
+
+func TestGetPublicStatus_CompactBudgetWithOneThousandMonitors(t *testing.T) {
+	store, spH := newStatusPageTestEnv(t)
+	seedGroup(t, store, "g-load", "Load test")
+	for i := 0; i < 1000; i++ {
+		seedMonitor(t, store, fmt.Sprintf("m-%04d", i), "g-load", fmt.Sprintf("Monitor %04d", i))
+	}
+	seedPage(t, store, "load", "Load status", nil, true, true)
+
+	durations := make([]time.Duration, 5)
+	var body []byte
+	for i := range durations {
+		request := makeRequest("GET", "/api/s/load", "load", nil)
+		request.URL.RawQuery = ""
+		started := time.Now()
+		response := httptest.NewRecorder()
+		spH.GetPublicStatus(response, request)
+		durations[i] = time.Since(started)
+		if response.Code != http.StatusOK {
+			t.Fatalf("compact response: got %d: %s", response.Code, response.Body.String())
+		}
+		body = response.Body.Bytes()
+	}
+
+	slices.Sort(durations)
+	p95 := durations[len(durations)-1]
+	t.Logf("compact 1000-monitor payload=%d bytes local_p95=%s", len(body), p95)
+	if len(body) >= 2*1024*1024 {
+		t.Fatalf("compact payload exceeded 2 MiB budget: %d bytes", len(body))
+	}
+	if p95 >= 250*time.Millisecond {
+		t.Fatalf("compact local p95 exceeded 250ms budget: %s", p95)
+	}
+	if bytes.Contains(body, []byte(`"history"`)) || bytes.Contains(body, []byte(`"uptimeDays"`)) {
+		t.Fatalf("compact payload contains per-monitor history: %s", body)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	groups := payload["groups"].([]any)
+	group := groups[1].(map[string]any)
+	if group["monitorCount"] != float64(1000) || len(group["monitors"].([]any)) != 0 {
+		t.Fatalf("overview did not stay aggregate-only: %#v", group)
+	}
+}
+
+func TestGetPublicStatus_TwoThousandMonitorDetailBudget(t *testing.T) {
+	store, spH := newStatusPageTestEnv(t)
+	seedGroup(t, store, "g-2k", "Two thousand")
+	for i := 0; i < 2000; i++ {
+		seedMonitor(t, store, fmt.Sprintf("m-2k-%04d", i), "g-2k", fmt.Sprintf("Monitor %04d", i))
+	}
+	seedPage(t, store, "scale-2k", "Scale", nil, true, true)
+
+	durations := make([]time.Duration, 5)
+	var body []byte
+	for i := range durations {
+		response := httptest.NewRecorder()
+		started := time.Now()
+		spH.GetPublicStatus(response, makeRequest("GET", "/api/s/scale-2k?group=g-2k&page=40&page_size=50", "scale-2k", nil))
+		durations[i] = time.Since(started)
+		if response.Code != http.StatusOK {
+			t.Fatalf("detail response: got %d: %s", response.Code, response.Body.String())
+		}
+		body = response.Body.Bytes()
+	}
+	slices.Sort(durations)
+	p95 := durations[len(durations)-1]
+	t.Logf("detail 2000-monitor payload=%d bytes local_p95=%s", len(body), p95)
+	if len(body) >= 1024*1024 {
+		t.Fatalf("detail page exceeded 1 MiB budget: %d bytes", len(body))
+	}
+	if p95 >= 250*time.Millisecond {
+		t.Fatalf("detail local p95 exceeded 250ms budget: %s", p95)
+	}
+
+	payload := map[string]any{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	group := payload["groups"].([]any)[0].(map[string]any)
+	if len(group["monitors"].([]any)) != 50 {
+		t.Fatalf("detail response escaped page bound: %d", len(group["monitors"].([]any)))
+	}
+	if payload["pagination"].(map[string]any)["total"] != float64(2000) {
+		t.Fatalf("unexpected pagination: %#v", payload["pagination"])
+	}
+}
+
+func TestGetPublicStatus_GroupDetailsArePaginated(t *testing.T) {
+	store, spH := newStatusPageTestEnv(t)
+	seedGroup(t, store, "g-page", "Paginated")
+	for i := 0; i < 250; i++ {
+		seedMonitor(t, store, fmt.Sprintf("m-%03d", i), "g-page", fmt.Sprintf("Monitor %03d", i))
+	}
+	seedPage(t, store, "page", "Page", nil, true, true)
+
+	request := makeRequest("GET", "/api/s/page?group=g-page&page=2&page_size=100", "page", nil)
+	response := httptest.NewRecorder()
+	spH.GetPublicStatus(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("group response: got %d: %s", response.Code, response.Body.String())
+	}
+
+	result := decodeJSON(t, response)
+	groups := result["groups"].([]any)
+	group := groups[0].(map[string]any)
+	if got := len(group["monitors"].([]any)); got != 100 {
+		t.Fatalf("expected 100 monitors, got %d", got)
+	}
+	if got := int(group["monitorCount"].(float64)); got != 250 {
+		t.Fatalf("expected total monitor count 250, got %d", got)
+	}
+	if _, ok := group["counts"]; ok {
+		t.Fatal("paged group detail must not expose counts for only one slice")
+	}
+	if _, ok := group["status"]; ok {
+		t.Fatal("paged group detail must not expose a status for only one slice")
+	}
+	pagination := result["pagination"].(map[string]any)
+	if pagination["page"] != float64(2) || pagination["pageSize"] != float64(100) || pagination["total"] != float64(250) || pagination["totalPages"] != float64(3) {
+		t.Fatalf("unexpected pagination: %#v", pagination)
+	}
+	counts := result["counts"].(map[string]any)
+	if counts["all"] != float64(250) || counts["issues"] != float64(250) {
+		t.Fatalf("unexpected counts: %#v", counts)
+	}
+}
+
+func TestGetPublicStatus_RejectsInvalidPagination(t *testing.T) {
+	store, spH := newStatusPageTestEnv(t)
+	seedGroup(t, store, "g-page", "Paginated")
+	seedMonitor(t, store, "m-page", "g-page", "Monitor")
+	seedPage(t, store, "page", "Page", nil, true, true)
+
+	for _, query := range []string{"page=0", "page=no", "page_size=0", "page_size=101", "page_size=no", "status=no", "search=" + strings.Repeat("x", 201)} {
+		t.Run(query, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			path := "/api/s/page?group=g-page&" + query
+			spH.GetPublicStatus(response, makeRequest("GET", path, "page", nil))
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d: %s", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
+func TestGetPublicStatus_CompactPayloadDoesNotGrowWithRawChecks(t *testing.T) {
+	store, spH := newStatusPageTestEnv(t)
+	seedGroup(t, store, "g-stable", "Stable")
+	seedMonitor(t, store, "m-stable", "g-stable", "Monitor")
+	seedPage(t, store, "stable", "Stable", nil, true, true)
+
+	request := func() []byte {
+		response := httptest.NewRecorder()
+		spH.GetPublicStatus(response, makeRequest("GET", "/api/s/stable", "stable", nil))
+		if response.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+		}
+		return bytes.Clone(response.Body.Bytes())
+	}
+
+	before := request()
+	checks := make([]db.CheckResult, 1000)
+	for i := range checks {
+		checks[i] = db.CheckResult{MonitorID: "m-stable", Status: "up", Timestamp: time.Now().UTC().Add(time.Duration(i) * time.Second)}
+	}
+	if err := store.BatchInsertChecks(checks); err != nil {
+		t.Fatalf("insert checks: %v", err)
+	}
+	after := request()
+	if !bytes.Equal(before, after) {
+		t.Fatalf("compact payload changed after raw checks: before=%d bytes after=%d bytes", len(before), len(after))
 	}
 }
 
@@ -260,7 +438,7 @@ func TestGetPublicStatus_DoesNotLeakMonitorURL(t *testing.T) {
 	seedPage(t, store, "leak-test", "Leak Test", nil, true, true)
 
 	w := httptest.NewRecorder()
-	spH.GetPublicStatus(w, makeRequest("GET", "/api/s/leak-test", "leak-test", nil))
+	spH.GetPublicStatus(w, makeRequest("GET", "/api/s/leak-test?group=g-leak", "leak-test", nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("Expected 200, got %d", w.Code)
 	}
@@ -740,7 +918,7 @@ func TestPhase1_ResponseIncludesUptimeDays(t *testing.T) {
 	seedPage(t, store, "uptime-test", "Uptime Test", nil, true, true)
 
 	w := httptest.NewRecorder()
-	spH.GetPublicStatus(w, makeRequest("GET", "/api/s/uptime-test", "uptime-test", nil))
+	spH.GetPublicStatus(w, makeRequest("GET", "/api/s/uptime-test?group=g-uptime", "uptime-test", nil))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("Expected 200, got %d", w.Code)
@@ -757,11 +935,6 @@ func TestPhase1_ResponseIncludesUptimeDays(t *testing.T) {
 	// Verify uptimeDays field exists (may be empty array)
 	if _, ok := monitor["uptimeDays"]; !ok {
 		t.Error("Expected 'uptimeDays' field in monitor response")
-	}
-
-	// Verify overallUptime field exists
-	if _, ok := monitor["overallUptime"]; !ok {
-		t.Error("Expected 'overallUptime' field in monitor response")
 	}
 
 	uptime, ok := monitor["uptime"].(map[string]interface{})
@@ -797,7 +970,7 @@ func TestPhase1_ResponseUsesRollupForSharedUptimeSummary(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	spH.GetPublicStatus(w, makeRequest("GET", "/api/s/summary-test", "summary-test", nil))
+	spH.GetPublicStatus(w, makeRequest("GET", "/api/s/summary-test?group=g-summary", "summary-test", nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
 	}
@@ -830,7 +1003,7 @@ func TestPhase1_ResponseIncludesMonitorStatus(t *testing.T) {
 	seedPage(t, store, "status-test", "Status Test", nil, true, true)
 
 	w := httptest.NewRecorder()
-	spH.GetPublicStatus(w, makeRequest("GET", "/api/s/status-test", "status-test", nil))
+	spH.GetPublicStatus(w, makeRequest("GET", "/api/s/status-test?group=g-status", "status-test", nil))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("Expected 200, got %d", w.Code)
@@ -857,7 +1030,7 @@ func TestPhase1_ResponseIncludesMonitorStatus(t *testing.T) {
 	}
 }
 
-func TestPhase1_ResponseIncludesLatency(t *testing.T) {
+func TestPhase1_ResponseOmitsUnusedMonitorFields(t *testing.T) {
 	store, spH := newStatusPageTestEnv(t)
 
 	seedGroup(t, store, "g-latency", "Latency Group")
@@ -865,7 +1038,7 @@ func TestPhase1_ResponseIncludesLatency(t *testing.T) {
 	seedPage(t, store, "latency-test", "Latency Test", nil, true, true)
 
 	w := httptest.NewRecorder()
-	spH.GetPublicStatus(w, makeRequest("GET", "/api/s/latency-test", "latency-test", nil))
+	spH.GetPublicStatus(w, makeRequest("GET", "/api/s/latency-test?group=g-latency", "latency-test", nil))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("Expected 200, got %d", w.Code)
@@ -879,14 +1052,10 @@ func TestPhase1_ResponseIncludesLatency(t *testing.T) {
 		t.Fatal("Expected to find 'Latency Monitor' in response")
 	}
 
-	// Verify latency field exists
-	if _, ok := monitor["latency"]; !ok {
-		t.Error("Expected 'latency' field in monitor response")
-	}
-
-	// Verify lastCheck field exists
-	if _, ok := monitor["lastCheck"]; !ok {
-		t.Error("Expected 'lastCheck' field in monitor response")
+	for _, field := range []string{"latency", "lastCheck", "overallUptime", "history", "url"} {
+		if _, ok := monitor[field]; ok {
+			t.Errorf("expected unused or sensitive field %q to be omitted", field)
+		}
 	}
 }
 
@@ -906,7 +1075,7 @@ func TestPhase1_PausedMonitorShowsPausedStatus(t *testing.T) {
 	seedPage(t, store, "paused-test", "Paused Test", nil, true, true)
 
 	w := httptest.NewRecorder()
-	spH.GetPublicStatus(w, makeRequest("GET", "/api/s/paused-test", "paused-test", nil))
+	spH.GetPublicStatus(w, makeRequest("GET", "/api/s/paused-test?group=g-paused", "paused-test", nil))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("Expected 200, got %d", w.Code)
@@ -1494,7 +1663,7 @@ func TestGetPublicStatus_ClampsBadUptimeRange(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	spH.GetPublicStatus(w, makeRequest("GET", "/api/s/clamp", "clamp", nil))
+	spH.GetPublicStatus(w, makeRequest("GET", "/api/s/clamp?group=g-clamp", "clamp", nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 (clamped), got %d: %s", w.Code, w.Body.String())
 	}

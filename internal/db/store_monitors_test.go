@@ -7,6 +7,42 @@ import (
 	"time"
 )
 
+func TestPublicMonitorMetadataAndGroupSummaries(t *testing.T) {
+	s := newTestStore(t)
+	if err := s.CreateGroup(Group{ID: "g-public", Name: "Public"}); err != nil {
+		t.Fatal(err)
+	}
+	monitors := []Monitor{
+		{ID: "m-api", GroupID: "g-public", Name: "Checkout API", URL: "https://secret.example/api", Active: true, Interval: 10},
+		{ID: "m-web", GroupID: "g-public", Name: "Website", URL: "https://secret.example/web", Active: true, Interval: 30},
+		{ID: "m-paused", GroupID: "g-public", Name: "Paused Worker", URL: "https://secret.example/worker", Active: false, Interval: 60},
+	}
+	for _, monitor := range monitors {
+		if err := s.CreateMonitor(monitor); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	summaries, err := s.GetGroupMonitorSummaries()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := summaries["g-public"]; got.Total != 3 || got.Active != 2 || got.Paused != 1 {
+		t.Fatalf("unexpected summary: %+v", got)
+	}
+
+	public, err := s.GetPublicMonitorsByGroup("g-public", "API")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(public) != 1 || public[0].ID != "m-api" {
+		t.Fatalf("unexpected public monitor search: %+v", public)
+	}
+	if public[0].URL != "" || public[0].RequestConfig != nil {
+		t.Fatalf("public metadata loaded private configuration: %+v", public[0])
+	}
+}
+
 func TestGetUptimeStatsUsesExactWindowsAndReturnsDowntime(t *testing.T) {
 	s := newTestStore(t)
 	if err := s.CreateGroup(Group{ID: "g-uptime", Name: "Uptime"}); err != nil {

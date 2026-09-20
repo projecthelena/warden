@@ -86,6 +86,13 @@ type Monitor struct {
 	AlertsMuted bool `json:"alertsMuted"`
 }
 
+type GroupMonitorSummary struct {
+	GroupID string
+	Total   int
+	Active  int
+	Paused  int
+}
+
 type CheckResult struct {
 	MonitorID  string    `json:"monitorId"`
 	Status     string    `json:"status"`
@@ -297,6 +304,63 @@ func (s *Store) GetMonitors() ([]Monitor, error) {
 		monitors = append(monitors, m)
 	}
 	return monitors, nil
+}
+
+// GetGroupMonitorSummaries returns the bounded metadata needed by public status
+// overviews. It avoids materializing every monitor and its private configuration.
+func (s *Store) GetGroupMonitorSummaries() (map[string]GroupMonitorSummary, error) {
+	rows, err := s.db.Query(`SELECT group_id, COUNT(*),
+		SUM(CASE WHEN active = TRUE THEN 1 ELSE 0 END),
+		SUM(CASE WHEN active = FALSE THEN 1 ELSE 0 END)
+		FROM monitors GROUP BY group_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	summaries := make(map[string]GroupMonitorSummary)
+	for rows.Next() {
+		var summary GroupMonitorSummary
+		if err := rows.Scan(&summary.GroupID, &summary.Total, &summary.Active, &summary.Paused); err != nil {
+			return nil, err
+		}
+		summaries[summary.GroupID] = summary
+	}
+	return summaries, rows.Err()
+}
+
+// GetPublicMonitorsByGroup returns only fields consumed by a public status page.
+// Search deliberately excludes URL so visitors cannot discover private targets.
+func (s *Store) GetPublicMonitorsByGroup(groupID, search string) ([]Monitor, error) {
+	query := `SELECT id, group_id, name, active, interval_seconds
+		FROM monitors WHERE group_id = ?`
+	args := []interface{}{groupID}
+	search = strings.ToLower(strings.TrimSpace(search))
+	if search != "" {
+		if s.IsPostgres() {
+			query += ` AND (POSITION(? IN LOWER(name)) > 0 OR POSITION(? IN LOWER(id)) > 0)`
+		} else {
+			query += ` AND (INSTR(LOWER(name), ?) > 0 OR INSTR(LOWER(id), ?) > 0)`
+		}
+		args = append(args, search, search)
+	}
+	query += " ORDER BY LOWER(name) ASC, id ASC"
+
+	rows, err := s.db.Query(s.rebind(query), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	monitors := []Monitor{}
+	for rows.Next() {
+		var monitor Monitor
+		if err := rows.Scan(&monitor.ID, &monitor.GroupID, &monitor.Name, &monitor.Active, &monitor.Interval); err != nil {
+			return nil, err
+		}
+		monitors = append(monitors, monitor)
+	}
+	return monitors, rows.Err()
 }
 
 // GetMonitorsByGroup returns monitor metadata for one group, optionally narrowed by a
