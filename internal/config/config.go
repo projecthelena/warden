@@ -12,14 +12,15 @@ const (
 )
 
 type Config struct {
-	ListenAddr   string
-	DBType       string // "sqlite" or "postgres"
-	DBPath       string // SQLite file path (only used when DBType is "sqlite")
-	DBURL        string // PostgreSQL connection URL (only used when DBType is "postgres")
-	CookieSecure bool
-	AdminSecret  string
-	TrustProxy   bool // Trust X-Forwarded-For headers (only enable behind a trusted reverse proxy)
-	MCPEnabled   bool // Serve the Model Context Protocol endpoint at /api/mcp
+	ListenAddr        string
+	ObservabilityAddr string // Separate metrics/pprof listener; empty keeps it disabled
+	DBType            string // "sqlite" or "postgres"
+	DBPath            string // SQLite file path (only used when DBType is "sqlite")
+	DBURL             string // PostgreSQL connection URL (only used when DBType is "postgres")
+	CookieSecure      bool
+	AdminSecret       string
+	TrustProxy        bool // Trust X-Forwarded-For headers (only enable behind a trusted reverse proxy)
+	MCPEnabled        bool // Serve the Model Context Protocol endpoint at /api/mcp
 }
 
 func Default() Config {
@@ -37,6 +38,9 @@ func Load() (*Config, error) {
 
 	if listen := os.Getenv("LISTEN_ADDR"); listen != "" {
 		cfg.ListenAddr = listen
+	}
+	if listen := os.Getenv("OBSERVABILITY_ADDR"); listen != "" {
+		cfg.ObservabilityAddr = listen
 	}
 
 	// Database configuration

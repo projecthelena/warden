@@ -1,0 +1,114 @@
+package observability
+
+import (
+	"database/sql"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/prometheus/client_golang/prometheus"
+)
+
+// RegisterDatabaseStats exposes database/sql pool saturation without coupling the store to
+// Prometheus. It must be called once during process startup.
+func RegisterDatabaseStats(dialect string, stats func() sql.DBStats) {
+	register := func(name, help string, value func(sql.DBStats) float64) {
+		prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name:        name,
+			Help:        help,
+			ConstLabels: prometheus.Labels{"dialect": dialect},
+		}, func() float64 { return value(stats()) }))
+	}
+
+	register("warden_db_connections_open", "Open database connections.", func(s sql.DBStats) float64 { return float64(s.OpenConnections) })
+	register("warden_db_connections_in_use", "Database connections currently in use.", func(s sql.DBStats) float64 { return float64(s.InUse) })
+	register("warden_db_connections_idle", "Idle database connections.", func(s sql.DBStats) float64 { return float64(s.Idle) })
+	register("warden_db_connections_max", "Configured maximum number of open database connections.", func(s sql.DBStats) float64 { return float64(s.MaxOpenConnections) })
+	register("warden_db_wait_total", "Total waits for a database connection.", func(s sql.DBStats) float64 { return float64(s.WaitCount) })
+	register("warden_db_wait_duration_seconds_total", "Total time blocked waiting for a database connection.", func(s sql.DBStats) float64 { return s.WaitDuration.Seconds() })
+}
+
+var (
+	httpInFlight = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "warden_http_requests_in_flight",
+		Help: "Number of HTTP requests currently being served.",
+	})
+	httpRequests = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "warden_http_requests_total",
+		Help: "HTTP requests completed, partitioned by route, method, and status code.",
+	}, []string{"route", "method", "status"})
+	httpDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "warden_http_request_duration_seconds",
+		Help:    "HTTP request duration by route and method.",
+		Buckets: prometheus.DefBuckets,
+	}, []string{"route", "method"})
+	Checks = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "warden_monitor_checks_total",
+		Help: "Monitor checks completed, partitioned by monitor type and outcome.",
+	}, []string{"type", "outcome"})
+	CheckScheduling = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "warden_monitor_check_scheduling_total",
+		Help: "Monitor scheduling attempts partitioned by queued or dropped outcome.",
+	}, []string{"outcome"})
+	CheckDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "warden_monitor_check_duration_seconds",
+		Help:    "End-to-end monitor check duration by monitor type.",
+		Buckets: []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 30},
+	}, []string{"type"})
+	CheckQueueDepth = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "warden_monitor_check_queue_depth",
+		Help: "Number of monitor checks waiting for a worker.",
+	})
+	ResultQueueDepth = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "warden_monitor_result_queue_depth",
+		Help: "Number of completed checks waiting to be processed.",
+	})
+	PersistBatchSize = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "warden_monitor_persist_batch_size",
+		Help:    "Number of check results in each database write batch.",
+		Buckets: prometheus.LinearBuckets(1, 5, 11),
+	})
+	PersistDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "warden_monitor_persist_duration_seconds",
+		Help:    "Duration of check-result batch writes by outcome.",
+		Buckets: prometheus.DefBuckets,
+	}, []string{"outcome"})
+	ActiveMonitors = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "warden_monitors_active",
+		Help: "Number of active monitors managed by this Warden instance.",
+	})
+)
+
+func init() {
+	prometheus.MustRegister(
+		httpInFlight, httpRequests, httpDuration,
+		Checks, CheckScheduling, CheckDuration, CheckQueueDepth, ResultQueueDepth,
+		PersistBatchSize, PersistDuration, ActiveMonitors,
+	)
+}
+
+// HTTPMiddleware records bounded-cardinality route templates, never raw URLs.
+func HTTPMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		httpInFlight.Inc()
+		defer httpInFlight.Dec()
+
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		next.ServeHTTP(ww, r)
+
+		route := chi.RouteContext(r.Context()).RoutePattern()
+		if route == "" {
+			route = "unmatched"
+		}
+		statusCode := ww.Status()
+		if statusCode == 0 {
+			statusCode = http.StatusOK
+		}
+		status := strconv.Itoa(statusCode)
+		httpRequests.WithLabelValues(route, r.Method, status).Inc()
+		httpDuration.WithLabelValues(route, r.Method).Observe(time.Since(start).Seconds())
+	})
+}

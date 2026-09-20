@@ -10,6 +10,7 @@ import (
 	"github.com/projecthelena/warden/internal/db"
 	_ "github.com/projecthelena/warden/internal/docs"
 	wardenmcp "github.com/projecthelena/warden/internal/mcp"
+	"github.com/projecthelena/warden/internal/observability"
 	"github.com/projecthelena/warden/internal/static"
 	"github.com/projecthelena/warden/internal/uptime"
 	httpSwagger "github.com/swaggo/http-swagger/v2"
@@ -59,6 +60,7 @@ func SecureHeadersWithConfig(cookieSecure bool) func(http.Handler) http.Handler 
 // NewRouter builds the HTTP router serving both JSON APIs and static assets.
 func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) http.Handler {
 	r := chi.NewRouter()
+	r.Use(observability.HTTPMiddleware)
 	r.Use(requestLogger)
 	r.Use(middleware.Recoverer)
 
