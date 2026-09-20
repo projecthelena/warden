@@ -60,6 +60,7 @@ web/coverage/
 coverage/
 *.lcov
 junit.xml
+/loadtest/results/
 
 /dashboard
 # Claude Code internal worktrees + local settings

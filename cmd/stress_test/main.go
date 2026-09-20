@@ -9,15 +9,29 @@ import (
 	"log"
 	"net/http"
 	"net/http/cookiejar"
+	"os"
+	"strings"
 	"time"
 )
 
-const baseURL = "http://localhost:9096" // Adjust port if running on different port
+var baseURL string
 
 func main() {
-	count := flag.Int("count", 50, "Number of monitors to create")
-	delete := flag.Bool("delete", false, "Delete created monitors after wait")
+	flag.StringVar(&baseURL, "base-url", envOr("WARDEN_URL", "http://localhost:9096"), "Warden base URL")
+	username := flag.String("username", envOr("WARDEN_USERNAME", "admin"), "Warden username")
+	password := flag.String("password", os.Getenv("WARDEN_PASSWORD"), "Warden password (prefer WARDEN_PASSWORD)")
+	targetURL := flag.String("target-url", envOr("TARGET_URL", "http://localhost:8888/healthy"), "URL monitored by generated monitors")
+	count := flag.Int("count", 50, "number of monitors to create")
+	interval := flag.Int("interval", 10, "check interval in seconds")
+	deleteMonitors := flag.Bool("delete", false, "delete created monitors and their group after creation")
 	flag.Parse()
+	baseURL = strings.TrimRight(baseURL, "/")
+	if *password == "" {
+		log.Fatal("WARDEN_PASSWORD or -password is required")
+	}
+	if *count < 1 || *interval < 10 {
+		log.Fatal("count must be positive and interval must be at least 10 seconds")
+	}
 
 	// 1. Setup Client with Cookie Jar
 	jar, _ := cookiejar.New(nil)
@@ -28,14 +42,13 @@ func main() {
 
 	// 2. Login
 	log.Println("Logging in...")
-	if err := login(client, "admin", "password"); err != nil {
-		// Try admin/password if admin/admin fails? No, "admin" usually has password "admin" in dev seed.
-		// If fails, we can't proceed.
+	if err := login(client, *username, *password); err != nil {
 		log.Fatalf("Login failed: %v", err)
 	}
 
 	// 3. Create Group
-	groupID, err := createGroup(client, "Stress Test Group")
+	groupName := "Load Test " + time.Now().UTC().Format("20060102-150405")
+	groupID, err := createGroup(client, groupName)
 	if err != nil {
 		log.Fatalf("Failed to create group: %v", err)
 	}
@@ -45,16 +58,9 @@ func main() {
 	log.Printf("Creating %d monitors...\n", *count)
 	var monitorIDs []string
 	for i := 0; i < *count; i++ {
-		// Alternate between 200 and 500 to trigger notifications
-		status := 200
-		if i%2 == 0 {
-			status = 500 // Will trigger DOWN
-		}
+		name := fmt.Sprintf("Load Monitor %05d", i)
 
-		name := fmt.Sprintf("Stress Monitor %d (%d)", i, status)
-		url := fmt.Sprintf("https://httpbin.org/status/%d", status)
-
-		id, err := createMonitor(client, name, url, groupID)
+		id, err := createMonitor(client, name, *targetURL, groupID, *interval)
 		if err != nil {
 			log.Printf("Failed to create monitor %d: %v", i, err)
 			continue
@@ -64,14 +70,11 @@ func main() {
 		if (i+1)%10 == 0 {
 			fmt.Println()
 		}
-		// Small sleep to not overwhelm completely
-		time.Sleep(50 * time.Millisecond)
 	}
 	fmt.Println("\nDone creating monitors.")
+	log.Printf("group=%s monitors=%d target=%s interval=%ds", groupID, len(monitorIDs), *targetURL, *interval)
 
-	if *delete {
-		log.Println("Waiting 30 seconds before deletion...")
-		time.Sleep(30 * time.Second)
+	if *deleteMonitors {
 		log.Println("Deleting monitors...")
 		for _, id := range monitorIDs {
 			if err := deleteMonitor(client, id); err != nil {
@@ -84,6 +87,13 @@ func main() {
 		}
 		log.Println("Cleanup done.")
 	}
+}
+
+func envOr(name, fallback string) string {
+	if value := os.Getenv(name); value != "" {
+		return value
+	}
+	return fallback
 }
 
 func login(client *http.Client, username, password string) error {
@@ -119,12 +129,12 @@ func createGroup(client *http.Client, name string) (string, error) {
 	return res["id"].(string), nil
 }
 
-func createMonitor(client *http.Client, name, url, groupID string) (string, error) {
+func createMonitor(client *http.Client, name, url, groupID string, interval int) (string, error) {
 	payload := map[string]interface{}{
 		"name":     name,
 		"url":      url,
 		"groupId":  groupID,
-		"interval": 60,
+		"interval": interval,
 	}
 	data, _ := json.Marshal(payload)
 	resp, err := client.Post(baseURL+"/api/monitors", "application/json", bytes.NewBuffer(data))
