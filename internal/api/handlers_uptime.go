@@ -2,8 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -103,6 +105,208 @@ type UptimeResponse struct {
 	Groups []GroupDTO `json:"groups"`
 }
 
+type GroupMonitorCounts struct {
+	All         int `json:"all"`
+	Operational int `json:"operational"`
+	Issues      int `json:"issues"`
+	Paused      int `json:"paused"`
+}
+
+type PaginationDTO struct {
+	Page       int `json:"page"`
+	PageSize   int `json:"pageSize"`
+	Total      int `json:"total"`
+	TotalPages int `json:"totalPages"`
+}
+
+type GroupMonitorsResponse struct {
+	Group      GroupDTO           `json:"group"`
+	Counts     GroupMonitorCounts `json:"counts"`
+	Pagination PaginationDTO      `json:"pagination"`
+}
+
+func (h *UptimeHandler) monitorStatus(meta db.Monitor) string {
+	if !meta.Active {
+		return "paused"
+	}
+	task := h.manager.GetMonitor(meta.ID)
+	if task == nil {
+		return "down"
+	}
+	isUp, latency, hasHistory, isDegraded := task.GetLastStatus()
+	if !hasHistory {
+		return "up"
+	}
+	if !isUp {
+		return "down"
+	}
+	if isDegraded || latency > task.GetLatencyThreshold() {
+		return "degraded"
+	}
+	return "up"
+}
+
+func (h *UptimeHandler) monitorDTO(meta db.Monitor, events []db.MonitorEvent) MonitorDTO {
+	status := h.monitorStatus(meta)
+	latency := int64(0)
+	lastCheck := "Never"
+	historyPoints := []HistoryPoint{}
+
+	if task := h.manager.GetMonitor(meta.ID); task != nil {
+		for _, point := range task.GetHistory() {
+			pointStatus := "down"
+			if point.IsUp {
+				pointStatus = "up"
+				if point.Latency > task.GetLatencyThreshold() {
+					pointStatus = "degraded"
+				}
+			}
+			historyPoints = append(historyPoints, HistoryPoint{
+				Status: pointStatus, Latency: point.Latency, Timestamp: point.Timestamp, StatusCode: point.StatusCode,
+			})
+		}
+		if len(historyPoints) > 0 {
+			last := historyPoints[len(historyPoints)-1]
+			latency = last.Latency
+			lastCheck = last.Timestamp.Format(time.RFC3339)
+		}
+	}
+
+	return MonitorDTO{
+		ID: meta.ID, Name: meta.Name, Type: db.NormalizeMonitorType(meta.Type), URL: meta.URL,
+		Status: status, Active: meta.Active, Latency: latency, Interval: meta.Interval,
+		History: historyPoints, Events: eventsToDTO(events), LastCheck: lastCheck,
+		ConfirmationThreshold: meta.ConfirmationThreshold, NotificationCooldownMin: meta.NotificationCooldownMin,
+		LatencyThreshold: meta.LatencyThreshold, RequestConfig: meta.RequestConfig, AlertsMuted: meta.AlertsMuted,
+	}
+}
+
+// GetGroupMonitors returns one bounded page of monitors for a group. Search and health
+// filters are applied before pagination, so counts and page totals always describe the
+// same result set the operator is viewing.
+// @Summary      List a group's monitors
+// @Tags         uptime
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Group ID"
+// @Param        page query int false "Page number" default(1)
+// @Param        page_size query int false "Rows per page (max 100)" default(25)
+// @Param        search query string false "Case-insensitive name, target or ID search"
+// @Param        status query string false "all, operational, issues, or paused" default(all)
+// @Success      200 {object} GroupMonitorsResponse
+// @Failure      400 {string} string "Invalid query"
+// @Failure      404 {string} string "Group not found"
+// @Router       /groups/{id}/monitors [get]
+func (h *UptimeHandler) GetGroupMonitors(w http.ResponseWriter, r *http.Request) {
+	groupID := chi.URLParam(r, "id")
+	group, err := h.store.GetGroup(groupID)
+	if errors.Is(err, db.ErrGroupNotFound) {
+		writeError(w, http.StatusNotFound, "Group not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to load group")
+		return
+	}
+
+	page, err := positiveQueryInt(r, "page", 1, 0)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	pageSize, err := positiveQueryInt(r, "page_size", 25, 100)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	search := strings.TrimSpace(r.URL.Query().Get("search"))
+	if len(search) > 200 {
+		writeError(w, http.StatusBadRequest, "search must be 200 characters or fewer")
+		return
+	}
+	statusFilter := r.URL.Query().Get("status")
+	if statusFilter == "" {
+		statusFilter = "all"
+	}
+	if statusFilter != "all" && statusFilter != "operational" && statusFilter != "issues" && statusFilter != "paused" {
+		writeError(w, http.StatusBadRequest, "status must be all, operational, issues, or paused")
+		return
+	}
+
+	matching, err := h.store.GetMonitorsByGroup(groupID, search)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to load monitors")
+		return
+	}
+
+	counts := GroupMonitorCounts{All: len(matching)}
+	filtered := make([]db.Monitor, 0, len(matching))
+	for _, monitor := range matching {
+		status := h.monitorStatus(monitor)
+		switch status {
+		case "up":
+			counts.Operational++
+		case "paused":
+			counts.Paused++
+		default:
+			counts.Issues++
+		}
+		if statusFilter == "all" || statusFilter == "operational" && status == "up" || statusFilter == "issues" && (status == "down" || status == "degraded") || statusFilter == "paused" && status == "paused" {
+			filtered = append(filtered, monitor)
+		}
+	}
+
+	total := len(filtered)
+	totalPages := 0
+	if total > 0 {
+		totalPages = (total + pageSize - 1) / pageSize
+	}
+	start := (page - 1) * pageSize
+	if start > total {
+		start = total
+	}
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+	pageMonitors := filtered[start:end]
+
+	monitorIDs := make([]string, 0, len(pageMonitors))
+	for _, monitor := range pageMonitors {
+		monitorIDs = append(monitorIDs, monitor.ID)
+	}
+	eventsByMonitor, err := h.store.GetRecentEventsForMonitors(monitorIDs, 10)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to load events")
+		return
+	}
+	dtos := make([]MonitorDTO, 0, len(pageMonitors))
+	for _, monitor := range pageMonitors {
+		dtos = append(dtos, h.monitorDTO(monitor, eventsByMonitor[monitor.ID]))
+	}
+
+	writeJSON(w, http.StatusOK, GroupMonitorsResponse{
+		Group:      GroupDTO{ID: group.ID, Name: group.Name, Monitors: dtos},
+		Counts:     counts,
+		Pagination: PaginationDTO{Page: page, PageSize: pageSize, Total: total, TotalPages: totalPages},
+	})
+}
+
+func positiveQueryInt(r *http.Request, name string, defaultValue, max int) (int, error) {
+	raw := r.URL.Query().Get(name)
+	if raw == "" {
+		return defaultValue, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 1 {
+		return 0, errors.New(name + " must be a positive integer")
+	}
+	if max > 0 && value > max {
+		return 0, errors.New(name + " must be " + strconv.Itoa(max) + " or less")
+	}
+	return value, nil
+}
+
 // GetHistory returns all monitors grouped by group with ping history.
 // @Summary      List monitors with history
 // @Tags         uptime
@@ -114,7 +318,7 @@ type UptimeResponse struct {
 // @Router       /uptime [get]
 func (h *UptimeHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 	// 1. Fetch Layout from DB (Groups + Monitors Metadata)
-	groups, err := h.store.GetGroups()
+	groups, err := h.store.GetGroupsMetadata()
 	if err != nil {
 		http.Error(w, "Failed to load groups", http.StatusInternalServerError)
 		return
@@ -473,7 +677,7 @@ func (h *UptimeHandler) GetMonitorEvents(w http.ResponseWriter, r *http.Request)
 // @Failure      500  {string} string "Internal error"
 // @Router       /overview [get]
 func (h *UptimeHandler) GetOverview(w http.ResponseWriter, r *http.Request) {
-	groups, err := h.store.GetGroups()
+	groups, err := h.store.GetGroupsMetadata()
 	if err != nil {
 		http.Error(w, "Failed to load groups", http.StatusInternalServerError)
 		return

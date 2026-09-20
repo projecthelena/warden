@@ -771,6 +771,7 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
                 if (groupId) {
                     get().fetchMonitors(groupId);
                 }
+                queryClient.invalidateQueries({ queryKey: ["group-monitors"] });
                 // Also refresh overview as status might change
                 get().fetchOverview();
                 toast({ title: "Monitor Updated", description: "Monitor details updated." });
@@ -793,6 +794,8 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
             if (res.ok) {
                 get().fetchMonitors();
                 get().fetchOverview();
+                queryClient.invalidateQueries({ queryKey: ["group-monitors"] });
+                queryClient.invalidateQueries({ queryKey: ["overview"] });
                 toast({ title: "Monitor Deleted", description: "Monitor deleted successfully." });
             } else {
                 const data = await res.json().catch(() => ({}));
@@ -818,6 +821,8 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
                 // list, so invalidating it picks up both the group the monitor left and the
                 // one it joined. The overview has no query behind it, hence the direct call.
                 queryClient.invalidateQueries({ queryKey: ["monitors"] });
+                queryClient.invalidateQueries({ queryKey: ["group-monitors"] });
+                queryClient.invalidateQueries({ queryKey: ["overview"] });
                 get().fetchOverview();
                 toast({
                     title: "Monitor moved",
@@ -850,6 +855,7 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
             });
             if (res.ok) {
                 queryClient.invalidateQueries({ queryKey: ["monitors"] });
+                queryClient.invalidateQueries({ queryKey: ["group-monitors"] });
                 queryClient.invalidateQueries({ queryKey: ["overview"] });
                 toast({
                     title: muted ? "Alerts muted" : "Alerts unmuted",
@@ -882,6 +888,7 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
             });
             if (res.ok) {
                 queryClient.invalidateQueries({ queryKey: ["monitors"] });
+                queryClient.invalidateQueries({ queryKey: ["group-monitors"] });
                 queryClient.invalidateQueries({ queryKey: ["overview"] });
                 toast({ title: "Monitor Paused", description: "Monitor has been paused." });
             } else if (res.status === 404) {
@@ -909,11 +916,13 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
             });
             if (res.ok) {
                 queryClient.invalidateQueries({ queryKey: ["monitors"] });
+                queryClient.invalidateQueries({ queryKey: ["group-monitors"] });
                 queryClient.invalidateQueries({ queryKey: ["overview"] });
 
                 // Delayed invalidation — captures the first check result (~3-5s for HTTP round trip)
                 setTimeout(() => {
                     queryClient.invalidateQueries({ queryKey: ["monitors"] });
+                    queryClient.invalidateQueries({ queryKey: ["group-monitors"] });
                 }, 5000);
 
                 toast({ title: "Monitor Resumed", description: "Monitor has been resumed." });

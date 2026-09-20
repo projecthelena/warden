@@ -7,10 +7,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "./components/ui/separator";
 
 import { useMonitorStore, Group, OverviewGroup, findMonitorWithGroup } from "./lib/store";
-import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
-import { Button } from "./components/ui/button";
-import { Trash2, ChevronRight } from "lucide-react";
-import { MonitorCard } from "./components/MonitorCard";
+import { Card } from "./components/ui/card";
+import { ChevronRight } from "lucide-react";
 import { CreateMonitorSheet } from "./components/CreateMonitorSheet";
 import { CreateGroupSheet } from "./components/CreateGroupSheet";
 import { CreateMaintenanceSheet } from "./components/incidents/CreateMaintenanceSheet";
@@ -21,6 +19,7 @@ import { LoginPage } from "./components/auth/LoginPage";
 import { SettingsView } from "./components/settings/SettingsView";
 import { StatusPagesView } from "./components/status-pages/StatusPagesView";
 import { MonitorPage } from "./components/MonitorPage";
+import { GroupMonitorsPage } from "./components/GroupMonitorsPage";
 
 // Legacy /digest/:date links from older Slack messages redirect into the canonical
 // /incidents?date=:date view, so we don't have two parallel surfaces.
@@ -41,76 +40,7 @@ import {
 
 
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
-
-import { useDeleteGroupMutation } from "@/hooks/useMonitors";
 import { useRole } from "@/hooks/useRole";
-
-function MonitorGroup({ group }: { group: Group }) {
-  const mutation = useDeleteGroupMutation();
-  const navigate = useNavigate();
-  const { canEdit } = useRole();
-
-  const handleDelete = async () => {
-    await mutation.mutateAsync(group.id);
-    navigate('/dashboard');
-  };
-
-  return (
-    <Card className="border-border bg-card">
-      <CardHeader className="p-4 pb-2">
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle>{group.name}</CardTitle>
-          </div>
-          {canEdit && group.id !== 'default' && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" data-testid="delete-group-trigger" aria-label={`Delete ${group.name}`}>
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This action cannot be undone. This will permanently delete the group
-                    "{group.name}" and all monitors associated with it.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90" data-testid="delete-group-confirm">
-                    Delete
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-2 p-4 pt-0">
-        {(!group.monitors || group.monitors.length === 0) ? (
-          <div className="text-sm text-muted-foreground italic py-2">No monitors in this group.</div>
-        ) : (
-          group.monitors.map((m) => (
-            <MonitorCard key={m.id} monitor={m} groupId={group.id} />
-          ))
-        )}
-      </CardContent>
-    </Card>
-  )
-}
 
 // New Lightweight Group Card for Overview
 // New Lightweight Group Card for Overview (Status Page Style)
@@ -168,91 +98,21 @@ function GroupOverviewCard({ group }: { group: OverviewGroup }) {
 }
 
 function Dashboard() {
-  const { groupId } = useParams();
-  const { groups, incidents, fetchIncidents } = useMonitorStore();
-  const safeGroups = groups || [];
+  const overview = useOverviewQuery();
+  const groups = overview.data || [];
+  const downGroups = groups.filter(g => g.status === 'down').length;
+  const degradedGroups = groups.filter(g => g.status === 'degraded').length;
+  const isHealthy = downGroups === 0 && degradedGroups === 0;
 
-  useEffect(() => {
-    fetchIncidents();
-  }, [fetchIncidents]);
-
-  // Filter groups if a specific group ID is selected
-  const displayGroups = groupId
-    ? safeGroups.filter(g => g.id === groupId)
-    : safeGroups;
-
-  // Derive overview stats from the full groups data (Client-side aggregation)
-  const derivedOverview = safeGroups.map(group => {
-    // Check for maintenance first
-    const now = new Date();
-    const isMaintenance = incidents.some(i =>
-      i.type === 'maintenance' &&
-      i.status !== 'completed' &&
-      i.affectedGroups.includes(group.id) &&
-      new Date(i.startTime) <= now &&
-      (!i.endTime || new Date(i.endTime) > now)
-    );
-
-    if (isMaintenance) {
-      return { ...group, status: 'maintenance' as const };
-    }
-
-    let status: 'up' | 'down' | 'degraded' | 'maintenance' = 'up';
-    if (!group.monitors || group.monitors.length === 0) {
-      status = 'up';
-    } else {
-      const anyDown = group.monitors.some(m => m.status === 'down');
-      const anyDegraded = group.monitors.some(m => m.status === 'degraded');
-      if (anyDown) status = 'down';
-      else if (anyDegraded) status = 'degraded';
-    }
-    return { ...group, status };
-  });
-
-  if (!groupId) {
-    // Overview Mode
-    const downGroups = derivedOverview.filter(g => g.status === 'down').length;
-    const degradedGroups = derivedOverview.filter(g => g.status === 'degraded').length;
-    const isHealthy = downGroups === 0 && degradedGroups === 0;
-
-    return (
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-xl font-semibold tracking-tight text-foreground">
-            {isHealthy ? "All Systems Operational" : "System Issues Detected"}
-          </h2>
-          <p className={`text-sm ${isHealthy ? 'text-muted-foreground' : 'text-red-400'}`}>
-            {isHealthy
-              ? `Monitoring ${derivedOverview.length} check groups. Everything looks good.`
-              : `${downGroups} groups down, ${degradedGroups} degraded.`}
-          </p>
-        </div>
-
-        {derivedOverview.length === 0 && (
-          <div className="text-center text-muted-foreground py-10 border border-border rounded-xl bg-card">
-            No groups found. Create one to get started.
-          </div>
-        )}
-        <div className="grid gap-3">
-          {derivedOverview.map(group => (
-            <GroupOverviewCard key={group.id} group={group} />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  // Detail Mode (Single Group)
   return (
-    <div className="space-y-8">
-      {displayGroups.map(group => (
-        <MonitorGroup key={group.id} group={group} />
-      ))}
+    <div className="space-y-6">
+      <div><h2 className="text-xl font-semibold tracking-tight text-foreground">{isHealthy ? "All Systems Operational" : "System Issues Detected"}</h2><p className={`text-sm ${isHealthy ? 'text-muted-foreground' : 'text-red-400'}`}>{isHealthy ? `Monitoring ${groups.length} check groups. Everything looks good.` : `${downGroups} groups down, ${degradedGroups} degraded.`}</p></div>
+      {overview.isLoading ? <div className="space-y-3">{Array.from({ length: 4 }, (_, index) => <div key={index} className="h-16 animate-pulse rounded-xl bg-muted" />)}</div> : groups.length === 0 ? <div className="text-center text-muted-foreground py-10 border border-border rounded-xl bg-card">No groups found. Create one to get started.</div> : <div className="grid gap-3">{groups.map(group => <GroupOverviewCard key={group.id} group={group} />)}</div>}
     </div>
-  )
+  );
 }
 
-import { useMonitorsQuery } from "@/hooks/useMonitors";
+import { useMonitorsQuery, useOverviewQuery } from "@/hooks/useMonitors";
 import { useSystemEventsQuery } from "@/hooks/useSystemEvents";
 
 function AdminLayout() {
@@ -267,19 +127,18 @@ function AdminLayout() {
     // addMonitor // Unused
   } = useMonitorStore();
   const { canEdit } = useRole();
-
-  useMonitorsQuery(); // Handles polling
-  useSystemEventsQuery(); // Handles polling events
-
   const location = useLocation();
   const navigate = useNavigate();
-
-  console.log('DEBUG: App Render Path:', location.pathname);
-
-  // Ensure overview is loaded for Sidebar
-  // useEffect removed as query handles it
-
-  const safeGroups = groups || [];
+  const groupId = location.pathname.startsWith('/groups/') ? location.pathname.split('/')[2] : null;
+  const overviewQuery = useOverviewQuery();
+  useMonitorsQuery(!groupId); // Group pages use their bounded query instead.
+  useSystemEventsQuery();
+  const safeGroups = groupId
+    ? Array.from(new Map([
+        ...(overviewQuery.data || []).map(group => [group.id, { id: group.id, name: group.name, monitors: [] }] as const),
+        ...(groups || []).map(group => [group.id, { id: group.id, name: group.name, monitors: [] }] as const),
+      ]).values())
+    : (groups || []);
 
   // Route Guard
   if (!isAuthChecked) {
@@ -305,7 +164,6 @@ function AdminLayout() {
   const isMaintenance = location.pathname.startsWith('/maintenance');
   const isSettings = location.pathname.startsWith('/settings');
   const isStatusPages = location.pathname.startsWith('/status-pages');
-  const groupId = location.pathname.startsWith('/groups/') ? location.pathname.split('/')[2] : null;
   const activeGroup = groupId ? safeGroups.find(g => g.id === groupId) : null;
   const monitorRouteId = location.pathname.startsWith('/monitors/') ? location.pathname.split('/')[2] : null;
   const monitorContext = monitorRouteId ? findMonitorWithGroup(safeGroups as Group[], monitorRouteId) : null;
@@ -399,7 +257,7 @@ function AdminLayout() {
             <main className="max-w-5xl mx-auto space-y-6 py-6">
               <Routes>
                 <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/groups/:groupId" element={<Dashboard />} />
+                <Route path="/groups/:groupId" element={<GroupMonitorsPage />} />
                 <Route path="/incidents" element={<IncidentsView />} />
                 <Route path="/maintenance" element={<MaintenanceView />} />
                 <Route path="/monitors/:id" element={<MonitorPage />} />
