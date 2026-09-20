@@ -37,26 +37,41 @@ The final report contains the measurements and conclusions. This document record
 
 6. Wait five minutes before measuring so the process, database connections, and monitor schedule are warm.
 
-7. Start the reader workload from the node running the controlled target:
+7. Start the mixed reader workload from the node running the controlled target. It models two independent journeys:
+
+   - A public visitor loads the compact status overview and expands the first monitor page for the load-test group.
+   - An authenticated operator loads the dashboard overview, paginates the group, searches, cycles through Operational/Issues/Paused filters, and opens a monitor. Opening the monitor loads uptime, one-hour latency, and recent events in parallel, like the application.
+
+   The rate variables are journeys per second, not raw HTTP requests per second. A public journey makes two requests and an operator journey makes eight. Keep the operator rate much lower than the public rate; concurrent administrators are naturally rarer than status-page readers.
 
    ```bash
    mkdir -p loadtest/results
 
    WARDEN_URL=https://warden-under-test.example \
    STATUS_SLUG=public-page \
-   PEAK_RPS=50 \
+   GROUP_ID=g-load-test-example \
+   WARDEN_USERNAME=admin \
+   WARDEN_PASSWORD='...' \
+   PUBLIC_PEAK_RPS=5 \
+   OPERATOR_PEAK_RPS=1 \
    RESULT_FILE=loadtest/results/node-a-sqlite-100-run1.json \
    k6 run loadtest/api.js
    ```
 
-8. Leave the workload at its configured peak for the full test duration. VictoriaMetrics records Warden and k3s metrics independently. k6 writes one aggregated JSON summary when the run finishes.
+   `GROUP_ID` is recommended so an empty default group cannot be selected accidentally. `PAGE_SIZE` defaults to the UI default of 25, and `SEARCH_TERM` defaults to `Load Monitor 00500`.
 
-9. Repeat the measured run once without changing the deployment or parameters. Save it as `run2`.
+   Use `TEST_PROFILE=public` or `TEST_PROFILE=operator` to isolate a limit after the mixed smoke test. The operator profile requires credentials; the public profile does not. Never commit credentials or place them in a result filename.
 
-10. Add 150, 250, and 500 monitors in successive stages, producing totals of 250, 500, and 1,000. Set `-start-index` to the current monitor count so names remain unique; for example, use `-start-index 100 -count 150` for the second batch. Repeat steps 6–9 after each addition and include the total monitor count in each result filename.
+8. Leave the workload at its configured peak for the full test duration. VictoriaMetrics records Warden and k3s metrics independently. k6 writes one aggregated JSON summary when the run finishes. The run fails if more than 1% of requests or checks fail, if any iteration is dropped, or if journey latency exceeds the configured p95/p99 thresholds.
 
-11. Remove the disposable Warden release, deploy the next case, and repeat from step 1. Change only the node and database between cases.
+9. While the mixed workload is at its peak, use a browser to log in, open the 1,000-monitor group, paginate, search, apply every status filter, and open several monitor pages. k6 verifies the same data requests and their response contracts, while this short browser pass verifies React rendering and interaction remain usable under load. Record any visible timeout, stale state, broken navigation, or UI lock-up in the run notes.
 
-12. Build the final report from the aggregated summaries and their matching VictoriaMetrics time windows. Do not commit credentials or raw time-series exports.
+10. Repeat the measured run once without changing the deployment or parameters. Save it as `run2`.
 
-Warden limits a single client IP to 100 requests per second with a burst of 200. Tests above that rate require multiple load-generator addresses and must be reported separately from this four-case comparison.
+11. Add 150, 250, and 500 monitors in successive stages, producing totals of 250, 500, and 1,000. Set `-start-index` to the current monitor count so names remain unique; for example, use `-start-index 100 -count 150` for the second batch. Repeat the warm-up and measured runs after each addition and include the total monitor count in each result filename.
+
+12. Remove the disposable Warden release, deploy the next case, and repeat from step 1. Change only the node and database between cases.
+
+13. Build the final report from the aggregated summaries and their matching VictoriaMetrics time windows. Do not commit credentials or raw time-series exports.
+
+Warden limits a single client IP to 100 HTTP requests per second with a burst of 200. Account for the requests per journey when increasing rates. Tests above that limit require multiple load-generator addresses and must be reported separately from this four-case comparison.
