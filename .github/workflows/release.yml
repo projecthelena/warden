@@ -167,3 +167,42 @@ jobs:
     with:
       version: ${{ needs.release.outputs.tag }}
     secrets: inherit
+
+  update-helm-chart:
+    name: Update Helm chart
+    needs:
+      - release
+      - trigger-docker
+    if: ${{ !contains(needs.release.outputs.tag, '-') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Warden
+        uses: actions/checkout@v7
+
+      - name: Checkout Helm charts
+        uses: actions/checkout@v7
+        with:
+          repository: projecthelena/helm-charts
+          ref: main
+          path: helm-charts
+          ssh-key: ${{ secrets.HELM_CHARTS_DEPLOY_KEY }}
+
+      - name: Update Warden chart
+        id: chart
+        run: |
+          python3 .github/scripts/update_helm_chart.py \
+            --chart helm-charts/charts/warden/Chart.yaml \
+            --values helm-charts/charts/warden/values.yaml \
+            --release "${{ needs.release.outputs.tag }}" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Commit and push Helm chart
+        working-directory: helm-charts
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add charts/warden/Chart.yaml charts/warden/values.yaml
+          git commit -m "chore(warden): release chart ${{ steps.chart.outputs.chart_version }} for ${{ needs.release.outputs.tag }}"
+          git push origin main
