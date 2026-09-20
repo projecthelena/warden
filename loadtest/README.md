@@ -53,7 +53,7 @@ The final report contains the measurements and conclusions. This document record
 
 9. Repeat the measured run once without changing the deployment or parameters. Save it as `run2`.
 
-10. Add 150, 250, and 500 monitors in successive stages, producing totals of 250, 500, and 1,000. Repeat steps 6–9 after each addition and include the total monitor count in each result filename.
+10. Add 150, 250, and 500 monitors in successive stages, producing totals of 250, 500, and 1,000. Set `-start-index` to the current monitor count so names remain unique; for example, use `-start-index 100 -count 150` for the second batch. Repeat steps 6–9 after each addition and include the total monitor count in each result filename.
 
 11. Remove the disposable Warden release, deploy the next case, and repeat from step 1. Change only the node and database between cases.
 

@@ -22,6 +22,7 @@ func main() {
 	password := flag.String("password", os.Getenv("WARDEN_PASSWORD"), "Warden password (prefer WARDEN_PASSWORD)")
 	targetURL := flag.String("target-url", envOr("TARGET_URL", "http://localhost:8888/healthy"), "URL monitored by generated monitors")
 	count := flag.Int("count", 50, "number of monitors to create")
+	startIndex := flag.Int("start-index", 0, "first monitor number, for incremental batches")
 	interval := flag.Int("interval", 10, "check interval in seconds")
 	deleteMonitors := flag.Bool("delete", false, "delete created monitors and their group after creation")
 	flag.Parse()
@@ -29,8 +30,8 @@ func main() {
 	if *password == "" {
 		log.Fatal("WARDEN_PASSWORD or -password is required")
 	}
-	if *count < 1 || *interval < 10 {
-		log.Fatal("count must be positive and interval must be at least 10 seconds")
+	if *count < 1 || *startIndex < 0 || *interval < 10 {
+		log.Fatal("count must be positive, start-index must not be negative, and interval must be at least 10 seconds")
 	}
 
 	// 1. Setup Client with Cookie Jar
@@ -58,7 +59,7 @@ func main() {
 	log.Printf("Creating %d monitors...\n", *count)
 	var monitorIDs []string
 	for i := 0; i < *count; i++ {
-		name := fmt.Sprintf("Load Monitor %05d", i)
+		name := fmt.Sprintf("Load Monitor %05d", *startIndex+i)
 
 		id, err := createMonitor(client, name, *targetURL, groupID, *interval)
 		if err != nil {
