@@ -21,6 +21,7 @@ func main() {
 	username := flag.String("username", envOr("WARDEN_USERNAME", "admin"), "Warden username")
 	password := flag.String("password", os.Getenv("WARDEN_PASSWORD"), "Warden password (prefer WARDEN_PASSWORD)")
 	targetURL := flag.String("target-url", envOr("TARGET_URL", "http://localhost:8888/healthy"), "URL monitored by generated monitors")
+	existingGroupID := flag.String("group-id", "", "existing group ID to reuse instead of creating a group")
 	count := flag.Int("count", 50, "number of monitors to create")
 	startIndex := flag.Int("start-index", 0, "first monitor number, for incremental batches")
 	interval := flag.Int("interval", 10, "check interval in seconds")
@@ -47,13 +48,20 @@ func main() {
 		log.Fatalf("Login failed: %v", err)
 	}
 
-	// 3. Create Group
-	groupName := "Load Test " + time.Now().UTC().Format("20060102-150405")
-	groupID, err := createGroup(client, groupName)
-	if err != nil {
-		log.Fatalf("Failed to create group: %v", err)
+	// 3. Select or create the target group.
+	groupID := strings.TrimSpace(*existingGroupID)
+	createdGroup := groupID == ""
+	if createdGroup {
+		groupName := "Load Test " + time.Now().UTC().Format("20060102-150405")
+		var err error
+		groupID, err = createGroup(client, groupName)
+		if err != nil {
+			log.Fatalf("Failed to create group: %v", err)
+		}
+		log.Printf("Created group %s\n", groupID)
+	} else {
+		log.Printf("Using existing group %s\n", groupID)
 	}
-	log.Printf("Created group %s\n", groupID)
 
 	// 4. Create Monitors
 	log.Printf("Creating %d monitors...\n", *count)
@@ -82,9 +90,11 @@ func main() {
 				log.Printf("Failed to delete monitor %s: %v", id, err)
 			}
 		}
-		log.Println("Deleting group...")
-		if err := deleteGroup(client, groupID); err != nil {
-			log.Printf("Failed to delete group: %v", err)
+		if createdGroup {
+			log.Println("Deleting group...")
+			if err := deleteGroup(client, groupID); err != nil {
+				log.Printf("Failed to delete group: %v", err)
+			}
 		}
 		log.Println("Cleanup done.")
 	}
