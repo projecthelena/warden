@@ -89,6 +89,24 @@ var (
 		Help:    "Uncompressed status page JSON payload size partitioned by response view.",
 		Buckets: prometheus.ExponentialBuckets(1024, 2, 15),
 	}, []string{"view"})
+	rollupInProgress = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "warden_uptime_rollup_in_progress",
+		Help: "Whether a daily uptime rollup is currently running, partitioned by mode.",
+	}, []string{"mode"})
+	rollupRuns = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "warden_uptime_rollup_runs_total",
+		Help: "Daily uptime rollup runs partitioned by mode and outcome.",
+	}, []string{"mode", "outcome"})
+	rollupDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "warden_uptime_rollup_duration_seconds",
+		Help:    "Daily uptime rollup duration partitioned by mode and bounded phase.",
+		Buckets: []float64{.01, .025, .05, .1, .25, .5, 1, 2.5, 3, 5, 10, 30, 60},
+	}, []string{"mode", "phase"})
+	rollupRows = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "warden_uptime_rollup_rows",
+		Help:    "Number of monitor-day rows produced by a daily uptime rollup.",
+		Buckets: prometheus.ExponentialBuckets(1, 2, 13),
+	}, []string{"mode"})
 )
 
 func init() {
@@ -97,7 +115,30 @@ func init() {
 		Checks, CheckScheduling, CheckDuration, CheckQueueDepth, ResultQueueDepth,
 		PersistBatchSize, PersistDuration, ActiveMonitors,
 		StatusPagePhase, StatusPagePayloadBytes,
+		rollupInProgress, rollupRuns, rollupDuration, rollupRows,
 	)
+}
+
+// ObserveRollup records one completed rollup without exposing unbounded labels.
+func ObserveRollup(mode string, aggregation, upsert, total time.Duration, rows int, err error) {
+	outcome := "success"
+	if err != nil {
+		outcome = "error"
+	}
+	rollupRuns.WithLabelValues(mode, outcome).Inc()
+	rollupDuration.WithLabelValues(mode, "aggregation").Observe(aggregation.Seconds())
+	rollupDuration.WithLabelValues(mode, "upsert").Observe(upsert.Seconds())
+	rollupDuration.WithLabelValues(mode, "total").Observe(total.Seconds())
+	rollupRows.WithLabelValues(mode).Observe(float64(rows))
+}
+
+// SetRollupInProgress exposes the contention window to scrapers while a rollup runs.
+func SetRollupInProgress(mode string, running bool) {
+	value := 0.0
+	if running {
+		value = 1
+	}
+	rollupInProgress.WithLabelValues(mode).Set(value)
 }
 
 // HTTPMiddleware records bounded-cardinality route templates, never raw URLs.

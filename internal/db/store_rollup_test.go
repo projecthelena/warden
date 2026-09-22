@@ -44,8 +44,15 @@ func TestRollupDailyUptime_MatchesLiveAndEdges(t *testing.T) {
 			t.Fatalf("BatchInsertChecks: %v", err)
 		}
 
-		if err := s.RollupDailyUptime(10); err != nil {
-			t.Fatalf("RollupDailyUptime: %v", err)
+		rollupStats, err := s.RollupDailyUptimeWithStats(10)
+		if err != nil {
+			t.Fatalf("RollupDailyUptimeWithStats: %v", err)
+		}
+		if rollupStats.Rows != 4 {
+			t.Fatalf("rollup rows = %d, want 4", rollupStats.Rows)
+		}
+		if rollupStats.AggregationDuration <= 0 || rollupStats.UpsertDuration <= 0 {
+			t.Fatalf("rollup phase durations must be positive: %+v", rollupStats)
 		}
 
 		got, err := s.GetDailyUptimeStatsForMonitors([]string{"m1", "m2"}, 10)
