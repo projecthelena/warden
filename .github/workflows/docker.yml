@@ -14,6 +14,11 @@ on:
         type: boolean
   workflow_call:
     inputs:
+      update_latest:
+        description: "Promote a new stable release to latest"
+        required: false
+        default: false
+        type: boolean
       version:
         description: "Version tag (e.g. v1.0.1)"
         required: false
@@ -23,6 +28,10 @@ on:
         required: false
         default: false
         type: boolean
+
+concurrency:
+  group: warden-docker-publish
+  cancel-in-progress: false
 
 env:
   GHCR_IMAGE_NAME: ghcr.io/projecthelena/warden
@@ -86,7 +95,7 @@ jobs:
             ${{ env.DOCKERHUB_IMAGE_NAME }}
           tags: |
             type=raw,value=${{ inputs.version }}
-            type=raw,value=latest,enable=${{ !contains(inputs.version, '-') }}
+            type=raw,value=latest,enable=${{ inputs.update_latest && !contains(inputs.version, '-') }}
           flavor: |
             suffix=-${{ matrix.arch }}
 
@@ -138,16 +147,19 @@ jobs:
             ${{ env.DOCKERHUB_IMAGE_NAME }}
           tags: |
             type=raw,value=${{ inputs.version }}
-            type=raw,value=latest,enable=${{ !contains(inputs.version, '-') }}
+            type=raw,value=latest,enable=${{ inputs.update_latest && !contains(inputs.version, '-') }}
 
       - name: Create multi-arch manifests
+        env:
+          VERSION: ${{ inputs.version }}
+          TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           while IFS= read -r tag; do
             docker buildx imagetools create \
               -t "$tag" \
-              "$tag-amd64" \
-              "$tag-arm64"
-          done <<< "${{ steps.meta.outputs.tags }}"
+              "${tag%:*}:$VERSION-amd64" \
+              "${tag%:*}:$VERSION-arm64"
+          done <<< "$TAGS"
 
   description:
     name: Update Docker Hub description

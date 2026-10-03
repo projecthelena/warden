@@ -163,3 +163,5 @@ Playwright tests in `web/tests/e2e/` use page object models from `web/tests/page
 - `docs/dockerhub.md` is the public Docker Hub overview. Keep all links absolute. The description workflow runs on changes to this file on main, after stable releases, or manually.
 - Use the existing Docker workflow with `description_only=true` to refresh metadata without building or publishing images. Image publication requires an existing version tag and checks out that tag, not branch HEAD.
 - Metadata uses the existing Docker Hub username/token secrets. The pinned description action needs permission to update repository metadata; do not print tokens or extract GitHub secrets. A metadata failure does not block the independent Helm synchronization job.
+
+- Docker builds check out the release tag. Manual rebuilds do not move `latest`; only the stable release workflow promotes it. Manifest assembly uses version-specific architecture tags, and Docker publication runs are serialized.

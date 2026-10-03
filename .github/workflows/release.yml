@@ -180,6 +180,7 @@ jobs:
     uses: ./.github/workflows/docker.yml
     with:
       version: ${{ needs.release.outputs.tag }}
+      update_latest: true
     secrets: inherit
 
   update-helm-chart:
