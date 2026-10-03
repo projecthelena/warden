@@ -75,3 +75,15 @@ The final report contains the measurements and conclusions. This document record
 13. Build the final report from the aggregated summaries and their matching VictoriaMetrics time windows. Do not commit credentials or raw time-series exports.
 
 Warden limits a single client IP to 100 HTTP requests per second with a burst of 200. Account for the requests per journey when increasing rates. Tests above that limit require multiple load-generator addresses and must be reported separately from this four-case comparison.
+
+## Diagnosing rollup contention
+
+Use a disposable instance with `ROLLUP_DIAGNOSTICS_ENABLED=true` and a private `OBSERVABILITY_ADDR` listener. Record the exact image revision, flag state, database, retention, monitor count and interval for every run. Keep the controlled target supervised and verify its health independently throughout the soak; a failed target invalidates the capacity measurement.
+
+1. Establish a clean 1,000-monitor / 10-second SQLite case and a clean 2,000-monitor / 10-second PostgreSQL case on the same node. Do not reuse a failed database or increase to 3,000 monitors yet. Warm up for ten minutes, capture thirty minutes without reader traffic, then run the same mixed public/operator workload for thirty minutes and soak for at least four hours. When reproducing a failure that first appeared after several hours of history growth, extend the run to at least 24 hours; a clean short run does not rule it out.
+2. Correlate readiness 503 timestamps, scheduling drops, persist duration, SQL pool waits and queue depth with the rollup phase histograms and slow-operation logs. Preserve results and relevant time windows before metric retention expires. Queue depth sampled every few seconds can miss short saturation bursts; zero sampled depth alone is not proof of zero loss.
+3. If connection acquisition dominates, identify what else held the pool. If query/scan dominates, inspect the aggregation plan and history scanned. If begin/upsert/commit dominates, investigate transaction size, locking and storage latency. Compare PostgreSQL before selecting an optimization; retain the same workload and history window for a controlled before/after comparison.
+4. Accept a stage only with zero dropped schedules, no new persistence errors, no readiness failures or restarts, expected completed-check throughput (100/s at 1,000 monitors, 200/s at 2,000), and no unexplained UI history gaps. Stop escalation at the first failure. Preserve the existing readiness timeout and queue sizes while diagnosing.
+5. After a measured fix, repeat the failed SQLite stages and the PostgreSQL control, then complete the four-case matrix. Repeat a matched run with diagnostics disabled to assess instrumentation overhead before publishing capacity results.
+
+This instrumentation does not fix scheduling loss or change the storage algorithm. A scheduler fix should bound each monitor to one pending/in-flight check and make coalescing explicit; increasing the queue alone only postpones saturation. SQLite query/transaction changes require evidence from the diagnostic phases and regression coverage for uptime history.

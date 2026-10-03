@@ -7,8 +7,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/projecthelena/warden/internal/db"
+
 	"github.com/go-chi/chi/v5"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 )
 
 func TestHTTPMiddlewareUsesRoutePattern(t *testing.T) {
@@ -29,6 +33,7 @@ func TestHTTPMiddlewareUsesRoutePattern(t *testing.T) {
 
 func TestObserveRollupRecordsBoundedOutcomeAndProgress(t *testing.T) {
 	mode := "test"
+	rollupDuration.Reset()
 	beforeSuccess := testutil.ToFloat64(rollupRuns.WithLabelValues(mode, "success"))
 	beforeError := testutil.ToFloat64(rollupRuns.WithLabelValues(mode, "error"))
 
@@ -37,8 +42,8 @@ func TestObserveRollupRecordsBoundedOutcomeAndProgress(t *testing.T) {
 		t.Fatalf("in-progress gauge = %v, want 1", got)
 	}
 
-	ObserveRollup(mode, time.Second, 2*time.Second, 3*time.Second, 12, nil)
-	ObserveRollup(mode, time.Second, 0, time.Second, 0, errors.New("rollup failed"))
+	ObserveRollup(mode, db.DailyUptimeRollupStats{QueryDuration: time.Second, UpsertDuration: 2 * time.Second, Rows: 12}, 3*time.Second, nil)
+	ObserveRollup(mode, db.DailyUptimeRollupStats{QueryDuration: time.Second}, time.Second, errors.New("rollup failed"))
 	SetRollupInProgress(mode, false)
 
 	if got := testutil.ToFloat64(rollupRuns.WithLabelValues(mode, "success")) - beforeSuccess; got != 1 {
@@ -49,5 +54,17 @@ func TestObserveRollupRecordsBoundedOutcomeAndProgress(t *testing.T) {
 	}
 	if got := testutil.ToFloat64(rollupInProgress.WithLabelValues(mode)); got != 0 {
 		t.Fatalf("in-progress gauge = %v, want 0", got)
+	}
+	for phase, seconds := range map[string]float64{
+		"read_connection": 0, "query": 2, "scan": 0, "write_connection": 0,
+		"begin": 0, "upsert": 2, "commit": 0, "total": 4,
+	} {
+		metric := &dto.Metric{}
+		if err := rollupDuration.WithLabelValues(mode, phase).(prometheus.Metric).Write(metric); err != nil {
+			t.Fatal(err)
+		}
+		if metric.Histogram.GetSampleCount() != 2 || metric.Histogram.GetSampleSum() != seconds {
+			t.Errorf("phase %s: got %v", phase, metric.Histogram)
+		}
 	}
 }

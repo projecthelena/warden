@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/projecthelena/warden/internal/db"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/prometheus/client_golang/prometheus"
@@ -120,16 +122,25 @@ func init() {
 }
 
 // ObserveRollup records one completed rollup without exposing unbounded labels.
-func ObserveRollup(mode string, aggregation, upsert, total time.Duration, rows int, err error) {
+func ObserveRollup(mode string, stats db.DailyUptimeRollupStats, total time.Duration, err error) {
 	outcome := "success"
 	if err != nil {
 		outcome = "error"
 	}
 	rollupRuns.WithLabelValues(mode, outcome).Inc()
-	rollupDuration.WithLabelValues(mode, "aggregation").Observe(aggregation.Seconds())
-	rollupDuration.WithLabelValues(mode, "upsert").Observe(upsert.Seconds())
-	rollupDuration.WithLabelValues(mode, "total").Observe(total.Seconds())
-	rollupRows.WithLabelValues(mode).Observe(float64(rows))
+	for phase, duration := range map[string]time.Duration{
+		"read_connection":  stats.ReadConnectionDuration,
+		"query":            stats.QueryDuration,
+		"scan":             stats.ScanDuration,
+		"write_connection": stats.WriteConnectionDuration,
+		"begin":            stats.BeginDuration,
+		"upsert":           stats.UpsertDuration,
+		"commit":           stats.CommitDuration,
+		"total":            total,
+	} {
+		rollupDuration.WithLabelValues(mode, phase).Observe(duration.Seconds())
+	}
+	rollupRows.WithLabelValues(mode).Observe(float64(stats.Rows))
 }
 
 // SetRollupInProgress exposes the contention window to scrapers while a rollup runs.

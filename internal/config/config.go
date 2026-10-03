@@ -13,6 +13,7 @@ const (
 
 type Config struct {
 	ListenAddr        string
+	RollupDiagnostics bool   // Opt-in rollup timings and slow-operation logs
 	ObservabilityAddr string // Separate metrics/pprof listener; empty keeps it disabled
 	DBType            string // "sqlite" or "postgres"
 	DBPath            string // SQLite file path (only used when DBType is "sqlite")
@@ -42,6 +43,8 @@ func Load() (*Config, error) {
 	if listen := os.Getenv("OBSERVABILITY_ADDR"); listen != "" {
 		cfg.ObservabilityAddr = listen
 	}
+
+	cfg.RollupDiagnostics = strings.EqualFold(os.Getenv("ROLLUP_DIAGNOSTICS_ENABLED"), "true")
 
 	// Database configuration
 	// DB_TYPE: "sqlite" (default) or "postgres"
