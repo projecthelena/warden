@@ -14,7 +14,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": {
-        target: "http://localhost:9096",
+        target: process.env.WARDEN_API_PROXY || "http://localhost:9096",
         changeOrigin: true,
         secure: false,
         rewrite: (path) => '/api' + path.replace(/^\/api/, ''),

@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/projecthelena/warden/internal/db"
+	"github.com/projecthelena/warden/internal/observability"
 	"github.com/projecthelena/warden/internal/uptime"
 )
 
@@ -498,18 +499,23 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	// 2. Fetch Layout from DB (Groups + Monitors Metadata)
-	groups, err := h.store.GetGroups()
+	requestedGroupID := r.URL.Query().Get("group")
+	compact := requestedGroupID == ""
+
+	// 2. Fetch group metadata and aggregate monitor counts. The overview never
+	// materializes monitor rows or their private configuration.
+	metadataStarted := time.Now()
+	groups, err := h.store.GetGroupsMetadata()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load groups")
 		return
 	}
-
-	monitorsMeta, err := h.store.GetMonitors()
+	monitorSummaries, err := h.store.GetGroupMonitorSummaries()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to load monitors")
+		writeError(w, http.StatusInternalServerError, "failed to load monitor summaries")
 		return
 	}
+	observability.StatusPagePhase.WithLabelValues("metadata").Observe(time.Since(metadataStarted).Seconds())
 
 	// 3. Filter Groups if Status Page scans specific Group
 	var targetGroups []db.Group
@@ -534,13 +540,7 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 		targetGroups = groups
 	}
 
-	// 4. Map Monitors to Groups
-	groupMap := make(map[string][]db.Monitor)
-	for _, m := range monitorsMeta {
-		groupMap[m.GroupID] = append(groupMap[m.GroupID], m)
-	}
-
-	// 5. Construct Response (Reusing Logic from UptimeHandler)
+	// 4. Construct the compact overview or one bounded detail page.
 	// The monitor's target URL is deliberately not exposed here: this is an unauthenticated
 	// endpoint and the URL can carry internal hostnames, ports, paths, or credentials in the
 	// query string. The public page never renders it.
@@ -548,19 +548,18 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 		ID                   string               `json:"id"`
 		Name                 string               `json:"name"`
 		Status               string               `json:"status"`
-		Latency              int64                `json:"latency"`
-		History              []HistoryPoint       `json:"history"`
-		LastCheck            string               `json:"lastCheck"`
 		UptimeDays           []db.DailyUptimeStat `json:"uptimeDays"`
 		Uptime               db.UptimeWindow      `json:"uptime"`
-		OverallUptime        float64              `json:"overallUptime"`
 		CheckIntervalSeconds int                  `json:"checkIntervalSeconds"`
 	}
 
 	type GroupDTO struct {
-		ID       string       `json:"id"`
-		Name     string       `json:"name"`
-		Monitors []MonitorDTO `json:"monitors"`
+		ID           string         `json:"id"`
+		Name         string         `json:"name"`
+		Status       string         `json:"status,omitempty"`
+		MonitorCount int            `json:"monitorCount,omitempty"`
+		Counts       map[string]int `json:"counts,omitempty"`
+		Monitors     []MonitorDTO   `json:"monitors"`
 	}
 
 	// Clamp to the range the stats query accepts, so a bad stored value can never turn the
@@ -573,73 +572,163 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 		daysRange = 365
 	}
 
-	// One query for every monitor on the page instead of one per monitor.
-	var monitorIDs []string
-	for _, g := range targetGroups {
-		for _, meta := range groupMap[g.ID] {
-			monitorIDs = append(monitorIDs, meta.ID)
+	if requestedGroupID != "" {
+		allowed := false
+		for _, group := range targetGroups {
+			if group.ID == requestedGroupID {
+				targetGroups = []db.Group{group}
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			writeError(w, http.StatusNotFound, "group not found")
+			return
 		}
 	}
-	uptimeByMonitor, err := h.store.GetDailyUptimeStatsForMonitors(monitorIDs, daysRange)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to load uptime stats")
-		return
+
+	runningMonitors := h.manager.GetMonitorSnapshot()
+	statusFor := func(meta db.Monitor) string {
+		if !meta.Active {
+			return "paused"
+		}
+		task := runningMonitors[meta.ID]
+		if task == nil {
+			return "down"
+		}
+		isUp, _, hasHistory, isDegraded := task.GetLastStatus()
+		if !hasHistory {
+			return "up"
+		}
+		if !isUp {
+			return "down"
+		}
+		if isDegraded {
+			return "degraded"
+		}
+		return "up"
 	}
 
+	monitorsByGroup := make(map[string][]db.Monitor)
+	detailCounts := GroupMonitorCounts{}
+	detailPagination := PaginationDTO{}
+	if !compact {
+		pageNumber, queryErr := positiveQueryInt(r, "page", 1, 0)
+		if queryErr != nil {
+			writeError(w, http.StatusBadRequest, queryErr.Error())
+			return
+		}
+		pageSize, queryErr := positiveQueryInt(r, "page_size", 25, 100)
+		if queryErr != nil {
+			writeError(w, http.StatusBadRequest, queryErr.Error())
+			return
+		}
+		search := strings.TrimSpace(r.URL.Query().Get("search"))
+		if len(search) > 200 {
+			writeError(w, http.StatusBadRequest, "search must be 200 characters or fewer")
+			return
+		}
+		statusFilter := r.URL.Query().Get("status")
+		if statusFilter == "" {
+			statusFilter = "all"
+		}
+		if statusFilter != "all" && statusFilter != "operational" && statusFilter != "issues" && statusFilter != "paused" {
+			writeError(w, http.StatusBadRequest, "status must be all, operational, issues, or paused")
+			return
+		}
+
+		matching, loadErr := h.store.GetPublicMonitorsByGroup(requestedGroupID, search)
+		if loadErr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load monitors")
+			return
+		}
+		detailCounts.All = len(matching)
+		filtered := make([]db.Monitor, 0, len(matching))
+		for _, monitor := range matching {
+			status := statusFor(monitor)
+			switch status {
+			case "up":
+				detailCounts.Operational++
+			case "paused":
+				detailCounts.Paused++
+			default:
+				detailCounts.Issues++
+			}
+			if statusFilter == "all" || statusFilter == "operational" && status == "up" || statusFilter == "issues" && (status == "down" || status == "degraded") || statusFilter == "paused" && status == "paused" {
+				filtered = append(filtered, monitor)
+			}
+		}
+
+		total := len(filtered)
+		totalPages := 0
+		if total > 0 {
+			totalPages = (total + pageSize - 1) / pageSize
+		}
+		start := min((pageNumber-1)*pageSize, total)
+		end := min(start+pageSize, total)
+		monitorsByGroup[requestedGroupID] = filtered[start:end]
+		detailPagination = PaginationDTO{Page: pageNumber, PageSize: pageSize, Total: total, TotalPages: totalPages}
+	}
+
+	// Detailed responses query rollups only for the visible page.
+	monitorIDs := []string{}
+	for _, monitors := range monitorsByGroup {
+		for _, monitor := range monitors {
+			monitorIDs = append(monitorIDs, monitor.ID)
+		}
+	}
+	uptimeByMonitor := map[string][]db.DailyUptimeStat{}
+	if !compact {
+		rollupsStarted := time.Now()
+		uptimeByMonitor, err = h.store.GetDailyUptimeStatsForMonitors(monitorIDs, daysRange)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load uptime stats")
+			return
+		}
+		observability.StatusPagePhase.WithLabelValues("rollups").Observe(time.Since(rollupsStarted).Seconds())
+	}
+
+	dtoStarted := time.Now()
 	groupDTOs := []GroupDTO{}
-	runningMonitors := h.manager.GetMonitorSnapshot()
+	liveCounts := make(map[string]map[string]int)
+	liveSeen := make(map[string]int)
+	if compact {
+		for _, task := range runningMonitors {
+			groupID := task.GetGroupID()
+			summary, included := monitorSummaries[groupID]
+			if !included || liveSeen[groupID] >= summary.Active {
+				continue
+			}
+			if liveCounts[groupID] == nil {
+				liveCounts[groupID] = map[string]int{"up": 0, "degraded": 0, "down": 0, "paused": 0}
+			}
+			isUp, _, hasHistory, isDegraded := task.GetLastStatus()
+			status := "up"
+			if hasHistory && !isUp {
+				status = "down"
+			} else if hasHistory && isDegraded {
+				status = "degraded"
+			}
+			liveCounts[groupID][status]++
+			liveSeen[groupID]++
+		}
+	}
 
 	for _, g := range targetGroups {
 		monitorDTOs := []MonitorDTO{}
+		counts := liveCounts[g.ID]
+		if counts == nil {
+			counts = map[string]int{"up": 0, "degraded": 0, "down": 0, "paused": 0}
+		}
+		summary := monitorSummaries[g.ID]
+		if compact {
+			counts["paused"] = summary.Paused
+			counts["down"] += max(summary.Active-liveSeen[g.ID], 0)
+		}
+		groupStatus := "up"
 
-		for _, meta := range groupMap[g.ID] {
-			// One immutable snapshot keeps this read path independent from the manager's
-			// periodic configuration reconciliation.
-			task := runningMonitors[meta.ID]
-
-			statusStr := "down" // Default if not running
-			latency := int64(0)
-			lastCheck := "Never"
-			var historyPoints []HistoryPoint
-
-			if task != nil {
-				history := task.GetHistory()
-				if len(history) > 0 {
-					last := history[len(history)-1]
-					threshold := task.GetLatencyThreshold()
-					if last.IsUp {
-						statusStr = "up"
-						if last.Latency > threshold {
-							statusStr = "degraded"
-						}
-					}
-					latency = last.Latency
-					lastCheck = last.Timestamp.Format("15:04:05")
-
-					for _, h := range history {
-						s := "down"
-						if h.IsUp {
-							s = "up"
-							if h.Latency > threshold {
-								s = "degraded"
-							}
-						}
-						historyPoints = append(historyPoints, HistoryPoint{
-							Status:     s,
-							Latency:    h.Latency,
-							Timestamp:  h.Timestamp,
-							StatusCode: h.StatusCode,
-						})
-					}
-				} else {
-					statusStr = "up" // Optimistic or "pending"
-				}
-			} else {
-				if !meta.Active {
-					statusStr = "paused"
-				}
-			}
-
+		for _, meta := range monitorsByGroup[g.ID] {
+			statusStr := statusFor(meta)
 			uptimeDays := uptimeByMonitor[meta.ID]
 			if uptimeDays == nil {
 				uptimeDays = []db.DailyUptimeStat{}
@@ -651,26 +740,37 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 				ID:                   meta.ID,
 				Name:                 meta.Name,
 				Status:               statusStr,
-				Latency:              latency,
-				History:              historyPoints,
-				LastCheck:            lastCheck,
 				UptimeDays:           uptimeDays,
 				Uptime:               uptime,
-				OverallUptime:        uptime.Percent,
 				CheckIntervalSeconds: meta.Interval,
 			})
+		}
+		if counts["down"] > 0 {
+			groupStatus = "down"
+		} else if counts["degraded"] > 0 {
+			groupStatus = "degraded"
+		} else if counts["up"] == 0 && counts["paused"] > 0 {
+			groupStatus = "paused"
 		}
 
 		// Only add groups that have monitors or return empty groups too?
 		// Let's return all groups for now.
-		groupDTOs = append(groupDTOs, GroupDTO{
-			ID:       g.ID,
-			Name:     g.Name,
-			Monitors: monitorDTOs,
-		})
+		groupDTO := GroupDTO{
+			ID:           g.ID,
+			Name:         g.Name,
+			MonitorCount: summary.Total,
+			Monitors:     monitorDTOs,
+		}
+		if compact {
+			groupDTO.Status = groupStatus
+			groupDTO.Counts = counts
+		}
+		groupDTOs = append(groupDTOs, groupDTO)
 	}
+	observability.StatusPagePhase.WithLabelValues("dto").Observe(time.Since(dtoStarted).Seconds())
 
 	// 6. Fetch Incidents and Outages
+	incidentsStarted := time.Now()
 	type IncidentUpdateDTO struct {
 		Status    string    `json:"status"`
 		Message   string    `json:"message"`
@@ -917,15 +1017,42 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 		"headerArrangement":    page.HeaderArrangement,
 		"timezone":             page.Timezone,
 	}
+	observability.StatusPagePhase.WithLabelValues("incidents").Observe(time.Since(incidentsStarted).Seconds())
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	view := "compact"
+	if requestedGroupID != "" {
+		view = "group"
+	}
+	response := map[string]any{
 		"title":         page.Title,
 		"public":        page.Public,
 		"groups":        groupDTOs,
 		"incidents":     activeIncidents,
 		"pastIncidents": pastIncidents,
 		"config":        config,
-	})
+	}
+	if !compact {
+		response["counts"] = detailCounts
+		response["pagination"] = detailPagination
+	}
+	writeStatusPageJSON(w, view, response)
+}
+
+func writeStatusPageJSON(w http.ResponseWriter, view string, data any) {
+	started := time.Now()
+	payload, err := json.Marshal(data)
+	observability.StatusPagePhase.WithLabelValues("json_marshal").Observe(time.Since(started).Seconds())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to encode status page")
+		return
+	}
+
+	observability.StatusPagePayloadBytes.WithLabelValues(view).Observe(float64(len(payload)))
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	started = time.Now()
+	_, _ = w.Write(append(payload, '\n'))
+	observability.StatusPagePhase.WithLabelValues("response_write").Observe(time.Since(started).Seconds())
 }
 
 func formatDurationMinutes(d time.Duration) string {

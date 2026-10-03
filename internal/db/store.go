@@ -94,6 +94,11 @@ func (s *Store) Dialect() string {
 	return s.dialect
 }
 
+// Stats returns a snapshot of the database connection pool for operational metrics.
+func (s *Store) Stats() sql.DBStats {
+	return s.db.Stats()
+}
+
 // rebind converts ? placeholders to $1, $2, etc. for PostgreSQL
 // SQLite queries pass through unchanged
 func (s *Store) rebind(query string) string {

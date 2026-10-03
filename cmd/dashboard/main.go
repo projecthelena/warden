@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
@@ -13,7 +14,9 @@ import (
 	"github.com/projecthelena/warden/internal/config"
 	"github.com/projecthelena/warden/internal/db"
 	"github.com/projecthelena/warden/internal/logging"
+	"github.com/projecthelena/warden/internal/observability"
 	"github.com/projecthelena/warden/internal/uptime"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // @title           Warden API
@@ -55,12 +58,35 @@ func main() {
 		log.Fatal("Failed to init database:", err)
 	}
 	log.Printf("Database initialized (dialect: %s)", store.Dialect())
+	observability.RegisterDatabaseStats(store.Dialect(), store.Stats)
 	defer func() { _ = store.Close() }()
 
 	// Init Uptime Manager
 	manager := uptime.NewManager(store)
 	manager.Start()
 	defer manager.Stop()
+
+	var observabilityServer *http.Server
+	if cfg.ObservabilityAddr != "" {
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", promhttp.Handler())
+		mux.HandleFunc("/debug/pprof/", pprof.Index)
+		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+		observabilityServer = &http.Server{
+			Addr:              cfg.ObservabilityAddr,
+			Handler:           mux,
+			ReadHeaderTimeout: 5 * time.Second,
+		}
+		go func() {
+			log.Printf("Starting observability server on %s", cfg.ObservabilityAddr)
+			if err := observabilityServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Printf("observability server: %v", err)
+			}
+		}()
+	}
 
 	// Init Router
 	r := api.NewRouter(manager, store, cfg) // Changed monitor to manager
@@ -87,6 +113,11 @@ func main() {
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+	if observabilityServer != nil {
+		if err := observabilityServer.Shutdown(shutdownCtx); err != nil {
+			log.Printf("observability server shutdown: %v", err)
+		}
 	}
 
 	log.Println("Server exiting")

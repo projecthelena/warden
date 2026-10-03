@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import { Group, Monitor, MonitorType, RequestConfig, useMonitorStore } from "@/lib/store";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { Group, Monitor, MonitorType, OverviewGroup, RequestConfig, useMonitorStore } from "@/lib/store";
 import { computePollingInterval } from "@/lib/pollingInterval";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
@@ -12,7 +12,7 @@ async function fetchMonitorsData(): Promise<Group[]> {
     return data.groups || [];
 }
 
-export function useMonitorsQuery() {
+export function useMonitorsQuery(enabled = true) {
     const { setGroups, isAuthChecked, user, groups } = useMonitorStore();
     const pollingInterval = computePollingInterval(groups);
 
@@ -27,9 +27,72 @@ export function useMonitorsQuery() {
         },
         refetchInterval: pollingInterval,
         refetchIntervalInBackground: true, // Keep polling even when tab is backgrounded
-        enabled: isAuthChecked && !!user, // Only fetch if authenticated
+        enabled: enabled && isAuthChecked && !!user, // Only fetch if authenticated
         staleTime: 0, // Ensure data is always considered stale so invalidation works immediately
         refetchOnMount: true, // Always refetch on mount
+    });
+}
+
+async function fetchOverviewData(): Promise<OverviewGroup[]> {
+    const res = await fetch(`${API_URL}/api/overview`, { credentials: "include" });
+    if (!res.ok) throw new Error("Failed to fetch group overview");
+    const data = await res.json();
+    return data.groups || [];
+}
+
+export function useOverviewQuery() {
+    const { isAuthChecked, user } = useMonitorStore();
+    return useQuery({
+        queryKey: ["overview"],
+        queryFn: fetchOverviewData,
+        enabled: isAuthChecked && !!user,
+        staleTime: 5_000,
+        refetchInterval: 30_000,
+        refetchIntervalInBackground: true,
+    });
+}
+
+export type GroupMonitorStatusFilter = "all" | "operational" | "issues" | "paused";
+
+export interface GroupMonitorsResponse {
+    group: Group;
+    counts: { all: number; operational: number; issues: number; paused: number };
+    pagination: { page: number; pageSize: number; total: number; totalPages: number };
+}
+
+export interface GroupMonitorQuery {
+    page: number;
+    pageSize: number;
+    search: string;
+    status: GroupMonitorStatusFilter;
+}
+
+export function buildGroupMonitorsURL(groupId: string, query: GroupMonitorQuery) {
+    const params = new URLSearchParams({
+        page: String(query.page),
+        page_size: String(query.pageSize),
+        status: query.status,
+    });
+    if (query.search.trim()) params.set("search", query.search.trim());
+    return `${API_URL}/api/groups/${encodeURIComponent(groupId)}/monitors?${params}`;
+}
+
+export function useGroupMonitorsQuery(groupId: string | undefined, query: GroupMonitorQuery) {
+    const { isAuthChecked, user } = useMonitorStore();
+    return useQuery({
+        queryKey: ["group-monitors", groupId, query.page, query.pageSize, query.search, query.status],
+        queryFn: async (): Promise<GroupMonitorsResponse> => {
+            const res = await fetch(buildGroupMonitorsURL(groupId!, query), { credentials: "include" });
+            if (!res.ok) {
+                if (res.status === 404) throw new Error("Group not found");
+                throw new Error("Failed to fetch group monitors");
+            }
+            return res.json();
+        },
+        enabled: isAuthChecked && !!user && !!groupId,
+        placeholderData: keepPreviousData,
+        refetchInterval: 30_000,
+        refetchIntervalInBackground: true,
     });
 }
 
@@ -51,9 +114,9 @@ export function useDeleteGroupMutation() {
     return useMutation({
         mutationFn: deleteGroupReq,
         onSuccess: () => {
-            // Invalidate monitors to refresh the list
             queryClient.invalidateQueries({ queryKey: ["monitors"] });
-            // Also invalidate overview just in case, though monitors query drives it now.
+            queryClient.invalidateQueries({ queryKey: ["group-monitors"] });
+            queryClient.invalidateQueries({ queryKey: ["overview"] });
         },
     });
 }
@@ -120,6 +183,8 @@ export function useCreateMonitorMutation() {
         mutationFn: createMonitorReq,
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["monitors"] });
+            queryClient.invalidateQueries({ queryKey: ["group-monitors"] });
+            queryClient.invalidateQueries({ queryKey: ["overview"] });
         },
     });
 }

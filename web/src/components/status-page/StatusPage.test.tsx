@@ -1,6 +1,32 @@
 import { describe, expect, it } from "vitest";
 import { getOverallStatus } from "./statusPageStatus";
 import { getMaintenanceState } from "@/lib/maintenance";
+import { buildStatusMonitorQuery, mergeStatusMonitors } from "./statusPageMonitors";
+
+describe("mergeStatusMonitors", () => {
+    it("keeps stable order while replacing duplicates", () => {
+        expect(mergeStatusMonitors(
+            [{ id: "a", status: "up" }, { id: "b", status: "down" }],
+            [{ id: "b", status: "up" }, { id: "c", status: "up" }],
+        )).toEqual([
+            { id: "a", status: "up" },
+            { id: "b", status: "up" },
+            { id: "c", status: "up" },
+        ]);
+    });
+});
+
+describe("buildStatusMonitorQuery", () => {
+    it("uses bounded server pagination and omits an empty search", () => {
+        expect(buildStatusMonitorQuery({ group: "core", page: 2, pageSize: 50, status: "issues", search: "  " }).toString())
+            .toBe("group=core&page=2&page_size=50&status=issues");
+    });
+
+    it("trims and includes a monitor search", () => {
+        expect(buildStatusMonitorQuery({ group: "core", page: 1, pageSize: 25, status: "all", search: " API " }).get("search"))
+            .toBe("API");
+    });
+});
 
 function groupsWithStatuses(...statuses: Array<"up" | "down" | "degraded" | "paused">) {
     return [{

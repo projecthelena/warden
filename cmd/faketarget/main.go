@@ -54,19 +54,20 @@ func safeLog(s string) string {
 func main() {
 	listen := flag.String("listen", ":8888", "address to listen on")
 	latencyMs := flag.Int("slow-latency-ms", 1500, "latency for /slow")
+	quiet := flag.Bool("quiet", false, "disable per-request logs for load tests")
 	flag.Parse()
 
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthy", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("→ %s %s", safeLog(r.Method), safeLog(r.URL.Path))
+		requestLog(*quiet, "→ %s %s", safeLog(r.Method), safeLog(r.URL.Path))
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-Faketarget", "healthy")
 		_, _ = fmt.Fprintln(w, `{"ok":true,"service":"faketarget"}`)
 	})
 
 	mux.HandleFunc("/down", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("→ %s %s [503]", safeLog(r.Method), safeLog(r.URL.Path))
+		requestLog(*quiet, "→ %s %s [503]", safeLog(r.Method), safeLog(r.URL.Path))
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Server", "faketarget/1.0")
 		w.Header().Set("X-Request-Id", randomID())
@@ -75,7 +76,7 @@ func main() {
 	})
 
 	mux.HandleFunc("/error", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("→ %s %s [500]", safeLog(r.Method), safeLog(r.URL.Path))
+		requestLog(*quiet, "→ %s %s [500]", safeLog(r.Method), safeLog(r.URL.Path))
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-Request-Id", randomID())
 		w.WriteHeader(http.StatusInternalServerError)
@@ -83,7 +84,7 @@ func main() {
 	})
 
 	mux.HandleFunc("/slow", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("→ %s %s [slow %dms]", safeLog(r.Method), safeLog(r.URL.Path), *latencyMs)
+		requestLog(*quiet, "→ %s %s [slow %dms]", safeLog(r.Method), safeLog(r.URL.Path), *latencyMs)
 		time.Sleep(time.Duration(*latencyMs) * time.Millisecond)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprintln(w, `{"ok":true,"slowedBy":"`+strconv.Itoa(*latencyMs)+`ms"}`)
@@ -97,18 +98,18 @@ func main() {
 			}
 		}
 		if rand.Intn(100) < failPct { // #nosec G404 -- simulating flakiness, not a security decision
-			log.Printf("→ %s %s [flaky FAIL]", safeLog(r.Method), safeLog(r.URL.Path))
+			requestLog(*quiet, "→ %s %s [flaky FAIL]", safeLog(r.Method), safeLog(r.URL.Path))
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadGateway)
 			_, _ = fmt.Fprintln(w, `{"error":"bad_gateway","message":"upstream timed out","upstream":"api-backend"}`)
 			return
 		}
-		log.Printf("→ %s %s [flaky ok]", safeLog(r.Method), safeLog(r.URL.Path))
+		requestLog(*quiet, "→ %s %s [flaky ok]", safeLog(r.Method), safeLog(r.URL.Path))
 		_, _ = fmt.Fprintln(w, `{"ok":true}`)
 	})
 
 	mux.HandleFunc("/timeout", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("→ %s %s [sleeping 30s]", safeLog(r.Method), safeLog(r.URL.Path))
+		requestLog(*quiet, "→ %s %s [sleeping 30s]", safeLog(r.Method), safeLog(r.URL.Path))
 		time.Sleep(30 * time.Second)
 		_, _ = fmt.Fprintln(w, "late response")
 	})
@@ -120,7 +121,7 @@ func main() {
 			http.Error(w, "invalid status code", http.StatusBadRequest)
 			return
 		}
-		log.Printf("→ %s %s [%d]", safeLog(r.Method), safeLog(r.URL.Path), code)
+		requestLog(*quiet, "→ %s %s [%d]", safeLog(r.Method), safeLog(r.URL.Path), code)
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-Request-Id", randomID())
 		w.WriteHeader(code)
@@ -143,6 +144,12 @@ func main() {
 	}
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatal(err)
+	}
+}
+
+func requestLog(quiet bool, format string, args ...any) {
+	if !quiet {
+		log.Printf(format, args...)
 	}
 }
 

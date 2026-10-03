@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/projecthelena/warden/internal/db"
+	"github.com/projecthelena/warden/internal/observability"
 )
 
 type Status struct {
@@ -227,9 +228,11 @@ func (m *Monitor) schedule() {
 	m.mu.RUnlock()
 	select {
 	case m.jobQueue <- Job{MonitorID: m.id, Type: m.monitorType, URL: m.url, RequestConfig: cfg, DockerHost: dockerHost}:
-		// Scheduled
+		observability.CheckScheduling.WithLabelValues("queued").Inc()
+		observability.CheckQueueDepth.Set(float64(len(m.jobQueue)))
 	default:
-		// Queue full, skip this tick to avoid blocking scheduler
+		observability.CheckScheduling.WithLabelValues("dropped").Inc()
+		observability.CheckQueueDepth.Set(float64(len(m.jobQueue)))
 	}
 }
 

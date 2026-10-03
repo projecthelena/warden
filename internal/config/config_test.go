@@ -8,14 +8,17 @@ import (
 func TestLoad(t *testing.T) {
 	// Backup env and restore after test
 	oldListen := os.Getenv("LISTEN_ADDR")
+	oldObservability := os.Getenv("OBSERVABILITY_ADDR")
 	oldDB := os.Getenv("DB_PATH")
 	defer func() {
 		_ = os.Setenv("LISTEN_ADDR", oldListen)
+		_ = os.Setenv("OBSERVABILITY_ADDR", oldObservability)
 		_ = os.Setenv("DB_PATH", oldDB)
 	}()
 
 	t.Run("Defaults", func(t *testing.T) {
 		_ = os.Unsetenv("LISTEN_ADDR")
+		_ = os.Unsetenv("OBSERVABILITY_ADDR")
 		_ = os.Unsetenv("DB_PATH")
 
 		cfg, err := Load()
@@ -26,6 +29,9 @@ func TestLoad(t *testing.T) {
 		if cfg.ListenAddr != ":9096" {
 			t.Errorf("Expected default ListenAddr :9096, got %s", cfg.ListenAddr)
 		}
+		if cfg.ObservabilityAddr != "" {
+			t.Errorf("Expected observability to be disabled, got %s", cfg.ObservabilityAddr)
+		}
 		if cfg.DBPath != "warden.db" {
 			t.Errorf("Expected default DBPath warden.db, got %s", cfg.DBPath)
 		}
@@ -33,6 +39,7 @@ func TestLoad(t *testing.T) {
 
 	t.Run("Env Overrides", func(t *testing.T) {
 		_ = os.Setenv("LISTEN_ADDR", ":8080")
+		_ = os.Setenv("OBSERVABILITY_ADDR", "127.0.0.1:9091")
 		_ = os.Setenv("DB_PATH", "/tmp/test.db")
 
 		cfg, err := Load()
@@ -42,6 +49,9 @@ func TestLoad(t *testing.T) {
 
 		if cfg.ListenAddr != ":8080" {
 			t.Errorf("Expected ListenAddr :8080, got %s", cfg.ListenAddr)
+		}
+		if cfg.ObservabilityAddr != "127.0.0.1:9091" {
+			t.Errorf("Expected ObservabilityAddr override, got %s", cfg.ObservabilityAddr)
 		}
 		if cfg.DBPath != "/tmp/test.db" {
 			t.Errorf("Expected DBPath /tmp/test.db, got %s", cfg.DBPath)

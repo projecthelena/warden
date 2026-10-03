@@ -35,6 +35,7 @@ func TestAuthEnforcement(t *testing.T) {
 		{"Create Group", "POST", "/api/groups"},
 		{"Update Group", "PUT", "/api/groups/g-test"},
 		{"Delete Group", "DELETE", "/api/groups/g-test"},
+		{"List Group Monitors", "GET", "/api/groups/g-test/monitors"},
 		{"Get Uptime", "GET", "/api/uptime"},
 		{"Create Monitor", "POST", "/api/monitors"},
 		{"Update Monitor", "PUT", "/api/monitors/m-test"},

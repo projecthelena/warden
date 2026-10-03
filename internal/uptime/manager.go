@@ -15,6 +15,7 @@ import (
 	"github.com/projecthelena/warden/internal/db"
 	wardenlog "github.com/projecthelena/warden/internal/logging"
 	"github.com/projecthelena/warden/internal/notifications"
+	"github.com/projecthelena/warden/internal/observability"
 )
 
 type Job struct {
@@ -260,7 +261,21 @@ func (m *Manager) worker() {
 	transport := checkTransport()
 
 	for job := range m.jobQueue {
-		m.resultQueue <- runCheck(job, transport)
+		started := time.Now()
+		observability.CheckQueueDepth.Set(float64(len(m.jobQueue)))
+		result := runCheck(job, transport)
+		monitorType := job.Type
+		if monitorType == "" {
+			monitorType = db.MonitorTypeHTTP
+		}
+		outcome := "up"
+		if !result.Status {
+			outcome = "down"
+		}
+		observability.Checks.WithLabelValues(monitorType, outcome).Inc()
+		observability.CheckDuration.WithLabelValues(monitorType).Observe(time.Since(started).Seconds())
+		m.resultQueue <- result
+		observability.ResultQueueDepth.Set(float64(len(m.resultQueue)))
 	}
 }
 
@@ -372,9 +387,14 @@ func (m *Manager) resultProcessor() {
 		if len(batch) == 0 {
 			return
 		}
+		started := time.Now()
+		observability.PersistBatchSize.Observe(float64(len(batch)))
+		outcome := "success"
 		if err := m.store.BatchInsertChecks(batch); err != nil {
+			outcome = "error"
 			log.Printf("Error capturing batch stats: %v", err)
 		}
+		observability.PersistDuration.WithLabelValues(outcome).Observe(time.Since(started).Seconds())
 		batch = nil
 	}
 
@@ -947,6 +967,7 @@ func (m *Manager) Sync() {
 			log.Printf("Stopped monitor: %s", id)
 		}
 	}
+	observability.ActiveMonitors.Set(float64(len(m.monitors)))
 	m.publishMonitorSnapshotLocked()
 }
 
