@@ -77,6 +77,8 @@ type sslThresholdState struct {
 }
 
 type Manager struct {
+	RollupDiagnostics bool // Configure before Start; disabled by default.
+
 	store           *db.Store
 	monitors        map[string]*Monitor // Map id -> Monitor
 	mu              sync.RWMutex
@@ -1400,7 +1402,7 @@ func (m *Manager) rollupWorker() {
 	}
 
 	// Backfill the full window once so the status page has history right after a deploy.
-	if err := m.store.RollupDailyUptime(retentionDays()); err != nil {
+	if err := m.runRollup("backfill", retentionDays()); err != nil {
 		log.Printf("Rollup backfill error: %v", err)
 	}
 
@@ -1413,7 +1415,7 @@ func (m *Manager) rollupWorker() {
 			return
 		case <-ticker.C:
 			// Recompute today and yesterday only; the rest is already frozen.
-			if err := m.store.RollupDailyUptime(2); err != nil {
+			if err := m.runRollup("refresh", 2); err != nil {
 				log.Printf("Rollup error: %v", err)
 			}
 		}

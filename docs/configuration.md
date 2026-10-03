@@ -5,6 +5,7 @@ Warden is configured with environment variables. The defaults run locally with S
 | Variable | Default | Description |
 | :-- | :-- | :-- |
 | `LISTEN_ADDR` | `:9090` | Address and port Warden listens on. |
+| `ROLLUP_DIAGNOSTICS_ENABLED` | `false` | Opt in to daily uptime rollup phase metrics and structured logs for runs lasting at least one second. Requires a restart. |
 | `OBSERVABILITY_ADDR` | empty (disabled) | Separate address for Prometheus metrics and Go profiles, for example `127.0.0.1:9091`. |
 | `DB_TYPE` | `sqlite` | Database backend: `sqlite` or `postgres`. A PostgreSQL `DB_URL` also selects PostgreSQL automatically. |
 | `DB_PATH` | `/data/warden.db` | SQLite database path. |
@@ -26,3 +27,13 @@ Set `OBSERVABILITY_ADDR` to enable a separate diagnostics listener. It exposes P
 The metrics cover HTTP request rate, errors and latency; monitor check rate and latency; scheduling drops and queue depth; database batch size and write latency; and the active monitor count. Standard Go process and runtime metrics are included by the Prometheus client.
 
 Set `COOKIE_SECURE=true` whenever the public Warden URL uses HTTPS.
+
+### Rollup diagnostics
+
+Set `ROLLUP_DIAGNOSTICS_ENABLED=true` on the Warden process to diagnose database contention. This flag is independent of `OBSERVABILITY_ADDR`: slow-operation logs work without the metrics listener; scraping requires both. Unset the flag or set it to `false` and restart to disable diagnostics. Daily rollups, their five-minute refresh and status-page history remain active either way.
+
+With diagnostics enabled, `warden_uptime_rollup_in_progress{mode}` marks active work and `warden_uptime_rollup_runs_total{mode,outcome}` counts completed runs. Modes are `backfill` and `refresh`; outcomes are `success` and `error`. `warden_uptime_rollup_rows{mode}` records aggregated monitor-day rows, which may not have committed if a write fails.
+
+`warden_uptime_rollup_duration_seconds{mode,phase}` measures `read_connection`, `query`, `scan`, `write_connection`, `begin`, `upsert`, `commit` and `total`. Connection acquisition is separate from database execution. Drivers can defer database work until rows are read, so interpret query and scan together; scan also includes decoding and result cleanup. Phases not reached after an error are recorded as zero. Total includes cleanup and instrumentation overhead and need not equal the sum of phases.
+
+Runs lasting at least one second produce one structured `slow uptime rollup` warning with phase durations, outcome, row count, and pool snapshots before/after. Pool wait counts and durations include all concurrent database users: their difference is correlation evidence, not time attributable exclusively to the rollup. The diagnostic log omits SQL, targets, credentials and driver error text. Existing rollup error logging is unchanged.

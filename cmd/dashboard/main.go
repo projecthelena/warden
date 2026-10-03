@@ -63,6 +63,7 @@ func main() {
 
 	// Init Uptime Manager
 	manager := uptime.NewManager(store)
+	manager.RollupDiagnostics = cfg.RollupDiagnostics
 	manager.Start()
 	defer manager.Stop()
 

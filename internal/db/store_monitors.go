@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -1181,15 +1182,44 @@ func (s *Store) GetDailyUptimeStatsForMonitors(ids []string, days int) (map[stri
 	return out, nil
 }
 
-// RollupDailyUptime recomputes the daily uptime rollup for every monitor over the last
-// `days` calendar days from raw checks, and upserts it. It uses the same aggregation as
-// GetDailyUptimeStats, so a rollup row equals what a live query would return for that day.
-// Idempotent: recomputing a day overwrites its row. A day with no checks produces no row,
-// so the read path renders it as no-data (-1). The worker calls it with a small window to
-// refresh recent days and, once at startup, with the retention window to backfill.
+// DailyUptimeRollupStats contains wall-clock phase durations and pool-wide snapshots.
+// Pool deltas include concurrent users; they are not attributable to this rollup alone.
+type DailyUptimeRollupStats struct {
+	ReadConnectionDuration  time.Duration
+	QueryDuration           time.Duration
+	ScanDuration            time.Duration
+	WriteConnectionDuration time.Duration
+	BeginDuration           time.Duration
+	UpsertDuration          time.Duration
+	CommitDuration          time.Duration
+	Rows                    int
+	DBBefore                sql.DBStats
+	DBAfter                 sql.DBStats
+}
+
+// RollupDailyUptime recomputes daily uptime from raw checks and upserts the result.
+// It remains active when diagnostics are disabled. Historical reads use these rows.
 func (s *Store) RollupDailyUptime(days int) error {
+	return s.rollupDailyUptime(days, nil)
+}
+
+func (s *Store) RollupDailyUptimeWithStats(days int) (stats DailyUptimeRollupStats, err error) {
+	stats.DBBefore = s.db.Stats()
+	err = s.rollupDailyUptime(days, &stats)
+	stats.DBAfter = s.db.Stats()
+	return stats, err
+}
+
+func (s *Store) rollupDailyUptime(days int, stats *DailyUptimeRollupStats) error {
 	if days < 1 {
 		return nil
+	}
+	// Disabled diagnostics do not read the clock or snapshot the connection pool.
+	var phaseStart time.Time
+	startPhase := func() {
+		if stats != nil {
+			phaseStart = time.Now()
+		}
 	}
 
 	var query string
@@ -1207,8 +1237,27 @@ func (s *Store) RollupDailyUptime(days int) error {
 			GROUP BY monitor_id, day`
 	}
 
-	rows, err := s.db.Query(s.rebind(query), days)
+	ctx := context.Background()
+	var conn *sql.Conn
+	var rows *sql.Rows
+	var err error
+	if stats == nil {
+		rows, err = s.db.Query(s.rebind(query), days)
+	} else {
+		startPhase()
+		conn, err = s.db.Conn(ctx)
+		stats.ReadConnectionDuration = time.Since(phaseStart)
+		if err != nil {
+			return err
+		}
+		startPhase()
+		rows, err = conn.QueryContext(ctx, s.rebind(query), days)
+		stats.QueryDuration = time.Since(phaseStart)
+	}
 	if err != nil {
+		if conn != nil {
+			_ = conn.Close()
+		}
 		return err
 	}
 	type rollup struct {
@@ -1216,42 +1265,77 @@ func (s *Store) RollupDailyUptime(days int) error {
 		total, up      int
 	}
 	var rollups []rollup
+	startPhase()
 	for rows.Next() {
 		var r rollup
-		if err := rows.Scan(&r.monitorID, &r.day, &r.total, &r.up); err != nil {
-			_ = rows.Close()
-			return err
+		if err = rows.Scan(&r.monitorID, &r.day, &r.total, &r.up); err != nil {
+			break
 		}
 		rollups = append(rollups, r)
 	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
+	if err == nil {
+		err = rows.Err()
+	}
+	closeErr := rows.Close()
+	// Return the read connection before acquiring a writer, especially with SQLite's
+	// single-connection pool. This also lets queued work run between the two phases.
+	if conn != nil {
+		_ = conn.Close()
+	}
+	if stats != nil {
+		stats.ScanDuration = time.Since(phaseStart)
+		stats.Rows = len(rollups)
+	}
+	if err != nil {
 		return err
 	}
-	// Close before writing: SQLite won't let us upsert while a read is still open.
-	_ = rows.Close()
-
+	if closeErr != nil {
+		return closeErr
+	}
 	if len(rollups) == 0 {
 		return nil
 	}
 
-	// One transaction for all upserts: on the startup backfill this can be hundreds of rows,
-	// and on SQLite a row-per-transaction would be that many fsyncs while holding the single
-	// connection.
-	tx, err := s.db.Begin()
+	var tx *sql.Tx
+	if stats == nil {
+		tx, err = s.db.Begin()
+	} else {
+		startPhase()
+		conn, err = s.db.Conn(ctx)
+		stats.WriteConnectionDuration = time.Since(phaseStart)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = conn.Close() }()
+		startPhase()
+		tx, err = conn.BeginTx(ctx, nil)
+		stats.BeginDuration = time.Since(phaseStart)
+	}
 	if err != nil {
 		return err
 	}
+	defer func() { _ = tx.Rollback() }()
 	upsert := s.rebind(`INSERT INTO monitor_uptime_daily (monitor_id, day, total, up_count)
 		VALUES (?, ?, ?, ?)
 		ON CONFLICT(monitor_id, day) DO UPDATE SET total = excluded.total, up_count = excluded.up_count`)
+	startPhase()
 	for _, r := range rollups {
-		if _, err := tx.Exec(upsert, r.monitorID, r.day, r.total, r.up); err != nil {
-			_ = tx.Rollback()
-			return err
+		if _, err = tx.Exec(upsert, r.monitorID, r.day, r.total, r.up); err != nil {
+			break
 		}
 	}
-	return tx.Commit()
+	if stats != nil {
+		stats.UpsertDuration = time.Since(phaseStart)
+	}
+	if err != nil {
+		return err
+	}
+	startPhase()
+	err = tx.Commit()
+	if stats != nil {
+		stats.CommitDuration = time.Since(phaseStart)
+	}
+	return err
 }
 
 // PruneDailyRollups drops rollup rows older than the retention window. Historical rollups
