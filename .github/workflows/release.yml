@@ -238,3 +238,12 @@ jobs:
           done
           echo "::error::Could not push the Helm chart after three attempts."
           exit 1
+
+  update-dockerhub-description:
+    name: Update Docker Hub description
+    needs: [release, trigger-docker]
+    if: ${{ !contains(needs.release.outputs.tag, '-') }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/dockerhub-description.yml
+    secrets: inherit

@@ -1,0 +1,32 @@
+name: Sync Docker Hub description
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - docs/dockerhub.md
+      - .github/workflows/dockerhub-description.yml
+
+jobs:
+  description:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    concurrency:
+      group: dockerhub-description
+      cancel-in-progress: false
+    steps:
+      - name: Checkout documentation
+        uses: actions/checkout@v7
+
+      - name: Update Docker Hub description
+        uses: peter-evans/dockerhub-description@1b9a80c056b620d92cedb9d9b5a223409c68ddfa # v5
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: jesuspaz/warden
+          short-description: Uptime monitoring with adaptive latency alerts, status pages, and API/MCP access.
+          readme-filepath: docs/dockerhub.md
