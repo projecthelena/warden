@@ -7,6 +7,8 @@ Warden is an open-source uptime monitor that learns each service's normal latenc
 - Confirm failures and group related incidents to avoid repeated notifications.
 - Investigate incidents and manage monitors through the API or an AI assistant using MCP.
 
+Warden is built by [Project Helena](https://projecthelena.com/). Visit the website for a product overview and updates.
+
 ## Quick start
 
 ```bash
@@ -32,6 +34,7 @@ For public access, use an HTTPS reverse proxy. See the [configuration guide](htt
 
 ## Links
 
+- [Project Helena website](https://projecthelena.com/)
 - [Source code](https://github.com/projecthelena/warden)
 - [Documentation](https://github.com/projecthelena/warden/blob/main/docs/README.md)
 - [Report an issue](https://github.com/projecthelena/warden/issues)

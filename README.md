@@ -19,6 +19,8 @@ It monitors HTTP endpoints, TCP ports, ICMP hosts, and DNS records; publishes st
 
 Read [Why Warden](docs/why-warden.md) for the product direction and comparison with conventional uptime monitoring.
 
+Warden is built by [Project Helena](https://projecthelena.com/). Visit the website for a product overview and updates.
+
 ## Quick start
 
 ```bash
