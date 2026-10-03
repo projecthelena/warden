@@ -68,7 +68,7 @@ The final report contains the measurements and conclusions. This document record
 
 10. Repeat the measured run once without changing the deployment or parameters. Save it as `run2`.
 
-11. Add 150, 250, and 500 monitors in successive stages, producing totals of 250, 500, and 1,000. Set `-start-index` to the current monitor count so names remain unique; for example, use `-start-index 100 -count 150` for the second batch. Repeat the warm-up and measured runs after each addition and include the total monitor count in each result filename.
+11. Add 150, 250, and 500 monitors to the same group in successive stages, producing totals of 250, 500, and 1,000. Pass the existing `-group-id` and set `-start-index` to the current monitor count so names remain unique; for example, use `-group-id g-load-test-example -start-index 100 -count 150` for the second batch. Repeat the warm-up and measured runs after each addition and include the total monitor count in each result filename.
 
 12. Remove the disposable Warden release, deploy the next case, and repeat from step 1. Change only the node and database between cases.
 
