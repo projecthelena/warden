@@ -149,7 +149,10 @@ func main() {
 
 func requestLog(quiet bool, format string, args ...any) {
 	if !quiet {
-		log.Printf(format, args...)
+		message := fmt.Sprintf(format, args...)
+		message = strings.ReplaceAll(message, "\r", "")
+		message = strings.ReplaceAll(message, "\n", "")
+		log.Print(message)
 	}
 }
 
