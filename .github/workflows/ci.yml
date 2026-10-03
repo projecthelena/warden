@@ -33,8 +33,10 @@ jobs:
             exit 1
           fi
 
-      - name: Test semantic version calculation
-        run: python3 .github/scripts/test_next_version.py
+      - name: Test release automation
+        run: |
+          python3 .github/scripts/test_next_version.py
+          python3 .github/scripts/test_update_helm_chart.py
 
   changes:
     runs-on: ubuntu-latest

@@ -149,3 +149,19 @@ Playwright tests in `web/tests/e2e/` use page object models from `web/tests/page
 
 - Focus on correctness, security, concurrency, data integrity, and regressions.
 - Do not report formatting or lint findings already enforced by CI.
+
+## Helm release automation
+
+- Stable releases update `projecthelena/helm-charts` only after both Docker registries publish their multi-architecture manifests. Release candidates do not change chart defaults.
+- Set `HELM_CHARTS_DEPLOY_KEY` to a write-enabled deploy key scoped to `projecthelena/helm-charts`. Stable releases fail before tagging if it is missing. The key must be allowed to push to the chart repository's `main` branch; do not use `GITHUB_TOKEN`, which cannot write to the other repository.
+- `update_helm_chart.py` increments the chart patch version, sets `appVersion` and pins `image.tag`. Repeating the same release is a no-op; older releases are rejected. Chart template changes still need an appropriate chart version bump in the chart repository.
+- The chart job validates Helm output before pushing and retries against current `main` on a rejected push. Rerun only the failed chart job after fixing credentials or publication issues; do not recreate an existing release tag.
+- Validate changes with `python3 .github/scripts/test_next_version.py`, `python3 .github/scripts/test_update_helm_chart.py`, and `actionlint .github/workflows/ci.yml .github/workflows/release.yml`.
+
+## Docker Hub metadata
+
+- `docs/dockerhub.md` is the public Docker Hub overview. Keep all links absolute. The description workflow runs on changes to this file on main, after stable releases, or manually.
+- Use the existing Docker workflow with `description_only=true` to refresh metadata without building or publishing images. Image publication requires an existing version tag and checks out that tag, not branch HEAD.
+- Metadata uses the existing Docker Hub username/token secrets. The pinned description action needs permission to update repository metadata; do not print tokens or extract GitHub secrets. A metadata failure does not block the independent Helm synchronization job.
+
+- Docker builds check out the release tag. Manual rebuilds do not move `latest`; only the stable release workflow promotes it. Manifest assembly uses version-specific architecture tags, and Docker publication runs are serialized.
