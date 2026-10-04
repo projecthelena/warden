@@ -75,11 +75,11 @@ export function MonitorPage() {
             </header>
 
             <Tabs value={activeTab} onValueChange={tab => updateQuery({ tab: tab === "overview" ? null : tab })}>
-                <TabsList className={`grid h-auto w-full p-1 ${canEdit ? "grid-cols-4" : "grid-cols-3"}`}>
-                    <TabsTrigger value="overview" className="min-h-11 min-w-0 px-1 text-xs sm:px-3 sm:text-sm"><Activity className="mr-2 hidden h-4 w-4 sm:block" />Overview</TabsTrigger>
-                    <TabsTrigger value="incidents" className="min-h-11 min-w-0 px-1 text-xs sm:px-3 sm:text-sm"><Calendar className="mr-2 hidden h-4 w-4 sm:block" />Incidents</TabsTrigger>
-                    <TabsTrigger value="checks" className="min-h-11 min-w-0 px-1 text-xs sm:px-3 sm:text-sm"><ListChecks className="mr-2 hidden h-4 w-4 sm:block" />Checks</TabsTrigger>
-                    {canEdit && <TabsTrigger value="settings" className="min-h-11 min-w-0 px-1 text-xs sm:px-3 sm:text-sm" data-testid="monitor-settings-tab"><Settings2 className="mr-2 hidden h-4 w-4 sm:block" />Settings</TabsTrigger>}
+                <TabsList className={`grid h-auto w-full p-1 sm:inline-flex sm:w-auto ${canEdit ? "grid-cols-4" : "grid-cols-3"}`}>
+                    <TabsTrigger value="overview" className="min-h-11 min-w-0 px-1 text-xs sm:px-4 sm:text-sm"><Activity className="mr-2 hidden h-4 w-4 sm:block" />Overview</TabsTrigger>
+                    <TabsTrigger value="incidents" className="min-h-11 min-w-0 px-1 text-xs sm:px-4 sm:text-sm"><Calendar className="mr-2 hidden h-4 w-4 sm:block" />Incidents</TabsTrigger>
+                    <TabsTrigger value="checks" className="min-h-11 min-w-0 px-1 text-xs sm:px-4 sm:text-sm"><ListChecks className="mr-2 hidden h-4 w-4 sm:block" />Checks</TabsTrigger>
+                    {canEdit && <TabsTrigger value="settings" className="min-h-11 min-w-0 px-1 text-xs sm:px-4 sm:text-sm" data-testid="monitor-settings-tab"><Settings2 className="mr-2 hidden h-4 w-4 sm:block" />Settings</TabsTrigger>}
                 </TabsList>
                 <TabsContent value="overview" className="mt-5"><MonitorOverview monitor={monitor} timezone={user?.timezone} /></TabsContent>
                 <TabsContent value="incidents" className="mt-5"><IncidentsPanel id={id} date={date} incidents={incidents} sslWarnings={sslWarnings} query={incidentsQuery} onDateChange={value => updateQuery({ date: value === today() ? null : value })} onAll={() => navigate(`/incidents?monitorId=${id}`)} /></TabsContent>

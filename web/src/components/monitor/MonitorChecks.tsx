@@ -32,8 +32,8 @@ export function MonitorChecks({ monitorId }: { monitorId: string }) {
     if (query.error) return <div className="space-y-3 rounded-lg border border-border p-5"><p role="alert">Could not load recent checks.</p><Button variant="outline" onClick={() => query.refetch()}>Try again</Button></div>;
     const checks = query.data ?? [];
     return <section className="space-y-5" aria-label="Recent checks">
-        <div className="rounded-xl border border-border bg-card p-4 sm:p-5">
-            <h2 className="mb-4 text-sm font-medium">Last 24 hours</h2>
+        <div className="rounded-xl border border-border bg-card px-4 py-3 sm:px-5 sm:py-4">
+            <h2 className="mb-3 text-xs font-medium text-muted-foreground">Last 24 hours</h2>
             {totals.data ? <>
                 <dl className="grid grid-cols-3 gap-3" aria-label="24-hour totals">
                     <Metric label="Checks" value={totals.data.total} />
@@ -44,7 +44,7 @@ export function MonitorChecks({ monitorId }: { monitorId: string }) {
             </> : totals.error ? <p role="alert" className="text-sm text-muted-foreground">The 24-hour summary is unavailable. Individual checks are still shown below.</p> : <p role="status" className="text-sm text-muted-foreground">Loading summary…</p>}
         </div>
         <div className="overflow-hidden rounded-xl border border-border bg-card">
-            <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-4">
+            <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
                 <h2 className="text-sm font-medium">Check history</h2>
                 <span className="text-xs text-muted-foreground">{before ? "Older checks" : "Latest checks"} · {checks.length}</span>
             </header>
@@ -58,8 +58,8 @@ export function MonitorChecks({ monitorId }: { monitorId: string }) {
                 const title = recovered ? "Recovered" : check.status === "up" ? "Passed" : check.statusCode ? `HTTP ${check.statusCode}` : explanation.title;
                 return <details key={check.id ?? `${check.timestamp}-${i}`} className="check-entry border-b border-border last:border-0">
                     <summary className="check-row cursor-pointer list-none hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring" aria-label={`${new Date(check.timestamp).toLocaleString()} · ${explanation.title}`}>
-                        <time className="check-time text-xs tabular-nums text-muted-foreground" dateTime={check.timestamp}><span className="block text-foreground">{new Date(check.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span><span className="block mt-1">{new Date(check.timestamp).toLocaleDateString([], { month: "short", day: "numeric" })}</span></time>
-                        <span className={`check-result flex min-w-0 items-center gap-2 text-sm font-medium ${recovered ? "text-foreground" : check.status === "up" ? "text-foreground" : "text-rose-700 dark:text-rose-400"}`}><Icon className="h-4 w-4 shrink-0" aria-hidden="true" /><span>{title}</span></span>
+                        <time className="check-time text-xs tabular-nums text-muted-foreground" dateTime={check.timestamp}><span className="block">{new Date(check.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span><span className="block mt-1">{new Date(check.timestamp).toLocaleDateString([], { month: "short", day: "numeric" })}</span></time>
+                        <span className={`check-result flex min-w-0 items-center gap-2 text-sm font-semibold ${recovered ? "text-foreground" : check.status === "up" ? "text-foreground" : "text-rose-700 dark:text-rose-400"}`}><Icon className="h-4 w-4 shrink-0" aria-hidden="true" /><span>{title}</span></span>
                         <span className="check-attempts text-xs tabular-nums text-muted-foreground">{attempts ? <>{attempts.length}<span className="sm:hidden"> attempts</span></> : "—"}</span>
                         <span className="check-duration text-right font-mono text-xs tabular-nums">{Math.round(check.diagnostics?.totalMs ?? check.latency).toLocaleString()} ms</span>
                         <ChevronDown className="check-chevron h-4 w-4 text-muted-foreground" aria-hidden="true" />
@@ -82,5 +82,5 @@ export function MonitorChecks({ monitorId }: { monitorId: string }) {
 }
 
 function Metric({ label, value, tone = "text-foreground" }: { label: string; value: number; tone?: string }) {
-    return <div><dt className="text-xs text-muted-foreground">{label}</dt><dd className={`mt-1 text-2xl font-semibold tabular-nums sm:text-3xl ${tone}`}>{value.toLocaleString()}</dd></div>;
+    return <div><dt className="text-xs text-muted-foreground">{label}</dt><dd className={`mt-1 text-2xl font-semibold tabular-nums ${tone}`}>{value.toLocaleString()}</dd></div>;
 }

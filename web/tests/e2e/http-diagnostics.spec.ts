@@ -126,6 +126,12 @@ for (const scenario of [
             return { aligned: children.every(child => Math.abs(child.top - children[0].top) < 1), contained: children.every(child => child.left >= box.left && child.right <= box.right + 1 && child.bottom <= box.bottom + 1), touch: children.every(child => child.height >= 44) };
           });
           expect(geometry, `Tabs at ${width}px`).toEqual({ aligned: true, contained: true, touch: true });
+          if (width >= 768) {
+            const tabBox = await tabs.boundingBox();
+            const workspace = await page.getByTestId("monitor-page").boundingBox();
+            expect(tabBox!.width).toBeLessThan(workspace!.width - 1);
+            if (width >= 1280) expect(tabBox!.width).toBeLessThan(workspace!.width * 0.8);
+          }
           expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
           const breadcrumb = page.getByRole("navigation", { name: "breadcrumb" });
           expect(await breadcrumb.evaluate(element => {

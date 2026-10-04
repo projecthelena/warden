@@ -4,10 +4,10 @@
 @import "../../../../tokens.css";
 .check-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, .7fr) minmax(0, 1fr) 1rem;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2.5fr) minmax(0, .6fr) minmax(0, .9fr) 1rem;
   align-items: center;
   gap: var(--space-xs);
-  padding: var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
 }
 .check-row::-webkit-details-marker { display: none; }
 .check-entry[open] > summary .check-chevron { transform: rotate(180deg); }
