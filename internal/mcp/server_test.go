@@ -934,3 +934,23 @@ func TestMoveMonitorUnknownGroupPointsAtCreateGroup(t *testing.T) {
 		t.Errorf("expected the error to point at create_group, got %q", err)
 	}
 }
+
+func TestMCPHTTPDiagnostics(t *testing.T) {
+	s, store := newTestServer(t)
+	seedMonitor(t, store, "m-trace", "Trace", "https://example.test")
+	d := &db.HTTPDiagnostics{Attempts: []db.HTTPAttempt{{TotalMS: 10, Hops: []db.HTTPHop{{Host: "example.test", FailurePhase: "dns"}}}}}
+	if err := store.BatchInsertChecks([]db.CheckResult{{MonitorID: "m-trace", Timestamp: time.Now().UTC(), Status: "down", Diagnostics: d}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateEventWithDetails("m-trace", "down", "DNS failed", &db.EventDetails{Diagnostics: d}); err != nil {
+		t.Fatal(err)
+	}
+	_, checks, err := s.getMonitorChecks(context.Background(), nil, GetMonitorChecksInput{Monitor: "Trace"})
+	if err != nil || len(checks.Checks) != 1 || checks.Checks[0].Diagnostics == nil {
+		t.Fatalf("checks: %+v %v", checks, err)
+	}
+	_, events, err := s.getMonitorEvents(context.Background(), nil, GetMonitorEventsInput{Monitor: "Trace"})
+	if err != nil || len(events.Events) != 1 || events.Events[0].Diagnostics == nil {
+		t.Fatalf("events: %+v %v", events, err)
+	}
+}

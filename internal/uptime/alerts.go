@@ -180,13 +180,8 @@ func (m *Manager) partitionOutages(outages []db.OpenOutage, filter NotificationE
 	return eligible, groupSizes, total
 }
 
-// announceProbeFailure catches the case where Warden itself is the problem. Reporting
-// "Google, GitHub and Cloudflare are all down" as eighteen separate incidents sends you to
-// debug eighteen innocent services.
-//
-// The failures must span at least two groups. A single group going down entirely looks
-// identical from here, and "your NodeSource group is down" is both more specific and safer
-// to be wrong about than "your network is broken".
+// announceProbeFailure groups widespread failures without claiming their cause.
+// Phase evidence can suggest connectivity trouble, but cannot identify an ISP.
 func (m *Manager) announceProbeFailure(pending []db.OpenOutage, now time.Time, policy alertPolicy, corr correlationPolicy, totalMonitors int) ([]db.OpenOutage, bool) {
 	if totalMonitors < corr.MinMonitors {
 		return pending, false
@@ -236,8 +231,8 @@ func (m *Manager) announceProbeFailure(pending []db.OpenOutage, now time.Time, p
 		MonitorName: fmt.Sprintf("%d of %d monitors", affected, totalMonitors),
 		Type:        notifications.EventDown,
 		Message: fmt.Sprintf(
-			"%d of %d monitors are down across every group, for %s. That is more likely to be Warden's own network than every target failing at once — check this host before the services. Affected: %s",
-			affected, totalMonitors, formatAlertDuration(now.Sub(down[0].StartTime)), monitorList(down, 8)),
+			"%d of %d monitors are down across multiple groups, for %s. %s Affected: %s",
+			affected, totalMonitors, formatAlertDuration(now.Sub(down[0].StartTime)), m.connectivityEvidence(down, now), monitorList(down, 8)),
 		Time: now,
 	})
 	log.Printf("Alerting: probe-wide failure, %d of %d monitors down", affected, totalMonitors)
@@ -457,6 +452,9 @@ func (m *Manager) outageEvent(o db.OpenOutage, now time.Time, reminder bool) not
 		message = fmt.Sprintf("Still %s after %s", state, elapsed)
 	}
 
+	if detail := diagnosticSummary(m.recentDiagnostics(o.MonitorID, now)); detail != "" {
+		message += ". " + detail
+	}
 	return notifications.NotificationEvent{
 		MonitorID:   o.MonitorID,
 		MonitorName: o.MonitorName,

@@ -154,3 +154,43 @@ func TestGetMonitorEvents_RangeValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestHTTPDiagnosticsAPI(t *testing.T) {
+	s, err := db.NewStore(db.NewTestConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	if err := s.CreateMonitor(db.Monitor{ID: "m-trace", GroupID: "g-default", Name: "Trace", URL: "https://example.test", Interval: 60}); err != nil {
+		t.Fatal(err)
+	}
+	d := &db.HTTPDiagnostics{Attempts: []db.HTTPAttempt{{TotalMS: 9, Hops: []db.HTTPHop{{Host: "example.test", FailurePhase: "dns"}}}}}
+	if err := s.BatchInsertChecks([]db.CheckResult{{MonitorID: "m-trace", Status: "down", Timestamp: time.Now().UTC(), Diagnostics: d}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateEventWithDetails("m-trace", "down", "DNS failed", &db.EventDetails{Diagnostics: d}); err != nil {
+		t.Fatal(err)
+	}
+	h := NewUptimeHandler(uptime.NewManager(s), s)
+	r := chi.NewRouter()
+	r.Get("/monitors/{id}/checks", h.GetMonitorChecks)
+	r.Get("/monitors/{id}/events", h.GetMonitorEvents)
+	for _, path := range []string{"checks", "events"} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest("GET", "/monitors/m-trace/"+path, nil))
+		if w.Code != 200 {
+			t.Fatal(w.Code)
+		}
+		var rows []struct {
+			Diagnostics *db.HTTPDiagnostics `json:"diagnostics"`
+		}
+		if json.Unmarshal(w.Body.Bytes(), &rows) != nil || len(rows) != 1 || rows[0].Diagnostics == nil || rows[0].Diagnostics.Attempts[0].Hops[0].FailurePhase != "dns" {
+			t.Fatalf("missing trace in %s: %s", path, w.Body.String())
+		}
+	}
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/monitors/m-trace/checks?limit=100000", nil))
+	if w.Code != 400 {
+		t.Fatal("unbounded checks")
+	}
+}

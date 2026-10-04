@@ -54,6 +54,7 @@ export interface HistoryPoint {
 }
 
 export interface RequestConfig {
+    autoRetry?: boolean;
     method?: string;
     headers?: Record<string, string>;
     body?: string;

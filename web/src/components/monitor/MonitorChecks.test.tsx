@@ -1,0 +1,117 @@
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { MonitorChecks } from "./MonitorChecks";
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe("monitor check history", () => {
+  it("shows full-day counts separately and pages through retained checks", async () => {
+    const fetchMock = vi.fn(
+      async (url: string) =>
+        new Response(
+          JSON.stringify(
+            url.endsWith("/summary")
+              ? {
+                  total: 50,
+                  failed: 5,
+                  recovered: 3,
+                  traced: 50,
+                  failurePhases: { tcp: 8 },
+                }
+              : url.includes("beforeId=")
+                ? []
+                : Array.from({ length: 20 }, (_, i) => ({
+                    id: 100 - i,
+                    status: "up",
+                    timestamp: "2026-01-01T00:00:00Z",
+                    latency: 2,
+                  })),
+          ),
+          { status: 200 },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <MonitorChecks monitorId="m-test" />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText("Last 24 hours")).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("24-hour totals"),
+    ).toHaveTextContent("Checks50Failed5Recovered3");
+    await userEvent.click(screen.getByRole("button", { name: "Older" }));
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([url]) => url.includes("beforeId=81")),
+      ).toBe(true),
+    );
+    expect(await screen.findByText("No checks recorded.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Newer" })).toBeEnabled();
+    client.clear();
+  });
+});
+
+it("keeps individual checks available when the summary fails", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) =>
+      url.endsWith("/summary")
+        ? new Response("unavailable", { status: 503 })
+        : new Response(
+            JSON.stringify([
+              {
+                id: 1,
+                status: "down",
+                timestamp: "2026-01-01T00:00:00Z",
+                latency: 0,
+              },
+            ]),
+          ),
+    ),
+  );
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <MonitorChecks monitorId="m-old" />
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "24-hour summary is unavailable",
+  );
+
+  await userEvent.click(screen.getByLabelText(/Check failed/));
+  expect(
+    screen.getByText("No HTTP trace was recorded for this check."),
+  ).toBeVisible();
+  expect(screen.getByRole("button", { name: "Older" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Newer" })).toBeDisabled();
+  client.clear();
+});
+
+it("reports a history failure instead of presenting empty history", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response("unavailable", { status: 503 })),
+  );
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <MonitorChecks monitorId="m-error" />
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Could not load recent checks.",
+  );
+  expect(screen.queryByText("No checks recorded.")).not.toBeInTheDocument();
+  client.clear();
+});

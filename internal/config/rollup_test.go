@@ -17,3 +17,19 @@ func TestRollupDiagnosticsOptIn(t *testing.T) {
 		})
 	}
 }
+
+func TestHTTPDiagnosticsOptIn(t *testing.T) {
+	for _, value := range []string{"", "false", "true", "TRUE", "invalid"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("HTTP_DIAGNOSTICS_ENABLED", value)
+			cfg, err := Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := value == "true" || value == "TRUE"
+			if cfg.HTTPDiagnostics != want {
+				t.Fatalf("diagnostics = %v, want %v", cfg.HTTPDiagnostics, want)
+			}
+		})
+	}
+}

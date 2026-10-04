@@ -40,6 +40,8 @@ func TestAuthEnforcement(t *testing.T) {
 		{"Create Monitor", "POST", "/api/monitors"},
 		{"Update Monitor", "PUT", "/api/monitors/m-test"},
 		{"Delete Monitor", "DELETE", "/api/monitors/m-test"},
+		{"Monitor Check Summary", "GET", "/api/monitors/m-test/checks/summary"},
+		{"Monitor Check Diagnostics", "GET", "/api/monitors/m-test/checks"},
 		{"Monitor Uptime", "GET", "/api/monitors/m-test/uptime"},
 		{"Monitor Latency", "GET", "/api/monitors/m-test/latency"},
 		{"Get Incidents", "GET", "/api/incidents"},

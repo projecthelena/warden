@@ -5,6 +5,8 @@ import { ChevronDown, ChevronRight, AlertTriangle, ArrowDown, ArrowUp, Tornado, 
 import { formatDate } from "@/lib/utils";
 import { useMonitorStore } from "@/lib/store";
 import { EnrichedMonitorEvent } from "@/hooks/useMonitorEvents";
+import { explainCheck } from "@/lib/checkEvidence";
+import { HTTPDiagnosticDetails } from "@/components/HTTPDiagnosticDetails";
 import { cameFromCheck, formatLatency } from "@/lib/eventGroups";
 
 interface EventDetailCardProps {
@@ -26,8 +28,9 @@ export function EventDetailCard({ event }: EventDetailCardProps) {
     const { user } = useMonitorStore();
     const meta = TYPE_META[event.type] ?? { label: event.type, color: "text-muted-foreground border-border bg-muted/30", Icon: AlertTriangle };
     const Icon = meta.Icon;
+    const explanation = explainCheck({ status: event.type === "down" ? "down" : "up", latency: event.latency ?? 0, timestamp: event.timestamp, statusCode: event.statusCode, diagnostics: event.diagnostics });
 
-    const hasDetails = !!(event.errorMessage || event.responseBody || (event.responseHeaders && Object.keys(event.responseHeaders).length > 0));
+    const hasDetails = !!(event.diagnostics || event.errorMessage || event.responseBody || (event.responseHeaders && Object.keys(event.responseHeaders).length > 0));
     // A check that answered in under a millisecond stores no latency, which used to render
     // as an empty gap that read like missing data. Say "<1ms" instead.
     const latency = formatLatency(event.latency, cameFromCheck(event));
@@ -84,6 +87,11 @@ export function EventDetailCard({ event }: EventDetailCardProps) {
                 {header}
             </CollapsibleTrigger>
             <CollapsibleContent className="border-t border-border bg-muted/20 px-3 py-3 space-y-3">
+                    {event.diagnostics && <div className="space-y-2">
+                        <p className="text-sm font-medium">{explanation.title}</p>
+                        <p className="text-sm text-muted-foreground">{explanation.detail} {explanation.action}</p>
+                        <details><summary className="cursor-pointer text-sm">Technical details</summary><div className="mt-3"><HTTPDiagnosticDetails diagnostics={event.diagnostics} /></div></details>
+                    </div>}
                     {event.errorMessage && (
                         <Section title="Error">
                             <pre className="text-xs font-mono whitespace-pre-wrap break-words text-rose-500/90 bg-rose-500/5 border border-rose-500/20 rounded p-2">

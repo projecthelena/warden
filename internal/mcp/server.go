@@ -96,6 +96,7 @@ func (s *Server) newMCPServer(writable bool) *mcp.Server {
 		Annotations: readOnly,
 	}, s.getMonitorEvents)
 
+	mcp.AddTool(srv, &mcp.Tool{Name: "get_monitor_checks", Title: "Get recent HTTP check evidence", Description: "Raw checks with per-attempt and per-redirect timings when diagnostics are enabled. Response wait is not server execution time; simultaneous failures do not prove an ISP outage.", Annotations: readOnly}, s.getMonitorChecks)
 	s.addDiagnosticTools(srv, readOnly)
 
 	// A viewer key never sees the write tools at all, so the model is not left offering
@@ -167,12 +168,13 @@ type GetMonitorInput struct {
 }
 
 type EventSummary struct {
-	Type      string `json:"type"`
-	Message   string `json:"message"`
-	Timestamp string `json:"timestamp"`
-	Error     string `json:"error,omitempty"`
-	Status    int    `json:"statusCode,omitempty"`
-	Latency   int64  `json:"latencyMs,omitempty"`
+	Diagnostics *db.HTTPDiagnostics `json:"diagnostics,omitempty"`
+	Type        string              `json:"type"`
+	Message     string              `json:"message"`
+	Timestamp   string              `json:"timestamp"`
+	Error       string              `json:"error,omitempty"`
+	Status      int                 `json:"statusCode,omitempty"`
+	Latency     int64               `json:"latencyMs,omitempty"`
 	// What the target actually returned on a failed check. Usually the fastest route to
 	// the cause, and already filtered of sensitive headers when it was stored.
 	ResponseBody    string `json:"responseBody,omitempty"`
@@ -382,9 +384,10 @@ func summarizeEvents(events []db.MonitorEvent) []EventSummary {
 	out := make([]EventSummary, 0, len(events))
 	for _, e := range events {
 		summary := EventSummary{
-			Type:      e.Type,
-			Message:   e.Message,
-			Timestamp: e.Timestamp.UTC().Format(time.RFC3339),
+			Diagnostics: e.Diagnostics,
+			Type:        e.Type,
+			Message:     e.Message,
+			Timestamp:   e.Timestamp.UTC().Format(time.RFC3339),
 		}
 		if e.ErrorMessage != nil {
 			summary.Error = *e.ErrorMessage
@@ -422,4 +425,43 @@ func incidentSummary(o db.MonitorOutage) IncidentSummary {
 	}
 	summary.Duration = end.Sub(o.StartTime).Round(time.Second).String()
 	return summary
+}
+
+type GetMonitorChecksInput struct {
+	BeforeID int64  `json:"beforeId,omitempty" jsonschema:"return checks stored before this check ID"`
+	Monitor  string `json:"monitor" jsonschema:"monitor name or ID"`
+	Limit    int    `json:"limit,omitempty" jsonschema:"maximum checks (default 10, maximum 100)"`
+}
+
+type GetMonitorChecksOutput struct {
+	Summary db.CheckSummary  `json:"summary"`
+	Monitor string           `json:"monitor"`
+	Checks  []db.CheckResult `json:"checks"`
+}
+
+func (s *Server) getMonitorChecks(_ context.Context, _ *mcp.CallToolRequest, in GetMonitorChecksInput) (*mcp.CallToolResult, GetMonitorChecksOutput, error) {
+	m, err := s.resolveMonitor(in.Monitor)
+	if err != nil {
+		return nil, GetMonitorChecksOutput{}, err
+	}
+	limit := in.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	checks, err := s.store.GetMonitorChecksPage(m.ID, limit, in.BeforeID)
+	if err != nil {
+		return nil, GetMonitorChecksOutput{}, fmt.Errorf("failed to load checks: %w", err)
+	}
+	if checks == nil {
+		checks = []db.CheckResult{}
+	}
+	until := time.Now().UTC()
+	summary, err := s.store.GetMonitorCheckSummary(m.ID, until.Add(-24*time.Hour), until)
+	if err != nil {
+		return nil, GetMonitorChecksOutput{}, fmt.Errorf("failed to load check summary: %w", err)
+	}
+	return nil, GetMonitorChecksOutput{Monitor: m.Name, Checks: checks, Summary: summary}, nil
 }

@@ -201,6 +201,8 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 				dashboard.Get("/monitors/{id}/uptime", uptimeH.GetMonitorUptime)
 				dashboard.Get("/monitors/{id}/latency", uptimeH.GetMonitorLatency)
 				dashboard.Get("/monitors/{id}/events", uptimeH.GetMonitorEvents)
+				dashboard.Get("/monitors/{id}/checks", uptimeH.GetMonitorChecks)
+				dashboard.Get("/monitors/{id}/checks/summary", uptimeH.GetMonitorCheckSummary)
 				dashboard.Get("/monitors/{id}/insights", insightH.GetMonitorInsights)
 
 				// Reusable Docker Engine connections and container discovery.

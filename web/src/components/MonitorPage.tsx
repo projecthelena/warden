@@ -4,7 +4,7 @@
  */
 import { useMemo } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Activity, Bell, BellOff, Calendar, ExternalLink, Pause, Play, Settings2 } from "lucide-react";
+import { Activity, Bell, BellOff, Calendar, ListChecks, ExternalLink, Pause, Play, Settings2 } from "lucide-react";
 import { useMonitorsQuery } from "@/hooks/useMonitors";
 import { useFilteredSystemEvents } from "@/hooks/useSystemEvents";
 import { useRole } from "@/hooks/useRole";
@@ -18,6 +18,7 @@ import { StatusBadge } from "@/components/ui/monitor-visuals";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { IncidentCard } from "@/components/IncidentCard";
 import { MonitorOverview } from "@/components/monitor/MonitorOverview";
+import { MonitorChecks } from "@/components/monitor/MonitorChecks";
 import { MonitorSettings } from "@/components/monitor/MonitorSettings";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -33,7 +34,7 @@ export function MonitorPage() {
     const monitor = context?.monitor;
     const group = context?.group;
     const requestedTab = searchParams.get("tab");
-    const activeTab = requestedTab === "incidents" || (requestedTab === "settings" && canEdit) ? requestedTab : "overview";
+    const activeTab = requestedTab === "checks" || requestedTab === "incidents" || (requestedTab === "settings" && canEdit) ? requestedTab : "overview";
     const date = searchParams.get("date") || today();
     const incidentsQuery = useFilteredSystemEvents({ monitorId: id, date });
     const incidents: SystemIncident[] = [...(incidentsQuery.data?.active ?? []), ...(incidentsQuery.data?.history ?? [])];
@@ -74,13 +75,15 @@ export function MonitorPage() {
             </header>
 
             <Tabs value={activeTab} onValueChange={tab => updateQuery({ tab: tab === "overview" ? null : tab })}>
-                <TabsList className={`grid h-11 w-full sm:w-auto ${canEdit ? "grid-cols-3" : "grid-cols-2"}`}>
-                    <TabsTrigger value="overview" className="min-w-24"><Activity className="mr-2 h-4 w-4" />Overview</TabsTrigger>
-                    <TabsTrigger value="incidents" className="min-w-24"><Calendar className="mr-2 h-4 w-4" />Incidents</TabsTrigger>
-                    {canEdit && <TabsTrigger value="settings" className="min-w-24" data-testid="monitor-settings-tab"><Settings2 className="mr-2 h-4 w-4" />Settings</TabsTrigger>}
+                <TabsList className={`grid h-auto w-full p-1 sm:inline-flex sm:w-auto ${canEdit ? "grid-cols-4" : "grid-cols-3"}`}>
+                    <TabsTrigger value="overview" className="min-h-11 min-w-0 px-1 text-xs sm:px-4 sm:text-sm"><Activity className="mr-2 hidden h-4 w-4 sm:block" />Overview</TabsTrigger>
+                    <TabsTrigger value="incidents" className="min-h-11 min-w-0 px-1 text-xs sm:px-4 sm:text-sm"><Calendar className="mr-2 hidden h-4 w-4 sm:block" />Incidents</TabsTrigger>
+                    <TabsTrigger value="checks" className="min-h-11 min-w-0 px-1 text-xs sm:px-4 sm:text-sm"><ListChecks className="mr-2 hidden h-4 w-4 sm:block" />Checks</TabsTrigger>
+                    {canEdit && <TabsTrigger value="settings" className="min-h-11 min-w-0 px-1 text-xs sm:px-4 sm:text-sm" data-testid="monitor-settings-tab"><Settings2 className="mr-2 hidden h-4 w-4 sm:block" />Settings</TabsTrigger>}
                 </TabsList>
                 <TabsContent value="overview" className="mt-5"><MonitorOverview monitor={monitor} timezone={user?.timezone} /></TabsContent>
                 <TabsContent value="incidents" className="mt-5"><IncidentsPanel id={id} date={date} incidents={incidents} sslWarnings={sslWarnings} query={incidentsQuery} onDateChange={value => updateQuery({ date: value === today() ? null : value })} onAll={() => navigate(`/incidents?monitorId=${id}`)} /></TabsContent>
+                <TabsContent value="checks" className="mt-5"><MonitorChecks key={id} monitorId={id} /></TabsContent>
                 {canEdit && <TabsContent value="settings" className="mt-5"><MonitorSettings monitor={monitor} groupId={group.id} /></TabsContent>}
             </Tabs>
         </div>

@@ -601,6 +601,9 @@ func validateRequestConfig(cfg *db.RequestConfig) error {
 	if cfg.AcceptedStatusCodes != "" && !acceptedCodesRe.MatchString(cfg.AcceptedStatusCodes) {
 		return fmt.Errorf("acceptedStatusCodes must match format like '200-299,301,302'")
 	}
+	if cfg.AutoRetry && cfg.RetryCount > 0 {
+		return fmt.Errorf("autoRetry and retryCount cannot both be enabled")
+	}
 	if cfg.RetryCount < 0 || cfg.RetryCount > 5 {
 		return fmt.Errorf("retryCount must be between 0 and 5")
 	}

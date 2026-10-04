@@ -19,20 +19,22 @@ type Status struct {
 }
 
 type Monitor struct {
-	id            string
-	monitorType   string
-	groupID       string
-	name          string
-	url           string
-	interval      time.Duration
-	createdAt     time.Time
-	history       []Status
-	mu            sync.RWMutex
-	stopCh        chan struct{}
-	stopOnce      sync.Once
-	jobQueue      chan<- Job
-	requestConfig *db.RequestConfig
-	dockerHost    *db.DockerHost
+	lastDiagnostics *db.HTTPDiagnostics
+	diagnosticAt    time.Time
+	id              string
+	monitorType     string
+	groupID         string
+	name            string
+	url             string
+	interval        time.Duration
+	createdAt       time.Time
+	history         []Status
+	mu              sync.RWMutex
+	stopCh          chan struct{}
+	stopOnce        sync.Once
+	jobQueue        chan<- Job
+	requestConfig   *db.RequestConfig
+	dockerHost      *db.DockerHost
 
 	// Notification fatigue state (protected by mu)
 	confirmationThreshold int   // effective threshold (resolved from per-monitor or global)

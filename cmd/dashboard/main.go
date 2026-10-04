@@ -64,6 +64,14 @@ func main() {
 	// Init Uptime Manager
 	manager := uptime.NewManager(store)
 	manager.RollupDiagnostics = cfg.RollupDiagnostics
+	manager.HTTPDiagnostics = cfg.HTTPDiagnostics
+	if endpoint := os.Getenv("SECONDARY_PROBE_URL"); endpoint != "" {
+		probe, err := uptime.NewSecondaryProbe(endpoint, os.Getenv("SECONDARY_PROBE_TOKEN"))
+		if err != nil {
+			log.Fatal(err)
+		}
+		manager.SecondaryProbe = probe
+	}
 	manager.Start()
 	defer manager.Stop()
 

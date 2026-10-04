@@ -1,0 +1,26 @@
+/* Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: design.md
+ * pre-emit critique: P4 H4 E4 S4 R5 V4
+ */
+@import "../../../../tokens.css";
+.check-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2.5fr) minmax(0, .6fr) minmax(0, .9fr) 1rem;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+}
+.check-row::-webkit-details-marker { display: none; }
+.check-entry[open] > summary .check-chevron { transform: rotate(180deg); }
+.check-column-head > :nth-child(4) { text-align: right; }
+@media (max-width: 639px) {
+  .check-column-head { display: none; }
+  .check-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 1rem;
+    row-gap: var(--space-2xs);
+  }
+  .check-result { grid-column: 1 / 3; grid-row: 1; }
+  .check-chevron { grid-column: 3; grid-row: 1; }
+  .check-time { grid-column: 1; grid-row: 2 / 4; }
+  .check-attempts { grid-column: 2 / 4; grid-row: 3; text-align: right; }
+  .check-duration { grid-column: 2 / 4; grid-row: 2; }
+}

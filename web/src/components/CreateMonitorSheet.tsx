@@ -67,7 +67,7 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
     // Request Configuration state
     const [httpMethod, setHttpMethod] = useState("GET");
     const [requestTimeout, setRequestTimeout] = useState<string>("");
-    const [retryCount, setRetryCount] = useState("0");
+    const [retryCount, setRetryCount] = useState("auto");
     const [followRedirects, setFollowRedirects] = useState(true);
     const [acceptedCodes, setAcceptedCodes] = useState("");
     const [customHeaders, setCustomHeaders] = useState<{ key: string; value: string }[]>([]);
@@ -161,6 +161,7 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
             const config: RequestConfig = {};
             if (requestTimeout) config.timeoutSeconds = parseInt(requestTimeout);
             if (parseInt(retryCount) > 0) config.retryCount = parseInt(retryCount);
+            if (monitorType === "http") config.autoRetry = retryCount === "auto";
 
             if (monitorType === "http") {
                 const headers: Record<string, string> = {};
@@ -220,7 +221,7 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
             setIsNewGroup(false);
             setHttpMethod("GET");
             setRequestTimeout("");
-            setRetryCount("0");
+            setRetryCount("auto");
             setFollowRedirects(true);
             setAcceptedCodes("");
             setCustomHeaders([]);
@@ -430,9 +431,10 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                                         </div>
                                         <div className="grid gap-1.5">
                                             <Label className="text-xs">Retry on Failure</Label>
-                                            <Select onValueChange={setRetryCount} value={retryCount}>
+                                            <Select onValueChange={setRetryCount} value={monitorType !== "http" && retryCount === "auto" ? "0" : retryCount}>
                                                 <SelectTrigger data-testid="request-retry-select"><SelectValue /></SelectTrigger>
                                                 <SelectContent>
+                                                    {monitorType === "http" && <SelectItem value="auto">Automatic · one safe retry</SelectItem>}
                                                     {[0, 1, 2, 3, 4, 5].map(n => (
                                                         <SelectItem key={n} value={n.toString()} className="cursor-pointer">
                                                             {n === 0 ? "No retry" : `${n} ${n === 1 ? "retry" : "retries"}`}
@@ -440,6 +442,7 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                                                     ))}
                                                 </SelectContent>
                                             </Select>
+                                            {monitorType === "http" && retryCount === "auto" && <p className="text-xs text-muted-foreground">GET/HEAD only. One retry for temporary failures, within the check timeout.</p>}
                                         </div>
                                     </div>
                                 </div>

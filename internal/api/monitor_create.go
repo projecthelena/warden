@@ -72,6 +72,9 @@ func (h *CRUDHandler) AddMonitor(in MonitorInput) (db.Monitor, error) {
 		}
 	}
 
+	if in.RequestConfig == nil && db.NormalizeMonitorType(in.Type) == db.MonitorTypeHTTP {
+		in.RequestConfig = &db.RequestConfig{AutoRetry: true}
+	}
 	m := db.Monitor{
 		ID:                      generateID(in.Name, "m-"),
 		Type:                    db.NormalizeMonitorType(in.Type),
