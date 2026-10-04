@@ -2,7 +2,18 @@ import { useQuery } from "@tanstack/react-query";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 
+export interface HTTPDiagnostics {
+    retryMode?: string; retryDecision?: string; totalMs?: number;
+    attempts: { status?: string; failurePhase?: string; totalMs: number; truncated?: boolean; hops: {
+        host: string; totalMs: number; remoteIp?: string; reused?: boolean;
+        statusCode?: number; failurePhase?: string; truncated?: boolean;
+        phases: { exchange: number; name: string; startMs: number; durationMs: number; complete: boolean; failed?: boolean }[];
+    }[] }[];
+    external?: { outcome: string; observedAt?: string; statusCode?: number; failurePhase?: string };
+}
+
 export interface EnrichedMonitorEvent {
+    diagnostics?: HTTPDiagnostics;
     id: string;
     type: string;
     message: string;

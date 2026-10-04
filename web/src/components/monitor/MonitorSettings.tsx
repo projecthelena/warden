@@ -29,7 +29,7 @@ export function MonitorSettings({ monitor, groupId }: { monitor: Monitor; groupI
     const [cooldown, setCooldown] = useState(monitor.notificationCooldownMinutes?.toString() ?? "");
     const [latencyThreshold, setLatencyThreshold] = useState(monitor.latencyThreshold?.toString() ?? "");
     const [timeout, setTimeoutValue] = useState(monitor.requestConfig?.timeoutSeconds?.toString() ?? "");
-    const [retries, setRetries] = useState(monitor.requestConfig?.retryCount?.toString() ?? "0");
+    const [retries, setRetries] = useState(monitor.requestConfig?.autoRetry ? "auto" : monitor.requestConfig?.retryCount?.toString() ?? "0");
     const [method, setMethod] = useState(monitor.requestConfig?.method || "GET");
     const [acceptedCodes, setAcceptedCodes] = useState(monitor.requestConfig?.acceptedStatusCodes ?? "");
     const [followRedirects, setFollowRedirects] = useState(monitor.requestConfig?.followRedirects !== false);
@@ -68,6 +68,7 @@ export function MonitorSettings({ monitor, groupId }: { monitor: Monitor; groupI
         if (timeout) requestConfig.timeoutSeconds = Number(timeout);
         if (Number(retries) > 0) requestConfig.retryCount = Number(retries);
         if (type === "http") {
+            requestConfig.autoRetry = retries === "auto";
             const cleanHeaders = Object.fromEntries(headers.filter(item => item.key.trim()).map(item => [item.key.trim(), item.value.trim()]));
             if (method !== "GET") requestConfig.method = method;
             if (acceptedCodes) requestConfig.acceptedStatusCodes = acceptedCodes;
@@ -132,11 +133,12 @@ export function MonitorSettings({ monitor, groupId }: { monitor: Monitor; groupI
 
                         <AccordionItem value="behavior">
                             <AccordionTrigger className="hover:no-underline">
-                                <SectionLabel icon={<TimerReset />} title="Failure handling" summary={`${timeout || 5}s timeout · ${Number(retries) === 0 ? "no retries" : `${retries} retries`}`} />
+                                <SectionLabel icon={<TimerReset />} title="Failure handling" summary={`${timeout || 5}s timeout · ${retries === "auto" ? "automatic retry" : Number(retries) === 0 ? "no retries" : `${retries} retries`}`} />
                             </AccordionTrigger>
                             <AccordionContent className="grid gap-5 px-1 pt-2 sm:grid-cols-2">
                                 <Field label="Timeout (seconds)"><Input aria-label="Timeout (seconds)" type="number" min={1} max={120} placeholder="5" value={timeout} onChange={event => setTimeoutValue(event.target.value)} /></Field>
-                                <Field label="Retry on failure"><Select value={retries} onValueChange={setRetries}><SelectTrigger data-testid="request-retry-select"><SelectValue /></SelectTrigger><SelectContent>{[0, 1, 2, 3, 4, 5].map(value => <SelectItem key={value} value={value.toString()}>{value === 0 ? "No retry" : `${value} ${value === 1 ? "retry" : "retries"}`}</SelectItem>)}</SelectContent></Select></Field>
+                                {type === "http" && retries === "auto" && <p className="text-xs text-muted-foreground">GET/HEAD only. One retry for temporary failures, within the check timeout.</p>}
+                                <Field label="Retry on failure"><Select value={retries} onValueChange={setRetries}><SelectTrigger data-testid="request-retry-select"><SelectValue /></SelectTrigger><SelectContent>{type === "http" && <SelectItem value="auto">Automatic · one safe retry</SelectItem>}{[0, 1, 2, 3, 4, 5].map(value => <SelectItem key={value} value={value.toString()}>{value === 0 ? "No retry" : `${value} ${value === 1 ? "retry" : "retries"}`}</SelectItem>)}</SelectContent></Select></Field>
                             </AccordionContent>
                         </AccordionItem>
 

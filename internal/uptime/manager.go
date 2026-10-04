@@ -19,22 +19,26 @@ import (
 )
 
 type Job struct {
-	MonitorID     string
-	Type          string // check type; empty means http
-	URL           string
-	RequestConfig *db.RequestConfig
-	DockerHost    *db.DockerHost
+	retrySlots         chan struct{}
+	retryBusy          bool
+	CaptureDiagnostics bool
+	MonitorID          string
+	Type               string // check type; empty means http
+	URL                string
+	RequestConfig      *db.RequestConfig
+	DockerHost         *db.DockerHost
 }
 
 type CheckResult struct {
-	MonitorID  string
-	URL        string
-	Status     bool
-	Latency    int64
-	Timestamp  time.Time
-	StatusCode int
-	Error      string
-	IsDegraded bool
+	Diagnostics *db.HTTPDiagnostics
+	MonitorID   string
+	URL         string
+	Status      bool
+	Latency     int64
+	Timestamp   time.Time
+	StatusCode  int
+	Error       string
+	IsDegraded  bool
 	// NotRun marks a check that never reached the target: an address Warden cannot use,
 	// or a permission it lacks. Still down, but reporting it as "down" sends the
 	// operator hunting a network problem that isn't there, so the reason replaces the
@@ -77,6 +81,8 @@ type sslThresholdState struct {
 }
 
 type Manager struct {
+	HTTPDiagnostics   bool // Configure before Start.
+	SecondaryProbe    *SecondaryProbe
 	RollupDiagnostics bool // Configure before Start; disabled by default.
 
 	store           *db.Store
@@ -84,6 +90,7 @@ type Manager struct {
 	mu              sync.RWMutex
 	monitorSnapshot atomic.Value // immutable map[string]*Monitor for read-only consumers
 
+	retrySlots  chan struct{}
 	jobQueue    chan Job
 	resultQueue chan CheckResult
 	stopCh      chan struct{}
@@ -148,6 +155,7 @@ func NewManager(store *db.Store) *Manager {
 		maintenanceWindows:    make([]db.Incident, 0),
 		jobQueue:              make(chan Job, 1000),         // Buffer for bursts
 		resultQueue:           make(chan CheckResult, 1000), // Buffer for results
+		retrySlots:            make(chan struct{}, WorkerCount/10),
 		stopCh:                make(chan struct{}),
 		latencyThreshold:      1000, // Default
 		sslNotifiedThresholds: make(map[string]*sslThresholdState),
@@ -265,7 +273,13 @@ func (m *Manager) worker() {
 	for job := range m.jobQueue {
 		started := time.Now()
 		observability.CheckQueueDepth.Set(float64(len(m.jobQueue)))
+		job.retrySlots = m.retrySlots
+		job.retryBusy = len(m.jobQueue)*2 >= cap(m.jobQueue) || len(m.resultQueue)*2 >= cap(m.resultQueue)
+		job.CaptureDiagnostics = m.HTTPDiagnostics
 		result := runCheck(job, transport)
+		if !result.Status && result.Diagnostics != nil && m.SecondaryProbe != nil {
+			result.Diagnostics.External = m.SecondaryProbe.Observe(job.MonitorID)
+		}
 		monitorType := job.Type
 		if monitorType == "" {
 			monitorType = db.MonitorTypeHTTP
@@ -286,6 +300,7 @@ func (m *Manager) worker() {
 // fields (response body, headers) only when the check itself failed.
 func eventDetailsFromResult(res CheckResult) *db.EventDetails {
 	d := &db.EventDetails{
+		Diagnostics:  res.Diagnostics,
 		StatusCode:   res.StatusCode,
 		Latency:      res.Latency,
 		ErrorMessage: res.Error,
@@ -412,6 +427,12 @@ func (m *Manager) resultProcessor() {
 			m.mu.RLock()
 			mon, exists := m.monitors[res.MonitorID]
 			m.mu.RUnlock()
+			if exists {
+				mon.mu.Lock()
+				mon.lastDiagnostics = res.Diagnostics
+				mon.diagnosticAt = res.Timestamp
+				mon.mu.Unlock()
+			}
 
 			// Load event filter snapshot
 			m.mu.RLock()
@@ -645,11 +666,12 @@ func (m *Manager) resultProcessor() {
 				statusStr = "up"
 			}
 			batch = append(batch, db.CheckResult{
-				MonitorID:  res.MonitorID,
-				Status:     statusStr,
-				Latency:    res.Latency,
-				Timestamp:  res.Timestamp,
-				StatusCode: res.StatusCode,
+				Diagnostics: res.Diagnostics,
+				MonitorID:   res.MonitorID,
+				Status:      statusStr,
+				Latency:     res.Latency,
+				Timestamp:   res.Timestamp,
+				StatusCode:  res.StatusCode,
 			})
 
 			if len(batch) >= BatchSize {

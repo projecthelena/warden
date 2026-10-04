@@ -21,8 +21,8 @@ type correlationPolicy struct {
 	// GroupPercent is the share of a group that must be failing. Expressed as a percentage
 	// so it still means something when a group grows from 12 monitors to 200.
 	GroupPercent int
-	// ProbePercent is the share of *every* monitor that must be failing before Warden
-	// concludes the problem is its own vantage point rather than the targets.
+	// ProbePercent is the share of monitors needed for a broad outage alert.
+	// Grouping alone does not establish the cause.
 	ProbePercent int
 	// ChronicLimit is how many times one monitor may interrupt you inside ChronicWindow
 	// before its individual alerts are collapsed into a single "unstable" notice.
@@ -85,9 +85,7 @@ func distinctMonitors(outages []db.OpenOutage) int {
 	return len(seen)
 }
 
-// distinctGroups counts how many groups a set of outages spans. Trouble confined to one
-// group has a group-shaped explanation; trouble across several points at something they
-// share, which from Warden's vantage point is usually Warden's own network.
+// distinctGroups counts organizational groups, not independent network paths.
 func distinctGroups(outages []db.OpenOutage) int {
 	seen := make(map[string]struct{}, len(outages))
 	for _, o := range outages {

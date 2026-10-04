@@ -1187,6 +1187,105 @@
                 }
             }
         },
+        "/monitors/{id}/checks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "uptime"
+                ],
+                "summary": "Recent checks with optional HTTP diagnostics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Monitor ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum checks (default 20, maximum 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Return checks stored before this check ID",
+                        "name": "beforeId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_projecthelena_warden_internal_db.CheckResult"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid limit",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/monitors/{id}/checks/summary": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "uptime"
+                ],
+                "summary": "Check outcomes and recovered retries over the last 24 hours",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Monitor ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_projecthelena_warden_internal_db.CheckSummary"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/monitors/{id}/events": {
             "get": {
                 "security": [
@@ -2155,6 +2254,12 @@
         "github_com_projecthelena_warden_internal_db.CheckResult": {
             "type": "object",
             "properties": {
+                "diagnostics": {
+                    "$ref": "#/definitions/github_com_projecthelena_warden_internal_db.HTTPDiagnostics"
+                },
+                "id": {
+                    "type": "integer"
+                },
                 "latency": {
                     "type": "integer"
                 },
@@ -2169,6 +2274,53 @@
                 },
                 "timestamp": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_projecthelena_warden_internal_db.CheckSummary": {
+            "type": "object",
+            "properties": {
+                "failed": {
+                    "type": "integer"
+                },
+                "failurePhases": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                },
+                "recovered": {
+                    "type": "integer"
+                },
+                "since": {
+                    "type": "string"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "traced": {
+                    "type": "integer"
+                },
+                "until": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_projecthelena_warden_internal_db.ExternalObservation": {
+            "type": "object",
+            "properties": {
+                "failurePhase": {
+                    "type": "string"
+                },
+                "observedAt": {
+                    "type": "string"
+                },
+                "outcome": {
+                    "type": "string"
+                },
+                "statusCode": {
+                    "type": "integer"
                 }
             }
         },
@@ -2189,6 +2341,107 @@
                 },
                 "name": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_projecthelena_warden_internal_db.HTTPAttempt": {
+            "type": "object",
+            "properties": {
+                "failurePhase": {
+                    "type": "string"
+                },
+                "hops": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_projecthelena_warden_internal_db.HTTPHop"
+                    }
+                },
+                "status": {
+                    "type": "string"
+                },
+                "totalMs": {
+                    "type": "number"
+                },
+                "truncated": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_projecthelena_warden_internal_db.HTTPDiagnostics": {
+            "type": "object",
+            "properties": {
+                "attempts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_projecthelena_warden_internal_db.HTTPAttempt"
+                    }
+                },
+                "external": {
+                    "$ref": "#/definitions/github_com_projecthelena_warden_internal_db.ExternalObservation"
+                },
+                "retryDecision": {
+                    "type": "string"
+                },
+                "retryMode": {
+                    "type": "string"
+                },
+                "totalMs": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_projecthelena_warden_internal_db.HTTPHop": {
+            "type": "object",
+            "properties": {
+                "failurePhase": {
+                    "type": "string"
+                },
+                "host": {
+                    "type": "string"
+                },
+                "phases": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_projecthelena_warden_internal_db.HTTPPhase"
+                    }
+                },
+                "remoteIp": {
+                    "type": "string"
+                },
+                "reused": {
+                    "type": "boolean"
+                },
+                "statusCode": {
+                    "type": "integer"
+                },
+                "totalMs": {
+                    "type": "number"
+                },
+                "truncated": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_projecthelena_warden_internal_db.HTTPPhase": {
+            "type": "object",
+            "properties": {
+                "complete": {
+                    "type": "boolean"
+                },
+                "durationMs": {
+                    "type": "number"
+                },
+                "exchange": {
+                    "type": "integer"
+                },
+                "failed": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "startMs": {
+                    "type": "number"
                 }
             }
         },
@@ -2335,6 +2588,9 @@
             "properties": {
                 "acceptedStatusCodes": {
                     "type": "string"
+                },
+                "autoRetry": {
+                    "type": "boolean"
                 },
                 "body": {
                     "type": "string"
@@ -2676,6 +2932,9 @@
         "internal_api.MonitorEvent": {
             "type": "object",
             "properties": {
+                "diagnostics": {
+                    "$ref": "#/definitions/github_com_projecthelena_warden_internal_db.HTTPDiagnostics"
+                },
                 "errorMessage": {
                     "type": "string"
                 },
@@ -2711,6 +2970,9 @@
         "internal_api.MonitorEventDTO": {
             "type": "object",
             "properties": {
+                "diagnostics": {
+                    "$ref": "#/definitions/github_com_projecthelena_warden_internal_db.HTTPDiagnostics"
+                },
                 "errorMessage": {
                     "type": "string"
                 },
@@ -2798,7 +3060,7 @@
     },
     "securityDefinitions": {
         "BearerAuth": {
-            "description": "Enter \"Bearer sk_live_...\" — create keys in Settings \u003e API Keys",
+            "description": "Enter \"Bearer sk_live_...\" — create keys in Settings > API Keys",
             "type": "apiKey",
             "name": "Authorization",
             "in": "header"

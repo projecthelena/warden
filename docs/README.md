@@ -13,6 +13,7 @@ Use this page as the starting point for installing, operating, and understanding
 ## Understand Warden
 
 - [Why Warden](why-warden.md) — product focus and the gap Warden is designed to fill.
+- [HTTP diagnostics](http-diagnostics.md) — inspect request phases and compare a second probe without assuming an ISP failure.
 - [Adaptive latency](adaptive-latency.md) — how each monitor learns its normal response time.
 - [Notification fatigue](notification-fatigue.md) — confirmation, reminders, flapping detection, correlation, and alert damping.
 - [Patterns](patterns.md) — recurring behavior and longer-term changes found in monitor history.

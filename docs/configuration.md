@@ -6,6 +6,9 @@ Warden is configured with environment variables. The defaults run locally with S
 | :-- | :-- | :-- |
 | `LISTEN_ADDR` | `:9090` | Address and port Warden listens on. |
 | `ROLLUP_DIAGNOSTICS_ENABLED` | `false` | Opt in to daily uptime rollup phase metrics and structured logs for runs lasting at least one second. Requires a restart. |
+| `HTTP_DIAGNOSTICS_ENABLED` | `false` | Also record HTTP phases for legacy/manual-mode monitors; automatic retry mode already records its attempts. See [HTTP diagnostics](http-diagnostics.md). Requires a restart. |
+| `SECONDARY_PROBE_URL` | empty (disabled) | Optional second probe endpoint over HTTPS or a loopback HTTP tunnel. Requires HTTP diagnostics. |
+| `SECONDARY_PROBE_TOKEN` | empty | Shared probe API secret, at least 32 characters. Never sent to monitored targets. |
 | `OBSERVABILITY_ADDR` | empty (disabled) | Separate address for Prometheus metrics and Go profiles, for example `127.0.0.1:9091`. |
 | `DB_TYPE` | `sqlite` | Database backend: `sqlite` or `postgres`. A PostgreSQL `DB_URL` also selects PostgreSQL automatically. |
 | `DB_PATH` | `/data/warden.db` | SQLite database path. |

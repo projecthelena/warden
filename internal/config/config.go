@@ -13,6 +13,7 @@ const (
 
 type Config struct {
 	ListenAddr        string
+	HTTPDiagnostics   bool
 	RollupDiagnostics bool   // Opt-in rollup timings and slow-operation logs
 	ObservabilityAddr string // Separate metrics/pprof listener; empty keeps it disabled
 	DBType            string // "sqlite" or "postgres"
@@ -44,6 +45,7 @@ func Load() (*Config, error) {
 		cfg.ObservabilityAddr = listen
 	}
 
+	cfg.HTTPDiagnostics = strings.EqualFold(os.Getenv("HTTP_DIAGNOSTICS_ENABLED"), "true")
 	cfg.RollupDiagnostics = strings.EqualFold(os.Getenv("ROLLUP_DIAGNOSTICS_ENABLED"), "true")
 
 	// Database configuration

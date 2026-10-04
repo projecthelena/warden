@@ -34,6 +34,7 @@ func eventsToDTO(events []db.MonitorEvent) []MonitorEvent {
 			Latency:      e.Latency,
 			ErrorMessage: e.ErrorMessage,
 			ResponseBody: e.ResponseBody,
+			Diagnostics:  e.Diagnostics,
 		}
 		if e.ResponseHeaders != nil && *e.ResponseHeaders != "" {
 			var headers map[string]string
@@ -74,15 +75,16 @@ type MonitorDTO struct {
 }
 
 type MonitorEvent struct {
-	ID              string            `json:"id"`
-	Type            string            `json:"type"`
-	Message         string            `json:"message"`
-	Timestamp       string            `json:"timestamp"`
-	StatusCode      *int              `json:"statusCode,omitempty"`
-	Latency         *int64            `json:"latency,omitempty"`
-	ErrorMessage    *string           `json:"errorMessage,omitempty"`
-	ResponseBody    *string           `json:"responseBody,omitempty"`
-	ResponseHeaders map[string]string `json:"responseHeaders,omitempty"`
+	Diagnostics     *db.HTTPDiagnostics `json:"diagnostics,omitempty"`
+	ID              string              `json:"id"`
+	Type            string              `json:"type"`
+	Message         string              `json:"message"`
+	Timestamp       string              `json:"timestamp"`
+	StatusCode      *int                `json:"statusCode,omitempty"`
+	Latency         *int64              `json:"latency,omitempty"`
+	ErrorMessage    *string             `json:"errorMessage,omitempty"`
+	ResponseBody    *string             `json:"responseBody,omitempty"`
+	ResponseHeaders map[string]string   `json:"responseHeaders,omitempty"`
 }
 
 type GroupDTO struct {
@@ -535,15 +537,16 @@ func (h *UptimeHandler) GetMonitorLatency(w http.ResponseWriter, r *http.Request
 
 // MonitorEventDTO is the enriched event payload returned to the dashboard drill-down view.
 type MonitorEventDTO struct {
-	ID              string            `json:"id"`
-	Type            string            `json:"type"`
-	Message         string            `json:"message"`
-	Timestamp       string            `json:"timestamp"`
-	StatusCode      *int              `json:"statusCode,omitempty"`
-	Latency         *int64            `json:"latency,omitempty"`
-	ErrorMessage    *string           `json:"errorMessage,omitempty"`
-	ResponseBody    *string           `json:"responseBody,omitempty"`
-	ResponseHeaders map[string]string `json:"responseHeaders,omitempty"`
+	Diagnostics     *db.HTTPDiagnostics `json:"diagnostics,omitempty"`
+	ID              string              `json:"id"`
+	Type            string              `json:"type"`
+	Message         string              `json:"message"`
+	Timestamp       string              `json:"timestamp"`
+	StatusCode      *int                `json:"statusCode,omitempty"`
+	Latency         *int64              `json:"latency,omitempty"`
+	ErrorMessage    *string             `json:"errorMessage,omitempty"`
+	ResponseBody    *string             `json:"responseBody,omitempty"`
+	ResponseHeaders map[string]string   `json:"responseHeaders,omitempty"`
 }
 
 func toEventDTO(e db.MonitorEvent) MonitorEventDTO {
@@ -556,6 +559,7 @@ func toEventDTO(e db.MonitorEvent) MonitorEventDTO {
 		Latency:      e.Latency,
 		ErrorMessage: e.ErrorMessage,
 		ResponseBody: e.ResponseBody,
+		Diagnostics:  e.Diagnostics,
 	}
 	if e.ResponseHeaders != nil && *e.ResponseHeaders != "" {
 		var headers map[string]string
@@ -743,4 +747,65 @@ func (h *UptimeHandler) GetOverview(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(OverviewResponse{Groups: overview})
+}
+
+// GetMonitorChecks returns bounded raw check evidence for the authenticated history view.
+// @Summary Recent checks with optional HTTP diagnostics
+// @Tags uptime
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Monitor ID"
+// @Param limit query int false "Maximum checks (default 20, maximum 100)"
+// @Param beforeId query int false "Return checks stored before this check ID"
+// @Success 200 {array} db.CheckResult
+// @Failure 400 {string} string "Invalid limit"
+// @Failure 500 {string} string "Internal error"
+// @Router /monitors/{id}/checks [get]
+func (h *UptimeHandler) GetMonitorChecks(w http.ResponseWriter, r *http.Request) {
+	limit := 20
+	if value := r.URL.Query().Get("limit"); value != "" {
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 1 || n > 100 {
+			http.Error(w, "limit must be between 1 and 100", http.StatusBadRequest)
+			return
+		}
+		limit = n
+	}
+	var beforeID int64
+	if value := r.URL.Query().Get("beforeId"); value != "" {
+		parsed, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || parsed < 1 {
+			http.Error(w, "beforeId must be a positive check ID", http.StatusBadRequest)
+			return
+		}
+		beforeID = parsed
+	}
+	checks, err := h.store.GetMonitorChecksPage(chi.URLParam(r, "id"), limit, beforeID)
+	if err != nil {
+		http.Error(w, "Failed to load checks", http.StatusInternalServerError)
+		return
+	}
+	if checks == nil {
+		checks = []db.CheckResult{}
+	}
+	writeJSON(w, http.StatusOK, checks)
+}
+
+// GetMonitorCheckSummary returns the last 24 hours of check and retry outcomes.
+// @Summary Check outcomes and recovered retries over the last 24 hours
+// @Tags uptime
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Monitor ID"
+// @Success 200 {object} db.CheckSummary
+// @Failure 500 {string} string "Internal error"
+// @Router /monitors/{id}/checks/summary [get]
+func (h *UptimeHandler) GetMonitorCheckSummary(w http.ResponseWriter, r *http.Request) {
+	until := time.Now().UTC()
+	summary, err := h.store.GetMonitorCheckSummary(chi.URLParam(r, "id"), until.Add(-24*time.Hour), until)
+	if err != nil {
+		http.Error(w, "Failed to load check summary", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
 }

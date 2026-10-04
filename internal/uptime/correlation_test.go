@@ -293,8 +293,8 @@ func TestEvaluateAlerts_ProbeWideFailure(t *testing.T) {
 	if len(sent) != 1 {
 		t.Fatalf("expected 1 probe-wide alert, got %d: %+v", len(sent), messages(sent))
 	}
-	if !strings.Contains(sent[0].Message, "Warden's own network") {
-		t.Errorf("the probe-wide alert should point at the probe, got %q", sent[0].Message)
+	if !strings.Contains(sent[0].Message, "Simultaneous failures alone do not identify") {
+		t.Errorf("the probe-wide alert must avoid attributing an unobserved cause, got %q", sent[0].Message)
 	}
 
 	open, _ := store.GetOpenOutages()

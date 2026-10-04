@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"strings"
@@ -30,12 +31,15 @@ const (
 // checkOutcome is what a single probe attempt reports back. Only probeHTTP fills
 // statusCode, certExpiry and the captured response; the other types leave them zero.
 type checkOutcome struct {
+	cause       error
+	retryAfter  bool
 	up          bool
 	err         string
 	statusCode  int
 	certExpiry  *time.Time
 	respBody    string
 	respHeaders string
+	diagnostic  *db.HTTPAttempt
 
 	// fatal marks a target that cannot be probed at all — a malformed address, or an
 	// ICMP socket the process isn't allowed to open. Retrying that only delays the
@@ -57,27 +61,93 @@ func runCheck(job Job, transport *http.Transport) CheckResult {
 		retryCount = cfg.RetryCount
 	}
 
+	requestedAutomatic := cfg != nil && cfg.AutoRetry
+	if requestedAutomatic {
+		job.CaptureDiagnostics = true
+	}
+	automatic := automaticRetryEnabled(job)
+	if automatic {
+		retryCount = 1
+	}
+	checkStarted := time.Now()
 	var (
 		out     checkOutcome
 		start   time.Time
 		latency int64
 	)
 
+	diagnostics := &db.HTTPDiagnostics{RetryMode: "manual"}
+	if requestedAutomatic {
+		diagnostics.RetryMode = "automatic"
+		if !automatic {
+			diagnostics.RetryDecision = "unsafe_request"
+		}
+	}
 	for attempt := 0; attempt <= retryCount; attempt++ {
+		attemptTimeout := timeout
 		if attempt > 0 {
-			time.Sleep(retryBackoff)
+			delay := retryBackoff
+			if automatic {
+				delay = 500*time.Millisecond + time.Duration(rand.Int64N(int64(time.Second))) // #nosec G404 -- scheduling jitter, not a secret or security decision
+				remaining := timeout - time.Since(checkStarted) - delay
+				if remaining < 100*time.Millisecond {
+					diagnostics.RetryDecision = "budget_exhausted"
+					break
+				}
+				attemptTimeout = remaining
+			}
+			if automatic {
+				if job.retryBusy {
+					diagnostics.RetryDecision = "capacity_limited"
+					break
+				}
+				if job.retrySlots != nil {
+					select {
+					case job.retrySlots <- struct{}{}:
+						defer func() { <-job.retrySlots }()
+					default:
+						diagnostics.RetryDecision = "capacity_limited"
+					}
+					if diagnostics.RetryDecision == "capacity_limited" {
+						break
+					}
+				}
+			}
+			time.Sleep(delay)
+			if automatic {
+				attemptTimeout = timeout - time.Since(checkStarted)
+				if attemptTimeout < 100*time.Millisecond {
+					diagnostics.RetryDecision = "budget_exhausted"
+					break
+				}
+			}
 		}
 
 		start = time.Now().UTC()
-		out = probe(job, timeout, transport)
+		out = probe(job, attemptTimeout, transport)
 		latency = time.Since(start).Milliseconds()
+		if out.diagnostic != nil {
+			diagnostics.Attempts = append(diagnostics.Attempts, *out.diagnostic)
+		}
 
 		if out.up || out.fatal {
 			break
 		}
+		if automatic && !transientHTTPFailure(out) {
+			diagnostics.RetryDecision = "not_transient"
+			break
+		}
 	}
 
+	diagnostics.TotalMS = elapsedMS(checkStarted)
+	if len(diagnostics.Attempts) > 1 {
+		diagnostics.RetryDecision = "retried"
+	}
+	if len(diagnostics.Attempts) == 0 {
+		diagnostics = nil
+	}
 	return CheckResult{
+		Diagnostics:     diagnostics,
 		MonitorID:       job.MonitorID,
 		URL:             job.URL,
 		Status:          out.up,
@@ -154,7 +224,35 @@ func probeDocker(job Job, timeout time.Duration) checkOutcome {
 
 // probeHTTP decides on the status code, and picks up the TLS certificate expiry on the
 // way so the SSL warnings have something to work with.
-func probeHTTP(job Job, timeout time.Duration, transport *http.Transport) checkOutcome {
+func probeHTTP(job Job, timeout time.Duration, transport *http.Transport) (out checkOutcome) {
+	started := time.Now()
+	var roundTripper http.RoundTripper = transport
+	if job.CaptureDiagnostics {
+		tracer := &tracingTransport{base: transport}
+		roundTripper = tracer
+		defer func() {
+			d := tracer.snapshot(started)
+			d.Status = "down"
+			if out.up {
+				d.Status = "up"
+			}
+			if !out.up {
+				switch {
+				case len(d.Hops) == 0:
+					d.FailurePhase = "request"
+				case out.statusCode > 0:
+					d.FailurePhase = "http_status"
+				case d.Hops[len(d.Hops)-1].FailurePhase != "":
+					d.FailurePhase = d.Hops[len(d.Hops)-1].FailurePhase
+				case len(d.Hops) >= 10:
+					d.FailurePhase = "redirect"
+				default:
+					d.FailurePhase = "unknown"
+				}
+			}
+			out.diagnostic = &d
+		}()
+	}
 	cfg := job.RequestConfig
 
 	method := http.MethodGet
@@ -164,7 +262,7 @@ func probeHTTP(job Job, timeout time.Duration, transport *http.Transport) checkO
 
 	client := &http.Client{
 		Timeout:   timeout,
-		Transport: transport,
+		Transport: roundTripper,
 	}
 	if cfg != nil && cfg.FollowRedirects != nil && !*cfg.FollowRedirects {
 		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
@@ -189,11 +287,11 @@ func probeHTTP(job Job, timeout time.Duration, transport *http.Transport) checkO
 
 	resp, err := client.Do(req) // #nosec G704 -- probing an operator-configured target URL is the product
 	if err != nil {
-		return checkOutcome{err: err.Error()}
+		return checkOutcome{err: err.Error(), cause: err}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	out := checkOutcome{up: true, statusCode: resp.StatusCode}
+	out = checkOutcome{up: true, statusCode: resp.StatusCode, retryAfter: resp.Header.Get("Retry-After") != ""}
 	if cfg != nil && cfg.AcceptedStatusCodes != "" {
 		out.up = isAcceptedStatus(resp.StatusCode, cfg.AcceptedStatusCodes)
 	} else if resp.StatusCode >= 400 {
