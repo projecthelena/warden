@@ -8,11 +8,12 @@ import (
 )
 
 type InsightHandler struct {
-	store *db.Store
+	store       *db.Store
+	captureHTTP bool
 }
 
-func NewInsightHandler(store *db.Store) *InsightHandler {
-	return &InsightHandler{store: store}
+func NewInsightHandler(store *db.Store, captureHTTP bool) *InsightHandler {
+	return &InsightHandler{store: store, captureHTTP: captureHTTP}
 }
 
 // GetInsights returns the pattern findings, optionally for a single monitor.
@@ -38,6 +39,12 @@ func (h *InsightHandler) GetInsights(w http.ResponseWriter, r *http.Request) {
 	}
 	if findings == nil {
 		findings = []db.MonitorInsight{}
+	}
+	if len(findings) > 0 {
+		if err := h.addTraceCapture(findings); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load trace capture policy")
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, findings)
 }
@@ -65,5 +72,32 @@ func (h *InsightHandler) GetMonitorInsights(w http.ResponseWriter, r *http.Reque
 	if findings == nil {
 		findings = []db.MonitorInsight{}
 	}
+	if len(findings) > 0 {
+		if err := h.addTraceCapture(findings); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load trace capture policy")
+			return
+		}
+	}
 	writeJSON(w, http.StatusOK, findings)
+}
+
+func (h *InsightHandler) addTraceCapture(findings []db.MonitorInsight) error {
+	monitors, err := h.store.GetMonitors()
+	if err != nil {
+		return err
+	}
+	policies := make(map[string]string, len(monitors))
+	for _, monitor := range monitors {
+		policy := "disabled"
+		if db.NormalizeMonitorType(monitor.Type) != db.MonitorTypeHTTP {
+			policy = "not_applicable"
+		} else if h.captureHTTP || (monitor.RequestConfig != nil && monitor.RequestConfig.AutoRetry) {
+			policy = "enabled"
+		}
+		policies[monitor.ID] = policy
+	}
+	for i := range findings {
+		findings[i].TraceCapture = policies[findings[i].MonitorID]
+	}
+	return nil
 }

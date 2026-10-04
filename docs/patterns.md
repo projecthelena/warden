@@ -30,13 +30,13 @@ Whether a monitor's trouble piles into one part of the day. Concentrated events 
 
 ### Fails with another monitor
 
-At least three distinct outages must overlap and start within five minutes of each other, and at least 70% of each monitor's downtime must overlap the other's. Degraded periods are excluded. A shared cause is not confirmed: compare failed checks, the monitoring host, and shared network dependencies. Related monitors appear in one expandable section; each relationship is with the selected monitor, not necessarily with every other member.
+At least three distinct outages must overlap and start within five minutes of each other, and at least 70% of each monitor's downtime must overlap the other's. Degraded periods are excluded. A shared cause is not confirmed: compare failed checks, the monitoring host, and shared network dependencies. Related monitors appear in one expandable section with search and five rows per page; each relationship is with the selected monitor, not necessarily with every other member.
 
 ### Getting slower
 
 Median latency this week against last week. This catches the slow slide that never trips any threshold, because every day looks like the one before it:
 
-> API is 40% slower than it was a week ago: a typical response went from 250ms to 350ms. Compare HTTP timings between these periods to locate the slowdown.
+> API is 40% slower than it was a week ago: a typical response went from 250ms to 350ms. Compare check history between these periods to investigate the slowdown.
 
 Each calendar week needs at least 72 hourly samples. Missing data cannot turn a few days into a week-over-week comparison.
 
@@ -44,7 +44,9 @@ Improvements are reported too, as their own finding labelled "Getting faster" �
 
 ## What it deliberately is not
 
-These are explicit rules, not anomaly detection. A finding you cannot explain is a finding nobody acts on, and with a couple of dozen monitors the rules win on both accuracy and arguability. Every finding carries the numbers behind it so you can disagree with it. Expand **View evidence** for the last analysis time and the number of checks with HTTP traces in the window. Trace coverage and retry recoveries are context, not proof of a root cause. Use **Review checks and HTTP traces** to inspect individual requests.
+These are explicit rules, not anomaly detection. A finding you cannot explain is a finding nobody acts on, and with a couple of dozen monitors the rules win on both accuracy and arguability. Every finding carries the numbers behind it so you can disagree with it. Expand **View evidence** for the last analysis time and the number of checks with HTTP traces in the window. Trace coverage and retry recoveries are context, not proof of a root cause. **View example check** opens the specific retained check selected from the finding’s evidence window. Related monitors have their own **View check** links. Week-over-week findings also link to a previous-period check. Expired checks are shown as unavailable rather than replaced by a recent request. **All check history** opens the normal history.
+
+Current HTTP trace capture and historical trace coverage are shown separately. Capture is enabled by the global diagnostics setting or the monitor’s automatic retry configuration. Turning capture off does not remove existing traces. Partial or missing traces do not prevent timing and outage patterns, and they cannot establish a cause. HTTP traces do not apply to non-HTTP monitors.
 
 Findings are labelled `high` or `medium` confidence. Medium means the rule only just matched, and is shown as "worth a look" rather than stated flatly.
 

@@ -284,6 +284,28 @@ definitions:
       totalMonitors:
         type: integer
     type: object
+  github_com_projecthelena_warden_internal_db.MonitorInsight:
+    properties:
+      confidence:
+        type: string
+      detail:
+        additionalProperties: {}
+        type: object
+      detectedAt:
+        type: string
+      id:
+        type: integer
+      kind:
+        type: string
+      monitorId:
+        type: string
+      monitorName:
+        type: string
+      summary:
+        type: string
+      traceCapture:
+        type: string
+    type: object
   internal_api.CreatedMonitor:
     properties:
       active:
@@ -1313,6 +1335,10 @@ paths:
       - description: Return checks stored before this check ID
         in: query
         name: beforeId
+        type: integer
+      - description: Return one retained check belonging to this monitor
+        in: query
+        name: checkId
         type: integer
       produces:
       - application/json

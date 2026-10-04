@@ -7,14 +7,15 @@ import (
 
 // MonitorInsight is one stored finding from the pattern detectors.
 type MonitorInsight struct {
-	ID          int64          `json:"id"`
-	MonitorID   string         `json:"monitorId"`
-	MonitorName string         `json:"monitorName"`
-	Kind        string         `json:"kind"`
-	Summary     string         `json:"summary"`
-	Detail      map[string]any `json:"detail,omitempty"`
-	Confidence  string         `json:"confidence"`
-	DetectedAt  time.Time      `json:"detectedAt"`
+	TraceCapture string         `json:"traceCapture,omitempty"`
+	ID           int64          `json:"id"`
+	MonitorID    string         `json:"monitorId"`
+	MonitorName  string         `json:"monitorName"`
+	Kind         string         `json:"kind"`
+	Summary      string         `json:"summary"`
+	Detail       map[string]any `json:"detail,omitempty"`
+	Confidence   string         `json:"confidence"`
+	DetectedAt   time.Time      `json:"detectedAt"`
 }
 
 // ReplaceMonitorInsights swaps a monitor's findings for a freshly computed set. Replacing

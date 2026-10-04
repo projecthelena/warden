@@ -86,7 +86,7 @@ export function MonitorPage() {
                 <TabsContent value="overview" className="mt-5"><MonitorOverview monitor={monitor} timezone={user?.timezone} /></TabsContent>
                 <TabsContent value="patterns" className="mt-5"><InsightsCard monitorId={monitor.id} /></TabsContent>
                 <TabsContent value="incidents" className="mt-5"><IncidentsPanel id={id} date={date} incidents={incidents} sslWarnings={sslWarnings} query={incidentsQuery} onDateChange={value => updateQuery({ date: value === today() ? null : value })} onAll={() => navigate(`/incidents?monitorId=${id}`)} /></TabsContent>
-                <TabsContent value="checks" className="mt-5"><MonitorChecks key={id} monitorId={id} /></TabsContent>
+                <TabsContent value="checks" className="mt-5"><MonitorChecks key={`${id}-${searchParams.get("checkId") ?? "history"}`} monitorId={id} checkId={searchParams.has("checkId") ? searchParams.get("checkId")! : undefined} /></TabsContent>
                 {canEdit && <TabsContent value="settings" className="mt-5"><MonitorSettings monitor={monitor} groupId={group.id} /></TabsContent>}
             </Tabs>
         </div>

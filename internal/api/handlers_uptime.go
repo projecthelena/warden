@@ -757,6 +757,7 @@ func (h *UptimeHandler) GetOverview(w http.ResponseWriter, r *http.Request) {
 // @Param id path string true "Monitor ID"
 // @Param limit query int false "Maximum checks (default 20, maximum 100)"
 // @Param beforeId query int false "Return checks stored before this check ID"
+// @Param checkId query int false "Return one retained check belonging to this monitor"
 // @Success 200 {array} db.CheckResult
 // @Failure 400 {string} string "Invalid limit"
 // @Failure 500 {string} string "Internal error"
@@ -780,7 +781,18 @@ func (h *UptimeHandler) GetMonitorChecks(w http.ResponseWriter, r *http.Request)
 		}
 		beforeID = parsed
 	}
-	checks, err := h.store.GetMonitorChecksPage(chi.URLParam(r, "id"), limit, beforeID)
+	var checks []db.CheckResult
+	var err error
+	if value := r.URL.Query().Get("checkId"); r.URL.Query().Has("checkId") {
+		checkID, parseErr := strconv.ParseInt(value, 10, 64)
+		if parseErr != nil || checkID < 1 || beforeID > 0 {
+			http.Error(w, "checkId must be a positive check ID and cannot be combined with beforeId", http.StatusBadRequest)
+			return
+		}
+		checks, err = h.store.GetMonitorCheck(chi.URLParam(r, "id"), checkID)
+	} else {
+		checks, err = h.store.GetMonitorChecksPage(chi.URLParam(r, "id"), limit, beforeID)
+	}
 	if err != nil {
 		http.Error(w, "Failed to load checks", http.StatusInternalServerError)
 		return

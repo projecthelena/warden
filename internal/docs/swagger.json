@@ -1220,6 +1220,12 @@
                         "description": "Return checks stored before this check ID",
                         "name": "beforeId",
                         "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Return one retained check belonging to this monitor",
+                        "name": "checkId",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -3056,11 +3062,44 @@
                     }
                 }
             }
+        },
+        "github_com_projecthelena_warden_internal_db.MonitorInsight": {
+            "type": "object",
+            "properties": {
+                "confidence": {
+                    "type": "string"
+                },
+                "detail": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "detectedAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "monitorId": {
+                    "type": "string"
+                },
+                "monitorName": {
+                    "type": "string"
+                },
+                "summary": {
+                    "type": "string"
+                },
+                "traceCapture": {
+                    "type": "string"
+                }
+            }
         }
     },
     "securityDefinitions": {
         "BearerAuth": {
-            "description": "Enter \"Bearer sk_live_...\" — create keys in Settings > API Keys",
+            "description": "Enter \"Bearer sk_live_...\" \u2014 create keys in Settings > API Keys",
             "type": "apiKey",
             "name": "Authorization",
             "in": "header"

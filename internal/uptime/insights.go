@@ -96,6 +96,29 @@ func (m *Manager) refreshInsights(now time.Time) {
 func (m *Manager) detectForMonitor(id, name string, since, now time.Time, intervals map[string][]insights.Interval, loc *time.Location) []db.MonitorInsight {
 	var out []db.MonitorInsight
 
+	type evidenceWindow struct {
+		monitorID    string
+		since, until time.Time
+		status       string
+		latency      int64
+	}
+	checks := map[evidenceWindow]*db.InsightCheck{}
+	attachCheck := func(detail map[string]any, key, monitorID string, from, until time.Time, status string, latency int64) {
+		window := evidenceWindow{monitorID, from, until, status, latency}
+		ref, loaded := checks[window]
+		if !loaded {
+			var err error
+			ref, err = m.store.FindInsightCheck(monitorID, from, until, status, latency)
+			if err != nil {
+				log.Printf("Insights: failed to load example check for %s: %v", monitorID, err)
+			}
+			checks[window] = ref
+		}
+		if ref != nil {
+			detail[key] = ref
+		}
+	}
+
 	points, err := m.store.HourlyLatency(id, since)
 	if err != nil {
 		log.Printf("Insights: failed to load latency for %s: %v", id, err)
@@ -114,6 +137,8 @@ func (m *Manager) detectForMonitor(id, name string, since, now time.Time, interv
 		if ramps, baseline, found := insights.DetectSawtooth(samples, insights.DefaultSawtoothConfig()); found {
 			f := insights.SawtoothFinding(name, ramps, baseline, insightsWindowDays)
 			out = append(out, toStored(id, f))
+			lastRamp := ramps[len(ramps)-1]
+			attachCheck(out[len(out)-1].Detail, "evidenceCheck", id, lastRamp.Peak, lastRamp.Peak.Add(time.Hour), "up", lastRamp.PeakMs)
 
 			peaks := make([]time.Time, 0, len(ramps))
 			for _, r := range ramps {
@@ -125,9 +150,10 @@ func (m *Manager) detectForMonitor(id, name string, since, now time.Time, interv
 					Summary: fmt.Sprintf(
 						"%s resets on a schedule, roughly every %s. Compare this cadence with scheduled jobs and restart history; the cause is not confirmed.",
 						name, formatAlertDuration(period)),
-					Detail:     map[string]any{"periodHours": int(period.Hours())},
+					Detail:     map[string]any{"periodHours": period.Hours()},
 					Confidence: "medium",
 				}))
+				attachCheck(out[len(out)-1].Detail, "evidenceCheck", id, lastRamp.Peak, lastRamp.Peak.Add(time.Hour), "up", lastRamp.PeakMs)
 			}
 		}
 
@@ -145,7 +171,7 @@ func (m *Manager) detectForMonitor(id, name string, since, now time.Time, interv
 		if pct, recent, prev, found := insights.DetectDrift(recentSamples, previousSamples, 25, 20); found && len(recentSamples) >= insightsMinHours && len(previousSamples) >= insightsMinHours {
 			kind := insights.KindLatencyDrift
 			summary := fmt.Sprintf(
-				"%s is %.0f%% slower than it was a week ago: a typical response went from %dms to %dms. Compare HTTP timings between these periods to locate the slowdown.",
+				"%s is %.0f%% slower than it was a week ago: a typical response went from %dms to %dms. Compare check history between these periods to locate the slowdown.",
 				name, pct, prev, recent)
 			if pct < 0 {
 				// Worth saying out loud: it is how you find out a fix landed.
@@ -164,6 +190,19 @@ func (m *Manager) detectForMonitor(id, name string, since, now time.Time, interv
 				},
 				Confidence: "high",
 			}))
+			for _, window := range []struct {
+				key     string
+				samples []insights.Sample
+				median  int64
+			}{{"evidenceCheck", recentSamples, recent}, {"comparisonCheck", previousSamples, prev}} {
+				for i := len(window.samples) - 1; i >= 0; i-- {
+					sample := window.samples[i]
+					if sample.LatencyMs == window.median {
+						attachCheck(out[len(out)-1].Detail, window.key, id, sample.Hour, sample.Hour.Add(time.Hour), "up", window.median)
+						break
+					}
+				}
+			}
 		}
 	}
 
@@ -173,6 +212,16 @@ func (m *Manager) detectForMonitor(id, name string, since, now time.Time, interv
 		log.Printf("Insights: failed to load event times for %s: %v", id, err)
 	} else if start, width, share, found := insights.DetectTimeOfDay(times, 8, 8, 0.6); found {
 		out = append(out, toStored(id, insights.TimeOfDayFinding(name, start, width, share, len(times), loc, now)))
+		for i := len(times) - 1; i >= 0; i-- {
+			event := times[i]
+			if (event.UTC().Hour()-start+24)%24 < width {
+				attachCheck(out[len(out)-1].Detail, "evidenceCheck", id, event.Add(-5*time.Minute), event.Add(5*time.Minute), "down", -1)
+				if out[len(out)-1].Detail["evidenceCheck"] == nil {
+					attachCheck(out[len(out)-1].Detail, "evidenceCheck", id, event.Add(-5*time.Minute), event.Add(5*time.Minute), "degraded", -1)
+				}
+				break
+			}
+		}
 	}
 
 	// Repeated simultaneous starts and mutual overlap are evidence of co-failure, not causation.
@@ -183,7 +232,8 @@ func (m *Manager) detectForMonitor(id, name string, since, now time.Time, interv
 			}
 			overlap := insights.Overlap(mine, theirs, now)
 			reverseOverlap := insights.Overlap(theirs, mine, now)
-			matched := insights.CoincidentStarts(mine, theirs, now, 5*time.Minute)
+			pairs := insights.CoincidentOutages(mine, theirs, now, 5*time.Minute)
+			matched := len(pairs)
 			if overlap < 0.7 || reverseOverlap < 0.7 || matched < 3 {
 				continue
 			}
@@ -199,6 +249,10 @@ func (m *Manager) detectForMonitor(id, name string, since, now time.Time, interv
 				Detail:     map[string]any{"withMonitorId": otherID, "withMonitorName": otherName, "overlap": int(overlap * 100), "reverseOverlap": int(reverseOverlap * 100), "matchedOutages": matched},
 				Confidence: "medium",
 			}))
+			pair := pairs[len(pairs)-1]
+			detail := out[len(out)-1].Detail
+			attachCheck(detail, "evidenceCheck", id, pair.First.Start.Add(-5*time.Minute), pair.First.End, "down", -1)
+			attachCheck(detail, "withCheck", otherID, pair.Second.Start.Add(-5*time.Minute), pair.Second.End, "down", -1)
 		}
 	}
 

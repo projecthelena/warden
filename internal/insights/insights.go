@@ -187,7 +187,7 @@ func SawtoothFinding(monitorName string, ramps []Ramp, baseline int64, windowDay
 	return Finding{
 		Kind: KindSawtooth,
 		Summary: fmt.Sprintf(
-			"%s climbs and resets: %d ramps in %d days, rising about %.0fms/h from a normal of %dms to as much as %dms, then dropping straight back. Latency alone does not identify the cause. Compare the slow checks with HTTP timings and deployment or restart history.",
+			"%s climbs and resets: %d ramps in %d days, rising about %.0fms/h from a normal of %dms to as much as %dms, then dropping straight back. Latency alone does not identify the cause. Compare the slow checks with check history and deployment or restart history.",
 			monitorName, len(ramps), windowDays, medianSlope, baseline, worstPeak),
 		Detail: map[string]any{
 			"ramps":                len(ramps),
@@ -338,8 +338,15 @@ func Overlap(a, b []Interval, now time.Time) float64 {
 // CoincidentStarts counts distinct overlapping outages starting within the given
 // tolerance. A long outage cannot stand in for several recurring failures.
 func CoincidentStarts(a, b []Interval, now time.Time, tolerance time.Duration) int {
+	return len(CoincidentOutages(a, b, now, tolerance))
+}
+
+type OutagePair struct{ First, Second Interval }
+
+func CoincidentOutages(a, b []Interval, now time.Time, tolerance time.Duration) []OutagePair {
 	a, b = mergedIntervals(a, now), mergedIntervals(b, now)
-	count, j := 0, 0
+	var pairs []OutagePair
+	j := 0
 	for _, ia := range a {
 		for j < len(b) && b[j].Start.Before(ia.Start.Add(-tolerance)) {
 			j++
@@ -349,11 +356,11 @@ func CoincidentStarts(a, b []Interval, now time.Time, tolerance time.Duration) i
 		}
 		ib := b[j]
 		if !ib.Start.After(ia.Start.Add(tolerance)) && minTime(ia.End, ib.End).After(maxTime(ia.Start, ib.Start)) {
-			count++
+			pairs = append(pairs, OutagePair{First: ia, Second: ib})
 			j++
 		}
 	}
-	return count
+	return pairs
 }
 
 func mergedIntervals(intervals []Interval, now time.Time) []Interval {
