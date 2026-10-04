@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronDown, ChevronRight, AlertTriangle, ArrowDown, Lock, Clock, Activity } from "lucide-react";
+import { ChevronDown, ChevronRight, AlertTriangle, ArrowDown, Lock, Clock, Activity, CheckCircle2 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { useMonitorStore } from "@/lib/store";
 import { useIncidentEvents } from "@/hooks/useMonitorEvents";
@@ -59,7 +59,9 @@ export function IncidentCard({
     const [open, setOpen] = useState(false);
     const { user } = useMonitorStore();
     const meta = TYPE_META[type] ?? { label: type, color: "text-muted-foreground border-border bg-muted/30", Icon: AlertTriangle };
-    const Icon = meta.Icon;
+    const resolved = Boolean(endedAt) && type !== "ssl_expiring";
+    const Icon = resolved ? CheckCircle2 : meta.Icon;
+    const resolvedDuration = endedAt ? formatResolvedDuration(startedAt, endedAt, duration) : duration;
     // SSL expiring events aren't rollups of monitor_events with bodies/headers — they're
     // single notifications. We render them with the same chrome but skip the expand drawer
     // AND skip the "ongoing" indicator (the cert isn't actively failing right now).
@@ -93,9 +95,9 @@ export function IncidentCard({
                         <div className="w-4 h-4" />
                     )}
                 </div>
-                <Badge variant="outline" className={`gap-1 flex-shrink-0 ${meta.color}`}>
+                <Badge variant="outline" className={`gap-1 flex-shrink-0 ${resolved ? "text-emerald-700 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/5" : meta.color}`}>
                     <Icon className="w-3 h-3" />
-                    {meta.label}
+                    {resolved ? "Resolved" : meta.label}
                 </Badge>
                 <div className="flex-1 min-w-0">
                     <p className="text-sm text-foreground truncate">{summary}</p>
@@ -116,7 +118,7 @@ export function IncidentCard({
                     {rightAction}
                     {!isSSL && (
                         <span className={`font-mono ${isOngoing ? "text-rose-500" : ""}`}>
-                            {duration}{isOngoing ? " ongoing" : ""}
+                            {resolved ? resolvedDuration : duration}{isOngoing ? " ongoing" : ""}
                         </span>
                     )}
                     <span className="flex items-center gap-1">
@@ -183,4 +185,15 @@ export function IncidentCard({
             )}
         </Collapsible>
     );
+}
+
+function formatResolvedDuration(startedAt: string, endedAt: string, fallback: string) {
+    const elapsed = Date.parse(endedAt) - Date.parse(startedAt);
+    if (!Number.isFinite(elapsed) || elapsed < 0) return fallback;
+    const seconds = Math.round(elapsed / 1000);
+    if (seconds < 1) return "<1 s";
+    if (seconds < 60) return `${seconds} s`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)} min${seconds % 60 ? ` ${seconds % 60} s` : ""}`;
+    const minutes = Math.floor(seconds % 3600 / 60);
+    return `${Math.floor(seconds / 3600)} h${minutes ? ` ${minutes} min` : ""}`;
 }

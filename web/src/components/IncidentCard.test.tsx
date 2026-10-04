@@ -150,6 +150,31 @@ describe("IncidentCard", () => {
         });
     });
 
+    describe("resolved incidents", () => {
+        it.each([
+            ["2026-08-13T03:00:10Z", "10 s"],
+            ["2026-08-13T03:00:00.200Z", "<1 s"],
+            ["2026-08-13T03:01:10Z", "1 min 10 s"],
+            ["2026-08-13T04:02:00Z", "1 h 2 min"],
+            ["invalid", "0m"],
+            ["2026-08-13T02:59:59Z", "0m"],
+        ])("shows resolved status and duration for %s", (endedAt, expected) => {
+            renderCard({ endedAt, duration: "0m" });
+            const trigger = screen.getAllByRole("button")[0];
+            expect(within(trigger).getByText("Resolved")).toBeVisible();
+            expect(within(trigger).queryByText("Down")).not.toBeInTheDocument();
+            expect(within(trigger).getByText(expected)).toBeVisible();
+            expect(within(trigger).queryByText(/ongoing/)).not.toBeInTheDocument();
+        });
+
+        it("keeps ongoing incidents marked down", () => {
+            renderCard({ endedAt: null });
+            expect(screen.getByText("Down")).toBeVisible();
+            expect(screen.getByText("22m ongoing")).toBeVisible();
+            expect(screen.queryByText("Resolved")).not.toBeInTheDocument();
+        });
+    });
+
     describe("SSL warnings", () => {
         it("renders without an expand affordance — there are no checks behind it", () => {
             renderCard({ type: "ssl_expiring", summary: "SSL certificate expires in 14 days", duration: "" });
