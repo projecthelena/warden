@@ -49,22 +49,25 @@ describe("InsightsCard", () => {
         expect(screen.getByText(/9 ramps in 14 days/)).toBeInTheDocument();
     });
 
-    // A panel that is permanently empty trains people to stop looking at it, so a monitor
-    // with nothing to report renders nothing at all rather than an empty state.
-    it("renders nothing when there is nothing to say", () => {
-        mockUseMonitorInsights.mockReturnValue({ data: [], isLoading: false, error: null });
-        const { container } = render(<InsightsCard monitorId="m1" />);
-        expect(container).toBeEmptyDOMElement();
+    it.each([[], undefined])("shows an empty state for %s", data => {
+        mockUseMonitorInsights.mockReturnValue({ data, isLoading: false, error: null });
+        render(<InsightsCard monitorId="m1" />);
+        expect(screen.getByText("No patterns detected yet.")).toBeInTheDocument();
+        expect(screen.getByText(/refreshed daily/)).toBeInTheDocument();
     });
 
-    it("renders nothing when the request failed", () => {
-        mockUseMonitorInsights.mockReturnValue({
-            data: undefined,
-            isLoading: false,
-            error: new Error("boom"),
-        });
-        const { container } = render(<InsightsCard monitorId="m1" />);
-        expect(container).toBeEmptyDOMElement();
+    it("distinguishes request errors from no findings", () => {
+        mockUseMonitorInsights.mockReturnValue({ data: undefined, isLoading: false, error: new Error("boom") });
+        render(<InsightsCard monitorId="m1" />);
+        expect(screen.getByRole("alert")).toHaveTextContent("Could not load patterns");
+        expect(screen.queryByText("No patterns detected yet.")).not.toBeInTheDocument();
+    });
+
+    it("announces loading without showing an empty state", () => {
+        mockUseMonitorInsights.mockReturnValue({ isLoading: true, error: null });
+        render(<InsightsCard monitorId="m1" />);
+        expect(screen.getByRole("status", { name: "Loading patterns" })).toBeInTheDocument();
+        expect(screen.queryByText("No patterns detected yet.")).not.toBeInTheDocument();
     });
 
     // Findings are heuristics, and a weaker match says so rather than sounding certain.

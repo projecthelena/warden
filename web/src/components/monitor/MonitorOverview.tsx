@@ -9,7 +9,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UptimeHistory } from "@/components/ui/monitor-visuals";
-import { InsightsCard } from "@/components/InsightsCard";
 import { Tooltip as UiTooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatUptimeDetail, formatUptimeSummary, uptimeSummaryTone, type UptimeSummary } from "@/lib/uptime";
 import {
@@ -156,7 +155,6 @@ export function MonitorOverview({ monitor, timezone }: { monitor: Monitor; timez
                 </CardContent>
             </Card>
 
-            <InsightsCard monitorId={monitor.id} />
         </div>
     );
 }
