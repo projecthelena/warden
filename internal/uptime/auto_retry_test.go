@@ -144,3 +144,47 @@ func TestAutomaticRetryDoesNotWaitForCapacity(t *testing.T) {
 		t.Fatal("released an unowned slot")
 	}
 }
+
+func TestRetryPolicyBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		cfg       db.RequestConfig
+		busy      bool
+		wantCalls int32
+		wantUp    bool
+		decision  string
+	}{
+		{"persistent transient stops after two", db.RequestConfig{AutoRetry: true}, false, 2, false, "retried"},
+		{"HEAD retries", db.RequestConfig{AutoRetry: true, Method: "HEAD"}, false, 2, false, "retried"},
+		{"GET body is not replayed", db.RequestConfig{AutoRetry: true, Body: "payload"}, false, 1, false, "unsafe_request"},
+		{"PUT is not replayed", db.RequestConfig{AutoRetry: true, Method: "PUT"}, false, 1, false, "unsafe_request"},
+		{"DELETE is not replayed", db.RequestConfig{AutoRetry: true, Method: "DELETE"}, false, 1, false, "unsafe_request"},
+		{"queue pressure skips retry", db.RequestConfig{AutoRetry: true}, true, 1, false, "capacity_limited"},
+		{"accepted error is success", db.RequestConfig{AutoRetry: true, AcceptedStatusCodes: "503"}, false, 1, true, ""},
+		{"manual policy is preserved", db.RequestConfig{RetryCount: 2}, false, 3, false, "retried"},
+		{"explicit opt out", db.RequestConfig{}, false, 1, false, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var calls atomic.Int32
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				calls.Add(1)
+				w.WriteHeader(http.StatusServiceUnavailable)
+			}))
+			defer s.Close()
+			transport := checkTransport()
+			defer transport.CloseIdleConnections()
+			slots := make(chan struct{}, 1)
+			r := runCheck(Job{URL: s.URL, CaptureDiagnostics: true, RequestConfig: &tc.cfg, retryBusy: tc.busy, retrySlots: slots}, transport)
+			if calls.Load() != tc.wantCalls || r.Status != tc.wantUp || r.Diagnostics == nil {
+				t.Fatalf("calls=%d result=%+v", calls.Load(), r)
+			}
+			if len(r.Diagnostics.Attempts) != int(tc.wantCalls) || r.Diagnostics.RetryDecision != tc.decision {
+				t.Fatalf("lost policy evidence: %+v", r.Diagnostics)
+			}
+			if len(slots) != 0 {
+				t.Fatal("retry capacity leaked")
+			}
+		})
+	}
+}

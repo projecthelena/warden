@@ -113,3 +113,101 @@ func TestConnectivityEvidenceDoesNotJoinUnrelatedOutages(t *testing.T) {
 		t.Fatal("joined failures an hour apart")
 	}
 }
+
+func TestSecondaryProbeRejectsInvalidObservations(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		status     int
+	}{
+		{"malformed", `{`, 200},
+		{"missing timestamp", `{"outcome":"response","statusCode":200}`, 200},
+		{"future", `{"outcome":"response","statusCode":200,"observedAt":"2099-01-01T00:00:00Z"}`, 200},
+		{"bad status", `{"outcome":"response","statusCode":999,"observedAt":"NOW"}`, 200},
+		{"unknown outcome", `{"outcome":"healthy","observedAt":"NOW"}`, 200},
+		{"unknown phase", `{"outcome":"failed","failurePhase":"secret","observedAt":"NOW"}`, 200},
+		{"oversized", `{"outcome":"` + strings.Repeat("x", 4096) + `"}`, 200},
+		{"unauthorized", `{}`, 401},
+		{"busy", `{}`, 429},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(strings.ReplaceAll(tc.body, "NOW", time.Now().UTC().Format(time.RFC3339Nano))))
+			}))
+			defer s.Close()
+			p, err := NewSecondaryProbe(s.URL, strings.Repeat("t", 32))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer p.client.CloseIdleConnections()
+			if got := p.Observe("registered"); got.Outcome != "unavailable" {
+				t.Fatalf("accepted invalid evidence: %+v", got)
+			}
+			if len(p.slots) != 0 {
+				t.Fatal("probe capacity leaked")
+			}
+		})
+	}
+}
+
+func TestSecondaryProbeDoesNotFollowRedirects(t *testing.T) {
+	calls := make(chan struct{}, 1)
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { calls <- struct{}{}; w.WriteHeader(200) }))
+	defer target.Close()
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, target.URL, http.StatusFound) }))
+	defer s.Close()
+	p, err := NewSecondaryProbe(s.URL, strings.Repeat("t", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.client.CloseIdleConnections()
+	if got := p.Observe("registered"); got.Outcome != "unavailable" {
+		t.Fatalf("unexpected result: %+v", got)
+	}
+	select {
+	case <-calls:
+		t.Fatal("followed redirect with probe credentials")
+	default:
+	}
+}
+
+func TestProbeHandlerCapacityAndMethod(t *testing.T) {
+	entered := make(chan struct{}, 2)
+	release := make(chan struct{})
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		entered <- struct{}{}
+		<-release
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer target.Close()
+	token := strings.Repeat("t", 32)
+	h, err := NewProbeHandler(token, map[string]string{"registered": target.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	invoke := func(method string) int {
+		r := httptest.NewRequest(method, "/v1/check/registered", nil)
+		r.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+	if code := invoke(http.MethodPost); code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST: %d", code)
+	}
+	done := make(chan int, 2)
+	defer func() { close(release); <-done; <-done }()
+	for range 2 {
+		go func() { done <- invoke(http.MethodGet) }()
+	}
+	for range 2 {
+		select {
+		case <-entered:
+		case <-time.After(time.Second):
+			t.Fatal("target did not receive two concurrent checks")
+		}
+	}
+	if code := invoke(http.MethodGet); code != http.StatusTooManyRequests {
+		t.Fatalf("third check should be rejected: %d", code)
+	}
+}
