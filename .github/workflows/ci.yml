@@ -57,6 +57,9 @@ jobs:
           filters: |
             frontend:
               - 'web/**'
+              - 'tokens.css'
+              - 'Dockerfile'
+              - '.dockerignore'
               - '.github/workflows/ci.yml'
             backend:
               - 'cmd/**'
@@ -128,6 +131,9 @@ jobs:
       - name: Unit Tests
         run: npm run test
         working-directory: web
+
+      - name: Build frontend Docker stage
+        run: docker build --target frontend .
 
   backend:
     needs: changes

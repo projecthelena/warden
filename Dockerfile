@@ -6,6 +6,7 @@ WORKDIR /app
 COPY web/package.json web/package-lock.json ./web/
 RUN cd web && npm ci
 COPY web ./web
+COPY tokens.css ./tokens.css
 RUN cd web && npm run build
 
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-bookworm AS backend
