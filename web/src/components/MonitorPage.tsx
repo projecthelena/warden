@@ -76,7 +76,7 @@ export function MonitorPage() {
             </header>
 
             <Tabs value={activeTab} onValueChange={tab => updateQuery({ tab: tab === "overview" ? null : tab })}>
-                <TabsList className={`grid h-auto w-full p-1 sm:inline-flex sm:w-auto ${canEdit ? "grid-cols-5" : "grid-cols-4"}`}>
+                <TabsList className={`grid h-auto w-full p-1 ${canEdit ? "grid-cols-5" : "grid-cols-4"}`}>
                     <TabsTrigger value="overview" className="min-h-11 min-w-0 px-0 text-xs sm:px-4 sm:text-sm"><Activity className="mr-2 hidden h-4 w-4 sm:block" />Overview</TabsTrigger>
                     <TabsTrigger value="incidents" className="min-h-11 min-w-0 px-0 text-xs sm:px-4 sm:text-sm"><Calendar className="mr-2 hidden h-4 w-4 sm:block" />Incidents</TabsTrigger>
                     <TabsTrigger value="patterns" className="min-h-11 min-w-0 px-0 text-xs sm:px-4 sm:text-sm"><Waves className="mr-2 hidden h-4 w-4 sm:block" />Patterns</TabsTrigger>
