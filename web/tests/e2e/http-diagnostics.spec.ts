@@ -127,10 +127,11 @@ for (const scenario of [
           });
           expect(geometry, `Tabs at ${width}px`).toEqual({ aligned: true, contained: true, touch: true });
           if (width >= 768) {
-            const tabBox = await tabs.boundingBox();
-            const workspace = await page.getByTestId("monitor-page").boundingBox();
-            expect(Math.abs(tabBox!.x - workspace!.x)).toBeLessThan(1);
-            expect(Math.abs(tabBox!.width - workspace!.width)).toBeLessThan(1);
+            await expect.poll(() => tabs.evaluate(element => {
+              const tabBox = element.getBoundingClientRect();
+              const workspace = element.closest('[data-testid="monitor-page"]')!.getBoundingClientRect();
+              return Math.abs(tabBox.x - workspace.x) < 1 && Math.abs(tabBox.width - workspace.width) < 1;
+            }), { message: `Full-width tabs at ${width}px` }).toBe(true);
           }
           expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
           const breadcrumb = page.getByRole("navigation", { name: "breadcrumb" });
