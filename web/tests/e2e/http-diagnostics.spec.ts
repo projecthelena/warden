@@ -119,7 +119,7 @@ for (const scenario of [
         for (const width of [320, 375, 414, 768, 1440]) {
           await page.setViewportSize({ width, height: 1000 });
           const tabs = page.getByRole("tablist");
-          await expect(tabs.getByRole("tab")).toHaveCount(4);
+          await expect(tabs.getByRole("tab")).toHaveCount(5);
           const geometry = await tabs.evaluate(element => {
             const box = element.getBoundingClientRect();
             const children = [...element.querySelectorAll('[role="tab"]')].map(tab => tab.getBoundingClientRect());
@@ -129,8 +129,8 @@ for (const scenario of [
           if (width >= 768) {
             const tabBox = await tabs.boundingBox();
             const workspace = await page.getByTestId("monitor-page").boundingBox();
-            expect(tabBox!.width).toBeLessThan(workspace!.width - 1);
-            if (width >= 1280) expect(tabBox!.width).toBeLessThan(workspace!.width * 0.8);
+            expect(Math.abs(tabBox!.x - workspace!.x)).toBeLessThan(1);
+            expect(Math.abs(tabBox!.width - workspace!.width)).toBeLessThan(1);
           }
           expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
           const breadcrumb = page.getByRole("navigation", { name: "breadcrumb" });
@@ -155,7 +155,7 @@ for (const scenario of [
       await expect(details).toContainText("127.0.0.1");
       await expect(details).toContainText("not backend execution time");
       if (scenario.name === "recovers") {
-        // Exercise the three-tab layout independently of backend authorization tests.
+        // Exercise the viewer tab layout independently of backend authorization tests.
         await page.route("**/api/auth/me", async route => {
           const response = await route.fetch();
           const body = await response.json();
@@ -165,7 +165,7 @@ for (const scenario of [
         for (const width of [320, 375, 414, 768, 1440]) {
           await page.setViewportSize({ width, height: 1000 });
           const tabs = page.getByRole("tablist");
-          await expect(tabs.getByRole("tab")).toHaveCount(3);
+          await expect(tabs.getByRole("tab")).toHaveCount(4);
           await expect(page.getByRole("tab", { name: "Settings", exact: true })).toHaveCount(0);
           expect(await tabs.evaluate(element => {
             const box = element.getBoundingClientRect();
