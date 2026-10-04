@@ -185,6 +185,17 @@ for (const traced of [true, false]) {
         .getByRole("link", { name: "All check history", exact: true })
         .click();
       await expect(page.getByText("Last 24 hours")).toBeVisible();
+      // Go serializes nil trace collections as null, including early request failures.
+      const errors: string[] = [];
+      page.on("pageerror", error => errors.push(error.message));
+      await page.route(`**/api/monitors/${ids[0]}/checks?checkId=${checks[0].id}`, route => route.fulfill({ json: [{
+        ...checks[0], diagnostics: { attempts: [{ status: "down", failurePhase: "request", totalMs: 0, hops: null }] },
+      }] }));
+      await page.goto(`/monitors/${ids[0]}?tab=checks&checkId=${checks[0].id}`);
+      await expect(page.getByText("Check configuration needs attention", { exact: true })).toBeVisible();
+      await expect(page.getByRole("region", { name: "HTTP diagnostics" })).toBeVisible();
+      expect(errors).toEqual([]);
+
     } finally {
       if (groupId)
         expect(
