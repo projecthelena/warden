@@ -29,17 +29,20 @@ function KindIcon({ kind }: { kind: MonitorInsight["kind"] }) {
     }
 }
 
-// InsightsCard shows what Warden noticed about the *shape* of a monitor's behaviour, as
-// opposed to the incidents below it. It renders nothing at all when there is nothing to
-// say — a panel that is permanently empty trains people to stop looking at it.
 export function InsightsCard({ monitorId }: { monitorId: string }) {
     const { data, isLoading, error } = useMonitorInsights(monitorId);
 
     if (isLoading) {
-        return <Skeleton className="h-20 w-full" />;
+        return <div role="status" aria-label="Loading patterns"><Skeleton className="h-20 w-full" /></div>;
     }
-    if (error || !data || data.length === 0) {
-        return null;
+    if (error) {
+        return <div role="alert" className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-4 text-sm text-rose-400">Could not load patterns. Please try again later.</div>;
+    }
+    if (!data || data.length === 0) {
+        return <div className="grid min-h-44 place-content-center gap-2 rounded-xl border border-dashed border-border bg-card/30 px-4 text-center text-sm text-muted-foreground">
+            <p>No patterns detected yet.</p>
+            <p>Patterns are based on the last 14 days of checks and refreshed daily.</p>
+        </div>;
     }
 
     return (

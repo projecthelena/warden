@@ -6,7 +6,7 @@ Warden recomputes findings once a day over the last 14 days and replaces them wh
 
 Only successful checks feed the detectors. A failed check's latency is the time spent failing, and a single 10-second timeout would add enough to its hour to manufacture a ramp and a reset out of an outage. A stale finding is worse than none — it sends you looking for something that is no longer there.
 
-They show up in three places: on a monitor's page under **Patterns**, through `list_insights` in the MCP, and — if you turn it on — in a weekly summary on your notification channels.
+They show up in three places: in the **Patterns** tab on a monitor's page, through `list_insights` in the MCP, and — if you turn it on — in a weekly summary on your notification channels.
 
 ## What it looks for
 
