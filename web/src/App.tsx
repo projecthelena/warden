@@ -215,19 +215,19 @@ function AdminLayout() {
         <AppSidebar groups={safeGroups} />
         <SidebarInset className="bg-background md:rounded-tl-xl md:border-t md:border-l md:border-border/50 overflow-hidden min-h-screen transition-all">
           <header className="flex h-16 shrink-0 items-center gap-2 border-b border-border/40 bg-background/95 px-4 backdrop-blur sticky top-0 z-10">
-            <div className="flex items-center gap-2">
-              <SidebarTrigger className="-ml-1" />
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <SidebarTrigger className="-ml-1 shrink-0" />
               <Separator orientation="vertical" className="mr-2 h-4" />
-              <Breadcrumb>
-                <BreadcrumbList>
+              <Breadcrumb className="min-w-0">
+                <BreadcrumbList className="flex-nowrap">
                   {breadcrumbs.map((item, index) => (
                     <React.Fragment key={`${item.url}-${index}`}>
-                      {index > 0 && <BreadcrumbSeparator />}
-                      <BreadcrumbItem>
+                      {index > 0 && <BreadcrumbSeparator className="hidden shrink-0 sm:block" />}
+                      <BreadcrumbItem className={item.active ? "min-w-0" : "hidden min-w-0 sm:inline-flex"}>
                         {item.active ? (
-                          <BreadcrumbPage>{item.title}</BreadcrumbPage>
+                          <BreadcrumbPage className="truncate">{item.title}</BreadcrumbPage>
                         ) : (
-                          <BreadcrumbLink href={item.url} onClick={(e) => {
+                          <BreadcrumbLink className="truncate" href={item.url} onClick={(e) => {
                             e.preventDefault();
                             navigate(item.url);
                           }}>
@@ -240,13 +240,13 @@ function AdminLayout() {
                 </BreadcrumbList>
               </Breadcrumb>
             </div>
-            <div className="ml-auto flex items-center gap-2">
+            <div className="ml-auto flex shrink-0 items-center gap-2">
               {canEdit && (
                 isMaintenance ? (
                   <CreateMaintenanceSheet onCreate={addMaintenance} groups={safeGroups} />
                 ) : !isIncidents && !isSettings && !isStatusPages ? (
                   <>
-                    {!groupId && <CreateGroupSheet onCreate={addGroup} />}
+                    {!groupId && <div className="hidden sm:block"><CreateGroupSheet onCreate={addGroup} /></div>}
                     <CreateMonitorSheet groups={safeGroups} defaultGroup={activeGroup?.name} />
                   </>
                 ) : null

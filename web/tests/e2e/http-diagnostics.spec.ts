@@ -110,13 +110,34 @@ for (const scenario of [
       await page.goto(`/monitors/${monitorId}`);
       await page.getByRole("tab", { name: "Checks", exact: true }).click();
       const history = page.getByRole("region", { name: "Recent checks" });
-      await expect(history).toContainText(
-        `1 checks · ${scenario.recover ? 0 : 1} failed · ${scenario.recover ? 1 : 0} recovered after retry`,
-      );
+      await expect(history.getByLabel("24-hour totals")).toHaveText(`Checks1Failed${scenario.recover ? 0 : 1}Recovered${scenario.recover ? 1 : 0}`);
       await history
         .locator("summary")
-        .filter({ hasText: scenario.title })
+        .filter({ has: page.locator(".check-result") }).first()
         .click();
+      if (scenario.name === "recovers") {
+        for (const width of [320, 375, 414, 768, 1440]) {
+          await page.setViewportSize({ width, height: 1000 });
+          const tabs = page.getByRole("tablist");
+          await expect(tabs.getByRole("tab")).toHaveCount(4);
+          const geometry = await tabs.evaluate(element => {
+            const box = element.getBoundingClientRect();
+            const children = [...element.querySelectorAll('[role="tab"]')].map(tab => tab.getBoundingClientRect());
+            return { aligned: children.every(child => Math.abs(child.top - children[0].top) < 1), contained: children.every(child => child.left >= box.left && child.right <= box.right + 1 && child.bottom <= box.bottom + 1), touch: children.every(child => child.height >= 44) };
+          });
+          expect(geometry, `Tabs at ${width}px`).toEqual({ aligned: true, contained: true, touch: true });
+          expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+          const breadcrumb = page.getByRole("navigation", { name: "breadcrumb" });
+          expect(await breadcrumb.evaluate(element => {
+            const box = element.getBoundingClientRect();
+            const header = element.closest("header")!.getBoundingClientRect();
+            return box.top >= header.top && box.bottom <= header.bottom;
+          }), `Breadcrumb at ${width}px`).toBe(true);
+          await expect(history.getByText(/^Between attempts \d/)).toBeVisible();
+          await expect(history.getByText("Retry mode: automatic")).not.toBeVisible();
+        }
+        await page.setViewportSize({ width: 1280, height: 900 });
+      }
       await history.getByText("Technical details", { exact: true }).click();
       const details = page.getByRole("region", { name: "HTTP diagnostics" });
       await expect(details).toContainText("Attempt 1");
@@ -127,6 +148,26 @@ for (const scenario of [
       if (scenario.recover) await expect(details).toContainText("HTTP 204");
       await expect(details).toContainText("127.0.0.1");
       await expect(details).toContainText("not backend execution time");
+      if (scenario.name === "recovers") {
+        // Exercise the three-tab layout independently of backend authorization tests.
+        await page.route("**/api/auth/me", async route => {
+          const response = await route.fetch();
+          const body = await response.json();
+          await route.fulfill({ response, json: { ...body, user: { ...body.user, role: "viewer" } } });
+        });
+        await page.reload();
+        for (const width of [320, 375, 414, 768, 1440]) {
+          await page.setViewportSize({ width, height: 1000 });
+          const tabs = page.getByRole("tablist");
+          await expect(tabs.getByRole("tab")).toHaveCount(3);
+          await expect(page.getByRole("tab", { name: "Settings", exact: true })).toHaveCount(0);
+          expect(await tabs.evaluate(element => {
+            const box = element.getBoundingClientRect();
+            const children = [...element.querySelectorAll('[role="tab"]')].map(tab => tab.getBoundingClientRect());
+            return children.every(child => Math.abs(child.top - children[0].top) < 1 && child.left >= box.left && child.right <= box.right + 1 && child.bottom <= box.bottom + 1);
+          }), `Viewer tabs at ${width}px`).toBe(true);
+        }
+      }
     } finally {
       try {
         if (monitorId)

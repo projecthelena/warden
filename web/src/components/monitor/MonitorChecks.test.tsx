@@ -43,8 +43,8 @@ describe("monitor check history", () => {
     );
     expect(await screen.findByText("Last 24 hours")).toBeInTheDocument();
     expect(
-      screen.getByText("50 checks · 5 failed · 3 recovered after retry"),
-    ).toBeInTheDocument();
+      screen.getByLabelText("24-hour totals"),
+    ).toHaveTextContent("Checks50Failed5Recovered3");
     await userEvent.click(screen.getByRole("button", { name: "Older" }));
     await waitFor(() =>
       expect(
@@ -86,10 +86,8 @@ it("keeps individual checks available when the summary fails", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "24-hour summary is unavailable",
   );
-  expect(
-    screen.getByText(/1 checks have no detailed trace/),
-  ).toBeInTheDocument();
-  await userEvent.click(screen.getByText(/Check failed/));
+
+  await userEvent.click(screen.getByLabelText(/Check failed/));
   expect(
     screen.getByText("No HTTP trace was recorded for this check."),
   ).toBeVisible();
