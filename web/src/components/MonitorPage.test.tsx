@@ -34,7 +34,7 @@ describe("MonitorPage tabs", () => {
         expect(screen.getByText("Overview content")).toBeInTheDocument();
         expect(screen.queryByText("Patterns for m1")).not.toBeInTheDocument();
         await user.click(screen.getByRole("tab", { name: "Patterns" }));
-        expect(screen.getByText("Patterns for m1")).toBeInTheDocument();
+        expect(await screen.findByText("Patterns for m1")).toBeInTheDocument();
         expect(screen.queryByText("Overview content")).not.toBeInTheDocument();
         expect(screen.getByTestId("location")).toHaveTextContent("?date=2026-09-01&tab=patterns");
         await user.click(screen.getByRole("tab", { name: "Overview" }));
@@ -47,13 +47,13 @@ describe("MonitorPage tabs", () => {
         screen.getByRole("tab", { name: "Incidents" }).focus();
         await user.keyboard("{ArrowRight}");
         expect(screen.getByRole("tab", { name: "Patterns" })).toHaveFocus();
-        expect(screen.getByText("Patterns for m1")).toBeInTheDocument();
+        expect(await screen.findByText("Patterns for m1")).toBeInTheDocument();
     });
-    it.each([true, false])("supports direct links with edit permission %s", canEdit => {
+    it.each([true, false])("supports direct links with edit permission %s", async canEdit => {
         state.canEdit = canEdit;
         open("?tab=patterns");
         expect(screen.getByRole("tab", { name: "Patterns" })).toHaveAttribute("aria-selected", "true");
-        expect(screen.getByText("Patterns for m1")).toBeInTheDocument();
+        expect(await screen.findByText("Patterns for m1")).toBeInTheDocument();
         expect(screen.queryByRole("tab", { name: "Settings" }) !== null).toBe(canEdit);
     });
     it("preserves the checks tab and its direct link", async () => {
@@ -61,7 +61,7 @@ describe("MonitorPage tabs", () => {
         open("?tab=checks");
         expect(screen.getByText("Checks content")).toBeInTheDocument();
         await user.click(screen.getByRole("tab", { name: "Patterns" }));
-        expect(screen.getByText("Patterns for m1")).toBeInTheDocument();
+        expect(await screen.findByText("Patterns for m1")).toBeInTheDocument();
         expect(screen.queryByText("Checks content")).not.toBeInTheDocument();
     });
     it.each(["unknown", "settings"])("falls back to overview for a viewer requesting %s", tab => {
