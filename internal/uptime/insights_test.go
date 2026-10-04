@@ -152,8 +152,8 @@ func TestDetectForMonitor_ReportsDrift(t *testing.T) {
 	if !strings.Contains(drift[0].Summary, "slower") {
 		t.Errorf("summary does not name the direction: %q", drift[0].Summary)
 	}
-	if !strings.Contains(drift[0].Summary, "Nothing alerted") {
-		t.Errorf("summary should say why this never alerted: %q", drift[0].Summary)
+	if strings.Contains(drift[0].Summary, "Nothing alerted") {
+		t.Errorf("summary must not invent alert history: %q", drift[0].Summary)
 	}
 }
 
@@ -179,8 +179,8 @@ func TestDetectForMonitor_ReportsCoFailure(t *testing.T) {
 	if len(co) != 1 {
 		t.Fatalf("two monitors failing in lockstep were not linked (%d findings)", len(findings))
 	}
-	if !strings.Contains(co[0].Summary, "share a cause") {
-		t.Errorf("summary does not draw the conclusion: %q", co[0].Summary)
+	if !strings.Contains(co[0].Summary, "not confirmed") {
+		t.Errorf("summary must distinguish overlap from causation: %q", co[0].Summary)
 	}
 	if co[0].Detail["withMonitorId"] != "m2" {
 		t.Errorf("detail does not name the other monitor: %+v", co[0].Detail)
@@ -272,5 +272,39 @@ func TestRefreshInsights_ClearsFindingsForPausedMonitors(t *testing.T) {
 
 	if got, _ := store.GetMonitorInsights("m1"); len(got) != 0 {
 		t.Errorf("a paused monitor kept %d stale findings: %+v", len(got), got)
+	}
+}
+
+func TestDetectForMonitor_RejectsChronicNeighbor(t *testing.T) {
+	m, _ := newAlertTestManager(t)
+	now := time.Now().UTC().Truncate(time.Hour)
+	base := now.Add(-48 * time.Hour)
+	mine := []insights.Interval{}
+	for i := 0; i < 3; i++ {
+		start := base.Add(time.Duration(i) * time.Hour)
+		mine = append(mine, insights.Interval{Start: start, End: start.Add(10 * time.Minute)})
+	}
+	theirs := []insights.Interval{{Start: base.Add(-time.Hour), End: base.Add(4 * time.Hour)}, {Start: base.Add(-24 * time.Hour), End: base.Add(-23 * time.Hour)}, {Start: base.Add(-20 * time.Hour), End: base.Add(-19 * time.Hour)}}
+	findings := m.detectForMonitor("m1", "API", now.Add(-14*24*time.Hour), now, map[string][]insights.Interval{"m1": mine, "m2": theirs}, time.UTC)
+	if got := findingsByKind(findings, insights.KindCoFailure); len(got) != 0 {
+		t.Fatalf("chronic neighbor reported: %+v", got)
+	}
+}
+
+func TestDetectForMonitor_DoesNotCallThreeDaysAWeek(t *testing.T) {
+	m, store := newAlertTestManager(t)
+	now := time.Now().UTC().Truncate(time.Hour)
+	series := make([]int64, 100)
+	for i := range series {
+		if i < 50 {
+			series[i] = 250
+		} else {
+			series[i] = 400
+		}
+	}
+	seedHourly(t, store, "m1", series, now)
+	findings := m.detectForMonitor("m1", "API", now.Add(-14*24*time.Hour), now, nil, time.UTC)
+	if got := findingsByKind(findings, insights.KindLatencyDrift); len(got) != 0 {
+		t.Fatalf("partial week reported as week-over-week: %+v", got)
 	}
 }

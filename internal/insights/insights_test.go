@@ -1,6 +1,7 @@
 package insights
 
 import (
+	"math"
 	"testing"
 	"time"
 )
@@ -486,5 +487,60 @@ func TestOverlap_Degenerate(t *testing.T) {
 	}
 	if got := Overlap(long, manySmall, now); got > 1 {
 		t.Errorf("overlap = %.2f, must never exceed 1", got)
+	}
+}
+
+func TestCoFailureEvidence(t *testing.T) {
+	now := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
+	base := now.Add(-48 * time.Hour)
+	a := []Interval{}
+	for i := 0; i < 3; i++ {
+		start := base.Add(time.Duration(i) * time.Hour)
+		a = append(a, Interval{Start: start, End: start.Add(10 * time.Minute)})
+	}
+	t.Run("repeated coincident starts", func(t *testing.T) {
+		if got := CoincidentStarts(a, a, now, 5*time.Minute); got != 3 {
+			t.Fatalf("got %d starts", got)
+		}
+	})
+	t.Run("chronic outage is not repetition", func(t *testing.T) {
+		b := []Interval{{Start: base.Add(-time.Hour)}}
+		if Overlap(a, b, now) != 1 {
+			t.Fatal("fixture must fully overlap")
+		}
+		if got := CoincidentStarts(a, b, now, 5*time.Minute); got != 0 {
+			t.Fatalf("chronic outage matched %d starts", got)
+		}
+		if Overlap(b, a, now) >= 0.7 {
+			t.Fatal("chronic outage should fail mutual overlap")
+		}
+	})
+	t.Run("duplicate windows do not inflate overlap or starts", func(t *testing.T) {
+		duplicated := []Interval{a[0], a[0], a[0]}
+		if got := Overlap(a, duplicated, now); math.Abs(got-1.0/3) > 0.001 {
+			t.Fatalf("overlap = %f", got)
+		}
+		if got := CoincidentStarts(a, duplicated, now, 5*time.Minute); got != 1 {
+			t.Fatalf("starts = %d", got)
+		}
+	})
+}
+
+func TestSawtoothDoesNotBridgeMissingHours(t *testing.T) {
+	base := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	contiguous := []Sample{}
+	for cycle := 0; cycle < 5; cycle++ {
+		for _, latency := range []int64{200, 260, 330, 400, 470, 200} {
+			contiguous = append(contiguous, Sample{Hour: base.Add(time.Duration(len(contiguous)) * time.Hour), LatencyMs: latency})
+		}
+	}
+	if _, _, found := DetectSawtooth(contiguous, DefaultSawtoothConfig()); !found {
+		t.Fatal("fixture has no pattern")
+	}
+	for i := range contiguous {
+		contiguous[i].Hour = base.Add(time.Duration(i) * 2 * time.Hour)
+	}
+	if _, _, found := DetectSawtooth(contiguous, DefaultSawtoothConfig()); found {
+		t.Fatal("missing hours were treated as a continuous ramp")
 	}
 }

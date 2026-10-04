@@ -101,7 +101,7 @@ func DetectSawtooth(samples []Sample, cfg SawtoothConfig) ([]Ramp, int64, bool) 
 	for i < len(samples)-1 {
 		// Walk while the series is not falling.
 		j := i
-		for j+1 < len(samples) && samples[j+1].LatencyMs >= samples[j].LatencyMs {
+		for j+1 < len(samples) && samples[j+1].Hour.Sub(samples[j].Hour) == time.Hour && samples[j+1].LatencyMs >= samples[j].LatencyMs {
 			j++
 		}
 
@@ -138,6 +138,9 @@ func DetectSawtooth(samples []Sample, cfg SawtoothConfig) ([]Ramp, int64, bool) 
 func resetAfter(samples []Sample, peakIdx int, baseline int64, factor float64) (int64, bool) {
 	limit := float64(baseline) * factor
 	for k := peakIdx + 1; k < len(samples) && k <= peakIdx+2; k++ {
+		if samples[k].Hour.Sub(samples[k-1].Hour) != time.Hour {
+			break
+		}
 		if float64(samples[k].LatencyMs) <= limit {
 			return samples[k].LatencyMs, true
 		}
@@ -184,7 +187,7 @@ func SawtoothFinding(monitorName string, ramps []Ramp, baseline int64, windowDay
 	return Finding{
 		Kind: KindSawtooth,
 		Summary: fmt.Sprintf(
-			"%s climbs and resets: %d ramps in %d days, rising about %.0fms/h from a normal of %dms to as much as %dms, then dropping straight back. That shape usually means something is being recycled — a restart, an OOM kill, or a pool being rebuilt.",
+			"%s climbs and resets: %d ramps in %d days, rising about %.0fms/h from a normal of %dms to as much as %dms, then dropping straight back. Latency alone does not identify the cause. Compare the slow checks with HTTP timings and deployment or restart history.",
 			monitorName, len(ramps), windowDays, medianSlope, baseline, worstPeak),
 		Detail: map[string]any{
 			"ramps":                len(ramps),
@@ -298,7 +301,7 @@ func TimeOfDayFinding(monitorName string, startHour, width int, share float64, n
 	return Finding{
 		Kind: KindTimeOfDay,
 		Summary: fmt.Sprintf(
-			"%s misbehaves on a schedule: %.0f%% of its %d recent problems fall between %02d:00 and %02d:00 UTC%s. That points at load rather than chance.",
+			"%s misbehaves on a schedule: %.0f%% of its %d recent problems fall between %02d:00 and %02d:00 UTC%s. Check traffic and scheduled jobs during this window; timing alone does not identify the cause.",
 			monitorName, share*100, n, startHour, endHour, local),
 		Detail: map[string]any{
 			"startHourUTC": startHour,
@@ -312,41 +315,67 @@ func TimeOfDayFinding(monitorName string, startHour, width int, share float64, n
 
 // --- co-failure -----------------------------------------------------------------------
 
-// Overlap reports what share of a's outage time is also b's outage time. Two monitors that
-// keep failing together share a cause, and finding that out from a dashboard means holding
-// two charts side by side.
+// Overlap measures shared downtime after merging overlapping intervals. It is
+// directional, so callers must check both directions before reporting co-failure.
 func Overlap(a, b []Interval, now time.Time) float64 {
-	total := 0.0
-	shared := 0.0
-
+	a, b = mergedIntervals(a, now), mergedIntervals(b, now)
+	total, shared := 0.0, 0.0
 	for _, ia := range a {
-		endA := ia.End
-		if endA.IsZero() {
-			endA = now
-		}
-		d := endA.Sub(ia.Start).Seconds()
-		if d <= 0 {
-			continue
-		}
-		total += d
-
+		total += ia.End.Sub(ia.Start).Seconds()
 		for _, ib := range b {
-			endB := ib.End
-			if endB.IsZero() {
-				endB = now
-			}
-			start := maxTime(ia.Start, ib.Start)
-			end := minTime(endA, endB)
+			start, end := maxTime(ia.Start, ib.Start), minTime(ia.End, ib.End)
 			if end.After(start) {
 				shared += end.Sub(start).Seconds()
 			}
 		}
 	}
-
 	if total <= 0 {
 		return 0
 	}
 	return math.Min(shared/total, 1)
+}
+
+// CoincidentStarts counts distinct overlapping outages starting within the given
+// tolerance. A long outage cannot stand in for several recurring failures.
+func CoincidentStarts(a, b []Interval, now time.Time, tolerance time.Duration) int {
+	a, b = mergedIntervals(a, now), mergedIntervals(b, now)
+	count, j := 0, 0
+	for _, ia := range a {
+		for j < len(b) && b[j].Start.Before(ia.Start.Add(-tolerance)) {
+			j++
+		}
+		if j == len(b) {
+			break
+		}
+		ib := b[j]
+		if !ib.Start.After(ia.Start.Add(tolerance)) && minTime(ia.End, ib.End).After(maxTime(ia.Start, ib.Start)) {
+			count++
+			j++
+		}
+	}
+	return count
+}
+
+func mergedIntervals(intervals []Interval, now time.Time) []Interval {
+	sorted := make([]Interval, 0, len(intervals))
+	for _, iv := range intervals {
+		if iv.End.IsZero() || iv.End.After(now) {
+			iv.End = now
+		}
+		if iv.End.After(iv.Start) {
+			sorted = append(sorted, iv)
+		}
+	}
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Start.Before(sorted[j].Start) })
+	out := make([]Interval, 0, len(sorted))
+	for _, iv := range sorted {
+		if len(out) > 0 && !iv.Start.After(out[len(out)-1].End) {
+			out[len(out)-1].End = maxTime(out[len(out)-1].End, iv.End)
+		} else {
+			out = append(out, iv)
+		}
+	}
+	return out
 }
 
 func maxTime(a, b time.Time) time.Time {

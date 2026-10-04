@@ -92,4 +92,23 @@ describe("InsightsCard", () => {
         render(<InsightsCard monitorId="m1" />);
         expect(screen.queryByText("worth a look")).not.toBeInTheDocument();
     });
+    it("groups related monitors without claiming they share a cause", () => {
+        mockUseMonitorInsights.mockReturnValue({
+            data: [insight(), ...[2, 3, 4].map(id => insight({ id, kind: "co_failure", summary: "Three coincident outages.", detail: { withMonitorId: `m${id}`, withMonitorName: `Service ${id}` } }))],
+            isLoading: false, error: null,
+        });
+        render(<InsightsCard monitorId="m1" />);
+        expect(screen.getByText("Patterns (2)")).toBeInTheDocument();
+        expect(screen.getByText("Overlapping outages with 3 monitors")).toBeInTheDocument();
+        expect(screen.getByText(/A shared cause is not confirmed/)).toBeInTheDocument();
+        expect(screen.getByRole("link", { name: "Service 2" })).toHaveAttribute("href", "/monitors/m2?tab=checks");
+        expect(screen.getByRole("link", { name: "Review checks and HTTP traces" })).toHaveAttribute("href", "/monitors/m1?tab=checks");
+    });
+
+    it("shows missing trace coverage without inventing measurements", () => {
+        mockUseMonitorInsights.mockReturnValue({ data: [insight({ detail: { checkEvidence: { total: 100, traced: 0, recovered: 0 } } })], isLoading: false, error: null });
+        render(<InsightsCard monitorId="m1" />);
+        expect(screen.getByText(/No HTTP trace evidence is available/)).toBeInTheDocument();
+    });
+
 });

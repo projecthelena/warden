@@ -12,7 +12,7 @@ They show up in three places: in the **Patterns** tab on a monitor's page, throu
 
 ### Climbs and resets
 
-Latency rises steadily for hours and then drops straight back to normal. The signature of something being recycled: a restart, an OOM kill, a connection pool being rebuilt.
+Latency rises steadily for hours and then drops straight back to normal. This shape does not establish a restart, an OOM kill, or a connection pool problem. Missing hours break a ramp rather than being treated as continuous measurements.
 
 Warden cannot tell you which. It can tell you the shape is there, how steep it is and how often it repeats, which is the part that otherwise costs you an afternoon:
 
@@ -26,23 +26,25 @@ Whether those resets keep a cadence. This is a genuinely different conclusion fr
 
 ### Time of day
 
-Whether a monitor's trouble piles into one part of the day. Events spread evenly are chance; 78% of them inside an eight-hour band is load. The summary gives the band in UTC and in your own timezone, because nobody reading an alert at midnight wants to do that arithmetic.
+Whether a monitor's trouble piles into one part of the day. Concentrated events suggest a time-of-day association; they do not establish load as the cause. The summary gives the band in UTC and in your own timezone, because nobody reading an alert at midnight wants to do that arithmetic.
 
 ### Fails with another monitor
 
-How much of one monitor's downtime overlaps another's. Two monitors that keep failing together share a cause and should be looked at as one thing.
+At least three distinct outages must overlap and start within five minutes of each other, and at least 70% of each monitor's downtime must overlap the other's. Degraded periods are excluded. A shared cause is not confirmed: compare failed checks, the monitoring host, and shared network dependencies. Related monitors appear in one expandable section; each relationship is with the selected monitor, not necessarily with every other member.
 
 ### Getting slower
 
 Median latency this week against last week. This catches the slow slide that never trips any threshold, because every day looks like the one before it:
 
-> API is 40% slower than it was a week ago: a typical response went from 250ms to 350ms. Nothing alerted, because no single check was slow enough to.
+> API is 40% slower than it was a week ago: a typical response went from 250ms to 350ms. Compare HTTP timings between these periods to locate the slowdown.
+
+Each calendar week needs at least 72 hourly samples. Missing data cannot turn a few days into a week-over-week comparison.
 
 Improvements are reported too, as their own finding labelled "Getting faster" — knowing a fix worked is worth as much as knowing it broke.
 
 ## What it deliberately is not
 
-These are explicit rules, not anomaly detection. A finding you cannot explain is a finding nobody acts on, and with a couple of dozen monitors the rules win on both accuracy and arguability. Every finding carries the numbers behind it so you can disagree with it.
+These are explicit rules, not anomaly detection. A finding you cannot explain is a finding nobody acts on, and with a couple of dozen monitors the rules win on both accuracy and arguability. Every finding carries the numbers behind it so you can disagree with it. Expand **View evidence** for the last analysis time and the number of checks with HTTP traces in the window. Trace coverage and retry recoveries are context, not proof of a root cause. Use **Review checks and HTTP traces** to inspect individual requests.
 
 Findings are labelled `high` or `medium` confidence. Medium means the rule only just matched, and is shown as "worth a look" rather than stated flatly.
 

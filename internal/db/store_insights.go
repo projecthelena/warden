@@ -175,13 +175,13 @@ type OutageWindow struct {
 	End       *time.Time
 }
 
-// OutageWindowsSince returns every outage that started in the window, across all monitors,
+// OutageWindowsSince returns down outages that started in the window, across all monitors,
 // so pairs can be compared without a query per pair.
 func (s *Store) OutageWindowsSince(since time.Time) ([]OutageWindow, error) {
 	rows, err := s.db.Query(s.rebind(`
 		SELECT monitor_id, start_time, end_time
 		FROM monitor_outages
-		WHERE start_time >= ?
+		WHERE start_time >= ? AND type = 'down'
 		ORDER BY start_time ASC`), since.UTC())
 	if err != nil {
 		return nil, err
