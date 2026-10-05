@@ -3,6 +3,9 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { HTTPDiagnosticDetails } from "./HTTPDiagnosticDetails";
 
+import type { HTTPDiagnostics } from "@/hooks/useMonitorEvents";
+import { explainCheck, recoveredByRetry } from "@/lib/checkEvidence";
+
 describe("HTTP diagnostics", () => {
     it("separates attempts and redirects without calling response wait server time", async () => {
         render(<HTTPDiagnosticDetails diagnostics={{ attempts: [
@@ -30,4 +33,24 @@ it("separates request duration from retry waiting without adding overlapping pha
     expect(screen.getByText("1300.0 ms")).toBeVisible();
     expect(screen.getByText("Retry mode: automatic")).not.toBeVisible();
     expect(screen.queryByText("http_status")).not.toBeInTheDocument();
+});
+
+describe("nullable HTTP trace collections", () => {
+    it.each([null, undefined])("renders an attempt without hops (%s)", hops => {
+        const diagnostics = { attempts: [{ status: "down", failurePhase: "request", totalMs: 0, hops }] } as unknown as HTTPDiagnostics;
+        expect(explainCheck({ status: "down", latency: 0, timestamp: "", diagnostics }).title).toBe("Check configuration needs attention");
+        render(<HTTPDiagnosticDetails diagnostics={diagnostics} />);
+        expect(screen.getByText("Attempt 1")).toBeVisible();
+    });
+    it("renders a hop without phase timings", () => {
+        const diagnostics = { attempts: [{ totalMs: 2, hops: [{ host: "example.test", totalMs: 2, phases: null }] }] } as unknown as HTTPDiagnostics;
+        render(<HTTPDiagnosticDetails diagnostics={diagnostics} />);
+        expect(screen.getByText("No phase timings recorded.")).toBeVisible();
+    });
+    it("accepts an empty serialized attempts collection", () => {
+        const diagnostics = { attempts: null } as unknown as HTTPDiagnostics;
+        expect(recoveredByRetry({ status: "up", latency: 0, timestamp: "", diagnostics })).toBe(false);
+        render(<HTTPDiagnosticDetails diagnostics={diagnostics} />);
+        expect(screen.getByRole("region", { name: "HTTP diagnostics" })).toBeVisible();
+    });
 });

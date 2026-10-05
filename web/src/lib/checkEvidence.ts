@@ -16,13 +16,13 @@ export interface CheckEvidence {
 }
 
 export function recoveredByRetry(check: CheckEvidence) {
-    return check.status === "up" && (check.diagnostics?.attempts.length ?? 0) > 1;
+    return check.status === "up" && (check.diagnostics?.attempts?.length ?? 0) > 1;
 }
 
 export function explainCheck(check: CheckEvidence) {
     const attempts = check.diagnostics?.attempts ?? [];
     const attempt = recoveredByRetry(check) ? attempts[0] : attempts.at(-1);
-    const hop = attempt?.hops.at(-1);
+    const hop = attempt?.hops?.at(-1);
     const phase = attempt?.failurePhase || hop?.failurePhase;
     const code = hop?.statusCode || check.statusCode;
     let title = check.status === "up" ? "Responded" : "Check failed";

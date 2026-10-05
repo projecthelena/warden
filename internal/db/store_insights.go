@@ -7,14 +7,15 @@ import (
 
 // MonitorInsight is one stored finding from the pattern detectors.
 type MonitorInsight struct {
-	ID          int64          `json:"id"`
-	MonitorID   string         `json:"monitorId"`
-	MonitorName string         `json:"monitorName"`
-	Kind        string         `json:"kind"`
-	Summary     string         `json:"summary"`
-	Detail      map[string]any `json:"detail,omitempty"`
-	Confidence  string         `json:"confidence"`
-	DetectedAt  time.Time      `json:"detectedAt"`
+	TraceCapture string         `json:"traceCapture,omitempty"`
+	ID           int64          `json:"id"`
+	MonitorID    string         `json:"monitorId"`
+	MonitorName  string         `json:"monitorName"`
+	Kind         string         `json:"kind"`
+	Summary      string         `json:"summary"`
+	Detail       map[string]any `json:"detail,omitempty"`
+	Confidence   string         `json:"confidence"`
+	DetectedAt   time.Time      `json:"detectedAt"`
 }
 
 // ReplaceMonitorInsights swaps a monitor's findings for a freshly computed set. Replacing
@@ -175,13 +176,13 @@ type OutageWindow struct {
 	End       *time.Time
 }
 
-// OutageWindowsSince returns every outage that started in the window, across all monitors,
+// OutageWindowsSince returns down outages that started in the window, across all monitors,
 // so pairs can be compared without a query per pair.
 func (s *Store) OutageWindowsSince(since time.Time) ([]OutageWindow, error) {
 	rows, err := s.db.Query(s.rebind(`
 		SELECT monitor_id, start_time, end_time
 		FROM monitor_outages
-		WHERE start_time >= ?
+		WHERE start_time >= ? AND type = 'down'
 		ORDER BY start_time ASC`), since.UTC())
 	if err != nil {
 		return nil, err

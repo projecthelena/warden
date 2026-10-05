@@ -44,7 +44,7 @@ func seedInsightFixture(t *testing.T) *db.Store {
 
 func TestGetMonitorInsights_ReturnsFindings(t *testing.T) {
 	s := seedInsightFixture(t)
-	h := NewInsightHandler(s)
+	h := NewInsightHandler(s, false)
 
 	req := httptest.NewRequest("GET", "/api/monitors/m1/insights", nil)
 	req = withURLParam(req, "id", "m1")
@@ -71,7 +71,7 @@ func TestGetMonitorInsights_ReturnsFindings(t *testing.T) {
 // the response directly.
 func TestGetMonitorInsights_EmptyIsAnArray(t *testing.T) {
 	s := seedInsightFixture(t)
-	h := NewInsightHandler(s)
+	h := NewInsightHandler(s, false)
 
 	req := httptest.NewRequest("GET", "/api/monitors/m-none/insights", nil)
 	req = withURLParam(req, "id", "m-none")
@@ -89,7 +89,7 @@ func TestGetMonitorInsights_EmptyIsAnArray(t *testing.T) {
 
 func TestGetMonitorInsights_RequiresAnID(t *testing.T) {
 	s := seedInsightFixture(t)
-	h := NewInsightHandler(s)
+	h := NewInsightHandler(s, false)
 
 	req := httptest.NewRequest("GET", "/api/monitors//insights", nil)
 	req = withURLParam(req, "id", "")
@@ -106,7 +106,7 @@ func TestGetMonitorInsights_RequiresAnID(t *testing.T) {
 // but never routed, so the generated docs advertised an endpoint that 404s.
 func TestGetInsights_ListsEveryMonitor(t *testing.T) {
 	s := seedInsightFixture(t)
-	h := NewInsightHandler(s)
+	h := NewInsightHandler(s, false)
 
 	req := httptest.NewRequest("GET", "/api/insights", nil)
 	w := httptest.NewRecorder()
@@ -127,7 +127,7 @@ func TestGetInsights_ListsEveryMonitor(t *testing.T) {
 
 func TestGetInsights_FiltersByMonitor(t *testing.T) {
 	s := seedInsightFixture(t)
-	h := NewInsightHandler(s)
+	h := NewInsightHandler(s, false)
 
 	req := httptest.NewRequest("GET", "/api/insights?monitorId=m-other", nil)
 	w := httptest.NewRecorder()
@@ -140,5 +140,44 @@ func TestGetInsights_FiltersByMonitor(t *testing.T) {
 	}
 	if len(out) != 0 {
 		t.Errorf("filter returned another monitor's findings: %+v", out)
+	}
+}
+
+func TestInsightsReportCurrentTraceCaptureWithoutInferringFromHistory(t *testing.T) {
+	for _, c := range []struct {
+		name, kind        string
+		global, automatic bool
+		want              string
+	}{
+		{"global enabled", "http", true, false, "enabled"},
+		{"global disabled", "http", false, false, "disabled"},
+		{"automatic retry captures", "http", false, true, "enabled"},
+		{"non HTTP", "tcp", true, false, "not_applicable"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			s := seedInsightFixture(t)
+			defer func() { _ = s.Close() }()
+			if err := s.CreateMonitor(db.Monitor{ID: "m-policy", GroupID: "g1", Name: "Policy", Type: c.kind, URL: "https://example.test", Interval: 60, RequestConfig: &db.RequestConfig{AutoRetry: c.automatic}}); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.ReplaceMonitorInsights("m-policy", []db.MonitorInsight{{Kind: "latency_drift", Summary: "Measured drift", Confidence: "medium", Detail: map[string]any{"checkEvidence": map[string]any{"total": 100, "traced": 7}}}}, time.Now()); err != nil {
+				t.Fatal(err)
+			}
+			h := NewInsightHandler(s, c.global)
+			req := withURLParam(httptest.NewRequest("GET", "/api/monitors/m-policy/insights", nil), "id", "m-policy")
+			w := httptest.NewRecorder()
+			h.GetMonitorInsights(w, req)
+			var findings []db.MonitorInsight
+			if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &findings) != nil || len(findings) != 1 {
+				t.Fatalf("bad response: %d %s", w.Code, w.Body.String())
+			}
+			if findings[0].TraceCapture != c.want {
+				t.Fatalf("policy = %q, want %q", findings[0].TraceCapture, c.want)
+			}
+			evidence := findings[0].Detail["checkEvidence"].(map[string]any)
+			if evidence["traced"] != float64(7) {
+				t.Fatalf("historical coverage was changed: %+v", evidence)
+			}
+		})
 	}
 }

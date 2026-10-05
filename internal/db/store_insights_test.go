@@ -169,6 +169,10 @@ func TestEventTimesAndOutageWindows(t *testing.T) {
 		if err := s.CreateOutage("m1", "down", "Monitor is down"); err != nil {
 			t.Fatalf("CreateOutage: %v", err)
 		}
+		if err := s.CreateOutage("m1", "degraded", "Slow response"); err != nil {
+			t.Fatal(err)
+		}
+
 		windows, err := s.OutageWindowsSince(since)
 		if err != nil {
 			t.Fatalf("OutageWindowsSince: %v", err)

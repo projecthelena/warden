@@ -1227,6 +1227,12 @@ const docTemplate = `{
                         "description": "Return checks stored before this check ID",
                         "name": "beforeId",
                         "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Return one retained check belonging to this monitor",
+                        "name": "checkId",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -2519,6 +2525,39 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_projecthelena_warden_internal_db.MonitorInsight": {
+            "type": "object",
+            "properties": {
+                "confidence": {
+                    "type": "string"
+                },
+                "detail": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "detectedAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "monitorId": {
+                    "type": "string"
+                },
+                "monitorName": {
+                    "type": "string"
+                },
+                "summary": {
+                    "type": "string"
+                },
+                "traceCapture": {
                     "type": "string"
                 }
             }

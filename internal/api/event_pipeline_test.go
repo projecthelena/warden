@@ -194,3 +194,53 @@ func TestHTTPDiagnosticsAPI(t *testing.T) {
 		t.Fatal("unbounded checks")
 	}
 }
+
+func TestSpecificCheckAPIIsBoundedAndMonitorScoped(t *testing.T) {
+	s, err := db.NewStore(db.NewTestConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	for _, id := range []string{"m-evidence", "m-other"} {
+		if err := s.CreateMonitor(db.Monitor{ID: id, GroupID: "g-default", Name: id, URL: "https://example.test", Interval: 60}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.BatchInsertChecks([]db.CheckResult{{MonitorID: "m-evidence", Status: "down", Timestamp: time.Now().Add(-48 * time.Hour)}}); err != nil {
+		t.Fatal(err)
+	}
+	checks, err := s.GetMonitorChecks("m-evidence", 1)
+	if err != nil || len(checks) != 1 {
+		t.Fatal("seed failed")
+	}
+	id := checks[0].ID
+	h := NewUptimeHandler(uptime.NewManager(s), s)
+	r := chi.NewRouter()
+	r.Get("/monitors/{id}/checks", h.GetMonitorChecks)
+	for _, c := range []struct {
+		path        string
+		code, count int
+	}{
+		{fmt.Sprintf("/monitors/m-evidence/checks?checkId=%d", id), 200, 1},
+		{fmt.Sprintf("/monitors/m-other/checks?checkId=%d", id), 200, 0},
+		{"/monitors/m-evidence/checks?checkId=999999", 200, 0},
+		{"/monitors/m-evidence/checks?checkId=0", 400, 0},
+		{"/monitors/m-evidence/checks?checkId=", 400, 0},
+		{"/monitors/m-evidence/checks?checkId=-1", 400, 0},
+		{"/monitors/m-evidence/checks?checkId=oops", 400, 0},
+		{"/monitors/m-evidence/checks?checkId=9223372036854775808", 400, 0},
+		{fmt.Sprintf("/monitors/m-evidence/checks?checkId=%d&beforeId=99", id), 400, 0},
+	} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest("GET", c.path, nil))
+		if w.Code != c.code {
+			t.Fatalf("%s: %d %s", c.path, w.Code, w.Body.String())
+		}
+		if c.code == 200 {
+			var rows []db.CheckResult
+			if json.Unmarshal(w.Body.Bytes(), &rows) != nil || len(rows) != c.count {
+				t.Fatalf("%s: unexpected checks %s", c.path, w.Body.String())
+			}
+		}
+	}
+}

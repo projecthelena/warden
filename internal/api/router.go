@@ -116,7 +116,7 @@ func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) htt
 	incidentH := NewIncidentHandler(store)
 	maintH := NewMaintenanceHandler(store, manager)
 	eventH := NewEventHandler(store, manager)
-	insightH := NewInsightHandler(store)
+	insightH := NewInsightHandler(store, cfg.HTTPDiagnostics)
 	statusPageH := NewStatusPageHandler(store, manager, authH)
 	notifH := NewNotificationChannelsHandler(store)
 	userH := NewUserHandler(store)

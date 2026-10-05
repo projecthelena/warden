@@ -644,17 +644,26 @@ func (s *Store) BatchInsertChecks(checks []CheckResult) error {
 
 // GetMonitorChecks returns the last N checks for a monitor
 func (s *Store) GetMonitorChecks(monitorID string, limit int) ([]CheckResult, error) {
-	return s.readMonitorChecks(monitorID, limit, 0, false)
+	return s.readMonitorChecks(monitorID, limit, 0, false, 0)
 }
 
 // GetMonitorChecksPage uses insertion IDs so new checks cannot shift older pages.
 func (s *Store) GetMonitorChecksPage(monitorID string, limit int, beforeID int64) ([]CheckResult, error) {
-	return s.readMonitorChecks(monitorID, limit, beforeID, true)
+	return s.readMonitorChecks(monitorID, limit, beforeID, true, 0)
 }
 
-func (s *Store) readMonitorChecks(monitorID string, limit int, beforeID int64, page bool) ([]CheckResult, error) {
+// GetMonitorCheck scopes a retained check ID to its owning monitor.
+func (s *Store) GetMonitorCheck(monitorID string, checkID int64) ([]CheckResult, error) {
+	return s.readMonitorChecks(monitorID, 1, 0, false, checkID)
+}
+
+func (s *Store) readMonitorChecks(monitorID string, limit int, beforeID int64, page bool, checkID int64) ([]CheckResult, error) {
 	query := `SELECT id, monitor_id, status, latency, timestamp, COALESCE(status_code, 0), COALESCE(diagnostics, '') FROM monitor_checks WHERE monitor_id = ?`
 	args := []any{monitorID}
+	if checkID > 0 {
+		query += " AND id = ?"
+		args = append(args, checkID)
+	}
 	if beforeID > 0 {
 		query += " AND id < ?"
 		args = append(args, beforeID)

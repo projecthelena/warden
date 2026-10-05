@@ -127,6 +127,17 @@ func TestDetectForMonitor_ReportsAScheduleWhenThereIsOne(t *testing.T) {
 	if !strings.Contains(periodic[0].Summary, "6h") {
 		t.Errorf("summary does not name the period: %q", periodic[0].Summary)
 	}
+	for _, kind := range []insights.Kind{insights.KindSawtooth, insights.KindPeriodicReset} {
+		finding := findingsByKind(findings, kind)[0]
+		ref, ok := finding.Detail["evidenceCheck"].(*db.InsightCheck)
+		if !ok || ref.HasTrace || !ref.Timestamp.Equal(now.Add(-70*time.Minute)) {
+			t.Fatalf("%s did not reference the last peak hour: %+v", kind, finding.Detail)
+		}
+		checks, err := store.GetMonitorCheck("m1", ref.ID)
+		if err != nil || len(checks) != 1 || checks[0].Latency != 470 || checks[0].Status != "up" {
+			t.Fatalf("%s linked the reset instead of the peak: %+v %v", kind, checks, err)
+		}
+	}
 }
 
 // The slow slide that never trips a threshold, because every day looks like the one before.
@@ -149,11 +160,20 @@ func TestDetectForMonitor_ReportsDrift(t *testing.T) {
 	if len(drift) != 1 {
 		t.Fatalf("a 60%% week-over-week slowdown was missed (%d findings)", len(findings))
 	}
+	for key, recent := range map[string]bool{"evidenceCheck": true, "comparisonCheck": false} {
+		ref, ok := drift[0].Detail[key].(*db.InsightCheck)
+		if !ok || ref == nil || ref.HasTrace {
+			t.Fatalf("missing untraced reference %s: %+v", key, drift[0].Detail)
+		}
+		if ref.Timestamp.Before(now.Add(-7*24*time.Hour)) == recent {
+			t.Fatalf("%s belongs to wrong week: %+v", key, ref)
+		}
+	}
 	if !strings.Contains(drift[0].Summary, "slower") {
 		t.Errorf("summary does not name the direction: %q", drift[0].Summary)
 	}
-	if !strings.Contains(drift[0].Summary, "Nothing alerted") {
-		t.Errorf("summary should say why this never alerted: %q", drift[0].Summary)
+	if strings.Contains(drift[0].Summary, "Nothing alerted") {
+		t.Errorf("summary must not invent alert history: %q", drift[0].Summary)
 	}
 }
 
@@ -179,8 +199,8 @@ func TestDetectForMonitor_ReportsCoFailure(t *testing.T) {
 	if len(co) != 1 {
 		t.Fatalf("two monitors failing in lockstep were not linked (%d findings)", len(findings))
 	}
-	if !strings.Contains(co[0].Summary, "share a cause") {
-		t.Errorf("summary does not draw the conclusion: %q", co[0].Summary)
+	if !strings.Contains(co[0].Summary, "not confirmed") {
+		t.Errorf("summary must distinguish overlap from causation: %q", co[0].Summary)
 	}
 	if co[0].Detail["withMonitorId"] != "m2" {
 		t.Errorf("detail does not name the other monitor: %+v", co[0].Detail)
@@ -272,5 +292,117 @@ func TestRefreshInsights_ClearsFindingsForPausedMonitors(t *testing.T) {
 
 	if got, _ := store.GetMonitorInsights("m1"); len(got) != 0 {
 		t.Errorf("a paused monitor kept %d stale findings: %+v", len(got), got)
+	}
+}
+
+func TestDetectForMonitor_RejectsChronicNeighbor(t *testing.T) {
+	m, _ := newAlertTestManager(t)
+	now := time.Now().UTC().Truncate(time.Hour)
+	base := now.Add(-48 * time.Hour)
+	mine := []insights.Interval{}
+	for i := 0; i < 3; i++ {
+		start := base.Add(time.Duration(i) * time.Hour)
+		mine = append(mine, insights.Interval{Start: start, End: start.Add(10 * time.Minute)})
+	}
+	theirs := []insights.Interval{{Start: base.Add(-time.Hour), End: base.Add(4 * time.Hour)}, {Start: base.Add(-24 * time.Hour), End: base.Add(-23 * time.Hour)}, {Start: base.Add(-20 * time.Hour), End: base.Add(-19 * time.Hour)}}
+	findings := m.detectForMonitor("m1", "API", now.Add(-14*24*time.Hour), now, map[string][]insights.Interval{"m1": mine, "m2": theirs}, time.UTC)
+	if got := findingsByKind(findings, insights.KindCoFailure); len(got) != 0 {
+		t.Fatalf("chronic neighbor reported: %+v", got)
+	}
+}
+
+func TestDetectForMonitor_DoesNotCallThreeDaysAWeek(t *testing.T) {
+	m, store := newAlertTestManager(t)
+	now := time.Now().UTC().Truncate(time.Hour)
+	series := make([]int64, 100)
+	for i := range series {
+		if i < 50 {
+			series[i] = 250
+		} else {
+			series[i] = 400
+		}
+	}
+	seedHourly(t, store, "m1", series, now)
+	findings := m.detectForMonitor("m1", "API", now.Add(-14*24*time.Hour), now, nil, time.UTC)
+	if got := findingsByKind(findings, insights.KindLatencyDrift); len(got) != 0 {
+		t.Fatalf("partial week reported as week-over-week: %+v", got)
+	}
+}
+
+func TestCoFailureLinksChecksFromTheSameMatchedOutage(t *testing.T) {
+	m, store := newAlertTestManager(t)
+	if err := store.CreateMonitor(db.Monitor{ID: "m2", GroupID: "g1", Name: "Peer", URL: "https://example.test", Interval: 60}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Hour)
+	intervals := map[string][]insights.Interval{}
+	for _, id := range []string{"m1", "m2"} {
+		for _, age := range []int{72, 48, 24} {
+			start := now.Add(-time.Duration(age) * time.Hour)
+			intervals[id] = append(intervals[id], insights.Interval{Start: start, End: start.Add(10 * time.Minute)})
+			if err := store.BatchInsertChecks([]db.CheckResult{{MonitorID: id, Timestamp: start.Add(time.Minute), Status: "down", Latency: 500}}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	// More recent failures outside the paired episodes must not replace evidence.
+	if err := store.BatchInsertChecks([]db.CheckResult{{MonitorID: "m1", Timestamp: now.Add(-time.Hour), Status: "down"}}); err != nil {
+		t.Fatal(err)
+	}
+	findings := m.detectForMonitor("m1", "API", now.Add(-14*24*time.Hour), now, intervals, time.UTC)
+	co := findingsByKind(findings, insights.KindCoFailure)
+	if len(co) != 1 {
+		t.Fatalf("missing co-failure: %+v", findings)
+	}
+	for key, id := range map[string]string{"evidenceCheck": "m1", "withCheck": "m2"} {
+		ref, ok := co[0].Detail[key].(*db.InsightCheck)
+		if !ok || ref == nil || ref.HasTrace || !ref.Timestamp.Equal(now.Add(-24*time.Hour+time.Minute)) {
+			t.Fatalf("wrong %s reference: %+v", key, co[0].Detail)
+		}
+		rows, err := store.GetMonitorCheck(id, ref.ID)
+		if err != nil || len(rows) != 1 || rows[0].Status != "down" {
+			t.Fatalf("reference does not resolve to %s: %+v %v", id, rows, err)
+		}
+	}
+	// Retention can remove raw checks without deleting outage history.
+	if err := store.PruneMonitorChecks(1); err != nil {
+		t.Fatal(err)
+	}
+	findings = m.detectForMonitor("m1", "API", now.Add(-14*24*time.Hour), now, intervals, time.UTC)
+	co = findingsByKind(findings, insights.KindCoFailure)
+	if len(co) != 1 || co[0].Detail["evidenceCheck"] != nil || co[0].Detail["withCheck"] != nil {
+		t.Fatalf("expired evidence was replaced: %+v", co)
+	}
+}
+
+func TestTimeOfDayLinksAFailedCheckWithoutRequiringTraces(t *testing.T) {
+	for _, status := range []string{"down", "degraded"} {
+		t.Run(status, func(t *testing.T) {
+			m, store := newAlertTestManager(t)
+			for i := 0; i < 8; i++ {
+				if err := store.CreateEvent("m1", status, "Example event"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			now := time.Now().UTC()
+			if err := store.BatchInsertChecks([]db.CheckResult{
+				{MonitorID: "m1", Timestamp: now, Status: status, Latency: 300},
+				{MonitorID: "m1", Timestamp: now.Add(time.Minute), Status: "up", Latency: 200},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			findings := findingsByKind(m.detectForMonitor("m1", "Example", now.Add(-14*24*time.Hour), now, nil, time.UTC), insights.KindTimeOfDay)
+			if len(findings) != 1 {
+				t.Fatalf("expected time-of-day finding: %+v", findings)
+			}
+			ref, ok := findings[0].Detail["evidenceCheck"].(*db.InsightCheck)
+			if !ok || ref.HasTrace {
+				t.Fatalf("untraced failure unavailable: %+v", findings[0].Detail)
+			}
+			checks, err := store.GetMonitorCheck("m1", ref.ID)
+			if err != nil || len(checks) != 1 || checks[0].Status != status {
+				t.Fatalf("linked a successful check: %+v %v", checks, err)
+			}
+		})
 	}
 }
