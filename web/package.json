@@ -11,6 +11,7 @@
     "lint": "eslint . && node ./scripts/check-typography.mjs",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:sqlite-rollup": "playwright test --config playwright.sqlite-rollup.config.ts",
     "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {

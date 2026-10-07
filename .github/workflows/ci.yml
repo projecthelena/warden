@@ -266,6 +266,12 @@ jobs:
       - name: Build Backend
         run: go build -o warden ./cmd/dashboard
 
+      - name: Verify SQLite rollup history end to end
+        working-directory: web
+        env:
+          WARDEN_E2E_BINARY: ../warden
+        run: npm run test:e2e:sqlite-rollup
+
       - name: Run E2E Tests
         # Waits for the server instead of sleeping: a sleep passed whether or not it came
         # up, so a startup failure surfaced as a browser error with no server output.
