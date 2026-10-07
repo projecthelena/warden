@@ -69,6 +69,7 @@ export default defineConfig({
         {
             name: 'chromium',
             testIgnore: [
+                /sqlite-rollup\//,
                 /auth\.spec\.ts/,
                 /custom_setup\.spec\.ts/,
                 /status_pages\.spec\.ts/,

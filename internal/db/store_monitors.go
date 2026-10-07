@@ -1259,75 +1259,118 @@ func (s *Store) rollupDailyUptime(days int, stats *DailyUptimeRollupStats) error
 		}
 	}
 
-	var query string
-	if s.IsPostgres() {
-		query = `SELECT monitor_id, TO_CHAR(timestamp, 'YYYY-MM-DD') as day,
-				COUNT(*), SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END)
-			FROM monitor_checks
-			WHERE timestamp >= NOW() - MAKE_INTERVAL(days => ?)
-			GROUP BY monitor_id, day`
-	} else {
-		query = `SELECT monitor_id, DATE(timestamp) as day,
-				COUNT(*), SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END)
-			FROM monitor_checks
-			WHERE timestamp >= datetime('now', '-' || ? || ' days')
-			GROUP BY monitor_id, day`
-	}
-
-	ctx := context.Background()
-	var conn *sql.Conn
-	var rows *sql.Rows
-	var err error
-	if stats == nil {
-		rows, err = s.db.Query(s.rebind(query), days)
-	} else {
-		startPhase()
-		conn, err = s.db.Conn(ctx)
-		stats.ReadConnectionDuration = time.Since(phaseStart)
-		if err != nil {
-			return err
-		}
-		startPhase()
-		rows, err = conn.QueryContext(ctx, s.rebind(query), days)
-		stats.QueryDuration = time.Since(phaseStart)
-	}
-	if err != nil {
-		if conn != nil {
-			_ = conn.Close()
-		}
-		return err
-	}
 	type rollup struct {
 		monitorID, day string
 		total, up      int
 	}
 	var rollups []rollup
-	startPhase()
-	for rows.Next() {
-		var r rollup
-		if err = rows.Scan(&r.monitorID, &r.day, &r.total, &r.up); err != nil {
-			break
+	ctx := context.Background()
+	var conn *sql.Conn
+	var err error
+
+	queryRows := func(query string, args ...any) (*sql.Rows, *sql.Conn, error) {
+		if stats == nil {
+			rows, err := s.db.Query(s.rebind(query), args...)
+			return rows, nil, err
 		}
-		rollups = append(rollups, r)
+		startPhase()
+		readConn, err := s.db.Conn(ctx)
+		stats.ReadConnectionDuration += time.Since(phaseStart)
+		if err != nil {
+			return nil, nil, err
+		}
+		startPhase()
+		rows, err := readConn.QueryContext(ctx, s.rebind(query), args...)
+		stats.QueryDuration += time.Since(phaseStart)
+		if err != nil {
+			_ = readConn.Close()
+			return nil, nil, err
+		}
+		return rows, readConn, nil
 	}
-	if err == nil {
-		err = rows.Err()
+	closeRows := func(rows *sql.Rows, readConn *sql.Conn, scanErr error) error {
+		if scanErr == nil {
+			scanErr = rows.Err()
+		}
+		closeErr := rows.Close()
+		if readConn != nil {
+			_ = readConn.Close()
+		}
+		if stats != nil {
+			stats.ScanDuration += time.Since(phaseStart)
+		}
+		if scanErr != nil {
+			return scanErr
+		}
+		return closeErr
 	}
-	closeErr := rows.Close()
-	// Return the read connection before acquiring a writer, especially with SQLite's
-	// single-connection pool. This also lets queued work run between the two phases.
-	if conn != nil {
-		_ = conn.Close()
+	readRollups := func(query string, args ...any) error {
+		rows, readConn, err := queryRows(query, args...)
+		if err != nil {
+			return err
+		}
+		startPhase()
+		for rows.Next() {
+			var r rollup
+			if err = rows.Scan(&r.monitorID, &r.day, &r.total, &r.up); err != nil {
+				break
+			}
+			rollups = append(rollups, r)
+		}
+		return closeRows(rows, readConn, err)
+	}
+
+	if s.IsPostgres() {
+		err = readRollups(`SELECT monitor_id, TO_CHAR(timestamp, 'YYYY-MM-DD') as day,
+				COUNT(*), SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END)
+			FROM monitor_checks
+			WHERE timestamp >= NOW() - MAKE_INTERVAL(days => ?)
+			GROUP BY monitor_id, day`, days)
+	} else {
+		rows, readConn, queryErr := queryRows(`SELECT id, datetime('now', '-' || ? || ' days')
+			FROM monitors ORDER BY id`, days)
+		if queryErr != nil {
+			return queryErr
+		}
+		var monitorIDs []string
+		var cutoff string
+		startPhase()
+		for rows.Next() {
+			var id string
+			if err = rows.Scan(&id, &cutoff); err != nil {
+				break
+			}
+			monitorIDs = append(monitorIDs, id)
+		}
+		if err = closeRows(rows, readConn, err); err != nil {
+			return err
+		}
+
+		// Release SQLite's single connection between batches so queued checks and
+		// readiness can run. The date bound also skips retained, older index entries.
+		const batchSize = 50
+		for start := 0; start < len(monitorIDs); start += batchSize {
+			end := min(start+batchSize, len(monitorIDs))
+			args := make([]any, 0, end-start+2)
+			for _, id := range monitorIDs[start:end] {
+				args = append(args, id)
+			}
+			args = append(args, cutoff, cutoff)
+			query := `SELECT monitor_id, DATE(timestamp) as day,
+				COUNT(*), SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END)
+				FROM monitor_checks WHERE monitor_id IN (` + strings.TrimSuffix(strings.Repeat("?,", end-start), ",") + `)
+				AND DATE(timestamp) >= DATE(?) AND timestamp >= ?
+				GROUP BY monitor_id, day`
+			if err = readRollups(query, args...); err != nil {
+				return err
+			}
+		}
 	}
 	if stats != nil {
-		stats.ScanDuration = time.Since(phaseStart)
 		stats.Rows = len(rollups)
 	}
 	if err != nil {
 		return err
-	}
-	if closeErr != nil {
-		return closeErr
 	}
 	if len(rollups) == 0 {
 		return nil
@@ -1352,12 +1395,14 @@ func (s *Store) rollupDailyUptime(days int, stats *DailyUptimeRollupStats) error
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	// A monitor can be deleted while read batches release the connection. Skip its
+	// rows instead of rolling back the history of every surviving monitor.
 	upsert := s.rebind(`INSERT INTO monitor_uptime_daily (monitor_id, day, total, up_count)
-		VALUES (?, ?, ?, ?)
+		SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM monitors WHERE id = ?)
 		ON CONFLICT(monitor_id, day) DO UPDATE SET total = excluded.total, up_count = excluded.up_count`)
 	startPhase()
 	for _, r := range rollups {
-		if _, err = tx.Exec(upsert, r.monitorID, r.day, r.total, r.up); err != nil {
+		if _, err = tx.Exec(upsert, r.monitorID, r.day, r.total, r.up, r.monitorID); err != nil {
 			break
 		}
 	}

@@ -41,6 +41,9 @@ make e2e                  # Playwright headless (starts Vite automatically)
 make e2e-ui               # Playwright with UI
 make e2e-fresh            # Wipes DB, restarts backend, runs E2E
 
+# SQLite rollup E2E (isolated temporary DB; build frontend first)
+cd web && npm run build && npm run test:e2e:sqlite-rollup
+
 # Single E2E test
 cd web && npx playwright test tests/e2e/auth.spec.ts
 ```
