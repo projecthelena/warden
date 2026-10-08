@@ -27,14 +27,16 @@ var postgresMigrationFS embed.FS
 
 // DBConfig holds database configuration
 type DBConfig struct {
-	Type string // "sqlite" or "postgres"
-	Path string // SQLite file path
-	URL  string // PostgreSQL connection URL
+	SQLiteRollupBatchSize int    // SQLite monitors per rollup read; zero defaults to 50.
+	Type                  string // "sqlite" or "postgres"
+	Path                  string // SQLite file path
+	URL                   string // PostgreSQL connection URL
 }
 
 type Store struct {
-	db      *sql.DB
-	dialect string
+	sqliteRollupBatchSize int
+	db                    *sql.DB
+	dialect               string
 }
 
 // NewStore creates a new store with the given configuration.
@@ -53,6 +55,13 @@ func NewStore(cfg DBConfig) (*Store, error) {
 			return nil, fmt.Errorf("failed to open postgres: %w", err)
 		}
 	default:
+		if cfg.SQLiteRollupBatchSize == 0 {
+			cfg.SQLiteRollupBatchSize = 50
+		}
+		if cfg.SQLiteRollupBatchSize < 1 || cfg.SQLiteRollupBatchSize > 50 {
+			log.Print("WARNING: invalid SQLite rollup batch size; expected an integer between 1 and 50, using default 50")
+			cfg.SQLiteRollupBatchSize = 50
+		}
 		// Default to SQLite
 		dialect = DialectSQLite
 		db, err = sql.Open("sqlite3", cfg.Path)
@@ -77,7 +86,7 @@ func NewStore(cfg DBConfig) (*Store, error) {
 		}
 	}
 
-	s := &Store{db: db, dialect: dialect}
+	s := &Store{db: db, dialect: dialect, sqliteRollupBatchSize: cfg.SQLiteRollupBatchSize}
 	if err := s.migrate(); err != nil {
 		return nil, err
 	}

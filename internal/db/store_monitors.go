@@ -1348,7 +1348,7 @@ func (s *Store) rollupDailyUptime(days int, stats *DailyUptimeRollupStats) error
 
 		// Release SQLite's single connection between batches so queued checks and
 		// readiness can run. The date bound also skips retained, older index entries.
-		const batchSize = 50
+		batchSize := s.sqliteRollupBatchSize
 		for start := 0; start < len(monitorIDs); start += batchSize {
 			end := min(start+batchSize, len(monitorIDs))
 			args := make([]any, 0, end-start+2)
