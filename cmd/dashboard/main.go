@@ -50,9 +50,10 @@ func main() {
 
 	// Init DB
 	store, err := db.NewStore(db.DBConfig{
-		Type: cfg.DBType,
-		Path: cfg.DBPath,
-		URL:  cfg.DBURL,
+		SQLiteRollupBatchSize: cfg.SQLiteRollupBatchSize,
+		Type:                  cfg.DBType,
+		Path:                  cfg.DBPath,
+		URL:                   cfg.DBURL,
 	})
 	if err != nil {
 		log.Fatal("Failed to init database:", err)

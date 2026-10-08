@@ -1,7 +1,9 @@
 package config
 
 import (
+	"log"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -12,26 +14,28 @@ const (
 )
 
 type Config struct {
-	ListenAddr        string
-	HTTPDiagnostics   bool
-	RollupDiagnostics bool   // Opt-in rollup timings and slow-operation logs
-	ObservabilityAddr string // Separate metrics/pprof listener; empty keeps it disabled
-	DBType            string // "sqlite" or "postgres"
-	DBPath            string // SQLite file path (only used when DBType is "sqlite")
-	DBURL             string // PostgreSQL connection URL (only used when DBType is "postgres")
-	CookieSecure      bool
-	AdminSecret       string
-	TrustProxy        bool // Trust X-Forwarded-For headers (only enable behind a trusted reverse proxy)
-	MCPEnabled        bool // Serve the Model Context Protocol endpoint at /api/mcp
+	SQLiteRollupBatchSize int
+	ListenAddr            string
+	HTTPDiagnostics       bool
+	RollupDiagnostics     bool   // Opt-in rollup timings and slow-operation logs
+	ObservabilityAddr     string // Separate metrics/pprof listener; empty keeps it disabled
+	DBType                string // "sqlite" or "postgres"
+	DBPath                string // SQLite file path (only used when DBType is "sqlite")
+	DBURL                 string // PostgreSQL connection URL (only used when DBType is "postgres")
+	CookieSecure          bool
+	AdminSecret           string
+	TrustProxy            bool // Trust X-Forwarded-For headers (only enable behind a trusted reverse proxy)
+	MCPEnabled            bool // Serve the Model Context Protocol endpoint at /api/mcp
 }
 
 func Default() Config {
 	return Config{
-		ListenAddr:   ":9096",
-		DBType:       DBTypeSQLite,
-		DBPath:       "warden.db",
-		CookieSecure: true,
-		MCPEnabled:   true,
+		SQLiteRollupBatchSize: 50,
+		ListenAddr:            ":9096",
+		DBType:                DBTypeSQLite,
+		DBPath:                "warden.db",
+		CookieSecure:          true,
+		MCPEnabled:            true,
 	}
 }
 
@@ -66,6 +70,17 @@ func Load() (*Config, error) {
 		// Auto-detect postgres from URL if DB_TYPE not explicitly set
 		if os.Getenv("DB_TYPE") == "" && strings.HasPrefix(dbURL, "postgres") {
 			cfg.DBType = DBTypePostgres
+		}
+	}
+
+	if cfg.DBType != DBTypePostgres && cfg.DBType != "postgresql" {
+		if value := os.Getenv("SQLITE_ROLLUP_BATCH_SIZE"); value != "" {
+			size, err := strconv.Atoi(value)
+			if err != nil || size < 1 || size > 50 {
+				log.Print("WARNING: invalid SQLITE_ROLLUP_BATCH_SIZE; expected an integer between 1 and 50, using default 50")
+			} else {
+				cfg.SQLiteRollupBatchSize = size
+			}
 		}
 	}
 

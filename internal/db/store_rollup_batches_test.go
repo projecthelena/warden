@@ -70,9 +70,20 @@ func TestRollupDailyUptime_MultipleMonitorRanges(t *testing.T) {
 }
 
 func TestRollupDailyUptime_SQLiteRangeErrorDoesNotPublish(t *testing.T) {
-	for _, diagnostics := range []bool{false, true} {
-		t.Run(fmt.Sprintf("diagnostics=%t", diagnostics), func(t *testing.T) {
-			s := newTestStore(t)
+	for _, tc := range []struct {
+		batchSize   int
+		diagnostics bool
+	}{
+		{50, false}, {50, true}, {10, false}, {10, true},
+	} {
+		batchSize, diagnostics := tc.batchSize, tc.diagnostics
+		t.Run(fmt.Sprintf("batch=%d/diagnostics=%t", batchSize, diagnostics), func(t *testing.T) {
+			cfg := NewTestConfig()
+			cfg.SQLiteRollupBatchSize = batchSize
+			s, err := NewStore(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
 			t.Cleanup(func() { _ = s.Close() })
 			if err := s.CreateGroup(Group{ID: "ranges", Name: "Ranges"}); err != nil {
 				t.Fatal(err)
@@ -166,9 +177,20 @@ func TestRollupDailyUptime_SQLiteRangeErrorDoesNotPublish(t *testing.T) {
 // A queued readiness check and writer must run before the next read batch, even
 // when diagnostics are disabled. Deletion must not discard other monitors' history.
 func TestRollupDailyUptime_SQLiteYieldsToQueuedWork(t *testing.T) {
-	for _, diagnostics := range []bool{false, true} {
-		t.Run(fmt.Sprintf("diagnostics=%t", diagnostics), func(t *testing.T) {
-			s := newTestStore(t)
+	for _, tc := range []struct {
+		batchSize   int
+		diagnostics bool
+	}{
+		{50, false}, {50, true}, {10, false}, {10, true},
+	} {
+		batchSize, diagnostics := tc.batchSize, tc.diagnostics
+		t.Run(fmt.Sprintf("batch=%d/diagnostics=%t", batchSize, diagnostics), func(t *testing.T) {
+			cfg := NewTestConfig()
+			cfg.SQLiteRollupBatchSize = batchSize
+			s, err := NewStore(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
 			t.Cleanup(func() { _ = s.Close() })
 			if err := s.CreateGroup(Group{ID: "ranges", Name: "Ranges"}); err != nil {
 				t.Fatal(err)
@@ -285,8 +307,8 @@ func TestRollupDailyUptime_SQLiteYieldsToQueuedWork(t *testing.T) {
 			case <-ctx.Done():
 				t.Fatal("rollup did not release the connection")
 			}
-			if reads < 3 {
-				t.Fatalf("want multiple read batches, got %d", reads)
+			if want := (123 + batchSize - 1) / batchSize; reads != want {
+				t.Fatalf("read batches = %d, want %d", reads, want)
 			}
 			conn, err = s.db.Conn(ctx)
 			if err != nil {

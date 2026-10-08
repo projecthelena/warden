@@ -28,7 +28,7 @@ func runResetPassword(args []string) int {
 		fmt.Fprintf(os.Stderr, "load config: %v\n", err)
 		return 1
 	}
-	store, err := db.NewStore(db.DBConfig{Type: cfg.DBType, Path: cfg.DBPath, URL: cfg.DBURL})
+	store, err := db.NewStore(db.DBConfig{SQLiteRollupBatchSize: cfg.SQLiteRollupBatchSize, Type: cfg.DBType, Path: cfg.DBPath, URL: cfg.DBURL})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "open database: %v\n", err)
 		return 1
