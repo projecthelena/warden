@@ -9,7 +9,7 @@ This directory contains the tools used to run the same test against four disposa
 | `node-b-sqlite` | Intel i3-8100, 4C/4T | 32 GB | P3 1 TB SATA SSD | 1 GbE | SQLite |
 | `node-b-postgres` | Intel i3-8100, 4C/4T | 32 GB | P3 1 TB SATA SSD | 1 GbE | PostgreSQL |
 
-The final report contains the measurements and conclusions. This document records only the procedure needed to reproduce them.
+The [load-testing report](../docs/load-testing.md) contains the measured SQLite capacity, resource usage, and scope of the conclusions. This document records the procedure; the report identifies which stages have actually been completed.
 
 ## Procedure
 

@@ -1,0 +1,68 @@
+{
+  "node_a": {
+    "status": "passed",
+    "reason": "",
+    "started_at": "2026-10-09T09:55:42.322903+00:00",
+    "finished_at": "2026-10-10T03:55:50.961988+00:00",
+    "release": "v0.10.0-rc.1",
+    "revision": "3ff86808c04af8bdfce9d88c84bce3584e0c13fa",
+    "image": "ghcr.io/projecthelena/warden:v0.10.0-rc.1@sha256:ea3a3f94b96e33f53600a7776a384a1dcce42fbddd9e3501d2c7b69aab8c87af",
+    "monitors": 1000,
+    "interval_seconds": 10,
+    "sqlite_rollup_batch_size": 10,
+    "rollup_diagnostics": true,
+    "measured_seconds": 64808.637987,
+    "checks_completed": 6480862.0,
+    "checks_per_second": 99.99997224598363,
+    "cpu_seconds": 12785.49,
+    "cpu_cores_mean": 0.19728064648673296,
+    "rss_mib": {
+      "samples": 6464,
+      "min": 52.9921875,
+      "median": 66.625,
+      "p95": 67.421875,
+      "max": 69.5390625
+    },
+    "host_cpu_percent": {
+      "samples": 2159,
+      "min": 4.6675520833332484,
+      "median": 5.459010416666388,
+      "p95": 6.806510416666546,
+      "max": 8.932968749999949
+    },
+    "host_memory_percent": {
+      "samples": 2159,
+      "min": 33.969408479776234,
+      "median": 36.63705327101773,
+      "p95": 41.772562747672055,
+      "max": 42.22458377612469
+    },
+    "readiness_ms": {
+      "samples": 6464,
+      "min": 0.25224800629075617,
+      "median": 1.309945004322799,
+      "p95": 40.23511000559665,
+      "max": 1223.5297019942664
+    },
+    "counter_increases": {
+      "down": 0,
+      "drops": 0,
+      "persist_errors": 0,
+      "ready_503": 0,
+      "rollup_errors": 0
+    },
+    "process_restarted": false,
+    "k6": {
+      "requests": 30111,
+      "error_rate": 0,
+      "dropped_iterations": 0,
+      "checks_passed": 53264,
+      "checks_failed": 0,
+      "http_p95_ms": 39.6944785,
+      "http_p99_ms": 56.10595500000001
+    }
+  },
+  "node_b": {
+    "status": "pending"
+  }
+}
