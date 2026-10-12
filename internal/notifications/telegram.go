@@ -32,11 +32,11 @@ func (n *TelegramNotifier) sendDigest(summary digestSummary) error {
 	if summary.TotalEvents == 0 {
 		body.WriteString("All systems operational — no incidents today.")
 	} else {
-		body.WriteString(fmt.Sprintf("%d events across %d monitors", summary.TotalEvents, summary.MonitorCount))
+		fmt.Fprintf(&body, "%d events across %d monitors", summary.TotalEvents, summary.MonitorCount)
 		for _, monitor := range summary.Monitors {
 			body.WriteString("\n• " + monitor.Name)
 			for _, event := range monitor.Events {
-				body.WriteString(fmt.Sprintf(" — %s (%dx)", eventLabel(event.Type), event.Count))
+				fmt.Fprintf(&body, " — %s (%dx)", eventLabel(event.Type), event.Count)
 			}
 		}
 	}
