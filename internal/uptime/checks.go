@@ -24,6 +24,9 @@ const (
 	defaultCheckTimeout = 5 * time.Second
 	retryBackoff        = 1 * time.Second
 
+	maxResponseDrainBytes = 64 << 10
+	responseDrainTimeout  = 100 * time.Millisecond
+
 	// Shown to operators, so it has to be a link they can follow, not a repo path.
 	pingPermissionsDoc = "https://github.com/projecthelena/warden/blob/main/docs/monitor-types.md#ping-permissions"
 )
@@ -31,6 +34,8 @@ const (
 // checkOutcome is what a single probe attempt reports back. Only probeHTTP fills
 // statusCode, certExpiry and the captured response; the other types leave them zero.
 type checkOutcome struct {
+	// HTTP latency ends at the response headers, before best-effort body cleanup.
+	latency     time.Duration
 	cause       error
 	retryAfter  bool
 	up          bool
@@ -126,6 +131,9 @@ func runCheck(job Job, transport *http.Transport) CheckResult {
 		start = time.Now().UTC()
 		out = probe(job, attemptTimeout, transport)
 		latency = time.Since(start).Milliseconds()
+		if out.latency > 0 {
+			latency = out.latency.Milliseconds()
+		}
 		if out.diagnostic != nil {
 			diagnostics.Attempts = append(diagnostics.Attempts, *out.diagnostic)
 		}
@@ -275,7 +283,9 @@ func probeHTTP(job Job, timeout time.Duration, transport *http.Transport) (out c
 		body = strings.NewReader(cfg.Body)
 	}
 
-	req, err := http.NewRequest(method, job.URL, body)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, method, job.URL, body)
 	if err != nil {
 		return checkOutcome{err: err.Error(), fatal: true}
 	}
@@ -305,12 +315,28 @@ func probeHTTP(job Job, timeout time.Duration, transport *http.Transport) (out c
 		out.respHeaders = encodeAllowedHeaders(resp.Header)
 	}
 
+	// Reading a small body to EOF lets the transport reuse the connection.
+	// Cleanup must not change a status-only check or wait on a streaming body.
+	if out.up {
+		out.latency = time.Since(started)
+		drainResponseBody(resp, cancel)
+	}
+
 	if resp.TLS != nil && len(resp.TLS.PeerCertificates) > 0 {
 		notAfter := resp.TLS.PeerCertificates[0].NotAfter
 		out.certExpiry = &notAfter
 	}
 
 	return out
+}
+
+func drainResponseBody(resp *http.Response, cancel context.CancelFunc) {
+	if resp.ContentLength == 0 || resp.ContentLength > maxResponseDrainBytes {
+		return
+	}
+	timer := time.AfterFunc(responseDrainTimeout, cancel)
+	defer timer.Stop()
+	_, _ = io.CopyN(io.Discard, resp.Body, maxResponseDrainBytes+1)
 }
 
 // probeTCP writes nothing to the connection — a service that accepts is a service that
