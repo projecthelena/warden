@@ -4,7 +4,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## Project Overview
 
-Warden is a self-hosted uptime monitoring application by Project Helena. Go 1.25 backend with embedded React/TypeScript frontend and dual-database support (SQLite and PostgreSQL). It ships as a single binary without runtime package dependencies.
+Warden is a self-hosted uptime monitoring application by Project Helena. Go 1.26 backend with embedded React/TypeScript frontend and dual-database support (SQLite and PostgreSQL). It ships as a single binary without runtime package dependencies.
 
 ## Commands
 
