@@ -450,8 +450,9 @@ func TestEventSummaryCarriesTheServerResponse(t *testing.T) {
 func TestNotificationConfigDigestDoesNotSilenceImmediate(t *testing.T) {
 	s, store := newTestServer(t)
 	for k, v := range map[string]string{
-		"notification.digest.enabled":     "true",
-		"notification.digest.event_types": "down,flapping",
+		"notification.digest.enabled":         "true",
+		"notification.digest.event_types":     "down,flapping",
+		"notification.event.flapping.enabled": "true",
 	} {
 		if err := store.SetSetting(k, v); err != nil {
 			t.Fatalf("failed to set %s: %v", k, err)
@@ -501,7 +502,11 @@ func TestNotificationConfigReportsAlertLadder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get_notification_config failed: %v", err)
 	}
-	if out.AlertAfterSeconds != 180 || out.ReminderMinutes != 30 || out.RepeatReminderMinutes != 60 {
+	if contains(out.ImmediateEvents, "flapping") {
+		t.Errorf("flapping must be opt-in: %v", out.ImmediateEvents)
+	}
+
+	if out.AlertAfterSeconds != 180 || out.ReminderMinutes != 0 || out.RepeatReminderMinutes != 0 {
 		t.Errorf("defaults wrong: after=%d reminder=%d repeat=%d",
 			out.AlertAfterSeconds, out.ReminderMinutes, out.RepeatReminderMinutes)
 	}

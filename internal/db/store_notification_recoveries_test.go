@@ -18,7 +18,7 @@ func TestRecoveryQueuePreservesEpisodeUntilStable(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		now := time.Now().UTC()
+		now := time.Now().UTC().Truncate(time.Microsecond)
 		if _, err := s.MarkOutagesNotified([]int64{outages[0].ID}, now, "group-episode"); err != nil {
 			t.Fatal(err)
 		}
@@ -86,7 +86,7 @@ func TestWorseningFromDegradedToDownStillAlerts(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		now := time.Now().UTC()
+		now := time.Now().UTC().Truncate(time.Microsecond)
 		if _, err := s.MarkOutageNotified(outages[0].ID, now); err != nil {
 			t.Fatal(err)
 		}
