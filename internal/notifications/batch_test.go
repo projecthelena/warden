@@ -31,7 +31,11 @@ func TestBatchPreservesTransitionsAndBoundsSummary(t *testing.T) {
 
 func TestWorkerGroupsBurstAndFlushesOnClose(t *testing.T) {
 	store := newTestStore(t)
-	defer store.Close()
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("close test store: %v", err)
+		}
+	})
 	received := make(chan map[string]interface{}, 3)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]interface{}

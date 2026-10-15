@@ -60,7 +60,11 @@ func TestNoiseMigrationPreservesCustomReminderSchedules(t *testing.T) {
 
 func TestNoiseUpgradeDisablesLegacyFlappingNotices(t *testing.T) {
 	s := newTestStore(t)
-	defer s.Close()
+	t.Cleanup(func() {
+		if err := s.Close(); err != nil {
+			t.Errorf("close test store: %v", err)
+		}
+	})
 	if value, err := s.GetSetting("notification.event.flapping.enabled"); err != nil || value != "false" {
 		t.Fatalf("fresh-install default: %q %v", value, err)
 	}
