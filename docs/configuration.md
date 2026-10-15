@@ -32,6 +32,36 @@ The metrics cover HTTP request rate, errors and latency; monitor check rate and 
 
 Set `COOKIE_SECURE=true` whenever the public Warden URL uses HTTPS.
 
+### Baseline and check-write diagnostics
+
+These metrics are available on the diagnostics listener without enabling the rollup flag:
+
+| Metric | Meaning |
+| --- | --- |
+| `warden_db_operation_duration_seconds{operation,outcome}` | Histogram of completed operations, including errors; outcomes are `success` and `error`. |
+| `warden_db_operations_in_flight{operation}` | Active operations, including those waiting on the database. |
+| `warden_db_operation_last_started_timestamp_seconds{operation}` | Unix timestamp of the latest start. With overlapping operations, this is not the oldest active call. |
+| `warden_baseline_monitors_total{outcome}` | Monitors processed by the baseline worker: `updated`, `skipped` for insufficient samples, or `error`. |
+
+Operations are fixed labels: `baseline_count`, `baseline_p50`, `baseline_p95`, `baseline_save`, `baseline_cycle`, `persist_connection`, `persist_begin`, `persist_insert`, and `persist_commit`. No SQL, monitor IDs or target URLs are exported. Baseline query timings include pool waits and result scanning. Check writes separate connection acquisition from transaction begin, prepared inserts (including preparation and cleanup), and commit. Unreached phases are not observed. The baseline cycle includes applying thresholds; its error outcome includes computation or threshold-loading failures. Cycle and per-query durations overlap and must not be summed together.
+
+Scrape `/metrics` into Prometheus to retain history; Warden does not store these time series. A five-second scrape interval can help correlate load-test stalls with existing queue, pool-wait, rollup, HTTP and persistence metrics. Histograms record completed operations, so use the in-flight gauge to see unfinished work. For the serial baseline worker, elapsed time of its active cycle is:
+
+```promql
+(time() - warden_db_operation_last_started_timestamp_seconds{operation="baseline_cycle"})
+  and on(operation) (warden_db_operations_in_flight{operation="baseline_cycle"} > 0)
+```
+
+For frequent operations, compare p95 duration by operation:
+
+```promql
+histogram_quantile(0.95,
+  sum by (le, operation) (rate(warden_db_operation_duration_seconds_bucket[5m]))
+)
+```
+
+The hourly baseline cycle has too few samples for a useful five-minute percentile; inspect its duration sum/count over a longer window and its active-cycle elapsed time instead. These are application wall times, not database-server execution plans or proof of a lock/I/O cause. Counters reset when Warden restarts.
+
 ### Rollup diagnostics
 
 Set `ROLLUP_DIAGNOSTICS_ENABLED=true` on the Warden process to diagnose database contention. This flag is independent of `OBSERVABILITY_ADDR`: slow-operation logs work without the metrics listener; scraping requires both. Unset the flag or set it to `false` and restart to disable diagnostics. Daily rollups, their five-minute refresh and status-page history remain active either way.
