@@ -1,6 +1,7 @@
 package uptime
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"strconv"
@@ -30,8 +31,8 @@ type alertPolicy struct {
 func defaultAlertPolicy() alertPolicy {
 	return alertPolicy{
 		SustainedFor:        3 * time.Minute,
-		FirstReminderAfter:  30 * time.Minute,
-		RepeatReminderAfter: time.Hour,
+		FirstReminderAfter:  0,
+		RepeatReminderAfter: 0,
 	}
 }
 
@@ -111,6 +112,7 @@ func (m *Manager) alertEvaluator() {
 // It is the only place a down or degraded alert is emitted; the result processor's job is
 // to open and close outages, not to decide who hears about them.
 func (m *Manager) evaluateAlerts(now time.Time) {
+	m.evaluateRecoveries(now)
 	outages, err := m.store.GetOpenOutages()
 	if err != nil {
 		log.Printf("Alerting: failed to read open outages: %v", err)
@@ -542,4 +544,52 @@ func (m *Manager) settingDuration(key string, unit time.Duration) (time.Duration
 		return 0, false
 	}
 	return time.Duration(n) * unit, true
+}
+
+func (m *Manager) evaluateRecoveries(now time.Time) {
+	pending, err := m.store.PendingNotificationRecoveries()
+	if err != nil {
+		log.Printf("Alerting: failed to read pending recoveries: %v", err)
+		return
+	}
+	m.mu.RLock()
+	enabled := m.eventFilter.UpEnabled
+	m.mu.RUnlock()
+	blockedGroups := make(map[string]bool)
+	for _, recovery := range pending {
+		if recovery.CorrelationID == "" {
+			continue
+		}
+		if _, seen := blockedGroups[recovery.CorrelationID]; !seen {
+			open, err := m.store.HasOpenNotificationGroup(recovery.CorrelationID)
+			blockedGroups[recovery.CorrelationID] = open || err != nil
+		}
+		mon := m.GetMonitor(recovery.MonitorID)
+		if mon != nil && !mon.AlertsMuted() && !m.isMonitorInMaintenance(mon.GetGroupID()) && !mon.RecoveryIsStable(recovery.RecoveredAt, now) {
+			blockedGroups[recovery.CorrelationID] = true
+		}
+	}
+	for _, recovery := range pending {
+		mon := m.GetMonitor(recovery.MonitorID)
+		allowed := enabled && mon != nil && !mon.AlertsMuted() && !m.isMonitorInMaintenance(mon.GetGroupID())
+		if allowed && (blockedGroups[recovery.CorrelationID] || !mon.RecoveryIsStable(recovery.RecoveredAt, now)) {
+			continue
+		}
+		claimed, err := m.store.ClaimNotificationRecovery(recovery.MonitorID, recovery.RecoveredAt)
+		if err != nil {
+			log.Printf("Alerting: failed to claim recovery: %v", err)
+			continue
+		}
+		if !claimed || !allowed {
+			continue
+		}
+		var event notifications.NotificationEvent
+		if err := json.Unmarshal([]byte(recovery.Payload), &event); err != nil {
+			log.Printf("Alerting: invalid recovery payload: %v", err)
+			continue
+		}
+		event.Message = "Recovered and stable for at least 3 minutes."
+		event.Time = now
+		m.notifyNow(event)
+	}
 }

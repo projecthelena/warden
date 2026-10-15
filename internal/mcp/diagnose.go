@@ -186,8 +186,8 @@ func (s *Server) getNotificationConfig(ctx context.Context, _ *mcp.CallToolReque
 		CooldownMinutes:       s.settingInt("notification.cooldown_minutes", 30),
 		FlapDetectionEnabled:  s.settingBool("notification.flap_detection_enabled", true),
 		AlertAfterSeconds:     s.settingInt("notification.alert.sustained_seconds", 180),
-		ReminderMinutes:       s.settingInt("notification.alert.reminder_minutes", 30),
-		RepeatReminderMinutes: s.settingInt("notification.alert.repeat_reminder_minutes", 60),
+		ReminderMinutes:       s.settingInt("notification.alert.reminder_minutes", 0),
+		RepeatReminderMinutes: s.settingInt("notification.alert.repeat_reminder_minutes", 0),
 		CorrelationWindowSec:  s.settingInt("notification.correlation.window_seconds", 300),
 		CorrelationMinMonitor: s.settingInt("notification.correlation.min_monitors", 3),
 		CorrelationGroupPct:   s.settingInt("notification.correlation.group_percent", 30),
@@ -199,11 +199,11 @@ func (s *Server) getNotificationConfig(ctx context.Context, _ *mcp.CallToolReque
 		Note: "digestEvents lists what the daily summary contains; it no longer suppresses the " +
 			"immediate alert, those are separate decisions now. down and degraded are announced only " +
 			"after the monitor has been in that state for alertAfterSeconds, then repeated after " +
-			"reminderMinutes and every repeatReminderMinutes while it lasts. A recovery is announced " +
-			"only if the outage itself was. Monitors that fail together within correlationWindowSeconds " +
+			"reminderMinutes and every repeatReminderMinutes while it lasts, if nonzero (off by default). A recovery is announced " +
+			"only if the outage itself was, after three minutes of stable health. Monitors that fail together within correlationWindowSeconds " +
 			"are announced as one incident, and a monitor that has already alerted chronicAlertLimit " +
-			"times inside chronicWindowMinutes is collapsed into one 'unstable' notice and then goes " +
-			"quiet. mutedMonitors never alert at all. Flapping monitors stay suppressed until they settle.",
+			"times inside chronicWindowMinutes has further alerts suppressed. Instability notices are opt-in " +
+			"and limited to once per 24 hours. mutedMonitors never alert at all. Flapping monitors stay suppressed until they settle.",
 	}
 
 	monitors, err := s.store.GetMonitors()
@@ -221,7 +221,7 @@ func (s *Server) getNotificationConfig(ctx context.Context, _ *mcp.CallToolReque
 	// per-event toggles.
 	out.ImmediateEvents = []string{}
 	for _, event := range []string{"down", "up", "degraded", "flapping", "stabilized", "ssl_expiring"} {
-		if s.settingBool("notification.event."+event+".enabled", true) {
+		if s.settingBool("notification.event."+event+".enabled", event != "flapping") {
 			out.ImmediateEvents = append(out.ImmediateEvents, event)
 		}
 	}

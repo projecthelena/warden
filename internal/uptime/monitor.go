@@ -64,6 +64,7 @@ type Monitor struct {
 	// Recovery confirmation
 	recoveryConfirmationChecks int
 	consecutiveUpCount         int
+	healthySince               time.Time
 
 	// baselineP50 is this monitor's own median latency, used only to phrase the degraded
 	// message. Zero means no baseline yet, and the message falls back to the bare threshold.
@@ -272,6 +273,15 @@ func (m *Monitor) GetRequestConfig() *db.RequestConfig {
 func (m *Monitor) RecordResult(isUp bool, latency int64, ts time.Time, statusCode int, errStr string, isDegraded bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	if !isUp || isDegraded {
+		m.healthySince = time.Time{}
+	} else {
+		gap := max(2*m.interval, 30*time.Second)
+		if m.healthySince.IsZero() || len(m.history) == 0 || ts.Sub(m.history[len(m.history)-1].Timestamp) > gap {
+			m.healthySince = ts
+		}
+	}
 
 	status := Status{
 		Timestamp:  ts,
@@ -654,4 +664,22 @@ func (m *Monitor) HydrateConfirmationState() {
 
 	m.consecutiveDegCount = degCount
 	m.confirmedDegraded = degCount >= m.confirmationThreshold
+}
+
+// Recovery needs recent, continuously healthy observations, not just elapsed wall
+// time. After restart this conservatively waits for fresh evidence again.
+func (m *Monitor) RecoveryIsStable(since, now time.Time) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if len(m.history) == 0 || m.healthySince.IsZero() || m.isFlapping {
+		return false
+	}
+	last := m.history[len(m.history)-1]
+	if !last.IsUp || last.IsDegraded || now.Before(last.Timestamp) || now.Sub(last.Timestamp) > max(2*m.interval, 30*time.Second) {
+		return false
+	}
+	if m.healthySince.After(since) {
+		since = m.healthySince
+	}
+	return last.Timestamp.Sub(since) >= 3*time.Minute
 }

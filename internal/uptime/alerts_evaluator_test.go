@@ -142,6 +142,8 @@ func TestEvaluateAlerts_SkipsUnregisteredMonitor(t *testing.T) {
 
 func TestEvaluateAlerts_RemindersFollowTheLadder(t *testing.T) {
 	m, store := newAlertTestManager(t)
+	m.alertPolicy.FirstReminderAfter = 30 * time.Minute
+	m.alertPolicy.RepeatReminderAfter = time.Hour
 	o := openOutage(t, store, "down", "Monitor is down")
 
 	m.evaluateAlerts(o.StartTime.Add(3 * time.Minute))

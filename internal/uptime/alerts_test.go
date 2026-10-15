@@ -37,7 +37,7 @@ func TestDecideAlertAction_StaysSilentUntilSustained(t *testing.T) {
 }
 
 func TestDecideAlertAction_ReminderLadder(t *testing.T) {
-	p := defaultAlertPolicy()
+	p := alertPolicy{SustainedFor: 3 * time.Minute, FirstReminderAfter: 30 * time.Minute, RepeatReminderAfter: time.Hour}
 	start := time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
 
 	// Announced at the 3-minute mark, no reminder sent yet: the first reminder is due 30
@@ -86,6 +86,7 @@ func TestDecideAlertAction_ZeroReminderDisablesReminders(t *testing.T) {
 
 	// A first reminder still fires, but the repeat cadence being off stops the next one.
 	p = defaultAlertPolicy()
+	p.FirstReminderAfter = 30 * time.Minute
 	p.RepeatReminderAfter = 0
 	o.LastReminderAt = at(start, 33*time.Minute)
 	if got := decideAlertAction(o, start.Add(24*time.Hour), p); got != alertNone {
@@ -159,7 +160,7 @@ func TestDecideAlertAction_NegativeElapsedStaysSilent(t *testing.T) {
 // Exactly on the boundary counts as met. An off-by-one here delays every alert by a full
 // evaluator tick, which is invisible in production and infuriating to debug.
 func TestDecideAlertAction_BoundaryIsInclusive(t *testing.T) {
-	p := defaultAlertPolicy()
+	p := alertPolicy{SustainedFor: 3 * time.Minute, FirstReminderAfter: 30 * time.Minute, RepeatReminderAfter: time.Hour}
 	start := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
 
 	if got := decideAlertAction(db.OpenOutage{StartTime: start}, start.Add(p.SustainedFor), p); got != alertFire {
@@ -179,7 +180,7 @@ func TestDecideAlertAction_BoundaryIsInclusive(t *testing.T) {
 // A reminder stamped before the announcement — possible if the clock moved backwards, or a
 // row was edited by hand — must not make the ladder compute a reminder from the older mark.
 func TestDecideAlertAction_IgnoresAStaleReminderStamp(t *testing.T) {
-	p := defaultAlertPolicy()
+	p := alertPolicy{SustainedFor: 3 * time.Minute, FirstReminderAfter: 30 * time.Minute, RepeatReminderAfter: time.Hour}
 	start := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
 	o := db.OpenOutage{
 		StartTime:      start,
@@ -230,5 +231,15 @@ func TestOutageEvent_HandlesAnEmptySummary(t *testing.T) {
 	}
 	if !strings.Contains(ev.Message, "3m") {
 		t.Errorf("message lost the duration: %q", ev.Message)
+	}
+}
+
+func TestDefaultPolicyDoesNotRepeatUnchangedOutage(t *testing.T) {
+	now := time.Now()
+	outage := db.OpenOutage{StartTime: now.Add(-time.Hour), NotifiedAt: &now}
+	for _, elapsed := range []time.Duration{30 * time.Minute, time.Hour, 24 * time.Hour, 7 * 24 * time.Hour} {
+		if got := decideAlertAction(outage, now.Add(elapsed), defaultAlertPolicy()); got != alertNone {
+			t.Fatalf("unchanged outage repeated after %s", elapsed)
+		}
 	}
 }

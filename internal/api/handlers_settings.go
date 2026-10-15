@@ -94,7 +94,7 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	eventFlapping, _ := h.store.GetSetting("notification.event.flapping.enabled")
 	if eventFlapping == "" {
-		eventFlapping = "true"
+		eventFlapping = "false"
 	}
 	eventStabilized, _ := h.store.GetSetting("notification.event.stabilized.enabled")
 	if eventStabilized == "" {
@@ -118,11 +118,11 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	alertReminder, _ := h.store.GetSetting("notification.alert.reminder_minutes")
 	if alertReminder == "" {
-		alertReminder = "30"
+		alertReminder = "0"
 	}
 	alertRepeat, _ := h.store.GetSetting("notification.alert.repeat_reminder_minutes")
 	if alertRepeat == "" {
-		alertRepeat = "60"
+		alertRepeat = "0"
 	}
 
 	// Adaptive latency baseline

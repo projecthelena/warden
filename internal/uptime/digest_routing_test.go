@@ -173,10 +173,19 @@ func TestCloseOutageAndAnnounce_BothConditions(t *testing.T) {
 		m.closeOutageAndAnnounce("m1", recovery(), true)
 		waitForClose(t, store)
 
-		deadline := time.Now().Add(2 * time.Second)
-		for time.Now().Before(deadline) && len(spy.byType(notifications.EventUp)) == 0 {
-			time.Sleep(20 * time.Millisecond)
+		pending, err := store.PendingNotificationRecoveries()
+		if err != nil || len(pending) != 1 {
+			t.Fatalf("pending recoveries: %v, %v", pending, err)
 		}
+		if len(spy.byType(notifications.EventUp)) != 0 {
+			t.Fatal("recovery sent before stability")
+		}
+		mon := m.GetMonitor("m1")
+		for i := 0; i <= 3; i++ {
+			mon.RecordResult(true, 10, pending[0].RecoveredAt.Add(time.Duration(i)*time.Minute), 200, "", false)
+		}
+		m.evaluateRecoveries(pending[0].RecoveredAt.Add(3 * time.Minute))
+
 		if got := spy.byType(notifications.EventUp); len(got) != 1 {
 			t.Errorf("an announced outage that recovered sent %d recovery messages, want 1", len(got))
 		}
@@ -222,4 +231,27 @@ func TestCloseOutageAndAnnounce_BothConditions(t *testing.T) {
 			t.Errorf("recovery sent for an outage nobody was told about: %+v", got)
 		}
 	})
+}
+
+func TestInstabilityNoticeOncePerDayAndStabilizationOnlyArchived(t *testing.T) {
+	m, store, spy := digestRoutingManager(t, "flapping,stabilized")
+	mon := m.monitors["m1"]
+	now := time.Now()
+	for i := 0; i < 20; i++ {
+		m.recordEvent(mon, notifications.NotificationEvent{MonitorID: "m1", Type: notifications.EventFlapping, Time: now.Add(time.Duration(i) * 30 * time.Minute)}, true)
+		m.recordEvent(mon, notifications.NotificationEvent{MonitorID: "m1", Type: notifications.EventStabilized, Time: now.Add(time.Duration(i)*30*time.Minute + time.Minute)}, true)
+	}
+	if got := len(spy.byType(notifications.EventFlapping)); got != 1 {
+		t.Fatalf("got %d instability notices", got)
+	}
+	if got := len(spy.byType(notifications.EventStabilized)); got != 0 {
+		t.Fatalf("got %d stabilization notices", got)
+	}
+	if got := len(digestEventTypes(t, store)); got != 40 {
+		t.Fatalf("lost archived transitions: got %d", got)
+	}
+	m.recordEvent(mon, notifications.NotificationEvent{MonitorID: "m1", Type: notifications.EventFlapping, Time: now.Add(24 * time.Hour)}, true)
+	if got := len(spy.byType(notifications.EventFlapping)); got != 2 {
+		t.Fatalf("persistent instability was silenced forever: %d", got)
+	}
 }

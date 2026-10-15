@@ -35,7 +35,7 @@ func (n *DiscordNotifier) Send(event NotificationEvent) error {
 		"embeds": []map[string]interface{}{{
 			"title":       truncateDiscord(eventTitle(event.Type)+": "+event.MonitorName, discordTitleLimit),
 			"description": truncateDiscord(event.Message, discordDescriptionLimit),
-			"color":       discordColor(event.Type),
+			"color":       discordColor(notificationSeverity(event)),
 			"fields":      []map[string]interface{}{{"name": "Monitor", "value": truncateDiscord(event.MonitorURL, discordFieldLimit), "inline": false}},
 			"timestamp":   event.Time.Format(time.RFC3339),
 		}},

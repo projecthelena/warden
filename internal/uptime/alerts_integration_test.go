@@ -245,12 +245,27 @@ func TestAnnouncedOutageDoesAnnounceItsRecovery(t *testing.T) {
 	mu.Unlock()
 
 	deadline := time.Now().Add(10 * time.Second)
+	var pending []db.PendingRecovery
 	for time.Now().Before(deadline) {
-		if len(spy.byType(notifications.EventUp)) > 0 {
+		pending, _ = store.PendingNotificationRecoveries()
+		if len(pending) == 1 {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+	if len(pending) != 1 {
+		t.Fatal("recovery was not queued")
+	}
+	if len(spy.byType(notifications.EventUp)) != 0 {
+		t.Fatal("premature recovery")
+	}
+	mon := m.GetMonitor("m-recovers")
+	// Freeze scheduling before supplying a deterministic healthy observation window.
+	mon.Stop()
+	for i := 0; i <= 181; i++ {
+		mon.RecordResult(true, 10, pending[0].RecoveredAt.Add(time.Duration(i)*time.Second), 200, "", false)
+	}
+	m.evaluateRecoveries(pending[0].RecoveredAt.Add(181 * time.Second))
 
 	up := spy.byType(notifications.EventUp)
 	if len(up) != 1 {
