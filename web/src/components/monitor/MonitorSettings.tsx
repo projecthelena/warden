@@ -27,7 +27,7 @@ export function MonitorSettings({ monitor, groupId }: { monitor: Monitor; groupI
     const [pendingGroup, setPendingGroup] = useState<string | null>(null);
     const [confirmation, setConfirmation] = useState(monitor.confirmationThreshold?.toString() ?? "");
     const [cooldown, setCooldown] = useState(monitor.notificationCooldownMinutes?.toString() ?? "");
-    const [latencyThreshold, setLatencyThreshold] = useState(monitor.latencyThreshold?.toString() ?? "");
+    const [latencyIncreasePercent, setLatencyIncreasePercent] = useState(monitor.latencyIncreasePercent?.toString() ?? "");
     const [timeout, setTimeoutValue] = useState(monitor.requestConfig?.timeoutSeconds?.toString() ?? "");
     const [retries, setRetries] = useState(monitor.requestConfig?.autoRetry ? "auto" : monitor.requestConfig?.retryCount?.toString() ?? "0");
     const [method, setMethod] = useState(monitor.requestConfig?.method || "GET");
@@ -87,7 +87,7 @@ export function MonitorSettings({ monitor, groupId }: { monitor: Monitor; groupI
             name: name.trim(), type, url: normalizedTarget, interval,
             confirmationThreshold: confirmation ? Number(confirmation) : undefined,
             notificationCooldownMinutes: cooldown ? Number(cooldown) : undefined,
-            latencyThreshold: type !== "docker" && latencyThreshold ? Number(latencyThreshold) : undefined,
+            latencyIncreasePercent: type !== "docker" && latencyIncreasePercent ? Number(latencyIncreasePercent) : undefined,
             requestConfig: Object.keys(requestConfig).length || monitor.requestConfig ? requestConfig : undefined,
         });
         setSaving(false);
@@ -127,7 +127,7 @@ export function MonitorSettings({ monitor, groupId }: { monitor: Monitor; groupI
                             <AccordionContent className="grid gap-5 px-1 pt-2 sm:grid-cols-2">
                                 <Field label="Confirmation checks"><Input aria-label="Confirmation checks" type="number" min={1} placeholder="Global default" value={confirmation} onChange={event => setConfirmation(event.target.value)} /></Field>
                                 <Field label="Cooldown (minutes)"><Input aria-label="Cooldown (minutes)" type="number" min={0} placeholder="Global default" value={cooldown} onChange={event => setCooldown(event.target.value)} /></Field>
-                                {type !== "docker" && <Field label="Latency threshold (ms)" className="sm:col-span-2"><Input aria-label="Latency threshold (ms)" type="number" min={1} placeholder="Global default" value={latencyThreshold} onChange={event => setLatencyThreshold(event.target.value)} /></Field>}
+                                {type !== "docker" && <Field label="Above normal (%)" className="sm:col-span-2"><Input aria-label="Above normal (%)" type="number" min={1} max={9900} placeholder="Global default" value={latencyIncreasePercent} onChange={event => setLatencyIncreasePercent(event.target.value)} /><p className="text-xs text-muted-foreground">{monitor.effectiveLatencyThresholdMs ? `Current warning threshold: above ${monitor.effectiveLatencyThresholdMs}ms (learned p95 + percentage).` : "Learning latency. Warnings start after enough successful checks; down alerts remain active."}</p></Field>}
                             </AccordionContent>
                         </AccordionItem>
 

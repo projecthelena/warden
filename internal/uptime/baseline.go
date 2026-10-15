@@ -2,6 +2,7 @@ package uptime
 
 import (
 	"log"
+	"math"
 	"time"
 
 	"github.com/projecthelena/warden/internal/db"
@@ -15,19 +16,9 @@ const baselineInterval = time.Hour
 // slow. A single global number cannot serve a health check that answers in 254ms and a
 // homepage that answers in 427ms: the first is broken at 600ms, the second is fine.
 type baselinePolicy struct {
-	// Enabled turns adaptive thresholds off entirely, falling back to the fixed number.
-	Enabled bool
-	// Window is how far back the percentiles look.
-	Window time.Duration
-	// MinSamples is how much history a monitor needs before its baseline is trusted.
-	MinSamples int
-	// Factor multiplies p95. p95 already absorbs a service's normal spikes, so exceeding a
-	// multiple of it is genuinely unusual rather than merely the slow end of normal.
-	Factor float64
-	// FloorMs is added to p95 as an alternative bound, and the larger of the two wins. It
-	// stops very fast targets from alerting on noise: a service whose p95 is 8ms should not
-	// be called degraded at 12ms.
-	FloorMs int64
+	Window          time.Duration
+	MinSamples      int
+	IncreasePercent int
 	// LearnAfter excludes history from an old network or region after an operator asks
 	// Warden to relearn. Zero means the regular rolling window applies.
 	LearnAfter time.Time
@@ -35,54 +26,43 @@ type baselinePolicy struct {
 
 func defaultBaselinePolicy() baselinePolicy {
 	return baselinePolicy{
-		Enabled:    true,
-		Window:     7 * 24 * time.Hour,
-		MinSamples: 200,
-		Factor:     1.5,
-		FloorMs:    100,
+		Window:          7 * 24 * time.Hour,
+		MinSamples:      200,
+		IncreasePercent: 50,
 	}
 }
 
 // adaptiveThreshold is the latency above which this monitor counts as degraded, given what
 // it normally does. Returns false when the baseline is too thin to trust.
 func (p baselinePolicy) adaptiveThreshold(b db.LatencyBaseline) (int64, bool) {
-	if !p.Enabled || b.Samples < p.MinSamples || b.P95 <= 0 {
+	if b.Samples < p.MinSamples || b.P95 <= 0 {
 		return 0, false
 	}
-
-	byFactor := int64(float64(b.P95) * p.Factor)
-	byFloor := b.P95 + p.FloorMs
-	if byFactor > byFloor {
-		return byFactor, true
+	factor := int64(100 + p.IncreasePercent)
+	if b.P95 > (math.MaxInt64-99)/factor {
+		return math.MaxInt64, true
 	}
-	return byFloor, true
+	return (b.P95*factor + 99) / 100, true
 }
 
-// resolveLatencyThreshold picks the number a monitor is judged against, most specific
-// first: an explicit per-monitor value is a deliberate statement about that service — an
-// SLA, usually — and outranks anything learned. Otherwise the monitor's own baseline, and
-// failing that the global default, which is all a monitor with no history has.
-//
-// Repointing a monitor does not reset its baseline automatically because ordinary edits
-// should preserve continuity. An operator can explicitly relearn after moving networks;
-// that keeps history but records a cutoff so old checks cannot rebuild the baseline.
-func resolveLatencyThreshold(override *int, baseline db.LatencyBaseline, hasBaseline bool, p baselinePolicy, globalDefault int64) int64 {
-	if override != nil && *override > 0 {
-		return int64(*override)
+// Zero means learning: successful checks cannot be classified as slow yet.
+func resolveLatencyThreshold(override *int, baseline db.LatencyBaseline, hasBaseline bool, p baselinePolicy) int64 {
+	if override != nil && *override >= 1 && *override <= 9900 {
+		p.IncreasePercent = *override
 	}
 	if hasBaseline {
 		if v, ok := p.adaptiveThreshold(baseline); ok {
 			return v
 		}
 	}
-	return globalDefault
+	return 0
 }
 
 func (m *Manager) baselineWorker() {
 	m.wg.Add(1)
 	defer m.wg.Done()
 
-	// Compute once at startup so a fresh install stops using the global default as soon as
+	// Compute once at startup so a fresh install stops learning as soon as
 	// it has enough history, rather than an hour later.
 	m.refreshBaselines(time.Now())
 
@@ -106,13 +86,9 @@ func (m *Manager) refreshBaselines(now time.Time) {
 	policy := m.baselinePolicy
 	m.mu.RUnlock()
 
-	if !policy.Enabled {
-		return
-	}
-
 	for id := range m.GetAll() {
 		// A monitor without enough history is skipped rather than given a shaky baseline;
-		// it keeps using the global default until it has learned enough.
+		// latency warnings wait until it has learned enough.
 		since := now.Add(-policy.Window)
 		if policy.LearnAfter.After(since) {
 			since = policy.LearnAfter
@@ -145,7 +121,6 @@ func (m *Manager) applyLatencyThresholds() {
 
 	m.mu.RLock()
 	policy := m.baselinePolicy
-	globalDefault := m.latencyThreshold
 	m.mu.RUnlock()
 
 	for _, dbM := range monitors {
@@ -154,11 +129,11 @@ func (m *Manager) applyLatencyThresholds() {
 			continue
 		}
 		b, has := baselines[dbM.ID]
-		mon.SetLatencyThreshold(resolveLatencyThreshold(dbM.LatencyThreshold, b, has, policy, globalDefault))
-		if has && policy.Enabled {
-			mon.SetBaselineP50(b.P50)
+		mon.SetLatencyThreshold(resolveLatencyThreshold(dbM.LatencyIncreasePercent, b, has, policy))
+		if has && mon.GetLatencyThreshold() > 0 {
+			mon.SetBaselineP95(b.P95)
 		} else {
-			mon.SetBaselineP50(0)
+			mon.SetBaselineP95(0)
 		}
 	}
 }
@@ -167,20 +142,14 @@ func (m *Manager) applyLatencyThresholds() {
 func (m *Manager) loadBaselinePolicy() baselinePolicy {
 	p := defaultBaselinePolicy()
 
-	if val, err := m.store.GetSetting("notification.latency.adaptive_enabled"); err == nil && val != "" {
-		p.Enabled = val != "false"
-	}
 	if v, ok := m.settingInt("notification.latency.baseline_days"); ok && v >= 1 {
 		p.Window = time.Duration(v) * 24 * time.Hour
 	}
 	if v, ok := m.settingInt("notification.latency.min_samples"); ok && v >= 1 {
 		p.MinSamples = v
 	}
-	if v, ok := m.settingInt("notification.latency.factor_percent"); ok && v >= 100 {
-		p.Factor = float64(v) / 100
-	}
-	if v, ok := m.settingInt("notification.latency.floor_ms"); ok {
-		p.FloorMs = int64(v)
+	if v, ok := m.settingInt("notification.latency.increase_percent"); ok && v >= 1 && v <= 9900 {
+		p.IncreasePercent = v
 	}
 	if val, err := m.store.GetSetting("notification.latency.learn_after"); err == nil && val != "" {
 		if cutoff, err := time.Parse(time.RFC3339Nano, val); err == nil {

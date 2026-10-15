@@ -2544,7 +2544,7 @@
                     "description": "Seconds",
                     "type": "integer"
                 },
-                "latencyThreshold": {
+                "latencyIncreasePercent": {
                     "type": "integer"
                 },
                 "name": {
@@ -2678,7 +2678,7 @@
                     "description": "Seconds",
                     "type": "integer"
                 },
-                "latencyThreshold": {
+                "latencyIncreasePercent": {
                     "type": "integer"
                 },
                 "name": {
@@ -2882,6 +2882,9 @@
         "internal_api.MonitorDTO": {
             "type": "object",
             "properties": {
+                "effectiveLatencyThresholdMs": {
+                    "type": "integer"
+                },
                 "active": {
                     "type": "boolean"
                 },
@@ -2912,7 +2915,7 @@
                 "latency": {
                     "type": "integer"
                 },
-                "latencyThreshold": {
+                "latencyIncreasePercent": {
                     "type": "integer"
                 },
                 "name": {

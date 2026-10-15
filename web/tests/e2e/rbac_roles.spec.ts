@@ -405,7 +405,7 @@ test.describe('RBAC Roles - Viewer, Status Viewer, and Admin Permissions', () =>
                 'Content-Type': 'application/json',
                 Cookie: `auth_token=${viewerToken}`,
             },
-            data: { latency_threshold: '500' },
+            data: { 'notification.latency.increase_percent': '500' },
         });
         expect(settingsRes.status()).toBe(403);
 

@@ -2584,7 +2584,7 @@ const docTemplate = `{
                     "description": "Seconds",
                     "type": "integer"
                 },
-                "latencyThreshold": {
+                "latencyIncreasePercent": {
                     "type": "integer"
                 },
                 "name": {
@@ -2718,7 +2718,7 @@ const docTemplate = `{
                     "description": "Seconds",
                     "type": "integer"
                 },
-                "latencyThreshold": {
+                "latencyIncreasePercent": {
                     "type": "integer"
                 },
                 "name": {
@@ -2922,6 +2922,9 @@ const docTemplate = `{
         "internal_api.MonitorDTO": {
             "type": "object",
             "properties": {
+                "effectiveLatencyThresholdMs": {
+                    "type": "integer"
+                },
                 "active": {
                     "type": "boolean"
                 },
@@ -2952,7 +2955,7 @@ const docTemplate = `{
                 "latency": {
                     "type": "integer"
                 },
-                "latencyThreshold": {
+                "latencyIncreasePercent": {
                     "type": "integer"
                 },
                 "name": {

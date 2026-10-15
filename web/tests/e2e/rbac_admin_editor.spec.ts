@@ -232,7 +232,7 @@ test.describe('RBAC - Admin vs Editor Boundary', () => {
                 'Content-Type': 'application/json',
                 Cookie: `auth_token=${editorToken}`,
             },
-            data: { latency_threshold: '999' },
+            data: { 'notification.latency.increase_percent': '999' },
         });
         expect(res.status()).toBe(403);
     });
@@ -412,7 +412,7 @@ test.describe('RBAC - Admin vs Editor Boundary', () => {
                 'Content-Type': 'application/json',
                 Cookie: `auth_token=${adminToken}`,
             },
-            data: { latency_threshold: '2000' },
+            data: { 'notification.latency.increase_percent': '2000' },
         });
         expect(res.ok()).toBeTruthy();
     });

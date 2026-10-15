@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/projecthelena/warden/internal/config"
@@ -549,18 +550,28 @@ func TestCreateMonitor_NotifFatigueValidation(t *testing.T) {
 		},
 		{
 			name:     "latency_threshold_0",
-			payload:  map[string]interface{}{"name": "LT0", "url": "http://test.com", "groupId": "g-default", "interval": 60, "latencyThreshold": 0},
+			payload:  map[string]interface{}{"name": "LT0", "url": "http://test.com", "groupId": "g-default", "interval": 60, "latencyIncreasePercent": 0},
 			expected: http.StatusBadRequest,
 		},
 		{
 			name:     "latency_threshold_negative",
-			payload:  map[string]interface{}{"name": "LTN", "url": "http://test.com", "groupId": "g-default", "interval": 60, "latencyThreshold": -1},
+			payload:  map[string]interface{}{"name": "LTN", "url": "http://test.com", "groupId": "g-default", "interval": 60, "latencyIncreasePercent": -1},
 			expected: http.StatusBadRequest,
 		},
 		{
-			name:     "latency_threshold_valid",
-			payload:  map[string]interface{}{"name": "LTV", "url": "http://test.com", "groupId": "g-default", "interval": 60, "latencyThreshold": 2000},
+			name:     "latency_percentage_valid",
+			payload:  map[string]interface{}{"name": "LTV", "url": "http://test.com", "groupId": "g-default", "interval": 60, "latencyIncreasePercent": 2000},
 			expected: http.StatusCreated,
+		},
+		{
+			name:     "latency_percentage_too_large",
+			payload:  map[string]interface{}{"name": "Invalid", "url": "https://example.com", "groupId": "g-default", "interval": 60, "latencyIncreasePercent": 9901},
+			expected: http.StatusBadRequest,
+		},
+		{
+			name:     "legacy_latency_rejected",
+			payload:  map[string]interface{}{"name": "Legacy", "url": "https://example.com", "groupId": "g-default", "interval": 60, "latencyThreshold": 1000},
+			expected: http.StatusBadRequest,
 		},
 		{
 			name:     "nil_overrides",
@@ -622,18 +633,28 @@ func TestUpdateMonitor_NotifFatigueValidation(t *testing.T) {
 		},
 		{
 			name:     "latency_threshold_0",
-			payload:  map[string]interface{}{"name": "Test", "url": "http://test.com", "interval": 60, "latencyThreshold": 0},
+			payload:  map[string]interface{}{"name": "Test", "url": "http://test.com", "interval": 60, "latencyIncreasePercent": 0},
 			expected: http.StatusBadRequest,
 		},
 		{
 			name:     "latency_threshold_negative",
-			payload:  map[string]interface{}{"name": "Test", "url": "http://test.com", "interval": 60, "latencyThreshold": -1},
+			payload:  map[string]interface{}{"name": "Test", "url": "http://test.com", "interval": 60, "latencyIncreasePercent": -1},
 			expected: http.StatusBadRequest,
 		},
 		{
-			name:     "latency_threshold_valid",
-			payload:  map[string]interface{}{"name": "Test", "url": "http://test.com", "interval": 60, "latencyThreshold": 500},
+			name:     "latency_percentage_valid",
+			payload:  map[string]interface{}{"name": "Test", "url": "http://test.com", "interval": 60, "latencyIncreasePercent": 500},
 			expected: http.StatusOK,
+		},
+		{
+			name:     "latency_percentage_too_large",
+			payload:  map[string]interface{}{"name": "Invalid", "url": "https://example.com", "groupId": "g-default", "interval": 60, "latencyIncreasePercent": 9901},
+			expected: http.StatusBadRequest,
+		},
+		{
+			name:     "legacy_latency_rejected",
+			payload:  map[string]interface{}{"name": "Legacy", "url": "https://example.com", "groupId": "g-default", "interval": 60, "latencyThreshold": 1000},
+			expected: http.StatusBadRequest,
 		},
 		{
 			name:     "nil_overrides",
@@ -771,7 +792,7 @@ func TestGetUptime_IncludesLatencyThreshold(t *testing.T) {
 	if err := s.CreateMonitor(db.Monitor{
 		ID: "m-with-lt", GroupID: "g-default", Name: "With LT",
 		URL: "http://test.com", Interval: 60, Active: true,
-		LatencyThreshold: &lt,
+		LatencyIncreasePercent: &lt,
 	}); err != nil {
 		t.Fatalf("Failed to create monitor: %v", err)
 	}
@@ -834,13 +855,13 @@ func TestGetUptime_IncludesLatencyThreshold(t *testing.T) {
 	}
 
 	// Monitor WITH latency threshold should have the field
-	if v, ok := withLT["latencyThreshold"]; !ok || v != float64(500) {
-		t.Errorf("Expected latencyThreshold=500, got %v", v)
+	if v, ok := withLT["latencyIncreasePercent"]; !ok || v != float64(500) {
+		t.Errorf("Expected latencyIncreasePercent=500, got %v", v)
 	}
 
 	// Monitor WITHOUT latency threshold should NOT have the field (omitempty)
-	if _, ok := withoutLT["latencyThreshold"]; ok {
-		t.Error("Expected latencyThreshold absent for monitor without override")
+	if _, ok := withoutLT["latencyIncreasePercent"]; ok {
+		t.Error("Expected latencyIncreasePercent absent for monitor without override")
 	}
 
 	_ = crudH // used in setup
@@ -1170,4 +1191,41 @@ func TestGetUptime_IncludesRequestConfig(t *testing.T) {
 	}
 
 	_ = crudH // used in setup
+}
+
+func TestMonitorDTO_DynamicLatencyAndLearning(t *testing.T) {
+	_, _, _, _, store := setupTest(t)
+	manager := uptime.NewManager(store)
+	t.Cleanup(manager.Reset)
+	percent := 50
+	meta := db.Monitor{ID: "dynamic-dto", GroupID: "g-default", Name: "API", URL: "https://example.com", Interval: 60, Active: true, LatencyIncreasePercent: &percent}
+	if err := store.CreateMonitor(meta); err != nil {
+		t.Fatal(err)
+	}
+	manager.Sync()
+	mon := manager.GetMonitor(meta.ID)
+	h := NewUptimeHandler(manager, store)
+	for _, tc := range []struct {
+		name               string
+		threshold, latency int64
+		up                 bool
+		want               string
+	}{
+		{"learning", 0, 100000, true, "up"},
+		{"boundary", 1500, 1500, true, "up"},
+		{"slow", 1500, 1501, true, "degraded"},
+		{"down while learning", 0, 0, false, "down"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mon.SetLatencyThreshold(tc.threshold)
+			mon.RecordResult(tc.up, tc.latency, time.Now(), 200, "", false)
+			dto := h.monitorDTO(meta, nil)
+			if dto.Status != tc.want || dto.EffectiveLatencyThresholdMs != tc.threshold || dto.LatencyIncreasePercent == nil || *dto.LatencyIncreasePercent != percent {
+				t.Fatalf("unexpected monitor DTO: %+v", dto)
+			}
+			if got := dto.History[len(dto.History)-1].Status; got != tc.want {
+				t.Fatalf("history status=%s, want %s", got, tc.want)
+			}
+		})
+	}
 }

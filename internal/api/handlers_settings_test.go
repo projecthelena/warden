@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/projecthelena/warden/internal/db"
 	"github.com/projecthelena/warden/internal/uptime"
@@ -36,8 +37,8 @@ func TestGetSettings(t *testing.T) {
 	}
 
 	// Verify default values
-	if response["latency_threshold"] != "1000" {
-		t.Errorf("Expected latency_threshold '1000', got %s", response["latency_threshold"])
+	if response["notification.latency.increase_percent"] != "50" {
+		t.Errorf("Expected notification.latency.increase_percent '50', got %s", response["notification.latency.increase_percent"])
 	}
 	if response["data_retention_days"] != "365" {
 		t.Errorf("Expected data_retention_days '365', got %s", response["data_retention_days"])
@@ -50,8 +51,8 @@ func TestUpdateSettings_MultipleSettings(t *testing.T) {
 	h := NewSettingsHandler(s, m)
 
 	body := map[string]string{
-		"latency_threshold":   "500",
-		"data_retention_days": "180",
+		"notification.latency.increase_percent": "500",
+		"data_retention_days":                   "180",
 	}
 	bodyBytes, _ := json.Marshal(body)
 
@@ -66,9 +67,9 @@ func TestUpdateSettings_MultipleSettings(t *testing.T) {
 	}
 
 	// Verify all settings were saved
-	lat, _ := s.GetSetting("latency_threshold")
+	lat, _ := s.GetSetting("notification.latency.increase_percent")
 	if lat != "500" {
-		t.Errorf("Expected latency_threshold '500', got %s", lat)
+		t.Errorf("Expected notification.latency.increase_percent '500', got %s", lat)
 	}
 
 	ret, _ := s.GetSetting("data_retention_days")
@@ -98,8 +99,24 @@ func TestUpdateSettings_LatencyThresholdUpdatesManager(t *testing.T) {
 	m := uptime.NewManager(s)
 	h := NewSettingsHandler(s, m)
 
+	if err := s.CreateMonitor(db.Monitor{ID: "latency-settings", GroupID: "g-default", Name: "API", URL: "https://example.com", Active: true, Interval: 60}); err != nil {
+		t.Fatal(err)
+	}
+	checks := make([]db.CheckResult, 200)
+	for i := range checks {
+		checks[i] = db.CheckResult{MonitorID: "latency-settings", Status: "up", Latency: 1000, Timestamp: time.Now().Add(-time.Duration(i) * time.Minute)}
+	}
+	if err := s.BatchInsertChecks(checks); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ComputeLatencyBaseline("latency-settings", 7*24*time.Hour, 200, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	m.Sync()
+	defer m.Stop()
+
 	body := map[string]string{
-		"latency_threshold": "2000",
+		"notification.latency.increase_percent": "2000",
 	}
 	bodyBytes, _ := json.Marshal(body)
 
@@ -114,8 +131,8 @@ func TestUpdateSettings_LatencyThresholdUpdatesManager(t *testing.T) {
 	}
 
 	// Verify manager was updated
-	if m.GetLatencyThreshold() != 2000 {
-		t.Errorf("Expected latency threshold 2000, got %d", m.GetLatencyThreshold())
+	if m.GetMonitor("latency-settings").GetLatencyThreshold() != 21000 {
+		t.Errorf("Expected latency threshold 21000, got %d", m.GetMonitor("latency-settings").GetLatencyThreshold())
 	}
 }
 
@@ -342,11 +359,9 @@ func TestGetSettings_ReportsTheLatencyBaseline(t *testing.T) {
 	}
 
 	for key, want := range map[string]string{
-		"notification.latency.adaptive_enabled": "true",
 		"notification.latency.baseline_days":    "7",
 		"notification.latency.min_samples":      "200",
-		"notification.latency.factor_percent":   "150",
-		"notification.latency.floor_ms":         "100",
+		"notification.latency.increase_percent": "50",
 	} {
 		if response[key] != want {
 			t.Errorf("%s = %q, want the default %q", key, response[key], want)
@@ -360,10 +375,8 @@ func TestUpdateSettings_PersistsTheLatencyBaseline(t *testing.T) {
 	h := NewSettingsHandler(s, m)
 
 	body, _ := json.Marshal(map[string]string{
-		"notification.latency.adaptive_enabled": "false",
 		"notification.latency.baseline_days":    "14",
-		"notification.latency.factor_percent":   "200",
-		"notification.latency.floor_ms":         "0",
+		"notification.latency.increase_percent": "200",
 	})
 	req := withAdminCtx(httptest.NewRequest("PATCH", "/api/settings", bytes.NewReader(body)))
 	w := httptest.NewRecorder()
@@ -373,10 +386,8 @@ func TestUpdateSettings_PersistsTheLatencyBaseline(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	for key, want := range map[string]string{
-		"notification.latency.adaptive_enabled": "false",
 		"notification.latency.baseline_days":    "14",
-		"notification.latency.factor_percent":   "200",
-		"notification.latency.floor_ms":         "0",
+		"notification.latency.increase_percent": "200",
 	} {
 		if got, _ := s.GetSetting(key); got != want {
 			t.Errorf("%s = %q, want %q", key, got, want)
@@ -410,22 +421,26 @@ func TestRelearnLatencyBaselines_AdminOnly(t *testing.T) {
 	}
 }
 
-// A multiplier under 1x would call a service degraded at its own median, and the manager
-// quietly falls back to the default for anything it cannot use. Both are reasons the API
-// has to refuse the value rather than store it.
+// Invalid percentages must never be persisted.
 func TestUpdateSettings_RejectsBadLatencyBaseline(t *testing.T) {
 	s, _ := db.NewStore(db.NewTestConfig())
 	m := uptime.NewManager(s)
 	h := NewSettingsHandler(s, m)
 
 	for _, tc := range []struct{ key, value string }{
-		{"notification.latency.factor_percent", "99"},
-		{"notification.latency.factor_percent", "-1"},
+		{"notification.latency.increase_percent", "0"},
+		{"notification.latency.increase_percent", "-1"},
+		{"notification.latency.increase_percent", "9901"},
+		{"notification.latency.increase_percent", "25.5"},
+		{"latency_threshold", "1000"},
+		{"notification.latency.adaptive_enabled", "false"},
+		{"notification.latency.factor_percent", "150"},
 		{"notification.latency.baseline_days", "0"},
 		{"notification.latency.baseline_days", "365"},
 		{"notification.latency.min_samples", "0"},
 		{"notification.latency.floor_ms", "-1"},
 	} {
+		previous, _ := s.GetSetting(tc.key)
 		body, _ := json.Marshal(map[string]string{tc.key: tc.value})
 		req := withAdminCtx(httptest.NewRequest("PATCH", "/api/settings", bytes.NewReader(body)))
 		w := httptest.NewRecorder()
@@ -434,7 +449,7 @@ func TestUpdateSettings_RejectsBadLatencyBaseline(t *testing.T) {
 		if w.Code == http.StatusOK {
 			t.Errorf("%s=%q was accepted", tc.key, tc.value)
 		}
-		if got, _ := s.GetSetting(tc.key); got == tc.value {
+		if got, _ := s.GetSetting(tc.key); got != previous {
 			t.Errorf("%s=%q was persisted despite being invalid", tc.key, tc.value)
 		}
 	}

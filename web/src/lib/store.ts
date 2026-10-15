@@ -86,7 +86,8 @@ export interface Monitor {
     interval: number;
     confirmationThreshold?: number;
     notificationCooldownMinutes?: number;
-    latencyThreshold?: number;
+    latencyIncreasePercent?: number;
+    effectiveLatencyThresholdMs?: number;
     requestConfig?: RequestConfig;
     alertsMuted?: boolean;
 }
@@ -141,7 +142,7 @@ export interface OverviewGroup {
 }
 
 export interface Settings {
-    latency_threshold: string;
+    "notification.latency.increase_percent": string;
     data_retention_days: string;
     // Allow any string key for flexibility
     [key: string]: string | undefined;
@@ -1289,7 +1290,7 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
             }
             set((state) => ({
                 settings: {
-                    ...(state.settings || { latency_threshold: "1000", data_retention_days: "365" }),
+                    ...(state.settings || { "notification.latency.increase_percent": "50", data_retention_days: "365" }),
                     ...newSettings
                 }
             }));
@@ -1309,7 +1310,7 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
             const result = await res.json();
             set((state) => ({
                 settings: {
-                    ...(state.settings || { latency_threshold: "1000", data_retention_days: "365" }),
+                    ...(state.settings || { "notification.latency.increase_percent": "50", data_retention_days: "365" }),
                     "notification.latency.learn_after": result.learnAfter
                 }
             }));

@@ -36,7 +36,7 @@ export class AlertingSettingsPage {
     }
 
     async openLatency() {
-        await this.openSection('High Latency', this.page.getByTestId('adaptive-latency-switch'));
+        await this.openSection('High Latency', this.page.getByLabel(/Above normal/));
     }
 
     async openWeeklyPatterns() {

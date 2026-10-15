@@ -96,8 +96,6 @@ type Manager struct {
 	stopCh      chan struct{}
 	wg          sync.WaitGroup
 
-	latencyThreshold int64
-
 	// Track SSL notification thresholds per monitor
 	sslNotifiedThresholds map[string]*sslThresholdState
 
@@ -157,7 +155,6 @@ func NewManager(store *db.Store) *Manager {
 		resultQueue:           make(chan CheckResult, 1000), // Buffer for results
 		retrySlots:            make(chan struct{}, WorkerCount/10),
 		stopCh:                make(chan struct{}),
-		latencyThreshold:      1000, // Default
 		sslNotifiedThresholds: make(map[string]*sslThresholdState),
 		notificationTimezone:  time.UTC, // Default to UTC
 		notifier:              notifications.NewService(store),
@@ -175,13 +172,6 @@ func NewManager(store *db.Store) *Manager {
 		},
 	}
 	m.monitorSnapshot.Store(map[string]*Monitor{})
-
-	// Load settings
-	if val, err := store.GetSetting("latency_threshold"); err == nil {
-		if i, err := strconv.Atoi(val); err == nil {
-			m.latencyThreshold = int64(i)
-		}
-	}
 
 	return m
 }
@@ -442,13 +432,13 @@ func (m *Manager) resultProcessor() {
 			if exists {
 				active, _, hasHistory, lastDegraded := mon.GetLastStatus()
 
-				// 2. Latency Threshold (per-monitor override or global default)
+				// 2. Learned latency threshold (zero while learning)
 				threshold := mon.GetLatencyThreshold()
 
 				// Check if monitor is in maintenance
 				isMaint := m.isMonitorInMaintenance(mon.GetGroupID())
 
-				isDegraded := res.Status && res.Latency > threshold
+				isDegraded := res.Status && threshold > 0 && res.Latency > threshold
 				res.IsDegraded = isDegraded // Update result for storage
 
 				wasDegraded := active && lastDegraded
@@ -886,13 +876,12 @@ func (m *Manager) Sync() {
 		}
 		interval := time.Duration(intervalSec) * time.Second
 
-		// Resolve the degraded threshold: explicit override, else the monitor's own
-		// baseline, else the global default (see baseline.go).
+		// Apply the configured percentage to this monitor’s learned baseline.
 		b, hasBaseline := baselines[dbM.ID]
-		monLatencyThresh := resolveLatencyThreshold(dbM.LatencyThreshold, b, hasBaseline, basePolicy, m.latencyThreshold)
-		monBaselineP50 := int64(0)
-		if hasBaseline && basePolicy.Enabled {
-			monBaselineP50 = b.P50
+		monLatencyThresh := resolveLatencyThreshold(dbM.LatencyIncreasePercent, b, hasBaseline, basePolicy)
+		monBaselineP95 := int64(0)
+		if hasBaseline && monLatencyThresh > 0 {
+			monBaselineP95 = b.P95
 		}
 
 		if existing, exists := m.monitors[dbM.ID]; exists {
@@ -900,7 +889,7 @@ func (m *Manager) Sync() {
 			existing.ApplyConfig(cfg)
 			existing.SetLatencyThreshold(monLatencyThresh)
 			existing.SetAlertsMuted(dbM.AlertsMuted)
-			existing.SetBaselineP50(monBaselineP50)
+			existing.SetBaselineP95(monBaselineP95)
 			// A monitor that has been moved to another group keeps running; only the
 			// maintenance window and outage cluster it belongs to change.
 			existing.SetGroupID(dbM.GroupID)
@@ -927,7 +916,7 @@ func (m *Manager) Sync() {
 			mon.ApplyConfig(cfg)
 			mon.SetLatencyThreshold(monLatencyThresh)
 			mon.SetAlertsMuted(dbM.AlertsMuted)
-			mon.SetBaselineP50(monBaselineP50)
+			mon.SetBaselineP95(monBaselineP95)
 
 			// Hydrate history from DB
 			checks, err := m.store.GetMonitorChecks(dbM.ID, 50)
@@ -938,7 +927,7 @@ func (m *Manager) Sync() {
 				for i := len(checks) - 1; i >= 0; i-- {
 					c := checks[i]
 					isUp := c.Status == "up" // "up" or "down"
-					isDegraded := isUp && c.Latency > mon.GetLatencyThreshold()
+					isDegraded := isUp && mon.IsHighLatency(c.Latency)
 					mon.RecordResult(isUp, c.Latency, c.Timestamp, c.StatusCode, "", isDegraded)
 				}
 			}
@@ -1239,18 +1228,6 @@ func (m *Manager) RemoveMonitor(id string) {
 		m.publishMonitorSnapshotLocked()
 		log.Printf("Explicitly stopped monitor: %s", wardenlog.Sanitize(id)) // #nosec G706 -- sanitized
 	}
-}
-
-func (m *Manager) SetLatencyThreshold(ms int64) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.latencyThreshold = ms
-}
-
-func (m *Manager) GetLatencyThreshold() int64 {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.latencyThreshold
 }
 
 // GetAll returns a copy of all running monitors. Internal control-plane callers use this

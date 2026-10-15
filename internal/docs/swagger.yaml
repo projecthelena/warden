@@ -207,7 +207,7 @@ definitions:
       interval:
         description: Seconds
         type: integer
-      latencyThreshold:
+      latencyIncreasePercent:
         type: integer
       name:
         type: string
@@ -321,7 +321,7 @@ definitions:
       interval:
         description: Seconds
         type: integer
-      latencyThreshold:
+      latencyIncreasePercent:
         type: integer
       name:
         type: string
@@ -458,6 +458,8 @@ definitions:
     type: object
   internal_api.MonitorDTO:
     properties:
+      effectiveLatencyThresholdMs:
+        type: integer
       active:
         type: boolean
       confirmationThreshold:
@@ -478,7 +480,7 @@ definitions:
         type: string
       latency:
         type: integer
-      latencyThreshold:
+      latencyIncreasePercent:
         type: integer
       name:
         type: string
