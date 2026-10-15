@@ -9,6 +9,7 @@ Warden is configured with environment variables. The defaults run locally with S
 | `HTTP_DIAGNOSTICS_ENABLED` | `false` | Also record HTTP phases for legacy/manual-mode monitors; automatic retry mode already records its attempts. See [HTTP diagnostics](http-diagnostics.md). Requires a restart. |
 | `SECONDARY_PROBE_URL` | empty (disabled) | Optional second probe endpoint over HTTPS or a loopback HTTP tunnel. Requires HTTP diagnostics. |
 | `SECONDARY_PROBE_TOKEN` | empty | Shared probe API secret, at least 32 characters. Never sent to monitored targets. |
+| `METRICS_ENABLED` | `true` | Enable Prometheus instrumentation and `/metrics`. Set `false` and restart to disable metric updates, diagnostic timing and rollup diagnostic logs. |
 | `OBSERVABILITY_ADDR` | empty (disabled) | Separate address for Prometheus metrics and Go profiles, for example `127.0.0.1:9091`. |
 | `DB_TYPE` | `sqlite` | Database backend: `sqlite` or `postgres`. A PostgreSQL `DB_URL` also selects PostgreSQL automatically. |
 | `SQLITE_ROLLUP_BATCH_SIZE` | `50` | Monitors per daily uptime rollup read, SQLite only. Integer from 1 to 50; invalid values log a warning and use 50 without preventing startup. Requires a restart. |
@@ -28,13 +29,17 @@ Set `TRUST_PROXY=true` only when Warden can be reached exclusively through a tru
 
 Set `OBSERVABILITY_ADDR` to enable a separate diagnostics listener. It exposes Prometheus metrics at `/metrics` and Go profiles under `/debug/pprof/`. The listener has no authentication, so bind it to loopback or a private network and never publish it through the same ingress as Warden.
 
+Set `METRICS_ENABLED=false` and restart to disable all Warden Prometheus updates and their timing clock reads, including baseline, persistence, HTTP, status-page and monitor metrics. The rollup diagnostic flag is overridden: rollups still execute, but without phase timing or slow-rollup diagnostic logs. Ordinary errors, monitoring, check latency used by alerts, and optional HTTP diagnostics remain unchanged. Disabled batch writes use the ordinary transaction path without separately acquiring a connection for measurement. Small flag checks and startup collector allocation remain; disabling metrics does not mean zero overhead.
+
+With metrics disabled, `/metrics` returns 404 even if `OBSERVABILITY_ADDR` is set. The private listener can still serve `pprof`. Leave `OBSERVABILITY_ADDR` empty as well to disable that listener entirely. Conversely, leaving only the address empty does not stop in-process instrumentation. The switch is startup configuration, not a live API or UI toggle; set `METRICS_ENABLED=true` and restart to restore instrumentation. Invalid boolean values fail startup.
+
 The metrics cover HTTP request rate, errors and latency; monitor check rate and latency; scheduling drops and queue depth; database batch size and write latency; and the active monitor count. Standard Go process and runtime metrics are included by the Prometheus client.
 
 Set `COOKIE_SECURE=true` whenever the public Warden URL uses HTTPS.
 
 ### Baseline and check-write diagnostics
 
-These metrics are available on the diagnostics listener without enabling the rollup flag:
+These metrics are available when `METRICS_ENABLED=true` on the diagnostics listener without enabling the rollup flag:
 
 | Metric | Meaning |
 | --- | --- |

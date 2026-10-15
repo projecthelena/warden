@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"github.com/projecthelena/warden/internal/metricstate"
 	"testing"
 	"time"
 
@@ -100,6 +101,28 @@ func TestOperationMetricsBlockedConnectionAndFailure(t *testing.T) {
 		}
 		if operationValue(t, "warden_db_operations_in_flight", "persist_insert", "") != 0 {
 			t.Fatal("failed insert still active")
+		}
+	})
+}
+
+func TestDisabledMetricsPreserveBatchWrites(t *testing.T) {
+	metricstate.Configure(false)
+	t.Cleanup(func() { metricstate.Configure(true) })
+	RunTestWithBothDBs(t, "disabled metrics writes", func(t *testing.T, s *Store) {
+		seedBaselineMonitor(t, s)
+		before := operationValue(t, "warden_db_operation_duration_seconds", "persist_commit", "success")
+		if err := s.BatchInsertChecks([]CheckResult{{MonitorID: "m1", Status: "up", Latency: 10, Timestamp: time.Now().UTC()}}); err != nil {
+			t.Fatal(err)
+		}
+		rows, err := s.GetMonitorChecks("m1", 10)
+		if err != nil || len(rows) != 1 {
+			t.Fatalf("checks=%v err=%v", rows, err)
+		}
+		if operationValue(t, "warden_db_operation_duration_seconds", "persist_commit", "success") != before {
+			t.Fatal("disabled write changed metrics")
+		}
+		if s.db.Stats().InUse != 0 {
+			t.Fatal("connection leaked")
 		}
 	})
 }

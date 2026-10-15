@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -18,6 +19,7 @@ type Config struct {
 	ListenAddr            string
 	HTTPDiagnostics       bool
 	RollupDiagnostics     bool   // Opt-in rollup timings and slow-operation logs
+	MetricsEnabled        bool   // Process-wide Prometheus instrumentation and endpoint
 	ObservabilityAddr     string // Separate metrics/pprof listener; empty keeps it disabled
 	DBType                string // "sqlite" or "postgres"
 	DBPath                string // SQLite file path (only used when DBType is "sqlite")
@@ -32,6 +34,7 @@ func Default() Config {
 	return Config{
 		SQLiteRollupBatchSize: 50,
 		ListenAddr:            ":9096",
+		MetricsEnabled:        true,
 		DBType:                DBTypeSQLite,
 		DBPath:                "warden.db",
 		CookieSecure:          true,
@@ -47,6 +50,14 @@ func Load() (*Config, error) {
 	}
 	if listen := os.Getenv("OBSERVABILITY_ADDR"); listen != "" {
 		cfg.ObservabilityAddr = listen
+	}
+
+	if value := os.Getenv("METRICS_ENABLED"); value != "" {
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return nil, fmt.Errorf("METRICS_ENABLED must be a boolean: %w", err)
+		}
+		cfg.MetricsEnabled = enabled
 	}
 
 	cfg.HTTPDiagnostics = strings.EqualFold(os.Getenv("HTTP_DIAGNOSTICS_ENABLED"), "true")

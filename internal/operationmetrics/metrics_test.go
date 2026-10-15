@@ -2,6 +2,7 @@ package operationmetrics
 
 import (
 	"errors"
+	"github.com/projecthelena/warden/internal/metricstate"
 	"net/http/httptest"
 	"strings"
 	"sync"
@@ -51,5 +52,20 @@ func TestConcurrentOperations(t *testing.T) {
 	promhttp.Handler().ServeHTTP(response, httptest.NewRequest("GET", "/metrics", nil))
 	if !strings.Contains(response.Body.String(), `warden_db_operations_in_flight{operation="persist_commit"} 0`) {
 		t.Fatal("concurrent operations leaked active work")
+	}
+}
+
+func TestDisabledOperationsDoNotCreateSeries(t *testing.T) {
+	metricstate.Configure(false)
+	t.Cleanup(func() { metricstate.Configure(true) })
+	finish := Start(Operation("disabled_test"))
+	finish(errors.New("not recorded"))
+	response := httptest.NewRecorder()
+	promhttp.Handler().ServeHTTP(response, httptest.NewRequest("GET", "/metrics", nil))
+	if strings.Contains(response.Body.String(), "disabled_test") {
+		t.Fatal("disabled operation created a series")
+	}
+	if n := testing.AllocsPerRun(100, func() { done := Start(BaselineCount); done(nil) }); n != 0 {
+		t.Fatalf("disabled operation allocated %v times", n)
 	}
 }

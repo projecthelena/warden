@@ -4,6 +4,7 @@ package operationmetrics
 import (
 	"time"
 
+	"github.com/projecthelena/warden/internal/metricstate"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -45,6 +46,9 @@ func init() {
 
 // Start records active work immediately; finish must be called exactly once.
 func Start(operation Operation) func(error) {
+	if !metricstate.Enabled() {
+		return discard
+	}
 	label := string(operation)
 	started := time.Now()
 	inFlight.WithLabelValues(label).Inc()
@@ -58,3 +62,5 @@ func Start(operation Operation) func(error) {
 		inFlight.WithLabelValues(label).Dec()
 	}
 }
+
+func discard(error) {}

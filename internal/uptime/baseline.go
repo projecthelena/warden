@@ -5,6 +5,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/projecthelena/warden/internal/metricstate"
 	"github.com/projecthelena/warden/internal/operationmetrics"
 
 	"github.com/projecthelena/warden/internal/db"
@@ -108,7 +109,9 @@ func (m *Manager) refreshBaselines(now time.Time) {
 			cycleErr = err
 			log.Printf("Baseline: failed to compute for %s: %v", id, err)
 		}
-		operationmetrics.BaselineMonitors.WithLabelValues(outcome).Inc()
+		if metricstate.Enabled() {
+			operationmetrics.BaselineMonitors.WithLabelValues(outcome).Inc()
+		}
 	}
 
 	// Push the new numbers onto the running monitors in one pass, so the result processor

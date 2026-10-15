@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/projecthelena/warden/internal/db"
+	"github.com/projecthelena/warden/internal/metricstate"
 	"github.com/projecthelena/warden/internal/observability"
 	"github.com/projecthelena/warden/internal/uptime"
 )
@@ -504,7 +505,7 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 
 	// 2. Fetch group metadata and aggregate monitor counts. The overview never
 	// materializes monitor rows or their private configuration.
-	metadataStarted := time.Now()
+	metadataStarted := metricstate.Now()
 	groups, err := h.store.GetGroupsMetadata()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load groups")
@@ -515,7 +516,9 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusInternalServerError, "failed to load monitor summaries")
 		return
 	}
-	observability.StatusPagePhase.WithLabelValues("metadata").Observe(time.Since(metadataStarted).Seconds())
+	if metricstate.Enabled() {
+		observability.StatusPagePhase.WithLabelValues("metadata").Observe(time.Since(metadataStarted).Seconds())
+	}
 
 	// 3. Filter Groups if Status Page scans specific Group
 	var targetGroups []db.Group
@@ -679,16 +682,18 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 	}
 	uptimeByMonitor := map[string][]db.DailyUptimeStat{}
 	if !compact {
-		rollupsStarted := time.Now()
+		rollupsStarted := metricstate.Now()
 		uptimeByMonitor, err = h.store.GetDailyUptimeStatsForMonitors(monitorIDs, daysRange)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to load uptime stats")
 			return
 		}
-		observability.StatusPagePhase.WithLabelValues("rollups").Observe(time.Since(rollupsStarted).Seconds())
+		if metricstate.Enabled() {
+			observability.StatusPagePhase.WithLabelValues("rollups").Observe(time.Since(rollupsStarted).Seconds())
+		}
 	}
 
-	dtoStarted := time.Now()
+	dtoStarted := metricstate.Now()
 	groupDTOs := []GroupDTO{}
 	liveCounts := make(map[string]map[string]int)
 	liveSeen := make(map[string]int)
@@ -767,10 +772,12 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 		}
 		groupDTOs = append(groupDTOs, groupDTO)
 	}
-	observability.StatusPagePhase.WithLabelValues("dto").Observe(time.Since(dtoStarted).Seconds())
+	if metricstate.Enabled() {
+		observability.StatusPagePhase.WithLabelValues("dto").Observe(time.Since(dtoStarted).Seconds())
+	}
 
 	// 6. Fetch Incidents and Outages
-	incidentsStarted := time.Now()
+	incidentsStarted := metricstate.Now()
 	type IncidentUpdateDTO struct {
 		Status    string    `json:"status"`
 		Message   string    `json:"message"`
@@ -1017,7 +1024,9 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 		"headerArrangement":    page.HeaderArrangement,
 		"timezone":             page.Timezone,
 	}
-	observability.StatusPagePhase.WithLabelValues("incidents").Observe(time.Since(incidentsStarted).Seconds())
+	if metricstate.Enabled() {
+		observability.StatusPagePhase.WithLabelValues("incidents").Observe(time.Since(incidentsStarted).Seconds())
+	}
 
 	view := "compact"
 	if requestedGroupID != "" {
@@ -1039,20 +1048,26 @@ func (h *StatusPageHandler) GetPublicStatus(w http.ResponseWriter, r *http.Reque
 }
 
 func writeStatusPageJSON(w http.ResponseWriter, view string, data any) {
-	started := time.Now()
+	started := metricstate.Now()
 	payload, err := json.Marshal(data)
-	observability.StatusPagePhase.WithLabelValues("json_marshal").Observe(time.Since(started).Seconds())
+	if metricstate.Enabled() {
+		observability.StatusPagePhase.WithLabelValues("json_marshal").Observe(time.Since(started).Seconds())
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to encode status page")
 		return
 	}
 
-	observability.StatusPagePayloadBytes.WithLabelValues(view).Observe(float64(len(payload)))
+	if metricstate.Enabled() {
+		observability.StatusPagePayloadBytes.WithLabelValues(view).Observe(float64(len(payload)))
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	started = time.Now()
+	started = metricstate.Now()
 	_, _ = w.Write(append(payload, '\n'))
-	observability.StatusPagePhase.WithLabelValues("response_write").Observe(time.Since(started).Seconds())
+	if metricstate.Enabled() {
+		observability.StatusPagePhase.WithLabelValues("response_write").Observe(time.Since(started).Seconds())
+	}
 }
 
 func formatDurationMinutes(d time.Duration) string {

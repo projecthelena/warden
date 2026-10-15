@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/projecthelena/warden/internal/db"
+	"github.com/projecthelena/warden/internal/metricstate"
 	"github.com/projecthelena/warden/internal/observability"
 )
 
@@ -231,11 +232,15 @@ func (m *Monitor) schedule() {
 	m.mu.RUnlock()
 	select {
 	case m.jobQueue <- Job{MonitorID: m.id, Type: m.monitorType, URL: m.url, RequestConfig: cfg, DockerHost: dockerHost}:
-		observability.CheckScheduling.WithLabelValues("queued").Inc()
-		observability.CheckQueueDepth.Set(float64(len(m.jobQueue)))
+		if metricstate.Enabled() {
+			observability.CheckScheduling.WithLabelValues("queued").Inc()
+			observability.CheckQueueDepth.Set(float64(len(m.jobQueue)))
+		}
 	default:
-		observability.CheckScheduling.WithLabelValues("dropped").Inc()
-		observability.CheckQueueDepth.Set(float64(len(m.jobQueue)))
+		if metricstate.Enabled() {
+			observability.CheckScheduling.WithLabelValues("dropped").Inc()
+			observability.CheckQueueDepth.Set(float64(len(m.jobQueue)))
+		}
 	}
 }
 

@@ -5,13 +5,14 @@ import (
 	"time"
 
 	"github.com/projecthelena/warden/internal/db"
+	"github.com/projecthelena/warden/internal/metricstate"
 	"github.com/projecthelena/warden/internal/observability"
 )
 
 const slowRollupThreshold = time.Second
 
 func (m *Manager) runRollup(mode string, days int) error {
-	if !m.RollupDiagnostics {
+	if !m.RollupDiagnostics || !metricstate.Enabled() {
 		return m.store.RollupDailyUptime(days)
 	}
 	start := time.Now()

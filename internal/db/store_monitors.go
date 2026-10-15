@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/projecthelena/warden/internal/metricstate"
 	"github.com/projecthelena/warden/internal/operationmetrics"
 )
 
@@ -634,6 +635,17 @@ func (s *Store) BatchInsertChecks(checks []CheckResult) error {
 	if len(checks) == 0 {
 		return nil
 	}
+	if !metricstate.Enabled() {
+		tx, err := s.db.Begin()
+		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback() }()
+		if err := s.insertChecks(tx, checks); err != nil {
+			return err
+		}
+		return tx.Commit()
+	}
 	finish := operationmetrics.Start(operationmetrics.PersistConnection)
 	conn, err := s.db.Conn(context.Background())
 	finish(err)
@@ -651,19 +663,7 @@ func (s *Store) BatchInsertChecks(checks []CheckResult) error {
 	defer func() { _ = tx.Rollback() }()
 
 	finish = operationmetrics.Start(operationmetrics.PersistInsert)
-	err = func() error {
-		stmt, err := tx.Prepare(s.rebind("INSERT INTO monitor_checks (monitor_id, status, latency, timestamp, status_code, diagnostics) VALUES (?, ?, ?, ?, ?, ?)"))
-		if err != nil {
-			return err
-		}
-		defer func() { _ = stmt.Close() }()
-		for _, c := range checks {
-			if _, err := stmt.Exec(c.MonitorID, c.Status, c.Latency, c.Timestamp, c.StatusCode, diagnosticsJSON(c.Diagnostics)); err != nil {
-				return err
-			}
-		}
-		return nil
-	}()
+	err = s.insertChecks(tx, checks)
 	finish(err)
 	if err != nil {
 		return err
@@ -672,6 +672,21 @@ func (s *Store) BatchInsertChecks(checks []CheckResult) error {
 	err = tx.Commit()
 	finish(err)
 	return err
+}
+
+func (s *Store) insertChecks(tx *sql.Tx, checks []CheckResult) error {
+
+	stmt, err := tx.Prepare(s.rebind("INSERT INTO monitor_checks (monitor_id, status, latency, timestamp, status_code, diagnostics) VALUES (?, ?, ?, ?, ?, ?)"))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = stmt.Close() }()
+	for _, c := range checks {
+		if _, err := stmt.Exec(c.MonitorID, c.Status, c.Latency, c.Timestamp, c.StatusCode, diagnosticsJSON(c.Diagnostics)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // GetMonitorChecks returns the last N checks for a monitor
