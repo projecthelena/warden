@@ -5,6 +5,9 @@ import (
 	"math"
 	"time"
 
+	"github.com/projecthelena/warden/internal/metricstate"
+	"github.com/projecthelena/warden/internal/operationmetrics"
+
 	"github.com/projecthelena/warden/internal/db"
 )
 
@@ -79,12 +82,15 @@ func (m *Manager) baselineWorker() {
 	}
 }
 
-// refreshBaselines recomputes every running monitor's percentiles. Two queries per monitor
-// per hour, so this stays cheap even with a few hundred monitors.
+// refreshBaselines recomputes every running monitor's percentiles once per hour.
 func (m *Manager) refreshBaselines(now time.Time) {
 	m.mu.RLock()
 	policy := m.baselinePolicy
 	m.mu.RUnlock()
+
+	finish := operationmetrics.Start(operationmetrics.BaselineCycle)
+	var cycleErr error
+	defer func() { finish(cycleErr) }()
 
 	for id := range m.GetAll() {
 		// A monitor without enough history is skipped rather than given a shaky baseline;
@@ -93,30 +99,42 @@ func (m *Manager) refreshBaselines(now time.Time) {
 		if policy.LearnAfter.After(since) {
 			since = policy.LearnAfter
 		}
-		if _, err := m.store.ComputeLatencyBaselineSince(id, since, policy.MinSamples, now); err != nil {
+		updated, err := m.store.ComputeLatencyBaselineSince(id, since, policy.MinSamples, now)
+		outcome := "skipped"
+		if updated {
+			outcome = "updated"
+		}
+		if err != nil {
+			outcome = "error"
+			cycleErr = err
 			log.Printf("Baseline: failed to compute for %s: %v", id, err)
+		}
+		if metricstate.Enabled() {
+			operationmetrics.BaselineMonitors.WithLabelValues(outcome).Inc()
 		}
 	}
 
 	// Push the new numbers onto the running monitors in one pass, so the result processor
 	// keeps reading a plain int64 on the hot path.
-	m.applyLatencyThresholds()
+	if err := m.applyLatencyThresholds(); err != nil {
+		cycleErr = err
+	}
 }
 
 // applyLatencyThresholds resolves and sets the effective threshold for every running
 // monitor. Called after a baseline refresh and on every Sync, since either the override,
 // the global default or the baseline may have moved.
-func (m *Manager) applyLatencyThresholds() {
+func (m *Manager) applyLatencyThresholds() error {
 	baselines, err := m.store.GetLatencyBaselines()
 	if err != nil {
 		log.Printf("Baseline: failed to load baselines: %v", err)
-		return
+		return err
 	}
 
 	monitors, err := m.store.GetMonitors()
 	if err != nil {
 		log.Printf("Baseline: failed to load monitors: %v", err)
-		return
+		return err
 	}
 
 	m.mu.RLock()
@@ -136,6 +154,7 @@ func (m *Manager) applyLatencyThresholds() {
 			mon.SetBaselineP95(0)
 		}
 	}
+	return nil
 }
 
 // loadBaselinePolicy reads the adaptive-threshold settings.
@@ -178,6 +197,6 @@ func (m *Manager) RelearnLatencyBaselines(now time.Time) error {
 	for _, mon := range monitors {
 		mon.ForgetDegradedState()
 	}
-	m.applyLatencyThresholds()
+	_ = m.applyLatencyThresholds()
 	return nil
 }

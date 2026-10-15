@@ -3,6 +3,8 @@ package db
 import (
 	"database/sql"
 	"time"
+
+	"github.com/projecthelena/warden/internal/operationmetrics"
 )
 
 // LatencyBaseline is what "normal" looks like for one monitor, from its own history. A
@@ -73,9 +75,11 @@ func (s *Store) ComputeLatencyBaseline(monitorID string, window time.Duration, m
 func (s *Store) ComputeLatencyBaselineSince(monitorID string, since time.Time, minSamples int, now time.Time) (bool, error) {
 
 	var total int
+	finish := operationmetrics.Start(operationmetrics.BaselineCount)
 	err := s.db.QueryRow(s.rebind(
 		"SELECT COUNT(*) FROM monitor_checks WHERE monitor_id = ? AND status = 'up' AND timestamp >= ?"),
 		monitorID, since.UTC()).Scan(&total)
+	finish(err)
 	if err != nil {
 		return false, err
 	}
@@ -83,18 +87,25 @@ func (s *Store) ComputeLatencyBaselineSince(monitorID string, since time.Time, m
 		return false, nil
 	}
 
+	finish = operationmetrics.Start(operationmetrics.BaselineP50)
 	p50, err := s.percentileLatency(monitorID, since, total, 50)
+	finish(err)
 	if err != nil {
 		return false, err
 	}
+	finish = operationmetrics.Start(operationmetrics.BaselineP95)
 	p95, err := s.percentileLatency(monitorID, since, total, 95)
+	finish(err)
 	if err != nil {
 		return false, err
 	}
 
-	return true, s.upsertLatencyBaseline(LatencyBaseline{
+	finish = operationmetrics.Start(operationmetrics.BaselineSave)
+	err = s.upsertLatencyBaseline(LatencyBaseline{
 		MonitorID: monitorID, P50: p50, P95: p95, Samples: total, ComputedAt: now.UTC(),
 	})
+	finish(err)
+	return true, err
 }
 
 // RelearnLatencyBaselines forgets the derived baselines without deleting check history.

@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/projecthelena/warden/internal/metricstate"
+	"github.com/projecthelena/warden/internal/operationmetrics"
 )
 
 // RequestConfig holds per-monitor check customization. TimeoutSeconds and RetryCount
@@ -632,27 +635,58 @@ func (s *Store) BatchInsertChecks(checks []CheckResult) error {
 	if len(checks) == 0 {
 		return nil
 	}
+	if !metricstate.Enabled() {
+		tx, err := s.db.Begin()
+		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback() }()
+		if err := s.insertChecks(tx, checks); err != nil {
+			return err
+		}
+		return tx.Commit()
+	}
+	finish := operationmetrics.Start(operationmetrics.PersistConnection)
+	conn, err := s.db.Conn(context.Background())
+	finish(err)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.Close() }()
 
-	tx, err := s.db.Begin()
+	finish = operationmetrics.Start(operationmetrics.PersistBegin)
+	tx, err := conn.BeginTx(context.Background(), nil)
+	finish(err)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	finish = operationmetrics.Start(operationmetrics.PersistInsert)
+	err = s.insertChecks(tx, checks)
+	finish(err)
+	if err != nil {
+		return err
+	}
+	finish = operationmetrics.Start(operationmetrics.PersistCommit)
+	err = tx.Commit()
+	finish(err)
+	return err
+}
+
+func (s *Store) insertChecks(tx *sql.Tx, checks []CheckResult) error {
 
 	stmt, err := tx.Prepare(s.rebind("INSERT INTO monitor_checks (monitor_id, status, latency, timestamp, status_code, diagnostics) VALUES (?, ?, ?, ?, ?, ?)"))
 	if err != nil {
 		return err
 	}
 	defer func() { _ = stmt.Close() }()
-
 	for _, c := range checks {
-		_, err := stmt.Exec(c.MonitorID, c.Status, c.Latency, c.Timestamp, c.StatusCode, diagnosticsJSON(c.Diagnostics))
-		if err != nil {
+		if _, err := stmt.Exec(c.MonitorID, c.Status, c.Latency, c.Timestamp, c.StatusCode, diagnosticsJSON(c.Diagnostics)); err != nil {
 			return err
 		}
 	}
-
-	return tx.Commit()
+	return nil
 }
 
 // GetMonitorChecks returns the last N checks for a monitor

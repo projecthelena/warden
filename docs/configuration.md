@@ -9,6 +9,7 @@ Warden is configured with environment variables. The defaults run locally with S
 | `HTTP_DIAGNOSTICS_ENABLED` | `false` | Also record HTTP phases for legacy/manual-mode monitors; automatic retry mode already records its attempts. See [HTTP diagnostics](http-diagnostics.md). Requires a restart. |
 | `SECONDARY_PROBE_URL` | empty (disabled) | Optional second probe endpoint over HTTPS or a loopback HTTP tunnel. Requires HTTP diagnostics. |
 | `SECONDARY_PROBE_TOKEN` | empty | Shared probe API secret, at least 32 characters. Never sent to monitored targets. |
+| `METRICS_ENABLED` | `true` | Enable Prometheus instrumentation and `/metrics`. Set `false` and restart to disable metric updates, diagnostic timing and rollup diagnostic logs. |
 | `OBSERVABILITY_ADDR` | empty (disabled) | Separate address for Prometheus metrics and Go profiles, for example `127.0.0.1:9091`. |
 | `DB_TYPE` | `sqlite` | Database backend: `sqlite` or `postgres`. A PostgreSQL `DB_URL` also selects PostgreSQL automatically. |
 | `SQLITE_ROLLUP_BATCH_SIZE` | `50` | Monitors per daily uptime rollup read, SQLite only. Integer from 1 to 50; invalid values log a warning and use 50 without preventing startup. Requires a restart. |
@@ -28,9 +29,43 @@ Set `TRUST_PROXY=true` only when Warden can be reached exclusively through a tru
 
 Set `OBSERVABILITY_ADDR` to enable a separate diagnostics listener. It exposes Prometheus metrics at `/metrics` and Go profiles under `/debug/pprof/`. The listener has no authentication, so bind it to loopback or a private network and never publish it through the same ingress as Warden.
 
+Set `METRICS_ENABLED=false` and restart to disable all Warden Prometheus updates and their timing clock reads, including baseline, persistence, HTTP, status-page and monitor metrics. The rollup diagnostic flag is overridden: rollups still execute, but without phase timing or slow-rollup diagnostic logs. Ordinary errors, monitoring, check latency used by alerts, and optional HTTP diagnostics remain unchanged. Disabled batch writes use the ordinary transaction path without separately acquiring a connection for measurement. Small flag checks and startup collector allocation remain; disabling metrics does not mean zero overhead.
+
+With metrics disabled, `/metrics` returns 404 even if `OBSERVABILITY_ADDR` is set. The private listener can still serve `pprof`. Leave `OBSERVABILITY_ADDR` empty as well to disable that listener entirely. Conversely, leaving only the address empty does not stop in-process instrumentation. The switch is startup configuration, not a live API or UI toggle; set `METRICS_ENABLED=true` and restart to restore instrumentation. Invalid boolean values fail startup.
+
 The metrics cover HTTP request rate, errors and latency; monitor check rate and latency; scheduling drops and queue depth; database batch size and write latency; and the active monitor count. Standard Go process and runtime metrics are included by the Prometheus client.
 
 Set `COOKIE_SECURE=true` whenever the public Warden URL uses HTTPS.
+
+### Baseline and check-write diagnostics
+
+These metrics are available when `METRICS_ENABLED=true` on the diagnostics listener without enabling the rollup flag:
+
+| Metric | Meaning |
+| --- | --- |
+| `warden_db_operation_duration_seconds{operation,outcome}` | Histogram of completed operations, including errors; outcomes are `success` and `error`. |
+| `warden_db_operations_in_flight{operation}` | Active operations, including those waiting on the database. |
+| `warden_db_operation_last_started_timestamp_seconds{operation}` | Unix timestamp of the latest start. With overlapping operations, this is not the oldest active call. |
+| `warden_baseline_monitors_total{outcome}` | Monitors processed by the baseline worker: `updated`, `skipped` for insufficient samples, or `error`. |
+
+Operations are fixed labels: `baseline_count`, `baseline_p50`, `baseline_p95`, `baseline_save`, `baseline_cycle`, `persist_connection`, `persist_begin`, `persist_insert`, and `persist_commit`. No SQL, monitor IDs or target URLs are exported. Baseline query timings include pool waits and result scanning. Check writes separate connection acquisition from transaction begin, prepared inserts (including preparation and cleanup), and commit. Unreached phases are not observed. The baseline cycle includes applying thresholds; its error outcome includes computation or threshold-loading failures. Cycle and per-query durations overlap and must not be summed together.
+
+Scrape `/metrics` into Prometheus to retain history; Warden does not store these time series. A five-second scrape interval can help correlate load-test stalls with existing queue, pool-wait, rollup, HTTP and persistence metrics. Histograms record completed operations, so use the in-flight gauge to see unfinished work. For the serial baseline worker, elapsed time of its active cycle is:
+
+```promql
+(time() - warden_db_operation_last_started_timestamp_seconds{operation="baseline_cycle"})
+  and on(operation) (warden_db_operations_in_flight{operation="baseline_cycle"} > 0)
+```
+
+For frequent operations, compare p95 duration by operation:
+
+```promql
+histogram_quantile(0.95,
+  sum by (le, operation) (rate(warden_db_operation_duration_seconds_bucket[5m]))
+)
+```
+
+The hourly baseline cycle has too few samples for a useful five-minute percentile; inspect its duration sum/count over a longer window and its active-cycle elapsed time instead. These are application wall times, not database-server execution plans or proof of a lock/I/O cause. Counters reset when Warden restarts.
 
 ### Rollup diagnostics
 

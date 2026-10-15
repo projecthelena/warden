@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/projecthelena/warden/internal/db"
+	"github.com/projecthelena/warden/internal/metricstate"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus"
@@ -65,6 +66,45 @@ func TestObserveRollupRecordsBoundedOutcomeAndProgress(t *testing.T) {
 		}
 		if metric.Histogram.GetSampleCount() != 2 || metric.Histogram.GetSampleSum() != seconds {
 			t.Errorf("phase %s: got %v", phase, metric.Histogram)
+		}
+	}
+}
+
+func TestDisabledMetricsBypassHTTPAndRollups(t *testing.T) {
+	metricstate.Configure(false)
+	t.Cleanup(func() { metricstate.Configure(true) })
+	counter := httpRequests.WithLabelValues("disabled-test", "GET", "200")
+	before := testutil.ToFloat64(counter)
+	calls := 0
+	rec := httptest.NewRecorder()
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		if w != rec {
+			t.Fatal("disabled middleware wrapped the writer")
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	HTTPMiddleware(next).ServeHTTP(rec, httptest.NewRequest("GET", "/disabled-test", nil))
+	if calls != 1 || rec.Code != http.StatusNoContent {
+		t.Fatal("disabled middleware changed response")
+	}
+	if testutil.ToFloat64(counter) != before {
+		t.Fatal("disabled middleware recorded request")
+	}
+	// No labelled series should be created for these disabled calls.
+	SetRollupInProgress("disabled-test", true)
+	ObserveRollup("disabled-test", db.DailyUptimeRollupStats{}, time.Second, nil)
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, family := range families {
+		for _, metric := range family.Metric {
+			for _, label := range metric.Label {
+				if label.GetName() == "mode" && label.GetValue() == "disabled-test" {
+					t.Fatal("disabled rollup created metric")
+				}
+			}
 		}
 	}
 }

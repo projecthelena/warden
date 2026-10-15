@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/projecthelena/warden/internal/db"
+	"github.com/projecthelena/warden/internal/metricstate"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -16,6 +17,9 @@ import (
 // RegisterDatabaseStats exposes database/sql pool saturation without coupling the store to
 // Prometheus. It must be called once during process startup.
 func RegisterDatabaseStats(dialect string, stats func() sql.DBStats) {
+	if !metricstate.Enabled() {
+		return
+	}
 	register := func(name, help string, value func(sql.DBStats) float64) {
 		prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 			Name:        name,
@@ -123,6 +127,9 @@ func init() {
 
 // ObserveRollup records one completed rollup without exposing unbounded labels.
 func ObserveRollup(mode string, stats db.DailyUptimeRollupStats, total time.Duration, err error) {
+	if !metricstate.Enabled() {
+		return
+	}
 	outcome := "success"
 	if err != nil {
 		outcome = "error"
@@ -145,6 +152,9 @@ func ObserveRollup(mode string, stats db.DailyUptimeRollupStats, total time.Dura
 
 // SetRollupInProgress exposes the contention window to scrapers while a rollup runs.
 func SetRollupInProgress(mode string, running bool) {
+	if !metricstate.Enabled() {
+		return
+	}
 	value := 0.0
 	if running {
 		value = 1
@@ -154,6 +164,9 @@ func SetRollupInProgress(mode string, running bool) {
 
 // HTTPMiddleware records bounded-cardinality route templates, never raw URLs.
 func HTTPMiddleware(next http.Handler) http.Handler {
+	if !metricstate.Enabled() {
+		return next
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		httpInFlight.Inc()
