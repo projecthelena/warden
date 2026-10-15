@@ -152,7 +152,7 @@ func (s *Store) MarkOutagesNotified(ids []int64, at time.Time, correlationID str
 func (s *Store) CountAnnouncedOutagesSince(monitorID string, since time.Time) (int, error) {
 	var n int
 	err := s.db.QueryRow(s.rebind(
-		"SELECT COUNT(*) FROM monitor_outages WHERE monitor_id = ? AND notified_at IS NOT NULL AND notified_at >= ?"),
+		"SELECT COUNT(*) FROM monitor_outages WHERE monitor_id = ? AND notified_at IS NOT NULL AND notified_at >= ? AND notification_continuation = FALSE"),
 		monitorID, since.UTC()).Scan(&n)
 	return n, err
 }

@@ -180,6 +180,8 @@ func openOutagesForType(t *testing.T, store *db.Store, ids []string, outageType,
 
 func TestEvaluateAlerts_CorrelatedDegradationKeepsItsType(t *testing.T) {
 	m, store, spy := newCorrelationTestManager(t, "g-ns", 6)
+	m.alertPolicy.FirstReminderAfter = 30 * time.Minute
+	m.alertPolicy.RepeatReminderAfter = time.Hour
 	start := openOutagesForType(t, store, []string{"m00", "m01", "m02"}, "degraded", "High latency detected")
 
 	m.evaluateAlerts(start.Add(3 * time.Minute))
@@ -407,6 +409,8 @@ func TestEvaluateAlerts_MutedMonitorNeverAlerts(t *testing.T) {
 // hour later.
 func TestEvaluateAlerts_CorrelatedIncidentRemindsOnce(t *testing.T) {
 	m, store, spy := newCorrelationTestManager(t, "g-ns", 12)
+	m.alertPolicy.FirstReminderAfter = 30 * time.Minute
+	m.alertPolicy.RepeatReminderAfter = time.Hour
 
 	var ids []string
 	for i := 0; i < 11; i++ {

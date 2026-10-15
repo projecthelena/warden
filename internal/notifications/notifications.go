@@ -18,6 +18,7 @@ import (
 type EventType string
 
 const (
+	EventBatch       EventType = "batch"
 	EventDown        EventType = "down"
 	EventUp          EventType = "up"
 	EventDegraded    EventType = "degraded"
@@ -32,12 +33,13 @@ const (
 
 // NotificationEvent represents the data needed to send a notification
 type NotificationEvent struct {
-	MonitorID   string
-	MonitorName string
-	MonitorURL  string
-	Type        EventType
-	Message     string
-	Time        time.Time
+	MonitorID   string              `json:"monitorId"`
+	MonitorName string              `json:"monitorName"`
+	MonitorURL  string              `json:"monitorUrl"`
+	Type        EventType           `json:"event"`
+	Message     string              `json:"message"`
+	Time        time.Time           `json:"timestamp"`
+	Events      []NotificationEvent `json:"events,omitempty"`
 }
 
 // Notifier interfaces for different notification providers
@@ -70,8 +72,43 @@ func (s *Service) Start() {
 }
 
 func (s *Service) worker() {
-	for event := range s.queue {
-		s.dispatch(event)
+	s.runWorker(30 * time.Second)
+}
+
+// Anchor the window on the first event, so a busy installation cannot postpone
+// delivery forever. The cap also bounds memory during a widespread incident.
+func (s *Service) runWorker(window time.Duration) {
+	var pending []NotificationEvent
+	var timer *time.Timer
+	var ready <-chan time.Time
+	flush := func() {
+		if len(pending) > 0 {
+			s.dispatch(batchEvents(pending))
+			pending = nil
+		}
+		if timer != nil {
+			timer.Stop()
+		}
+		ready = nil
+	}
+	for {
+		select {
+		case event, ok := <-s.queue:
+			if !ok {
+				flush()
+				return
+			}
+			pending = append(pending, event)
+			if len(pending) == 1 {
+				timer = time.NewTimer(window)
+				ready = timer.C
+			}
+			if len(pending) == 100 {
+				flush()
+			}
+		case <-ready:
+			flush()
+		}
 	}
 }
 
@@ -162,56 +199,7 @@ func (n *SlackNotifier) Send(event NotificationEvent) error {
 		return fmt.Errorf("webhookUrl missing or invalid")
 	}
 
-	color := eventColor(event.Type)
-
-	emoji := ":white_check_mark:"
-	switch event.Type {
-	case EventDown:
-		emoji = ":rotating_light:"
-	case EventDegraded:
-		emoji = ":warning:"
-	case EventSSLExpiring:
-		emoji = ":lock:"
-	case EventFlapping:
-		emoji = ":cyclone:"
-	case EventStabilized:
-		emoji = ":large_blue_circle:"
-	case EventInsights:
-		emoji = ":mag:"
-	}
-
-	title := eventTitle(event.Type)
-
-	payload := map[string]interface{}{
-		"text": "*" + title + "*: " + event.MonitorName,
-		"attachments": []map[string]interface{}{
-			{
-				"color": color,
-				"fields": []map[string]interface{}{
-					{
-						"title": "Monitor",
-						"value": event.MonitorName,
-						"short": true,
-					},
-					{
-						"title": "URL",
-						"value": event.MonitorURL,
-						"short": true,
-					},
-					{
-						"title": "Message",
-						"value": emoji + " " + event.Message,
-						"short": false,
-					},
-					{
-						"title": "Time",
-						"value": event.Time.Format(time.RFC1123),
-						"short": true,
-					},
-				},
-			},
-		},
-	}
+	payload := slackAlertPayload(event)
 
 	return sendJSON(url, payload)
 }
@@ -240,6 +228,9 @@ func (n *WebhookNotifier) Send(event NotificationEvent) error {
 		"monitorUrl":  event.MonitorURL,
 		"message":     event.Message,
 		"timestamp":   event.Time.Format(time.RFC3339),
+	}
+	if len(event.Events) > 0 {
+		payload["events"] = event.Events
 	}
 
 	return sendJSON(webhookURL, payload)
@@ -315,6 +306,8 @@ func eventSeverity(eventType string) int {
 // here rather than keeping two switches that drift apart.
 func eventTitle(eventType EventType) string {
 	switch eventType {
+	case EventBatch:
+		return "Monitoring update"
 	case EventDown:
 		return "Monitor Down"
 	case EventDegraded:
@@ -344,7 +337,7 @@ func eventColor(eventType EventType) string {
 		return "#9b59b6" // Purple
 	case EventStabilized:
 		return "#3498db" // Blue
-	case EventInsights:
+	case EventInsights, EventBatch:
 		return "#6c757d" // Grey, informational rather than a state change
 	default:
 		return "#36a64f" // Green (Up)
@@ -564,11 +557,11 @@ func (n *SlackNotifier) sendDigest(summary digestSummary) error {
 	var subtitle, fallbackText string
 	if summary.TotalEvents == 0 {
 		subtitle = fmt.Sprintf(":white_check_mark: %s  ·  All systems operational", dateStr)
-		fallbackText = ":bar_chart: Daily Monitoring Summary — All systems operational"
+		fallbackText = "Daily Monitoring Summary — All systems operational"
 	} else {
-		subtitle = fmt.Sprintf(":clock3: %s  ·  %d events across %d monitors",
+		subtitle = fmt.Sprintf("%s  ·  %d events across %d monitors",
 			dateStr, summary.TotalEvents, summary.MonitorCount)
-		fallbackText = fmt.Sprintf(":bar_chart: Daily Monitoring Summary — %d events across %d monitors",
+		fallbackText = fmt.Sprintf("Daily Monitoring Summary — %d events across %d monitors",
 			summary.TotalEvents, summary.MonitorCount)
 	}
 	if digestURL := buildDigestURL(summary.AppURL, summary.Date); digestURL != "" {
@@ -580,7 +573,7 @@ func (n *SlackNotifier) sendDigest(summary digestSummary) error {
 			"type": "header",
 			"text": map[string]interface{}{
 				"type":  "plain_text",
-				"text":  ":bar_chart: Daily Monitoring Summary",
+				"text":  "Daily Monitoring Summary",
 				"emoji": true,
 			},
 		},
@@ -607,33 +600,29 @@ func (n *SlackNotifier) sendDigest(summary digestSummary) error {
 			},
 		})
 	} else {
-		for _, m := range summary.Monitors {
+		for i, m := range summary.Monitors {
+			if i == 8 {
+				blocks = append(blocks, map[string]interface{}{"type": "section", "text": map[string]interface{}{"type": "plain_text", "text": fmt.Sprintf("%d more monitors in the full report.", len(summary.Monitors)-i)}})
+				break
+			}
 			var eventParts []string
 			for _, ec := range m.Events {
 				if ec.Type == "ssl_expiring" && m.SSLMessage != "" {
-					eventParts = append(eventParts, fmt.Sprintf("%s %s",
-						eventEmoji(ec.Type), m.SSLMessage))
+					eventParts = append(eventParts, slackEscapeLinkText(clipNotification(m.SSLMessage, 180)))
 				} else {
-					eventParts = append(eventParts, fmt.Sprintf("%s %s `%dx`",
-						eventEmoji(ec.Type), eventLabel(ec.Type), ec.Count))
+					eventParts = append(eventParts, fmt.Sprintf("%s `%dx`", eventLabel(ec.Type), ec.Count))
 				}
-			}
-
-			monitorEmoji := ":white_check_mark:"
-			if len(m.Events) > 0 {
-				monitorEmoji = eventEmoji(m.Events[0].Type)
 			}
 
 			// Wrap the monitor name as a Slack link to its dedicated day page when an
 			// app_url is configured. Slack reserves `|`/`<`/`>` inside <url|text>, so
 			// we escape them in the name.
-			nameMarkup := fmt.Sprintf("*%s*", m.Name)
+			nameMarkup := fmt.Sprintf("*%s*", slackEscapeLinkText(clipNotification(m.Name, 120)))
 			if monURL := buildMonitorURL(summary.AppURL, m.ID, summary.Date); monURL != "" {
-				nameMarkup = fmt.Sprintf("<%s|*%s*>", monURL, slackEscapeLinkText(m.Name))
+				nameMarkup = fmt.Sprintf("<%s|*%s*>", monURL, slackEscapeLinkText(clipNotification(m.Name, 120)))
 			}
 
-			text := fmt.Sprintf("%s  %s\n%s",
-				monitorEmoji, nameMarkup, strings.Join(eventParts, "  ·  "))
+			text := fmt.Sprintf("%s\n%s", nameMarkup, strings.Join(eventParts, "  ·  "))
 
 			blocks = append(blocks, map[string]interface{}{
 				"type": "section",
@@ -724,7 +713,7 @@ func sendJSON(targetURL string, payload interface{}) error {
 	// SECURITY: Validate URL scheme to prevent SSRF if database is compromised
 	parsedURL, err := url.Parse(targetURL)
 	if err != nil {
-		return fmt.Errorf("invalid webhook URL: %w", err)
+		return fmt.Errorf("invalid webhook URL")
 	}
 	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
 		return fmt.Errorf("invalid webhook URL scheme: %s", parsedURL.Scheme)
@@ -737,14 +726,14 @@ func sendJSON(targetURL string, payload interface{}) error {
 
 	req, err := http.NewRequest("POST", targetURL, bytes.NewBuffer(data))
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid webhook request")
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req) // #nosec G704 -- URL scheme validated above
 	if err != nil {
-		return err
+		return fmt.Errorf("webhook connection failed")
 	}
 	defer func() { _ = resp.Body.Close() }()
 

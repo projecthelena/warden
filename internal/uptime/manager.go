@@ -169,7 +169,7 @@ func NewManager(store *db.Store) *Manager {
 			DownEnabled:        true,
 			UpEnabled:          true,
 			DegradedEnabled:    true,
-			FlappingEnabled:    true,
+			FlappingEnabled:    false,
 			StabilizedEnabled:  true,
 			SSLExpiringEnabled: true,
 		},
@@ -550,7 +550,7 @@ func (m *Manager) resultProcessor() {
 									Type:        notifications.EventUp,
 									Message:     "Monitor Recovered",
 									Time:        res.Timestamp,
-								}, !isMaint && !mon.IsFlapping() && eventFilter.IsEnabled("up"))
+								}, !isMaint && eventFilter.IsEnabled("up"))
 								log.Printf("Monitor %s RECOVERED", res.MonitorID)
 							}
 						} else {
@@ -595,7 +595,7 @@ func (m *Manager) resultProcessor() {
 										Type:        notifications.EventUp,
 										Message:     "Latency normalized",
 										Time:        res.Timestamp,
-									}, !isMaint && !mon.IsFlapping() && eventFilter.IsEnabled("up"))
+									}, !isMaint && eventFilter.IsEnabled("up"))
 									log.Printf("Monitor %s RECOVERED from degraded", res.MonitorID)
 								}
 							} else {
@@ -1055,7 +1055,7 @@ func (m *Manager) loadEventFilter() NotificationEventFilter {
 		DownEnabled:        true,
 		UpEnabled:          true,
 		DegradedEnabled:    true,
-		FlappingEnabled:    true,
+		FlappingEnabled:    false,
 		StabilizedEnabled:  true,
 		SSLExpiringEnabled: true,
 	}
@@ -1070,7 +1070,7 @@ func (m *Manager) loadEventFilter() NotificationEventFilter {
 		filter.DegradedEnabled = val != "false"
 	}
 	if val, err := m.store.GetSetting("notification.event.flapping.enabled"); err == nil {
-		filter.FlappingEnabled = val != "false"
+		filter.FlappingEnabled = val == "true"
 	}
 	if val, err := m.store.GetSetting("notification.event.stabilized.enabled"); err == nil {
 		filter.StabilizedEnabled = val != "false"
@@ -1142,18 +1142,16 @@ func (m *Manager) archiveForDigest(event notifications.NotificationEvent) {
 // around it a failure here is not something to swallow: it means the monitor is down, the
 // dashboard will not say so, and nobody will ever be told.
 func (m *Manager) openOutage(monitorID, kind, summary string) {
-	go func() {
-		if err := m.store.CloseOutage(monitorID); err != nil {
-			log.Printf("Failed to close the previous outage for %s: %v", monitorID, err)
-		}
-		if err := m.store.CreateOutageIfMonitorActive(monitorID, kind, summary); err != nil {
-			log.Printf("ALERTING: failed to open the %s outage for %s, so no alert will be sent for it: %v",
-				kind, monitorID, err)
-		}
-	}()
+	if err := m.store.CloseOutage(monitorID); err != nil {
+		log.Printf("Failed to close the previous outage for %s: %v", monitorID, err)
+	}
+	if err := m.store.CreateOutageIfMonitorActive(monitorID, kind, summary); err != nil {
+		log.Printf("ALERTING: failed to open the %s outage for %s, so no alert will be sent for it: %v",
+			kind, monitorID, err)
+	}
 }
 
-// notifyNow puts an event on the wire immediately.
+// notifyNow submits an actionable event to the automatic delivery window.
 func (m *Manager) notifyNow(event notifications.NotificationEvent) {
 	m.notifier.Enqueue(event)
 }
@@ -1167,27 +1165,36 @@ func (m *Manager) notifyNow(event notifications.NotificationEvent) {
 // that the monitor blipped, even when the moment didn't deserve a message.
 func (m *Manager) closeOutageAndAnnounce(monitorID string, recovery notifications.NotificationEvent, allowed bool) {
 	m.archiveForDigest(recovery)
-	go func() {
-		alerted, err := m.store.CloseOutageReport(monitorID)
-		if err != nil {
-			log.Printf("Failed to close outage for %s: %v", monitorID, err)
-			return
-		}
-		if alerted && allowed {
-			m.notifyNow(recovery)
-		}
-	}()
+	payload, err := json.Marshal(recovery)
+	if err != nil {
+		return
+	}
+	if err := m.store.CloseOutageQueueRecovery(monitorID, string(payload), recovery.Time, allowed); err != nil {
+		log.Printf("Failed to queue recovery for %s: %v", monitorID, err)
+	}
+
 }
 
-// recordEvent archives an event and, independently, sends it now if its type is enabled
-// and the monitor is allowed to interrupt anyone. Used by the events that are inherently
-// one-shot — flapping, stabilized, SSL expiry. Down and degraded do not come through here:
-// their timing is the alert evaluator's call.
+// recordEvent archives transitions and applies the interruption policy. Stabilization
+// stays in the history; instability has a durable daily limit. Down and degraded
+// notifications are decided by the alert evaluator.
 func (m *Manager) recordEvent(mon *Monitor, event notifications.NotificationEvent, notify bool) {
 	m.archiveForDigest(event)
-	if notify && !mon.AlertsMuted() {
-		m.notifyNow(event)
+	if !notify || mon.AlertsMuted() || event.Type == notifications.EventStabilized {
+		return
 	}
+	if event.Type == notifications.EventFlapping {
+		claimed, err := m.store.ClaimNotificationCooldown(event.MonitorID, string(event.Type), event.Time, 24*time.Hour)
+		if err != nil {
+			log.Printf("Alerting: failed to claim instability notice: %v", err)
+			return
+		}
+		if !claimed {
+			return
+		}
+		event.Message = "Repeated state changes detected. Further instability notices are quiet for 24 hours; checks and incident history continue."
+	}
+	m.notifyNow(event)
 }
 
 // GetMonitor returns a specific monitor instance

@@ -140,9 +140,10 @@ func TestGetSettings_ReportsTheAlertLadder(t *testing.T) {
 	}
 
 	for key, want := range map[string]string{
+		"notification.event.flapping.enabled":        "false",
 		"notification.alert.sustained_seconds":       "180",
-		"notification.alert.reminder_minutes":        "30",
-		"notification.alert.repeat_reminder_minutes": "60",
+		"notification.alert.reminder_minutes":        "0",
+		"notification.alert.repeat_reminder_minutes": "0",
 	} {
 		if response[key] != want {
 			t.Errorf("%s = %q, want the default %q", key, response[key], want)

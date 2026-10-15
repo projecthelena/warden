@@ -197,7 +197,7 @@ func (n *EmailNotifier) Send(event NotificationEvent) error {
 	subject := fmt.Sprintf("[Warden] %s: %s", eventTitle(event.Type), event.MonitorName)
 	body := eventBody{
 		Title:   eventTitle(event.Type),
-		Color:   eventColor(event.Type),
+		Color:   eventColor(notificationSeverity(event)),
 		Monitor: event.MonitorName,
 		URL:     event.MonitorURL,
 		Message: event.Message,
@@ -410,7 +410,7 @@ func (e eventBody) html() string {
 	rows.WriteString(htmlRow("Time", html.EscapeString(e.Time.Format(time.RFC1123))))
 
 	return htmlShell(e.Color, html.EscapeString(e.Title),
-		`<p style="margin:0 0 20px;font-size:16px;line-height:1.5;color:#0f172a">`+html.EscapeString(e.Message)+`</p>`+
+		`<p style="margin:0 0 20px;font-size:16px;line-height:1.5;color:#0f172a">`+strings.ReplaceAll(html.EscapeString(e.Message), "\n", "<br>")+`</p>`+
 			`<table cellpadding="0" cellspacing="0" style="width:100%;font-size:14px">`+rows.String()+`</table>`)
 }
 

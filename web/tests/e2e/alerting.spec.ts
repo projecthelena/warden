@@ -36,8 +36,8 @@ test.describe('Sustained alert ladder', () => {
 
         const ladder = await settings.readLadder();
         expect(ladder.sustained).toBe('180');
-        expect(ladder.reminder).toBe('30');
-        expect(ladder.repeat).toBe('60');
+        expect(ladder.reminder).toBe('0');
+        expect(ladder.repeat).toBe('0');
     });
 
     test('persists the workspace timezone for shared schedules', async ({ page }) => {
@@ -73,7 +73,7 @@ test.describe('Sustained alert ladder', () => {
         expect(reloaded).toEqual({ sustained: '300', reminder: '15', repeat: '120' });
 
         // Put it back so the rest of the suite sees the defaults.
-        await settings.setLadder('180', '30', '60');
+        await settings.setLadder('180', '0', '0');
         expect(await settings.saveAndWait()).toBe(200);
     });
 
@@ -95,7 +95,7 @@ test.describe('Sustained alert ladder', () => {
         expect(reloaded.sustained).toBe('0');
         expect(reloaded.reminder).toBe('0');
 
-        await settings.setLadder('180', '30', '60');
+        await settings.setLadder('180', '0', '0');
         expect(await settings.saveAndWait()).toBe(200);
     });
 
@@ -137,7 +137,7 @@ test.describe('Sustained alert ladder', () => {
 
         const stored = await serverSettings(page);
         expect(stored['notification.alert.sustained_seconds']).toBe('180');
-        expect(stored['notification.alert.reminder_minutes']).toBe('30');
+        expect(stored['notification.alert.reminder_minutes']).toBe('0');
     });
 });
 

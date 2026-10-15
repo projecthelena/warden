@@ -12,16 +12,19 @@ Confirming a monitor is down and telling you about it are two different moments.
 00:00  check fails, threshold met  → outage opens, silent
 00:02  still down                  → still silent
 00:03  still down                  → ALERT: "Monitor is down (Status: 503) — down for 3m"
-00:33  still down                  → reminder: "Still down after 33m"
-01:33  still down                  → reminder: "Still down after 1h33m"
-01:40  recovers                    → recovery sent, because the outage had been announced
+00:33  still down                  → silent; no new information
+01:33  still down                  → silent; visible on the dashboard
+01:40  recovers                    → outage closes; recovery notification waits
+01:43  continuously healthy        → recovery sent
 ```
 
 The same ladder applies to degraded (high latency) outages.
 
 A recovery is announced **only if the outage itself was**. Under the default policy most short outages are never announced, so telling you they recovered would be pure noise.
 
-Default: announce after **180 seconds**, first reminder after **30 minutes**, then every **60 minutes**. Set the sustained window to 0 to alert the moment an outage opens, or the reminder interval to 0 to turn reminders off.
+Default: announce after **180 seconds**, with **reminders disabled**. A recovery waits for at least **three minutes of fresh, continuously healthy checks**. A relapse before that notice continues the previous notification episode; it does not start another down/up conversation. Outage durations still record the actual recovery time.
+
+Upgrades disable the old 30/60-minute reminder defaults. Custom reminder schedules remain configurable.
 
 ### Confirmation Checks
 
@@ -30,23 +33,23 @@ A single failed check doesn't trigger an alert — it could be a transient blip.
 ```
 Check 1: DOWN  → count=1/3 → no alert
 Check 2: DOWN  → count=2/3 → no alert
-Check 3: DOWN  → count=3/3 → CONFIRMED → alert sent
-Check 4: UP    → RECOVERED → recovery alert sent, counter reset
+Check 3: DOWN  → count=3/3 → CONFIRMED → sustained window starts
+Check 4: UP    → RECOVERED → no alert for an unannounced blip
 ```
 
 Default: **3 consecutive failures**. Set to 1 for immediate alerts.
 
 ### Notification Cooldown
 
-After a flapping or stabilized alert fires, repeats of the same event type are suppressed for a cooldown period.
+Instability notices are **off by default**, including when upgrading. They can be enabled explicitly in notification settings; when enabled, they are limited to **one per monitor per 24 hours**, including across Warden restarts. Stabilization transitions stay in the history and optional daily digest rather than sending another immediate message.
 
 Down and degraded no longer use the cooldown: how often an ongoing outage repeats is governed by the reminder interval in the sustained ladder above, which knows how long the outage has actually lasted. The cooldown only ever knew how long ago the last message was.
 
-Default: **30 minutes**. Set to 0 to disable.
+A configured cooldown can further suppress instability messages; it cannot bypass the automatic daily limit.
 
 ### Flap Detection
 
-If a monitor rapidly oscillates between UP and DOWN, Warden detects it as "flapping" and suppresses all notifications until the monitor stabilizes. You get a single "flapping" alert when it starts and a "stabilized" alert when it stops.
+If a monitor rapidly oscillates between UP and DOWN, Warden detects it as "flapping" and suppresses all notifications until the monitor stabilizes. Instability itself does not send an immediate notification by default. If you opt in, you get an instability notice at most once a day. Recovery is announced only after stable healthy checks.
 
 It works by measuring the percentage of state transitions in a sliding window. Uses hysteresis (start threshold: 25%, stop threshold: 20%) so the detection itself doesn't oscillate.
 
@@ -88,7 +91,7 @@ Monitors that fail together are usually one thing failing. When enough of a grou
 ```
 19:29  eleven of twelve production monitors start failing, all with 404
 19:32  ALERT: "11 of 12 monitors in Production APIs are down, for 3m: ..."
-20:02  reminder: one message, not eleven
+20:02  unchanged: no reminder by default
 ```
 
 Reminders follow the incident, not the monitor: outages announced together share a correlation id and are reminded about together.
@@ -159,3 +162,13 @@ Those are now two independent decisions:
 - **What reaches you immediately** — the per-event toggles under Event Types.
 
 An event can be in both. To stop an immediate alert, turn the event off; putting it in the digest no longer does that.
+
+## Automatic delivery grouping
+
+Alerts arriving within 30 seconds share one notification, including mixed failures and recoveries. The message shows up to eight updates, with a count of additional updates. Webhook batches use `event: "batch"` and include the original events in `events`; a single event retains its existing payload. Large bursts are split into batches of at most 100 events to bound message size and memory.
+
+Recoveries from the same correlated incident wait until the remaining affected monitors recover and the pending recoveries have stable observations. Paused or muted monitors do not hold back the group. Temporal grouping does not claim that failures have a common root cause.
+
+## Design references
+
+The policy follows [Google SRE's guidance on actionable alerts and alert suppression](https://sre.google/workbook/monitoring/), [Alertmanager's grouping and notification intervals](https://prometheus.io/docs/alerting/latest/configuration/), and [Prometheus's recovery hold-down with `keep_firing_for`](https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/). Warden applies these principles automatically without requiring an external alerting service. Historical events remain available even when immediate notifications are suppressed.

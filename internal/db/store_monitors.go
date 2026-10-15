@@ -486,13 +486,26 @@ func (s *Store) CreateOutage(monitorID, eventType, summary string) error {
 // already be in flight when its monitor is paused; the SQL guard prevents that stale
 // result from reopening an outage after SetMonitorActive closed it.
 func (s *Store) CreateOutageIfMonitorActive(monitorID, eventType, summary string) error {
-	_, err := s.db.Exec(s.rebind(`
-		INSERT INTO monitor_outages (monitor_id, type, summary, start_time)
-		SELECT ?, ?, ?, ?
-		FROM monitors
-		WHERE id = ? AND active = ?`),
-		monitorID, eventType, summary, time.Now().UTC(), monitorID, true)
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	_, err = tx.Exec(s.rebind(`
+  INSERT INTO monitor_outages (monitor_id, type, summary, start_time, notified_at, correlation_id, notification_continuation)
+  SELECT ?, ?, ?, ?,
+   (SELECT notified_at FROM notification_recoveries WHERE monitor_id = ? AND outage_type = ?),
+   (SELECT correlation_id FROM notification_recoveries WHERE monitor_id = ? AND outage_type = ?),
+   EXISTS (SELECT 1 FROM notification_recoveries WHERE monitor_id = ? AND outage_type = ?)
+  FROM monitors WHERE id = ? AND active = ?`),
+		monitorID, eventType, summary, time.Now().UTC(), monitorID, eventType, monitorID, eventType, monitorID, eventType, monitorID, true)
+	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec(s.rebind(`DELETE FROM notification_recoveries WHERE monitor_id = ?`), monitorID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) CloseOutage(monitorID string) error {

@@ -34,44 +34,6 @@ func TestSlackNotifier_ConfigParsing(t *testing.T) {
 	// Actually we should export something or just test Send failing/passing based on config.
 }
 
-func TestService_Dispatch(t *testing.T) {
-	store := newTestStore(t)
-	svc := NewService(store)
-
-	// Create a channel
-	ch := db.NotificationChannel{
-		ID:        "nc1",
-		Type:      "slack",
-		Name:      "Test",
-		Config:    `{"webhookUrl": "https://hooks.slack.com/services/XXX"}`,
-		Enabled:   true,
-		CreatedAt: time.Now(),
-	}
-	if err := store.CreateNotificationChannel(ch); err != nil {
-		t.Fatalf("Failed to create channel: %v", err)
-	}
-
-	// Enqueue event
-	event := NotificationEvent{
-		MonitorID:   "m1",
-		MonitorName: "Test Monitor",
-		Type:        EventDown,
-		Message:     "System Down",
-		Time:        time.Now(),
-	}
-
-	// Start service
-	svc.Start()
-
-	svc.Enqueue(event)
-
-	// In a real integration test we would mock the HTTP transport for SlackNotifier
-	// to verify it made a request.
-	// Since SlackNotifier uses standard http.Client inside sendJSON (private),
-	// we assume here that no panic occurs.
-	// We can't easily verification without Refactoring SlackNotifier to accept a custom HTTP client.
-}
-
 func TestServiceDispatchesToEveryEnabledChannel(t *testing.T) {
 	store := newTestStore(t)
 	svc := NewService(store)

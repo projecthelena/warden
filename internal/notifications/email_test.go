@@ -704,7 +704,7 @@ func TestService_DispatchReachesAnEmailChannel(t *testing.T) {
 	}
 
 	svc := NewService(store)
-	svc.Start()
+	go svc.runWorker(time.Millisecond)
 	svc.Enqueue(testEvent())
 
 	data := waitForDelivery(t, server, 3*time.Second)
@@ -750,7 +750,7 @@ func TestService_SlowEmailDoesNotBlockWebhook(t *testing.T) {
 	}
 
 	svc := NewService(store)
-	svc.Start()
+	go svc.runWorker(time.Millisecond)
 	svc.Enqueue(testEvent())
 
 	select {
@@ -785,7 +785,7 @@ func TestService_DispatchSkipsADisabledEmailChannel(t *testing.T) {
 	}
 
 	svc := NewService(store)
-	svc.Start()
+	go svc.runWorker(time.Millisecond)
 	svc.Enqueue(testEvent())
 
 	if data := waitForDelivery(t, server, time.Second); data != "" {
@@ -1067,5 +1067,12 @@ func TestEmailDigest_LinksToTheFullReport(t *testing.T) {
 	summary.AppURL = ""
 	if strings.Contains(digestText(summary), "View full report") {
 		t.Error("expected no report line when there is no app URL")
+	}
+}
+
+func TestBatchEmailPreservesLinesAndEscapesMarkup(t *testing.T) {
+	body := eventBody{Message: "API <prod> · Down\nWebsite · Up"}.html()
+	if !strings.Contains(body, "API &lt;prod&gt; · Down<br>Website · Up") {
+		t.Fatal("batch email lost line separation or escaping")
 	}
 }

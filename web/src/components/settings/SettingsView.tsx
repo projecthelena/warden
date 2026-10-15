@@ -150,8 +150,7 @@ const EVENT_TOGGLES = [
     { key: "notification.event.down.enabled", label: "Down", description: "Monitor is confirmed down" },
     { key: "notification.event.up.enabled", label: "Recovered", description: "Monitor recovered from down or degraded" },
     { key: "notification.event.degraded.enabled", label: "Degraded", description: "High latency detected" },
-    { key: "notification.event.flapping.enabled", label: "Flapping", description: "Monitor oscillating between states" },
-    { key: "notification.event.stabilized.enabled", label: "Stabilized", description: "Monitor stopped flapping" },
+    { key: "notification.event.flapping.enabled", label: "Flapping", description: "Optional instability notices; off by default" },
     { key: "notification.event.ssl_expiring.enabled", label: "SSL Expiring", description: "SSL certificate nearing expiry" },
 ] as const;
 
@@ -189,8 +188,8 @@ function NotificationIntelligence() {
     const [confirmThreshold, setConfirmThreshold] = useState(settings?.["notification.confirmation_threshold"] || "3");
     const [cooldownMins, setCooldownMins] = useState(settings?.["notification.cooldown_minutes"] || "30");
     const [alertSustained, setAlertSustained] = useState(settings?.["notification.alert.sustained_seconds"] || "180");
-    const [alertReminder, setAlertReminder] = useState(settings?.["notification.alert.reminder_minutes"] || "30");
-    const [alertRepeat, setAlertRepeat] = useState(settings?.["notification.alert.repeat_reminder_minutes"] || "60");
+    const [alertReminder, setAlertReminder] = useState(settings?.["notification.alert.reminder_minutes"] || "0");
+    const [alertRepeat, setAlertRepeat] = useState(settings?.["notification.alert.repeat_reminder_minutes"] || "0");
     const [adaptiveLatency, setAdaptiveLatency] = useState(settings?.["notification.latency.adaptive_enabled"] !== "false");
     const [latencyFactor, setLatencyFactor] = useState(settings?.["notification.latency.factor_percent"] || "150");
     const [latencyBaselineDays, setLatencyBaselineDays] = useState(settings?.["notification.latency.baseline_days"] || "7");
@@ -207,7 +206,7 @@ function NotificationIntelligence() {
     const [eventToggles, setEventToggles] = useState<Record<string, boolean>>(() => {
         const toggles: Record<string, boolean> = {};
         EVENT_TOGGLES.forEach(({ key }) => {
-            toggles[key] = settings?.[key] !== "false";
+            toggles[key] = key === "notification.event.flapping.enabled" ? settings?.[key] === "true" : settings?.[key] !== "false";
         });
         return toggles;
     });
@@ -231,8 +230,8 @@ function NotificationIntelligence() {
             setConfirmThreshold(settings["notification.confirmation_threshold"] || "3");
             setCooldownMins(settings["notification.cooldown_minutes"] || "30");
             setAlertSustained(settings["notification.alert.sustained_seconds"] || "180");
-            setAlertReminder(settings["notification.alert.reminder_minutes"] || "30");
-            setAlertRepeat(settings["notification.alert.repeat_reminder_minutes"] || "60");
+            setAlertReminder(settings["notification.alert.reminder_minutes"] || "0");
+            setAlertRepeat(settings["notification.alert.repeat_reminder_minutes"] || "0");
             setAdaptiveLatency(settings["notification.latency.adaptive_enabled"] !== "false");
             setLatencyFactor(settings["notification.latency.factor_percent"] || "150");
             setLatencyBaselineDays(settings["notification.latency.baseline_days"] || "7");
@@ -246,7 +245,7 @@ function NotificationIntelligence() {
 
             const toggles: Record<string, boolean> = {};
             EVENT_TOGGLES.forEach(({ key }) => {
-                toggles[key] = settings[key] !== "false";
+                toggles[key] = key === "notification.event.flapping.enabled" ? settings[key] === "true" : settings[key] !== "false";
             });
             setEventToggles(toggles);
 
@@ -348,7 +347,7 @@ function NotificationIntelligence() {
                                         </div>
                                         <Switch
                                             id={key}
-                                            checked={eventToggles[key] ?? true}
+                                            checked={eventToggles[key] ?? (key !== "notification.event.flapping.enabled")}
                                             onCheckedChange={(checked) => setEventToggles(prev => ({ ...prev, [key]: checked }))}
                                         />
                                     </div>
@@ -361,7 +360,7 @@ function NotificationIntelligence() {
                         <section className="space-y-4" aria-labelledby="outage-timing-heading" data-testid="alert-ladder">
                             <div>
                                 <h3 id="outage-timing-heading" className="text-sm font-medium">Outage timing</h3>
-                                <p className="mt-1 text-sm text-muted-foreground">Wait through brief blips, then keep the team informed until recovery.</p>
+                                <p className="mt-1 text-sm text-muted-foreground">Brief blips stay quiet. Nearby alerts are grouped automatically; reminders are off by default.</p>
                             </div>
                             <div className="grid gap-4 sm:grid-cols-3">
                                 <div className="grid gap-2">
@@ -410,7 +409,7 @@ function NotificationIntelligence() {
                                             <Input id="recovery-checks" type="number" min={1} max={20} value={recoveryChecks} onChange={(e) => setRecoveryChecks(e.target.value)} />
                                         </div>
                                         <div className="grid gap-2">
-                                            <Label htmlFor="cooldown-mins">Flap cooldown <HelpTip text="Minutes to suppress repeat flapping and stabilized alerts. 0 disables the cooldown." /></Label>
+                                            <Label htmlFor="cooldown-mins">Flap cooldown <HelpTip text="Additional cooldown for instability notices. The automatic limit of one notice per monitor per day always applies." /></Label>
                                             <Input id="cooldown-mins" type="number" min={0} max={1440} value={cooldownMins} onChange={(e) => setCooldownMins(e.target.value)} />
                                         </div>
                                     </div>
