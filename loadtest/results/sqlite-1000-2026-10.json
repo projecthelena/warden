@@ -63,6 +63,80 @@
     }
   },
   "node_b": {
-    "status": "pending"
+    "status": "failed",
+    "reason": "ready_503 increased",
+    "started_at": "2026-10-10T10:18:45.852933+00:00",
+    "finished_at": "2026-10-10T17:14:13.560906+00:00",
+    "release": "v0.10.0-rc.1",
+    "revision": "3ff86808c04af8bdfce9d88c84bce3584e0c13fa",
+    "image": "ghcr.io/projecthelena/warden:v0.10.0-rc.1@sha256:ea3a3f94b96e33f53600a7776a384a1dcce42fbddd9e3501d2c7b69aab8c87af",
+    "monitors": 1000,
+    "interval_seconds": 10,
+    "sqlite_rollup_batch_size": 10,
+    "rollup_diagnostics": true,
+    "measured_seconds": 24927.70588,
+    "checks_completed": 2492766.0,
+    "checks_per_second": 99.99981594776422,
+    "cpu_seconds": 5198.03,
+    "cpu_cores_mean": 0.20852420295003896,
+    "rss_mib": {
+      "samples": 2489,
+      "min": 47.69140625,
+      "median": 59.90625,
+      "p95": 60.59375,
+      "max": 63.35546875
+    },
+    "host_cpu_percent": {
+      "samples": 830,
+      "min": 6.677500000000691,
+      "median": 7.691666666667061,
+      "p95": 12.525000000000547,
+      "max": 14.723333333333056
+    },
+    "host_memory_percent": {
+      "samples": 830,
+      "min": 16.409733724041278,
+      "median": 19.67001676333396,
+      "p95": 21.819357177483894,
+      "max": 21.93224685584989
+    },
+    "readiness_ms": {
+      "samples": 2489,
+      "min": 0.4981529782526195,
+      "median": 1.720870001008734,
+      "p95": 7.361364987445995,
+      "max": 1330.64772101352
+    },
+    "counter_increases": {
+      "down": 0,
+      "drops": 0,
+      "persist_errors": 0,
+      "ready_503": 1.0,
+      "rollup_errors": 0
+    },
+    "process_restarted": false,
+    "k6": {
+      "requests": 30113,
+      "error_rate": 0,
+      "dropped_iterations": 0,
+      "checks_passed": 53268,
+      "checks_failed": 0,
+      "http_p95_ms": 40.87302539999998,
+      "http_p99_ms": 53.30920760000005
+    },
+    "idle_host_cpu_percent": {
+      "samples": 11,
+      "min": 1.887499999999515,
+      "median": 2.259999999999612,
+      "p95": 3.7666666666670303,
+      "max": 3.7666666666670303
+    },
+    "idle_host_memory_percent": {
+      "samples": 11,
+      "min": 16.31209345365924,
+      "median": 16.32835867292945,
+      "p95": 16.437760324589647,
+      "max": 16.437760324589647
+    }
   }
 }

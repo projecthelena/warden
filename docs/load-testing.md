@@ -1,10 +1,12 @@
-# Load Testing
+# Preliminary SQLite Load-Test Results
 
-**Validated SQLite capacity: 1,000 HTTP monitors at a 10-second interval (~100 checks/s), sustained for 18 hours on Node A with the configuration below.** Use this as the current tested sizing target. The 2,000-monitor stage is not approved. This is a measured operating envelope for the stated hardware, release, workload, and duration; it is not a guarantee for arbitrary hardware, longer history, or slower targets.
+**Preliminary result: one tested configuration sustained 1,000 HTTP monitors at a 10-second interval (~100 checks/s) for 18 hours with SQLite.** A repeat on a second machine failed after 6 hours 55 minutes with a readiness 503 response. These results establish a successful run on Node A, not a general 1,000-monitor capacity guarantee or minimum hardware specification. The 2,000-monitor stage did not pass.
+
+This report covers tests completed on October 9–10, 2026, using `v0.10.0-rc.1`. It is a snapshot of that release and workload, not a benchmark of later releases.
 
 ## Configuration and scope
 
-The approved run used Warden `v0.10.0-rc.1`, revision `3ff86808c04af8bdfce9d88c84bce3584e0c13fa`, pinned to image digest `sha256:ea3a3f94b96e33f53600a7776a384a1dcce42fbddd9e3501d2c7b69aab8c87af`.
+Both 1,000-monitor runs used Warden `v0.10.0-rc.1`, revision `3ff86808c04af8bdfce9d88c84bce3584e0c13fa`, pinned to image digest `sha256:ea3a3f94b96e33f53600a7776a384a1dcce42fbddd9e3501d2c7b69aab8c87af`.
 
 | Setting | Value |
 | --- | --- |
@@ -30,19 +32,22 @@ Node A ran from **2026-10-09 09:55:42 UTC to 2026-10-10 03:55:50 UTC**. Its supe
 
 | Measurement | Node A | Node B |
 | --- | --- | --- |
-| Outcome | Passed | Pending |
-| Measured duration | 18.002 h | Pending |
-| Completed checks in measured window | 6,480,862 | Pending |
-| Mean check throughput | 100.00/s | Pending |
-| Mean Warden process CPU | 0.197 cores | Pending |
-| Warden RSS: median / p95 / max | 66.62 / 67.42 / 69.54 MiB | Pending |
-| Whole-host CPU: median / p95 / max | 5.46% / 6.81% / 8.93% | Pending |
-| Whole-host memory: median / p95 / max | 36.64% / 41.77% / 42.22% | Pending |
-| Mixed HTTP readers | 30,111 requests; p95 39.69 ms; p99 56.11 ms | Pending |
-| Counter increases | down: 0, drops: 0, persist_errors: 0, ready_503: 0, rollup_errors: 0 | Pending |
+| Outcome | Passed | Failed |
+| Measured duration | 18.002 h | 6.924 h |
+| Completed checks in measured window | 6,480,862 | 2,492,766 |
+| Mean check throughput | 100.00/s | 100.00/s |
+| Mean Warden process CPU | 0.197 cores | 0.209 cores |
+| Warden RSS: median / p95 / max | 66.62 / 67.42 / 69.54 MiB | 59.91 / 60.59 / 63.36 MiB |
+| Whole-host CPU: median / p95 / max | 5.46% / 6.81% / 8.93% | 7.69% / 12.53% / 14.72% |
+| Whole-host memory: median / p95 / max | 36.64% / 41.77% / 42.22% | 19.67% / 21.82% / 21.93% |
+| Mixed HTTP readers | 30,111 requests; p95 39.69 ms; p99 56.11 ms | 30,113 requests; p95 40.87 ms; p99 53.31 ms |
+| Counter increases | down: 0, drops: 0, persist_errors: 0, ready_503: 0, rollup_errors: 0 | down: 0, drops: 0, persist_errors: 0, ready_503: 1, rollup_errors: 0 |
 
-Node B is pending. No capacity or resource comparison is approved for that run until its final summary and integrity checks are available.
+Node B ran from **2026-10-10 10:18:45 UTC to 2026-10-10 17:14:13 UTC**, with outcome **failed**. Stop reason: `ready_503 increased`. Mean process CPU was 1.06× Node A; peak RSS was 0.91× Node A. These ratios describe these runs, including their different target placement and background workloads. The shorter failed run is not an equal-duration capacity comparison.
+
 <!-- results:end -->
+
+Node B recorded no down checks, scheduling drops, persistence errors, rollup errors, or process restarts during the measured window, but its readiness failure means it did not pass acceptance. Its mixed-reader phase had already completed successfully. The supervisor subsequently paused all 1,000 monitors and stopped the target. The failure does not by itself establish a hardware or database capacity limit; its root cause remains under investigation.
 
 Machine-readable, sanitized aggregates are available in [the result summary](../loadtest/results/sqlite-1000-2026-10.json). Raw time-series exports, LAN addresses, credentials, and host identities are not included.
 
@@ -51,9 +56,9 @@ Machine-readable, sanitized aggregates are available in [the result summary](../
 - Process CPU is the increase in `process_cpu_seconds_total` divided by elapsed seconds across the measured window. A value of 0.197 cores means roughly 19.7% of one logical CPU on average, not 19.7% of the entire machine. It does not describe peak CPU demand.
 - Process memory is `process_resident_memory_bytes` sampled approximately every 10 seconds. RSS does not include the entire filesystem page cache or all container memory accounting.
 - Whole-host CPU is cAdvisor's two-minute CPU rate divided by the host's logical CPU count. Whole-host memory is cAdvisor working-set bytes divided by physical memory. Both are sampled approximately every 30 seconds and filtered to the measured window.
-- Percentiles use the nearest-rank method over collected samples. Peaks are sampled maxima, not guaranteed instantaneous maxima. The approved run includes 6,464 process samples and 2,159 whole-host samples.
+- Percentiles use the nearest-rank method over collected samples. Peaks are sampled maxima, not guaranteed instantaneous maxima. Node A includes 6,464 process samples and 2,159 whole-host samples.
 - Node A's readiness latency had a 40.24 ms p95 and a 1,223.53 ms sampled maximum. The final sample's small result queue is not counted as a drop; acceptance also checks loss counters and sustained queue pressure.
-- A complete five-minute pre-run idle baseline was not preserved with Node A's approved-run artifacts. Its whole-host figures are therefore absolute usage, not baseline-subtracted Warden overhead. Node B captures a five-minute idle baseline; compare process CPU/RSS directly and treat whole-host differences as contextual.
+- A complete five-minute pre-run idle baseline was not preserved with Node A's approved-run artifacts. Its whole-host figures are therefore absolute usage, not baseline-subtracted Warden overhead. Node B captured a five-minute idle baseline; compare process CPU/RSS directly and treat whole-host differences as contextual.
 
 ## Workload and acceptance
 
@@ -67,4 +72,4 @@ This report records the 18-hour diagnostic acceptance run, which is distinct fro
 
 The same release with SQLite batch size 10 on Node B stopped on 2026-10-09 at 13:59:02 UTC, approximately four hours after starting, with `TimeoutError`. The last successful sample recorded 2,909,891 cumulative checks and approximately 200 checks/s; subsequent logs showed readiness 503 responses. The run did not satisfy acceptance, even though its mixed-reader phase passed. Rollup and database connection contention were observed around the failure, but this does not establish exclusive causality.
 
-Keep the current SQLite sizing target at **1,000 monitors / 10 seconds under the tested configuration**. A passing 1,000-monitor repeat can extend the evidence to Node B; it cannot validate the failed 2,000-monitor stage or establish a universal maximum.
+The strongest supported conclusion is **1,000 monitors / 10 seconds for 18 hours on Node A under the configuration above**. Node B has no passing 18-hour result at either 1,000 or 2,000 monitors. Validate your own deployment before relying on this workload in production; longer history, different hardware, target latency, and other monitor types remain outside this evidence.
