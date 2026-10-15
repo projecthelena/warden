@@ -273,13 +273,15 @@ func (m *Manager) worker() {
 		if !result.Status && result.Diagnostics != nil && m.SecondaryProbe != nil {
 			result.Diagnostics.External = m.SecondaryProbe.Observe(job.MonitorID)
 		}
-		monitorType := job.Type
-		if monitorType == "" {
-			monitorType = db.MonitorTypeHTTP
-		}
-		outcome := "up"
-		if !result.Status {
-			outcome = "down"
+		if metricstate.Enabled() {
+			monitorType := job.Type
+			if monitorType == "" {
+				monitorType = db.MonitorTypeHTTP
+			}
+			outcome := "up"
+			if !result.Status {
+				outcome = "down"
+			}
 			observability.Checks.WithLabelValues(monitorType, outcome).Inc()
 			observability.CheckDuration.WithLabelValues(monitorType).Observe(time.Since(started).Seconds())
 		}
@@ -407,6 +409,8 @@ func (m *Manager) resultProcessor() {
 		if err := m.store.BatchInsertChecks(batch); err != nil {
 			outcome = "error"
 			log.Printf("Error capturing batch stats: %v", err)
+		}
+		if metricstate.Enabled() {
 			observability.PersistDuration.WithLabelValues(outcome).Observe(time.Since(started).Seconds())
 		}
 		batch = nil
