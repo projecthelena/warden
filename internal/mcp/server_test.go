@@ -791,9 +791,26 @@ func TestGetMonitorLatencyReportsBaseline(t *testing.T) {
 	if out.BaselineP50Ms != 250 || out.BaselineP95Ms != 400 {
 		t.Errorf("baseline = p50 %d / p95 %d, want 250 / 400", out.BaselineP50Ms, out.BaselineP95Ms)
 	}
-	// 400 * 1.5 = 600, versus 400 + 100 = 500.
+	// An inactive runtime has no effective threshold.
+	if out.DegradedAboveMs != 0 {
+		t.Errorf("degradedAboveMs = %d, want 0 while not running", out.DegradedAboveMs)
+	}
+
+	if err := store.SetSetting("notification.latency.min_samples", "10"); err != nil {
+		t.Fatal(err)
+	}
+	percent := 50
+	if err := store.UpdateMonitor("m-api", db.MonitorTypeHTTP, "API", "https://api.example.com", 60, nil, nil, &percent, nil); err != nil {
+		t.Fatal(err)
+	}
+	s.manager.Sync()
+	defer s.manager.Stop()
+	_, out, err = s.getMonitorLatency(context.Background(), nil, GetMonitorLatencyInput{Monitor: "API", Hours: 24})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if out.DegradedAboveMs != 600 {
-		t.Errorf("degradedAboveMs = %d, want 600", out.DegradedAboveMs)
+		t.Errorf("effective threshold = %d, want 400ms + 50%% = 600ms", out.DegradedAboveMs)
 	}
 }
 

@@ -88,7 +88,6 @@ function ResetDatabaseDialog() {
 function GeneralSettings() {
     const { settings, fetchSettings, updateSettings } = useMonitorStore();
     const { toast } = useToast();
-    const [threshold, setThreshold] = useState(settings?.latency_threshold || "1000");
     const [retention, setRetention] = useState(settings?.data_retention_days || "30");
 
     // Fetch settings on mount
@@ -99,14 +98,12 @@ function GeneralSettings() {
     // Update state when settings load
     useEffect(() => {
         if (settings) {
-            setThreshold(settings.latency_threshold || "1000");
             setRetention(settings.data_retention_days || "30");
         }
     }, [settings]);
 
     const handleSave = async () => {
         await updateSettings({
-            latency_threshold: threshold,
             data_retention_days: retention
         });
         toast({ title: "Settings Saved", description: "Global settings updated." });
@@ -120,14 +117,6 @@ function GeneralSettings() {
             </CardHeader>
             <CardContent className="space-y-5">
                 <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="grid gap-2">
-                        <Label htmlFor="latency">Slow after</Label>
-                        <div className="relative max-w-xs">
-                            <Input id="latency" type="number" value={threshold} onChange={(e) => setThreshold(e.target.value)} className="pr-24" />
-                            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">milliseconds</span>
-                        </div>
-                        <p className="text-xs text-muted-foreground">Marks the monitor as degraded.</p>
-                    </div>
                     <div className="grid gap-2">
                         <Label htmlFor="retention">Keep check data for</Label>
                         <div className="relative max-w-xs">
@@ -190,8 +179,7 @@ function NotificationIntelligence() {
     const [alertSustained, setAlertSustained] = useState(settings?.["notification.alert.sustained_seconds"] || "180");
     const [alertReminder, setAlertReminder] = useState(settings?.["notification.alert.reminder_minutes"] || "0");
     const [alertRepeat, setAlertRepeat] = useState(settings?.["notification.alert.repeat_reminder_minutes"] || "0");
-    const [adaptiveLatency, setAdaptiveLatency] = useState(settings?.["notification.latency.adaptive_enabled"] !== "false");
-    const [latencyFactor, setLatencyFactor] = useState(settings?.["notification.latency.factor_percent"] || "150");
+    const [latencyIncreasePercent, setLatencyIncreasePercent] = useState(settings?.["notification.latency.increase_percent"] || "50");
     const [latencyBaselineDays, setLatencyBaselineDays] = useState(settings?.["notification.latency.baseline_days"] || "7");
     const [weeklyInsights, setWeeklyInsights] = useState(settings?.["notification.insights.weekly_enabled"] === "true");
     const [weeklyInsightsDay, setWeeklyInsightsDay] = useState(settings?.["notification.insights.weekly_day"] || "1");
@@ -232,8 +220,7 @@ function NotificationIntelligence() {
             setAlertSustained(settings["notification.alert.sustained_seconds"] || "180");
             setAlertReminder(settings["notification.alert.reminder_minutes"] || "0");
             setAlertRepeat(settings["notification.alert.repeat_reminder_minutes"] || "0");
-            setAdaptiveLatency(settings["notification.latency.adaptive_enabled"] !== "false");
-            setLatencyFactor(settings["notification.latency.factor_percent"] || "150");
+            setLatencyIncreasePercent(settings["notification.latency.increase_percent"] || "50");
             setLatencyBaselineDays(settings["notification.latency.baseline_days"] || "7");
             setWeeklyInsights(settings["notification.insights.weekly_enabled"] === "true");
             setWeeklyInsightsDay(settings["notification.insights.weekly_day"] || "1");
@@ -266,8 +253,7 @@ function NotificationIntelligence() {
             "notification.alert.sustained_seconds": alertSustained,
             "notification.alert.reminder_minutes": alertReminder,
             "notification.alert.repeat_reminder_minutes": alertRepeat,
-            "notification.latency.adaptive_enabled": String(adaptiveLatency),
-            "notification.latency.factor_percent": latencyFactor,
+            "notification.latency.increase_percent": latencyIncreasePercent,
             "notification.latency.baseline_days": latencyBaselineDays,
             "notification.insights.weekly_enabled": String(weeklyInsights),
             "notification.insights.weekly_day": weeklyInsightsDay,
@@ -291,8 +277,12 @@ function NotificationIntelligence() {
             updates[key] = eventToggles[key] ? "true" : "false";
         });
 
-        await updateSettings(updates);
-        toast({ title: "Settings Saved", description: "Notification intelligence settings updated." });
+        try {
+            await updateSettings(updates);
+            toast({ title: "Settings Saved", description: "Notification intelligence settings updated." });
+        } catch (error) {
+            toast({ title: "Could not save settings", description: error instanceof Error ? error.message : "Try again.", variant: "destructive" });
+        }
     };
 
     const handleRelearnLatency = async () => {
@@ -477,92 +467,73 @@ function NotificationIntelligence() {
                                 </AccordionTrigger>
                                 <AccordionContent>
                                     <div className="space-y-4 pt-2">
-                                        <div className="flex items-center justify-between">
-                                            <div className="pr-4">
-                                                <Label>Learn what is normal for each monitor</Label>
-                                                <div className="text-sm text-muted-foreground mt-1">
-                                                    Judges each monitor against its own recent latency instead of one number
-                                                    for everything. A health check that answers in 250ms and a homepage that
-                                                    answers in 430ms are not slow at the same point.
+                                        <div className="space-y-4">
+                                            <div className="grid gap-4 sm:grid-cols-2">
+                                                <div className="grid gap-2">
+                                                    <Label htmlFor="latency-increase-percent">
+                                                        Above normal (%)
+                                                        <HelpTip text="Percentage above each monitor’s learned p95 latency. With a 1000ms p95 and 25%, latency above 1250ms counts as degraded. Individual monitors can override this percentage." />
+                                                    </Label>
+                                                    <Input
+                                                        id="latency-increase-percent"
+                                                        type="number"
+                                                        min={1}
+                                                        max={9900}
+                                                        value={latencyIncreasePercent}
+                                                        onChange={(e) => setLatencyIncreasePercent(e.target.value)}
+                                                    />
+                                                </div>
+                                                <div className="grid gap-2">
+                                                    <Label htmlFor="latency-baseline-days">
+                                                        Learn from (days)
+                                                        <HelpTip text="How far back the baseline looks. Shorter adapts faster to a service that genuinely changed; longer is steadier." />
+                                                    </Label>
+                                                    <Input
+                                                        id="latency-baseline-days"
+                                                        type="number"
+                                                        min={1}
+                                                        max={90}
+                                                        value={latencyBaselineDays}
+                                                        onChange={(e) => setLatencyBaselineDays(e.target.value)}
+                                                    />
                                                 </div>
                                             </div>
-                                            <Switch
-                                                checked={adaptiveLatency}
-                                                onCheckedChange={setAdaptiveLatency}
-                                                data-testid="adaptive-latency-switch"
-                                            />
-                                        </div>
-                                        {adaptiveLatency && (
-                                            <div className="space-y-4">
-                                                <div className="grid gap-4 sm:grid-cols-2">
-                                                    <div className="grid gap-2">
-                                                        <Label htmlFor="latency-factor">
-                                                            Slow at (% of p95)
-                                                            <HelpTip text="A monitor counts as degraded above this multiple of its own 95th-percentile latency. 150 means 1.5x. The threshold never sits closer than 100ms above p95, so very fast targets do not alert on noise." />
-                                                        </Label>
-                                                        <Input
-                                                            id="latency-factor"
-                                                            type="number"
-                                                            min={100}
-                                                            max={10000}
-                                                            value={latencyFactor}
-                                                            onChange={(e) => setLatencyFactor(e.target.value)}
-                                                        />
-                                                    </div>
-                                                    <div className="grid gap-2">
-                                                        <Label htmlFor="latency-baseline-days">
-                                                            Learn from (days)
-                                                            <HelpTip text="How far back the baseline looks. Shorter adapts faster to a service that genuinely changed; longer is steadier." />
-                                                        </Label>
-                                                        <Input
-                                                            id="latency-baseline-days"
-                                                            type="number"
-                                                            min={1}
-                                                            max={90}
-                                                            value={latencyBaselineDays}
-                                                            onChange={(e) => setLatencyBaselineDays(e.target.value)}
-                                                        />
-                                                    </div>
-                                                </div>
-                                                {isAdmin && (
-                                                    <div className="flex flex-col gap-4 rounded-md border p-4 sm:flex-row sm:items-center sm:justify-between">
-                                                        <div className="pr-4">
-                                                            <Label>Moved Warden?</Label>
-                                                            <div className="text-sm text-muted-foreground mt-1">
-                                                                Start learning latency from this network. Check history stays intact,
-                                                                and the fixed threshold is used until enough new checks arrive.
-                                                            </div>
+                                            {isAdmin && (
+                                                <div className="flex flex-col gap-4 rounded-md border p-4 sm:flex-row sm:items-center sm:justify-between">
+                                                    <div className="pr-4">
+                                                        <Label>Moved Warden?</Label>
+                                                        <div className="text-sm text-muted-foreground mt-1">
+                                                            Start learning latency from this network. Check history stays intact,
+                                                            and latency warnings resume once enough new checks arrive.
                                                         </div>
-                                                        <AlertDialog>
-                                                            <AlertDialogTrigger asChild>
-                                                                <Button variant="outline" disabled={relearningLatency} data-testid="relearn-latency-button">
-                                                                    <RotateCcw className="h-4 w-4 mr-2" />
-                                                                    {relearningLatency ? "Restarting..." : "Relearn from now"}
-                                                                </Button>
-                                                            </AlertDialogTrigger>
-                                                            <AlertDialogContent>
-                                                                <AlertDialogHeader>
-                                                                    <AlertDialogTitle>Relearn latency from this network?</AlertDialogTitle>
-                                                                    <AlertDialogDescription>
-                                                                        Warden will forget its derived latency baselines, close current
-                                                                        degraded-latency alerts, and learn only from new successful checks.
-                                                                        Monitor history and uptime data will not be deleted.
-                                                                    </AlertDialogDescription>
-                                                                </AlertDialogHeader>
-                                                                <AlertDialogFooter>
-                                                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                                    <AlertDialogAction onClick={handleRelearnLatency}>Relearn from now</AlertDialogAction>
-                                                                </AlertDialogFooter>
-                                                            </AlertDialogContent>
-                                                        </AlertDialog>
                                                     </div>
-                                                )}
-                                            </div>
-                                        )}
+                                                    <AlertDialog>
+                                                        <AlertDialogTrigger asChild>
+                                                            <Button variant="outline" disabled={relearningLatency} data-testid="relearn-latency-button">
+                                                                <RotateCcw className="h-4 w-4 mr-2" />
+                                                                {relearningLatency ? "Restarting..." : "Relearn from now"}
+                                                            </Button>
+                                                        </AlertDialogTrigger>
+                                                        <AlertDialogContent>
+                                                            <AlertDialogHeader>
+                                                                <AlertDialogTitle>Relearn latency from this network?</AlertDialogTitle>
+                                                                <AlertDialogDescription>
+                                                                    Warden will forget its derived latency baselines, close current
+                                                                    degraded-latency alerts, and learn only from new successful checks.
+                                                                    Monitor history and uptime data will not be deleted.
+                                                                </AlertDialogDescription>
+                                                            </AlertDialogHeader>
+                                                            <AlertDialogFooter>
+                                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                                <AlertDialogAction onClick={handleRelearnLatency}>Relearn from now</AlertDialogAction>
+                                                            </AlertDialogFooter>
+                                                        </AlertDialogContent>
+                                                    </AlertDialog>
+                                                </div>
+                                            )}
+                                        </div>
                                         <div className="text-sm text-muted-foreground">
-                                            {adaptiveLatency
-                                                ? "Monitors without enough history yet, and monitors with their own latency threshold set, keep using that fixed number."
-                                                : "Every monitor is judged against the fixed latency threshold above."}
+                                            Latency warnings start once enough successful checks establish a baseline. Down alerts remain active while learning.
                                         </div>
                                     </div>
                                 </AccordionContent>

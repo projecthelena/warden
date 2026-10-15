@@ -25,7 +25,7 @@ type MonitorInput struct {
 	Interval                int
 	ConfirmationThreshold   *int
 	NotificationCooldownMin *int
-	LatencyThreshold        *int
+	LatencyIncreasePercent  *int
 	RequestConfig           *db.RequestConfig
 }
 
@@ -85,7 +85,7 @@ func (h *CRUDHandler) AddMonitor(in MonitorInput) (db.Monitor, error) {
 		Interval:                in.Interval,
 		ConfirmationThreshold:   in.ConfirmationThreshold,
 		NotificationCooldownMin: in.NotificationCooldownMin,
-		LatencyThreshold:        in.LatencyThreshold,
+		LatencyIncreasePercent:  in.LatencyIncreasePercent,
 		RequestConfig:           in.RequestConfig,
 	}
 	if err := h.store.CreateMonitor(m); err != nil {
@@ -140,8 +140,8 @@ func validateNotificationOverrides(in MonitorInput) error {
 	if in.NotificationCooldownMin != nil && (*in.NotificationCooldownMin < 0 || *in.NotificationCooldownMin > 1440) {
 		return fmt.Errorf("%w: notificationCooldownMinutes must be between 0 and 1440", ErrMonitorInvalid)
 	}
-	if in.LatencyThreshold != nil && *in.LatencyThreshold < 1 {
-		return fmt.Errorf("%w: latencyThreshold must be at least 1", ErrMonitorInvalid)
+	if in.LatencyIncreasePercent != nil && (*in.LatencyIncreasePercent < 1 || *in.LatencyIncreasePercent > 9900) {
+		return fmt.Errorf("%w: latencyIncreasePercent must be between 1 and 9900", ErrMonitorInvalid)
 	}
 	return nil
 }

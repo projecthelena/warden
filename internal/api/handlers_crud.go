@@ -217,11 +217,17 @@ func (h *CRUDHandler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
 		Interval                int               `json:"interval"`
 		ConfirmationThreshold   *int              `json:"confirmationThreshold,omitempty"`
 		NotificationCooldownMin *int              `json:"notificationCooldownMinutes,omitempty"`
-		LatencyThreshold        *int              `json:"latencyThreshold,omitempty"`
+		LegacyLatencyThreshold  json.RawMessage   `json:"latencyThreshold"`
+		LatencyIncreasePercent  *int              `json:"latencyIncreasePercent,omitempty"`
 		RequestConfig           *db.RequestConfig `json:"requestConfig,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if len(req.LegacyLatencyThreshold) > 0 {
+		http.Error(w, "latencyThreshold has been replaced by latencyIncreasePercent", http.StatusBadRequest)
 		return
 	}
 
@@ -233,7 +239,7 @@ func (h *CRUDHandler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
 		Interval:                req.Interval,
 		ConfirmationThreshold:   req.ConfirmationThreshold,
 		NotificationCooldownMin: req.NotificationCooldownMin,
-		LatencyThreshold:        req.LatencyThreshold,
+		LatencyIncreasePercent:  req.LatencyIncreasePercent,
 		RequestConfig:           req.RequestConfig,
 	})
 	if err != nil {
@@ -320,11 +326,17 @@ func (h *CRUDHandler) UpdateMonitor(w http.ResponseWriter, r *http.Request) {
 		Interval                int               `json:"interval"`
 		ConfirmationThreshold   *int              `json:"confirmationThreshold,omitempty"`
 		NotificationCooldownMin *int              `json:"notificationCooldownMinutes,omitempty"`
-		LatencyThreshold        *int              `json:"latencyThreshold,omitempty"`
+		LegacyLatencyThreshold  json.RawMessage   `json:"latencyThreshold"`
+		LatencyIncreasePercent  *int              `json:"latencyIncreasePercent,omitempty"`
 		RequestConfig           *db.RequestConfig `json:"requestConfig,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if len(req.LegacyLatencyThreshold) > 0 {
+		http.Error(w, "latencyThreshold has been replaced by latencyIncreasePercent", http.StatusBadRequest)
 		return
 	}
 
@@ -352,8 +364,8 @@ func (h *CRUDHandler) UpdateMonitor(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "notificationCooldownMinutes must be between 0 and 1440", http.StatusBadRequest)
 		return
 	}
-	if req.LatencyThreshold != nil && *req.LatencyThreshold < 1 {
-		http.Error(w, "latencyThreshold must be at least 1", http.StatusBadRequest)
+	if req.LatencyIncreasePercent != nil && (*req.LatencyIncreasePercent < 1 || *req.LatencyIncreasePercent > 9900) {
+		http.Error(w, "latencyIncreasePercent must be between 1 and 9900", http.StatusBadRequest)
 		return
 	}
 
@@ -366,7 +378,7 @@ func (h *CRUDHandler) UpdateMonitor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.store.UpdateMonitor(id, monitorType, req.Name, req.URL, req.Interval, req.ConfirmationThreshold, req.NotificationCooldownMin, req.LatencyThreshold, req.RequestConfig); err != nil {
+	if err := h.store.UpdateMonitor(id, monitorType, req.Name, req.URL, req.Interval, req.ConfirmationThreshold, req.NotificationCooldownMin, req.LatencyIncreasePercent, req.RequestConfig); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

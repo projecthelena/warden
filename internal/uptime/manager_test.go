@@ -185,87 +185,6 @@ func TestManager_OutageLogic(t *testing.T) {
 	m.Stop()
 }
 
-func TestManager_LatencyThreshold(t *testing.T) {
-	m, _ := newTestManager(t)
-
-	if m.GetLatencyThreshold() != 1000 {
-		t.Errorf("Expected default 1000, got %d", m.GetLatencyThreshold())
-	}
-
-	m.SetLatencyThreshold(500)
-	if m.GetLatencyThreshold() != 500 {
-		t.Errorf("Expected 500, got %d", m.GetLatencyThreshold())
-	}
-}
-
-func TestManager_PerMonitorLatencyThreshold(t *testing.T) {
-	n := testDBCounter.Add(1)
-	store, err := db.NewStore(db.NewTestConfigWithPath(fmt.Sprintf("file:per_mon_latency_%d?mode=memory&cache=shared", n)))
-	if err != nil {
-		t.Fatalf("Failed to create store: %v", err)
-	}
-
-	m := NewManager(store)
-
-	// Global threshold = 1000 (default)
-	if m.GetLatencyThreshold() != 1000 {
-		t.Fatalf("Expected default global threshold 1000, got %d", m.GetLatencyThreshold())
-	}
-
-	// Create monitor with custom threshold
-	lt := 200
-	if err := store.CreateMonitor(db.Monitor{
-		ID: "m-custom-lt", GroupID: "g-default", Name: "Custom LT",
-		URL: "http://example.com", Active: true, Interval: 60,
-		LatencyThreshold: &lt,
-	}); err != nil {
-		t.Fatalf("CreateMonitor failed: %v", err)
-	}
-
-	// Create monitor without custom threshold (should use global)
-	if err := store.CreateMonitor(db.Monitor{
-		ID: "m-global-lt", GroupID: "g-default", Name: "Global LT",
-		URL: "http://example.com", Active: true, Interval: 60,
-	}); err != nil {
-		t.Fatalf("CreateMonitor failed: %v", err)
-	}
-
-	m.Sync()
-
-	// Verify per-monitor threshold
-	customMon := m.GetMonitor("m-custom-lt")
-	if customMon == nil {
-		t.Fatal("Monitor m-custom-lt not found")
-	}
-	if customMon.GetLatencyThreshold() != 200 {
-		t.Errorf("Expected per-monitor threshold 200, got %d", customMon.GetLatencyThreshold())
-	}
-
-	// Verify global fallback
-	globalMon := m.GetMonitor("m-global-lt")
-	if globalMon == nil {
-		t.Fatal("Monitor m-global-lt not found")
-	}
-	if globalMon.GetLatencyThreshold() != 1000 {
-		t.Errorf("Expected global threshold 1000, got %d", globalMon.GetLatencyThreshold())
-	}
-
-	// Change global threshold and re-sync
-	m.SetLatencyThreshold(3000)
-	m.Sync()
-
-	// Custom monitor should still use its own threshold
-	if customMon.GetLatencyThreshold() != 200 {
-		t.Errorf("Expected per-monitor threshold still 200 after global change, got %d", customMon.GetLatencyThreshold())
-	}
-	// Global monitor should now use the new global
-	if globalMon.GetLatencyThreshold() != 3000 {
-		t.Errorf("Expected updated global threshold 3000, got %d", globalMon.GetLatencyThreshold())
-	}
-
-	m.Stop()
-}
-
 func TestManager_IsGroupInMaintenance(t *testing.T) {
 	m, s := newTestManager(t)
 
@@ -1368,7 +1287,6 @@ func TestManager_Sync_HydrateIsDegradedTrue(t *testing.T) {
 		t.Fatalf("Failed to create test store: %v", err)
 	}
 	m := NewManager(store)
-	m.SetLatencyThreshold(200) // Low threshold
 
 	if err := store.CreateMonitor(db.Monitor{
 		ID: "m-deg-hydrate", GroupID: "g-default", Name: "Degraded Hydrate",
@@ -1383,6 +1301,8 @@ func TestManager_Sync_HydrateIsDegradedTrue(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("BatchInsertChecks failed: %v", err)
 	}
+
+	seedLatencyBaseline(t, store, "m-deg-hydrate", 160)
 
 	m.Sync()
 
@@ -1405,7 +1325,6 @@ func TestManager_Sync_HydrateIsDegradedFalse(t *testing.T) {
 		t.Fatalf("Failed to create test store: %v", err)
 	}
 	m := NewManager(store)
-	m.SetLatencyThreshold(1000) // High threshold
 
 	if err := store.CreateMonitor(db.Monitor{
 		ID: "m-nodeg-hydrate", GroupID: "g-default", Name: "Not Degraded Hydrate",
@@ -1442,7 +1361,6 @@ func TestManager_Sync_ReconcileClosesStaleDegradedOutage(t *testing.T) {
 		t.Fatalf("Failed to create test store: %v", err)
 	}
 	m := NewManager(store)
-	m.SetLatencyThreshold(1000)
 
 	if err := store.CreateGroup(db.Group{ID: "g-recon", Name: "Recon Group"}); err != nil {
 		t.Fatalf("CreateGroup failed: %v", err)
@@ -1562,7 +1480,6 @@ func TestManager_Sync_PreservesOutageWhenStillDegraded(t *testing.T) {
 		t.Fatalf("Failed to create test store: %v", err)
 	}
 	m := NewManager(store)
-	m.SetLatencyThreshold(200)
 
 	if err := store.CreateGroup(db.Group{ID: "g-still-deg", Name: "Still Degraded Group"}); err != nil {
 		t.Fatalf("CreateGroup failed: %v", err)
@@ -1585,6 +1502,8 @@ func TestManager_Sync_PreservesOutageWhenStillDegraded(t *testing.T) {
 	if err := store.CreateOutage("m-still-deg", "degraded", "High latency detected"); err != nil {
 		t.Fatalf("CreateOutage failed: %v", err)
 	}
+
+	seedLatencyBaseline(t, store, "m-still-deg", 160)
 
 	m.Sync()
 
@@ -2348,5 +2267,20 @@ func TestWorker_CustomTimeout(t *testing.T) {
 	}
 	if isUp {
 		t.Error("Expected short timeout monitor DOWN (1s timeout < 3s sleep)")
+	}
+}
+
+func seedLatencyBaseline(t *testing.T, store *db.Store, id string, normal int64) {
+	t.Helper()
+	now := time.Now()
+	checks := make([]db.CheckResult, 200)
+	for i := range checks {
+		checks[i] = db.CheckResult{MonitorID: id, Status: "up", Latency: normal, Timestamp: now.Add(-time.Duration(i+60) * time.Minute)}
+	}
+	if err := store.BatchInsertChecks(checks); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ComputeLatencyBaseline(id, 7*24*time.Hour, 200, now); err != nil {
+		t.Fatal(err)
 	}
 }

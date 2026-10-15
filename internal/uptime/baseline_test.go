@@ -9,7 +9,7 @@ import (
 )
 
 func TestAdaptiveThreshold_UsesTheMonitorsOwnNormal(t *testing.T) {
-	p := defaultBaselinePolicy() // factor 1.5, floor 100ms, min 200 samples
+	p := defaultBaselinePolicy()
 
 	cases := []struct {
 		name string
@@ -18,20 +18,15 @@ func TestAdaptiveThreshold_UsesTheMonitorsOwnNormal(t *testing.T) {
 		ok   bool
 	}{
 		{
-			// The real shape of homedepot-nucleus-prod-3: a flat 254ms baseline with ramps.
-			// The factor governs, and 650ms — already 2.5x its normal — now counts as
-			// degraded, where the fixed 1000ms threshold said nothing.
 			name: "typical service",
 			b:    db.LatencyBaseline{P50: 254, P95: 420, Samples: 10000},
 			want: 630,
 			ok:   true,
 		},
 		{
-			// A very fast target must not be called degraded over a few milliseconds of
-			// noise, so the absolute floor takes over from the multiplier.
-			name: "fast service, floor governs",
+			name: "fast service uses the same percentage",
 			b:    db.LatencyBaseline{P50: 5, P95: 8, Samples: 10000},
-			want: 108,
+			want: 12,
 			ok:   true,
 		},
 		{
@@ -64,16 +59,6 @@ func TestAdaptiveThreshold_UsesTheMonitorsOwnNormal(t *testing.T) {
 	}
 }
 
-func TestAdaptiveThreshold_DisabledFallsBack(t *testing.T) {
-	p := defaultBaselinePolicy()
-	p.Enabled = false
-	if _, ok := p.adaptiveThreshold(db.LatencyBaseline{P50: 254, P95: 420, Samples: 10000}); ok {
-		t.Error("adaptive thresholds should be unusable when the feature is off")
-	}
-}
-
-// An explicit per-monitor number is a deliberate statement about that service — usually an
-// SLA — so nothing learned may quietly overrule it.
 func TestResolveLatencyThreshold_Precedence(t *testing.T) {
 	p := defaultBaselinePolicy()
 	good := db.LatencyBaseline{P50: 254, P95: 420, Samples: 10000}
@@ -87,27 +72,26 @@ func TestResolveLatencyThreshold_Precedence(t *testing.T) {
 		hasBaseline bool
 		want        int64
 	}{
-		{"explicit override wins over the baseline", &override, good, true, 500},
-		{"baseline wins over the global default", nil, good, true, 630},
-		{"thin baseline falls back to the global default", nil, thin, true, 1000},
-		{"no baseline at all falls back", nil, db.LatencyBaseline{}, false, 1000},
+		{"monitor percentage overrides global percentage", &override, good, true, 2520},
+		{"global percentage applies to learned baseline", nil, good, true, 630},
+		{"thin baseline stays learning", nil, thin, true, 0},
+		{"no baseline stays learning", nil, db.LatencyBaseline{}, false, 0},
 	}
 
 	for _, c := range cases {
-		got := resolveLatencyThreshold(c.override, c.baseline, c.hasBaseline, p, 1000)
+		got := resolveLatencyThreshold(c.override, c.baseline, c.hasBaseline, p)
 		if got != c.want {
 			t.Errorf("%s: got %dms, want %dms", c.name, got, c.want)
 		}
 	}
 }
 
-// A zero or negative override is not an override — it is an empty field.
 func TestResolveLatencyThreshold_IgnoresEmptyOverride(t *testing.T) {
 	p := defaultBaselinePolicy()
 	zero := 0
 	good := db.LatencyBaseline{P50: 254, P95: 420, Samples: 10000}
 
-	if got := resolveLatencyThreshold(&zero, good, true, p, 1000); got != 630 {
+	if got := resolveLatencyThreshold(&zero, good, true, p); got != 630 {
 		t.Errorf("a zero override should not suppress the baseline, got %dms", got)
 	}
 }
@@ -119,32 +103,22 @@ func TestLoadBaselinePolicy_ReadsSettings(t *testing.T) {
 		t.Errorf("with no settings: %+v, want the defaults", got)
 	}
 
-	_ = store.SetSetting("notification.latency.adaptive_enabled", "false")
 	_ = store.SetSetting("notification.latency.baseline_days", "14")
 	_ = store.SetSetting("notification.latency.min_samples", "500")
-	_ = store.SetSetting("notification.latency.factor_percent", "200")
-	_ = store.SetSetting("notification.latency.floor_ms", "50")
-
-	want := baselinePolicy{
-		Enabled:    false,
-		Window:     14 * 24 * time.Hour,
-		MinSamples: 500,
-		Factor:     2,
-		FloorMs:    50,
-	}
+	_ = store.SetSetting("notification.latency.increase_percent", "75")
+	want := baselinePolicy{Window: 14 * 24 * time.Hour, MinSamples: 500, IncreasePercent: 75}
 	if got := m.loadBaselinePolicy(); got != want {
-		t.Errorf("loadBaselinePolicy = %+v, want %+v", got, want)
+		t.Errorf("got %+v, want %+v", got, want)
+	}
+	for _, invalid := range []string{"0", "-1", "9901", "1.5"} {
+		_ = store.SetSetting("notification.latency.increase_percent", invalid)
+		if got := m.loadBaselinePolicy(); got.IncreasePercent != 50 {
+			t.Errorf("accepted %s", invalid)
+		}
 	}
 
-	// A factor below 1 would mark a service degraded at its own median, so it is rejected.
-	_ = store.SetSetting("notification.latency.factor_percent", "50")
-	if got := m.loadBaselinePolicy(); got.Factor != defaultBaselinePolicy().Factor {
-		t.Errorf("a factor below 1x was accepted: %v", got.Factor)
-	}
 }
 
-// The end-to-end path: a monitor with real history gets a threshold from its own numbers,
-// and the running monitor is actually told about it.
 func TestRefreshBaselines_AppliesToRunningMonitors(t *testing.T) {
 	m, store := newAlertTestManager(t)
 	m.baselinePolicy.MinSamples = 10
@@ -178,15 +152,35 @@ func TestRefreshBaselines_AppliesToRunningMonitors(t *testing.T) {
 		t.Errorf("p95 = %d, want 400", b.P95)
 	}
 
-	// 400 * 1.5 = 600, versus 400 + 100 = 500. The multiplier governs.
 	if got := m.monitors["m1"].GetLatencyThreshold(); got != 600 {
 		t.Errorf("running monitor threshold = %dms, want 600ms", got)
 	}
+
+	if err := store.SetSetting("notification.latency.increase_percent", "25"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetSetting("notification.latency.min_samples", "10"); err != nil {
+		t.Fatal(err)
+	}
+	m.Sync()
+	if got := m.GetMonitor("m1").GetLatencyThreshold(); got != 500 {
+		t.Fatalf("global percentage change: got %dms, want 500ms", got)
+	}
+	override := 75
+	for _, tc := range []struct {
+		percent *int
+		want    int64
+	}{{&override, 700}, {nil, 500}} {
+		if err := store.UpdateMonitor("m1", db.MonitorTypeHTTP, "API", "https://example.com", 60, nil, nil, tc.percent, nil); err != nil {
+			t.Fatal(err)
+		}
+		m.Sync()
+		if got := m.GetMonitor("m1").GetLatencyThreshold(); got != tc.want {
+			t.Fatalf("changing override: got %dms, want %dms", got, tc.want)
+		}
+	}
 }
 
-// Failed checks measure how long it took to fail, which says nothing about how fast the
-// service is when it works. Letting them into the baseline would inflate "normal" exactly
-// when the monitor is in trouble.
 func TestComputeLatencyBaseline_IgnoresFailedChecks(t *testing.T) {
 	m, store := newAlertTestManager(t)
 	now := time.Now().UTC()
@@ -223,7 +217,6 @@ func TestComputeLatencyBaseline_IgnoresFailedChecks(t *testing.T) {
 	_ = m
 }
 
-// A thin baseline is worse than none, because everything downstream trusts it.
 func TestComputeLatencyBaseline_SkipsThinHistory(t *testing.T) {
 	_, store := newAlertTestManager(t)
 	now := time.Now().UTC()
@@ -246,9 +239,6 @@ func TestComputeLatencyBaseline_SkipsThinHistory(t *testing.T) {
 	}
 }
 
-// An adaptive threshold is a number with no story unless the message says what normal is:
-// the reader cannot otherwise tell whether ">630ms" is twice this service's usual or a
-// tenth of it.
 func TestDegradedMessage_NamesTheBaseline(t *testing.T) {
 	mon := NewMonitor("m1", db.MonitorTypeHTTP, "g1", "API", "https://api.example.com",
 		time.Minute, nil, time.Now(), nil)
@@ -259,16 +249,12 @@ func TestDegradedMessage_NamesTheBaseline(t *testing.T) {
 	}
 
 	mon.SetLatencyThreshold(630)
-	mon.SetBaselineP50(254)
-	if got, want := mon.DegradedMessage(), "High latency detected (>630ms, normally ~254ms)"; got != want {
+	mon.SetBaselineP95(254)
+	if got, want := mon.DegradedMessage(), "High latency detected (>630ms, baseline p95 254ms)"; got != want {
 		t.Errorf("with a baseline: %q, want %q", got, want)
 	}
 }
 
-// --- baseline edge cases ---
-
-// A perfectly steady service has p50 == p95. The multiplier would put the line only a few
-// milliseconds above normal, so the absolute floor has to carry it.
 func TestAdaptiveThreshold_SteadyService(t *testing.T) {
 	p := defaultBaselinePolicy()
 
@@ -276,14 +262,11 @@ func TestAdaptiveThreshold_SteadyService(t *testing.T) {
 	if !ok {
 		t.Fatal("a steady service should still get a threshold")
 	}
-	// max(200*1.5, 200+100) = 300.
 	if got != 300 {
 		t.Errorf("threshold = %dms, want 300ms", got)
 	}
 }
 
-// Exactly at MinSamples is enough; one short is not. The boundary decides whether a
-// monitor is judged by its own numbers or the global default.
 func TestAdaptiveThreshold_SampleBoundary(t *testing.T) {
 	p := defaultBaselinePolicy()
 
@@ -295,8 +278,6 @@ func TestAdaptiveThreshold_SampleBoundary(t *testing.T) {
 	}
 }
 
-// A sub-millisecond target — a local service, or a ping — must not be called degraded over
-// rounding. The floor is what keeps that honest.
 func TestAdaptiveThreshold_VeryFastTarget(t *testing.T) {
 	p := defaultBaselinePolicy()
 
@@ -304,41 +285,21 @@ func TestAdaptiveThreshold_VeryFastTarget(t *testing.T) {
 	if !ok {
 		t.Fatal("a fast target should still get a threshold")
 	}
-	if got != 101 {
-		t.Errorf("threshold = %dms, want 101ms — the floor should govern", got)
+	if got != 2 {
+		t.Errorf("threshold = %dms, want 2ms", got)
 	}
 }
 
-// A negative override is not a stricter threshold, it is a corrupt value; it must not
-// suppress the baseline or become a threshold nothing can satisfy.
 func TestResolveLatencyThreshold_IgnoresANegativeOverride(t *testing.T) {
 	p := defaultBaselinePolicy()
 	negative := -500
 	good := db.LatencyBaseline{P50: 254, P95: 420, Samples: 10000}
 
-	if got := resolveLatencyThreshold(&negative, good, true, p, 1000); got != 630 {
+	if got := resolveLatencyThreshold(&negative, good, true, p); got != 630 {
 		t.Errorf("a negative override took effect: %dms", got)
 	}
 }
 
-// With the feature off, the baseline is ignored entirely and the fixed numbers govern —
-// including a per-monitor override, which still outranks the global default.
-func TestResolveLatencyThreshold_DisabledFallsBackToFixed(t *testing.T) {
-	p := defaultBaselinePolicy()
-	p.Enabled = false
-	good := db.LatencyBaseline{P50: 254, P95: 420, Samples: 10000}
-	override := 500
-
-	if got := resolveLatencyThreshold(nil, good, true, p, 1000); got != 1000 {
-		t.Errorf("with adaptive off: %dms, want the global default 1000ms", got)
-	}
-	if got := resolveLatencyThreshold(&override, good, true, p, 1000); got != 500 {
-		t.Errorf("with adaptive off the override should still win: %dms", got)
-	}
-}
-
-// Every check identical is a real shape for a stub or a health endpoint. The percentiles
-// must land on that value rather than degenerating.
 func TestComputeLatencyBaseline_IdenticalSamples(t *testing.T) {
 	_, store := newAlertTestManager(t)
 	now := time.Now().UTC()
@@ -363,8 +324,6 @@ func TestComputeLatencyBaseline_IdenticalSamples(t *testing.T) {
 	}
 }
 
-// A monitor whose every check failed has no successful sample at all. It must produce no
-// baseline rather than one derived from how long it took to fail.
 func TestComputeLatencyBaseline_AllChecksFailed(t *testing.T) {
 	_, store := newAlertTestManager(t)
 	now := time.Now().UTC()
@@ -389,7 +348,6 @@ func TestComputeLatencyBaseline_AllChecksFailed(t *testing.T) {
 	}
 }
 
-// The worker must not fall over on a monitor that has never been checked.
 func TestRefreshBaselines_MonitorWithNoHistory(t *testing.T) {
 	m, store := newAlertTestManager(t)
 
@@ -398,40 +356,11 @@ func TestRefreshBaselines_MonitorWithNoHistory(t *testing.T) {
 	if _, ok, _ := store.GetLatencyBaseline("m1"); ok {
 		t.Error("a baseline was stored for a monitor with no checks")
 	}
-	// And it falls back to the global default rather than zero, which would call every
-	// check degraded.
-	if got := m.monitors["m1"].GetLatencyThreshold(); got != 1000 {
-		t.Errorf("threshold = %dms, want the global default 1000ms", got)
+	if got := m.monitors["m1"].GetLatencyThreshold(); got != 0 {
+		t.Errorf("threshold = %dms, want learning (0)", got)
 	}
 }
 
-// With the feature off the worker does no work at all — no queries, no thresholds moved.
-func TestRefreshBaselines_NoOpWhenDisabled(t *testing.T) {
-	m, store := newAlertTestManager(t)
-	m.baselinePolicy.Enabled = false
-	now := time.Now().UTC()
-
-	var checks []db.CheckResult
-	for i := 0; i < 300; i++ {
-		checks = append(checks, db.CheckResult{
-			MonitorID: "m1", Status: "up", Latency: 100,
-			Timestamp: now.Add(-time.Duration(i) * time.Minute),
-		})
-	}
-	if err := store.BatchInsertChecks(checks); err != nil {
-		t.Fatalf("BatchInsertChecks: %v", err)
-	}
-
-	m.refreshBaselines(now)
-
-	if _, ok, _ := store.GetLatencyBaseline("m1"); ok {
-		t.Error("a baseline was computed with the feature disabled")
-	}
-}
-
-// The reason the baseline is persisted at all: after a restart, Sync has to resolve each
-// monitor's threshold from the stored numbers rather than leaving everyone on the global
-// default until the hourly worker next runs. Nothing covered that path.
 func TestSync_AppliesThePersistedBaseline(t *testing.T) {
 	_, store := newAlertTestManager(t)
 	now := time.Now().UTC()
@@ -454,60 +383,22 @@ func TestSync_AppliesThePersistedBaseline(t *testing.T) {
 		t.Fatalf("ComputeLatencyBaseline: %v", err)
 	}
 
-	// A fresh manager, as after a restart: it has never run the baseline worker.
 	restarted := NewManager(store)
+	t.Cleanup(restarted.Reset)
 	restarted.Sync()
 
 	mon := restarted.GetMonitor("m1")
 	if mon == nil {
 		t.Fatal("Sync did not schedule the monitor")
 	}
-	// 400 * 1.5 = 600, versus 400 + 100 = 500.
 	if got := mon.GetLatencyThreshold(); got != 600 {
 		t.Errorf("threshold after Sync = %dms, want 600ms from the stored baseline", got)
 	}
-	if !strings.Contains(mon.DegradedMessage(), "normally ~250ms") {
+	if !strings.Contains(mon.DegradedMessage(), "baseline p95 400ms") {
 		t.Errorf("the message lost the baseline after Sync: %q", mon.DegradedMessage())
 	}
 }
 
-// With the feature off, Sync must fall back to the fixed threshold even though a baseline
-// is sitting in the table, and the message must stop claiming to know what normal is.
-func TestSync_IgnoresTheBaselineWhenAdaptiveIsOff(t *testing.T) {
-	_, store := newAlertTestManager(t)
-	now := time.Now().UTC()
-
-	var checks []db.CheckResult
-	for i := 0; i < 300; i++ {
-		checks = append(checks, db.CheckResult{
-			MonitorID: "m1", Status: "up", Latency: 250,
-			Timestamp: now.Add(-time.Duration(i) * time.Minute),
-		})
-	}
-	if err := store.BatchInsertChecks(checks); err != nil {
-		t.Fatalf("BatchInsertChecks: %v", err)
-	}
-	if _, err := store.ComputeLatencyBaseline("m1", 7*24*time.Hour, 200, now); err != nil {
-		t.Fatalf("ComputeLatencyBaseline: %v", err)
-	}
-	if err := store.SetSetting("notification.latency.adaptive_enabled", "false"); err != nil {
-		t.Fatalf("SetSetting: %v", err)
-	}
-
-	restarted := NewManager(store)
-	restarted.Sync()
-
-	mon := restarted.GetMonitor("m1")
-	if got := mon.GetLatencyThreshold(); got != 1000 {
-		t.Errorf("threshold = %dms, want the global default 1000ms", got)
-	}
-	if strings.Contains(mon.DegradedMessage(), "normally") {
-		t.Errorf("the message still claims a baseline: %q", mon.DegradedMessage())
-	}
-}
-
-// A per-monitor threshold is a deliberate statement about that service, so Sync must not
-// let a learned baseline overrule it.
 func TestSync_KeepsThePerMonitorOverride(t *testing.T) {
 	_, store := newAlertTestManager(t)
 	now := time.Now().UTC()
@@ -533,9 +424,100 @@ func TestSync_KeepsThePerMonitorOverride(t *testing.T) {
 	}
 
 	restarted := NewManager(store)
+	t.Cleanup(restarted.Reset)
 	restarted.Sync()
 
-	if got := restarted.GetMonitor("m1").GetLatencyThreshold(); got != 500 {
-		t.Errorf("threshold = %dms, want the explicit override 500ms", got)
+	if got := restarted.GetMonitor("m1").GetLatencyThreshold(); got != 1500 {
+		t.Errorf("threshold = %dms, want the 250ms + 500%% = 1500ms", got)
+	}
+}
+
+func TestDynamicThreshold_PercentageAndLearning(t *testing.T) {
+	p := defaultBaselinePolicy()
+	b := db.LatencyBaseline{P95: 1000, Samples: 200}
+	percent := 25
+	threshold := resolveLatencyThreshold(&percent, b, true, p)
+	if threshold != 1250 {
+		t.Fatalf("got %d, want 1250", threshold)
+	}
+	mon := NewMonitor("m", db.MonitorTypeHTTP, "g", "API", "https://example.com", time.Minute, nil, time.Now(), nil)
+	mon.SetLatencyThreshold(threshold)
+	if mon.IsHighLatency(1250) || !mon.IsHighLatency(1251) {
+		t.Fatal("incorrect threshold boundary")
+	}
+	mon.SetLatencyThreshold(resolveLatencyThreshold(&percent, b, false, p))
+	if mon.IsHighLatency(100000) {
+		t.Fatal("learning monitor classified as slow")
+	}
+}
+
+func TestDynamicLatency_ConfirmationAlertsRecoveryAndLearning(t *testing.T) {
+	m, store := newAlertTestManager(t)
+	mon := m.GetMonitor("m1")
+	mon.ApplyConfig(MonitorConfig{ConfirmationThreshold: 2, RecoveryConfirmationChecks: 2})
+	mon.SetLatencyThreshold(1250)
+	mon.SetBaselineP95(1000)
+	m.wg.Add(1)
+	go m.resultProcessor()
+	defer m.Stop()
+	send := func(up bool, latency int64) {
+		t.Helper()
+		stamp := time.Now()
+		m.resultQueue <- CheckResult{MonitorID: "m1", Status: up, Latency: latency, Timestamp: stamp}
+		deadline := time.Now().Add(time.Second)
+		for time.Now().Before(deadline) {
+			history := mon.GetHistory()
+			if len(history) > 0 && history[len(history)-1].Timestamp.Equal(stamp) {
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+		t.Fatal("result was not processed")
+	}
+	assertOutages := func(want int, kind string) []db.OpenOutage {
+		t.Helper()
+		outages, err := store.GetOpenOutages()
+		if err != nil || len(outages) != want {
+			t.Fatalf("outages=%v err=%v, want %d", outages, err, want)
+		}
+		if want > 0 && outages[0].Type != kind {
+			t.Fatalf("type=%s, want %s", outages[0].Type, kind)
+		}
+		return outages
+	}
+	send(true, 1250)
+	assertOutages(0, "")
+	send(true, 1251)
+	assertOutages(0, "")
+	send(true, 1400)
+	outages := assertOutages(1, "degraded")
+	m.evaluateAlerts(outages[0].StartTime.Add(2 * time.Minute))
+	if notifiedAt(t, store) != nil {
+		t.Fatal("alert bypassed sustained window")
+	}
+	m.evaluateAlerts(outages[0].StartTime.Add(3 * time.Minute))
+	if notifiedAt(t, store) == nil {
+		t.Fatal("confirmed degradation was not announced")
+	}
+	send(true, 1000)
+	assertOutages(0, "")
+	mon.SetLatencyThreshold(0)
+	send(true, 100000)
+	send(true, 100000)
+	assertOutages(0, "")
+	send(false, 0)
+	assertOutages(0, "")
+	send(false, 0)
+	assertOutages(1, "down")
+}
+
+func TestDynamicThreshold_IntegerRounding(t *testing.T) {
+	p := defaultBaselinePolicy()
+	p.IncreasePercent = 10
+	for _, tc := range []struct{ normal, want int64 }{{100, 110}, {101, 112}, {1, 2}} {
+		got, ok := p.adaptiveThreshold(db.LatencyBaseline{P95: tc.normal, Samples: 200})
+		if !ok || got != tc.want {
+			t.Errorf("normal=%d: got %d, want %d", tc.normal, got, tc.want)
+		}
 	}
 }

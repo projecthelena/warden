@@ -81,7 +81,7 @@ type Monitor struct {
 	CreatedAt               time.Time      `json:"createdAt"`
 	ConfirmationThreshold   *int           `json:"confirmationThreshold,omitempty"`
 	NotificationCooldownMin *int           `json:"notificationCooldownMinutes,omitempty"`
-	LatencyThreshold        *int           `json:"latencyThreshold,omitempty"`
+	LatencyIncreasePercent  *int           `json:"latencyIncreasePercent,omitempty"`
 	RequestConfig           *RequestConfig `json:"requestConfig,omitempty"`
 	// AlertsMuted keeps a monitor fully recorded — checks, outages, digest, dashboard —
 	// while never letting it interrupt anyone. For test and staging targets.
@@ -179,12 +179,12 @@ func (s *Store) CreateMonitor(m Monitor) error {
 		}
 		reqCfg = sql.NullString{String: string(b), Valid: true}
 	}
-	_, err := s.db.Exec(s.rebind("INSERT INTO monitors (id, type, group_id, name, url, active, interval_seconds, created_at, confirmation_threshold, notification_cooldown_minutes, latency_threshold, request_config, alerts_muted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
-		m.ID, NormalizeMonitorType(m.Type), m.GroupID, m.Name, m.URL, m.Active, m.Interval, time.Now(), toNullInt64(m.ConfirmationThreshold), toNullInt64(m.NotificationCooldownMin), toNullInt64(m.LatencyThreshold), reqCfg, m.AlertsMuted)
+	_, err := s.db.Exec(s.rebind("INSERT INTO monitors (id, type, group_id, name, url, active, interval_seconds, created_at, confirmation_threshold, notification_cooldown_minutes, latency_increase_percent, request_config, alerts_muted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
+		m.ID, NormalizeMonitorType(m.Type), m.GroupID, m.Name, m.URL, m.Active, m.Interval, time.Now(), toNullInt64(m.ConfirmationThreshold), toNullInt64(m.NotificationCooldownMin), toNullInt64(m.LatencyIncreasePercent), reqCfg, m.AlertsMuted)
 	return err
 }
 
-func (s *Store) UpdateMonitor(id, monitorType, name, url string, interval int, confirmThreshold *int, cooldownMins *int, latencyThreshold *int, reqConfig *RequestConfig) error {
+func (s *Store) UpdateMonitor(id, monitorType, name, url string, interval int, confirmThreshold *int, cooldownMins *int, latencyIncreasePercent *int, reqConfig *RequestConfig) error {
 	if interval < 1 {
 		interval = 60
 	}
@@ -197,8 +197,8 @@ func (s *Store) UpdateMonitor(id, monitorType, name, url string, interval int, c
 		reqCfg = sql.NullString{String: string(b), Valid: true}
 	}
 	// Don't modify active flag - it's managed separately via SetMonitorActive
-	res, err := s.db.Exec(s.rebind("UPDATE monitors SET type = ?, name = ?, url = ?, interval_seconds = ?, confirmation_threshold = ?, notification_cooldown_minutes = ?, latency_threshold = ?, request_config = ? WHERE id = ?"),
-		NormalizeMonitorType(monitorType), name, url, interval, toNullInt64(confirmThreshold), toNullInt64(cooldownMins), toNullInt64(latencyThreshold), reqCfg, id)
+	res, err := s.db.Exec(s.rebind("UPDATE monitors SET type = ?, name = ?, url = ?, interval_seconds = ?, confirmation_threshold = ?, notification_cooldown_minutes = ?, latency_increase_percent = ?, request_config = ? WHERE id = ?"),
+		NormalizeMonitorType(monitorType), name, url, interval, toNullInt64(confirmThreshold), toNullInt64(cooldownMins), toNullInt64(latencyIncreasePercent), reqCfg, id)
 	if err != nil {
 		return err
 	}
@@ -273,7 +273,7 @@ func (s *Store) MoveMonitorToGroup(id, groupID string) error {
 
 // GetMonitors returns all monitors
 func (s *Store) GetMonitors() ([]Monitor, error) {
-	rows, err := s.db.Query("SELECT id, type, group_id, name, url, active, interval_seconds, created_at, confirmation_threshold, notification_cooldown_minutes, latency_threshold, request_config, alerts_muted FROM monitors ORDER BY created_at ASC")
+	rows, err := s.db.Query("SELECT id, type, group_id, name, url, active, interval_seconds, created_at, confirmation_threshold, notification_cooldown_minutes, latency_increase_percent, request_config, alerts_muted FROM monitors ORDER BY created_at ASC")
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +298,7 @@ func (s *Store) GetMonitors() ([]Monitor, error) {
 		}
 		if latencyThresh.Valid {
 			v := int(latencyThresh.Int64)
-			m.LatencyThreshold = &v
+			m.LatencyIncreasePercent = &v
 		}
 		if reqCfgStr.Valid && reqCfgStr.String != "" {
 			var rc RequestConfig
@@ -374,7 +374,7 @@ func (s *Store) GetPublicMonitorsByGroup(groupID, search string) ([]Monitor, err
 // uptime handler because the live state belongs to the manager rather than the database.
 func (s *Store) GetMonitorsByGroup(groupID, search string) ([]Monitor, error) {
 	query := `SELECT id, type, group_id, name, url, active, interval_seconds, created_at,
-		confirmation_threshold, notification_cooldown_minutes, latency_threshold, request_config, alerts_muted
+		confirmation_threshold, notification_cooldown_minutes, latency_increase_percent, request_config, alerts_muted
 		FROM monitors WHERE group_id = ?`
 	args := []interface{}{groupID}
 	search = strings.ToLower(strings.TrimSpace(search))
@@ -413,7 +413,7 @@ func (s *Store) GetMonitorsByGroup(groupID, search string) ([]Monitor, error) {
 		}
 		if latencyThresh.Valid {
 			v := int(latencyThresh.Int64)
-			m.LatencyThreshold = &v
+			m.LatencyIncreasePercent = &v
 		}
 		if reqCfgStr.Valid && reqCfgStr.String != "" {
 			var rc RequestConfig

@@ -124,7 +124,7 @@ That action:
 - forgets the derived p50 and p95 baselines;
 - closes current degraded-latency alerts without sending a recovery storm;
 - ignores old latency samples while learning;
-- uses the fixed global latency threshold until each monitor has enough new successful checks.
+- waits to resume latency warnings until each monitor has enough new successful checks; down detection remains active.
 
 No Warden restart is required. Do not lower the global threshold during the learning period.
 

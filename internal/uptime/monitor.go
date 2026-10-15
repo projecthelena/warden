@@ -39,7 +39,7 @@ type Monitor struct {
 	// Notification fatigue state (protected by mu)
 	confirmationThreshold int   // effective threshold (resolved from per-monitor or global)
 	cooldownMinutes       int   // effective cooldown (resolved from per-monitor or global)
-	latencyThreshold      int64 // effective latency threshold (resolved from per-monitor or global)
+	latencyThreshold      int64 // learned threshold in milliseconds; zero while learning
 
 	consecutiveDownCount int  // consecutive failed checks
 	consecutiveDegCount  int  // consecutive degraded checks
@@ -66,9 +66,9 @@ type Monitor struct {
 	consecutiveUpCount         int
 	healthySince               time.Time
 
-	// baselineP50 is this monitor's own median latency, used only to phrase the degraded
+	// baselineP95 is this monitor's own p95 latency, used only to phrase the degraded
 	// message. Zero means no baseline yet, and the message falls back to the bare threshold.
-	baselineP50 int64
+	baselineP95 int64
 }
 
 // NotificationEventFilter holds per-event-type notification toggle state.
@@ -588,11 +588,11 @@ func (m *Monitor) AlertsMuted() bool {
 	return m.alertsMuted
 }
 
-// SetBaselineP50 records the monitor's median latency for use in messages.
-func (m *Monitor) SetBaselineP50(v int64) {
+// SetBaselineP95 records the monitor's p95 latency for use in messages.
+func (m *Monitor) SetBaselineP95(v int64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.baselineP50 = v
+	m.baselineP95 = v
 }
 
 // DegradedMessage phrases the high-latency event. With a baseline it names what normal
@@ -601,9 +601,9 @@ func (m *Monitor) SetBaselineP50(v int64) {
 func (m *Monitor) DegradedMessage() string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if m.baselineP50 > 0 {
+	if m.baselineP95 > 0 {
 		return "High latency detected (>" + strconv.FormatInt(m.latencyThreshold, 10) +
-			"ms, normally ~" + strconv.FormatInt(m.baselineP50, 10) + "ms)"
+			"ms, baseline p95 " + strconv.FormatInt(m.baselineP95, 10) + "ms)"
 	}
 	return "High latency detected (>" + strconv.FormatInt(m.latencyThreshold, 10) + "ms)"
 }
@@ -682,4 +682,11 @@ func (m *Monitor) RecoveryIsStable(since, now time.Time) bool {
 		since = m.healthySince
 	}
 	return last.Timestamp.Sub(since) >= 3*time.Minute
+}
+
+// IsHighLatency uses the same learned threshold for checks and API status views.
+func (m *Monitor) IsHighLatency(latency int64) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.latencyThreshold > 0 && latency > m.latencyThreshold
 }

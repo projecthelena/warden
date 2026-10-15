@@ -1,6 +1,7 @@
 package uptime
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -19,7 +20,7 @@ func setIntegrationTestDefaults(store *db.Store) {
 
 func TestMonitor_DegradedThreshold(t *testing.T) {
 	// Setup Store & Manager
-	store, err := db.NewStore(db.NewTestConfigWithPath("file:test?mode=memory&cache=shared"))
+	store, err := db.NewStore(db.NewTestConfigWithPath(fmt.Sprintf("file:latency_integration_%d?mode=memory&cache=shared", testDBCounter.Add(1))))
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
@@ -37,9 +38,6 @@ func TestMonitor_DegradedThreshold(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	// 2. Set Low Threshold (10ms)
-	m.SetLatencyThreshold(10)
-
 	// 3. Create Monitor
 	monID := "m-slow"
 	if err := store.CreateMonitor(db.Monitor{
@@ -54,6 +52,7 @@ func TestMonitor_DegradedThreshold(t *testing.T) {
 	}
 
 	// 4. Sycn to start
+	seedLatencyBaseline(t, store, monID, 7)
 	m.Sync()
 
 	// 5. Wait for check
@@ -80,8 +79,8 @@ func TestMonitor_DegradedThreshold(t *testing.T) {
 		}
 	}
 
-	// 7. Update Threshold High (5000ms)
-	m.SetLatencyThreshold(5000)
+	// 7. Increase the allowed percentage so the same response recovers.
+	_ = store.SetSetting("notification.latency.increase_percent", "9900")
 	m.Sync() // Propagate new global threshold to per-monitor thresholds
 
 	// 8. Wait for next check
@@ -104,7 +103,7 @@ func TestMonitor_DegradedThreshold(t *testing.T) {
 func TestMonitor_StatusCodes(t *testing.T) {
 	// Setup Store & Manager
 	// Use named shared memory DB to isolate tests but verify connection sharing
-	store, err := db.NewStore(db.NewTestConfigWithPath("file:test?mode=memory&cache=shared"))
+	store, err := db.NewStore(db.NewTestConfigWithPath(fmt.Sprintf("file:latency_integration_%d?mode=memory&cache=shared", testDBCounter.Add(1))))
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
@@ -171,7 +170,7 @@ func TestMonitor_StatusCodes(t *testing.T) {
 
 func TestMonitor_EventLifecycle(t *testing.T) {
 	// Setup Store & Manager
-	store, err := db.NewStore(db.NewTestConfigWithPath("file:test?mode=memory&cache=shared"))
+	store, err := db.NewStore(db.NewTestConfigWithPath(fmt.Sprintf("file:latency_integration_%d?mode=memory&cache=shared", testDBCounter.Add(1))))
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
@@ -201,9 +200,9 @@ func TestMonitor_EventLifecycle(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Failed to create monitor: %v", err)
 	}
-	// Use high threshold (500ms) so CI HTTP overhead (~50-150ms) doesn't cause
-	// false degraded events when the server responds quickly.
-	m.SetLatencyThreshold(500)
+	// Learn a 300ms p95, yielding a 450ms threshold at the default 50%.
+	seedLatencyBaseline(t, store, monID, 300)
+
 	m.Sync()
 
 	time.Sleep(2 * time.Second) // Initial Up
@@ -291,7 +290,7 @@ func TestMonitor_EventLifecycle(t *testing.T) {
 }
 
 func TestMonitor_ErrorTypes(t *testing.T) {
-	store, err := db.NewStore(db.NewTestConfigWithPath("file:test?mode=memory&cache=shared"))
+	store, err := db.NewStore(db.NewTestConfigWithPath(fmt.Sprintf("file:latency_integration_%d?mode=memory&cache=shared", testDBCounter.Add(1))))
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}

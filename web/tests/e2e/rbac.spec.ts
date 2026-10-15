@@ -315,7 +315,7 @@ test.describe('RBAC - Role-Based Access Control', () => {
                 'Content-Type': 'application/json',
                 Authorization: `Bearer ${viewerKey}`,
             },
-            data: { latency_threshold: '500' },
+            data: { 'notification.latency.increase_percent': '500' },
         });
         expect(settingsRes.status()).toBe(403);
 
@@ -382,7 +382,7 @@ test.describe('RBAC - Role-Based Access Control', () => {
                 'Content-Type': 'application/json',
                 Authorization: `Bearer ${editorKey}`,
             },
-            data: { latency_threshold: '500' },
+            data: { 'notification.latency.increase_percent': '500' },
         });
         expect(settingsRes.status()).toBe(403);
 
@@ -449,7 +449,7 @@ test.describe('RBAC - Role-Based Access Control', () => {
                 'Content-Type': 'application/json',
                 Authorization: `Bearer ${adminKey}`,
             },
-            data: { latency_threshold: '2000' },
+            data: { 'notification.latency.increase_percent': '2000' },
         });
         expect(settingsPatchRes.ok()).toBeTruthy();
 
@@ -525,7 +525,7 @@ test.describe('RBAC - Role-Based Access Control', () => {
                 'Content-Type': 'application/json',
                 Authorization: `Bearer ${editorKey}`,
             },
-            data: { latency_threshold: '999' },
+            data: { 'notification.latency.increase_percent': '999' },
         });
         expect(editorSettingsRes.status()).toBe(403);
 
@@ -534,7 +534,7 @@ test.describe('RBAC - Role-Based Access Control', () => {
                 'Content-Type': 'application/json',
                 Authorization: `Bearer ${adminKey}`,
             },
-            data: { latency_threshold: '999' },
+            data: { 'notification.latency.increase_percent': '999' },
         });
         expect(adminSettingsRes.ok()).toBeTruthy();
     });

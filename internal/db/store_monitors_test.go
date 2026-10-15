@@ -1511,7 +1511,7 @@ func TestMonitor_LatencyThresholdRoundtrip(t *testing.T) {
 		m := Monitor{
 			ID: "m-lt1", GroupID: "g1", Name: "LT Create",
 			URL: "http://example.com", Active: true, Interval: 60,
-			LatencyThreshold: intPtr(2000),
+			LatencyIncreasePercent: intPtr(2000),
 		}
 		if err := s.CreateMonitor(m); err != nil {
 			t.Fatalf("CreateMonitor failed: %v", err)
@@ -1529,8 +1529,8 @@ func TestMonitor_LatencyThresholdRoundtrip(t *testing.T) {
 			t.Fatal("Monitor not found")
 			return
 		}
-		if found.LatencyThreshold == nil || *found.LatencyThreshold != 2000 {
-			t.Errorf("Expected LatencyThreshold=2000, got %v", found.LatencyThreshold)
+		if found.LatencyIncreasePercent == nil || *found.LatencyIncreasePercent != 2000 {
+			t.Errorf("Expected LatencyIncreasePercent=2000, got %v", found.LatencyIncreasePercent)
 		}
 	})
 
@@ -1558,8 +1558,8 @@ func TestMonitor_LatencyThresholdRoundtrip(t *testing.T) {
 			t.Fatal("Monitor not found")
 			return
 		}
-		if found.LatencyThreshold != nil {
-			t.Errorf("Expected LatencyThreshold=nil, got %v", *found.LatencyThreshold)
+		if found.LatencyIncreasePercent != nil {
+			t.Errorf("Expected LatencyIncreasePercent=nil, got %v", *found.LatencyIncreasePercent)
 		}
 	})
 
@@ -1591,8 +1591,8 @@ func TestMonitor_LatencyThresholdRoundtrip(t *testing.T) {
 			t.Fatal("Monitor not found")
 			return
 		}
-		if found.LatencyThreshold == nil || *found.LatencyThreshold != 500 {
-			t.Errorf("Expected LatencyThreshold=500, got %v", found.LatencyThreshold)
+		if found.LatencyIncreasePercent == nil || *found.LatencyIncreasePercent != 500 {
+			t.Errorf("Expected LatencyIncreasePercent=500, got %v", found.LatencyIncreasePercent)
 		}
 	})
 
@@ -1603,7 +1603,7 @@ func TestMonitor_LatencyThresholdRoundtrip(t *testing.T) {
 		m := Monitor{
 			ID: "m-lt4", GroupID: "g1", Name: "Clear LT",
 			URL: "http://example.com", Active: true, Interval: 60,
-			LatencyThreshold: intPtr(2000),
+			LatencyIncreasePercent: intPtr(2000),
 		}
 		if err := s.CreateMonitor(m); err != nil {
 			t.Fatalf("CreateMonitor failed: %v", err)
@@ -1625,8 +1625,8 @@ func TestMonitor_LatencyThresholdRoundtrip(t *testing.T) {
 			t.Fatal("Monitor not found")
 			return
 		}
-		if found.LatencyThreshold != nil {
-			t.Errorf("Expected LatencyThreshold=nil after clear, got %v", *found.LatencyThreshold)
+		if found.LatencyIncreasePercent != nil {
+			t.Errorf("Expected LatencyIncreasePercent=nil after clear, got %v", *found.LatencyIncreasePercent)
 		}
 	})
 }

@@ -12,7 +12,7 @@ See [Notification fatigue](notification-fatigue.md) for the complete alert lifec
 
 ## Normal is different for every service
 
-A local health endpoint and a storefront in another region should not share the same latency threshold. Warden learns p50 and p95 latency for each monitor, detects meaningful regressions, and lets an explicit service-level threshold take precedence when one exists.
+A local health endpoint and a storefront in another region should not share the same latency threshold. Warden learns p50 and p95 latency for each monitor, detects meaningful regressions, and lets you configure the percentage above each monitor’s learned p95 that counts as degraded.
 
 See [Adaptive latency](adaptive-latency.md) for learning, threshold precedence, and relearning after a migration.
 

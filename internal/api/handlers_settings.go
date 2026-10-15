@@ -29,12 +29,6 @@ func NewSettingsHandler(store *db.Store, manager *uptime.Manager) *SettingsHandl
 // @Success      200  {object} map[string]string
 // @Router       /settings [get]
 func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
-	// Latency Threshold
-	val, err := h.store.GetSetting("latency_threshold")
-	if err != nil {
-		val = "1000"
-	}
-
 	// Data Retention
 	retention, err := h.store.GetSetting("data_retention_days")
 	if err != nil {
@@ -126,10 +120,6 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Adaptive latency baseline
-	adaptiveEnabled, _ := h.store.GetSetting("notification.latency.adaptive_enabled")
-	if adaptiveEnabled == "" {
-		adaptiveEnabled = "true"
-	}
 	baselineDays, _ := h.store.GetSetting("notification.latency.baseline_days")
 	if baselineDays == "" {
 		baselineDays = "7"
@@ -138,13 +128,9 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	if baselineMinSamples == "" {
 		baselineMinSamples = "200"
 	}
-	baselineFactor, _ := h.store.GetSetting("notification.latency.factor_percent")
-	if baselineFactor == "" {
-		baselineFactor = "150"
-	}
-	baselineFloor, _ := h.store.GetSetting("notification.latency.floor_ms")
-	if baselineFloor == "" {
-		baselineFloor = "100"
+	baselineIncrease, _ := h.store.GetSetting("notification.latency.increase_percent")
+	if baselineIncrease == "" {
+		baselineIncrease = "50"
 	}
 	baselineLearnAfter, _ := h.store.GetSetting("notification.latency.learn_after")
 
@@ -210,7 +196,6 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	appURL, _ := h.store.GetSetting("app_url")
 
 	writeJSON(w, http.StatusOK, map[string]string{
-		"latency_threshold":               val,
 		"data_retention_days":             retention,
 		"notifications.slack.enabled":     slackEnabled,
 		"notifications.slack.webhook_url": slackWebhookMasked, // SECURITY: Masked for display
@@ -240,11 +225,9 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		"notification.insights.weekly_day":           weeklyInsightsDay,
 		"notification.insights.weekly_time":          weeklyInsightsTime,
 		"workspace.timezone":                         workspaceTimezone,
-		"notification.latency.adaptive_enabled":      adaptiveEnabled,
 		"notification.latency.baseline_days":         baselineDays,
+		"notification.latency.increase_percent":      baselineIncrease,
 		"notification.latency.min_samples":           baselineMinSamples,
-		"notification.latency.factor_percent":        baselineFactor,
-		"notification.latency.floor_ms":              baselineFloor,
 		"notification.latency.learn_after":           baselineLearnAfter,
 		"notification.correlation.window_seconds":    corrWindow,
 		"notification.correlation.min_monitors":      corrMin,
@@ -294,19 +277,11 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if val, ok := body["latency_threshold"]; ok {
-		// Validate int
-		i, err := strconv.Atoi(val)
-		if err != nil || i < 0 {
-			http.Error(w, "Invalid latency_threshold", http.StatusBadRequest)
+	for _, key := range []string{"latency_threshold", "notification.latency.adaptive_enabled", "notification.latency.factor_percent", "notification.latency.floor_ms"} {
+		if _, ok := body[key]; ok {
+			http.Error(w, "Use notification.latency.increase_percent instead of "+key, http.StatusBadRequest)
 			return
 		}
-
-		if err := h.store.SetSetting("latency_threshold", val); err != nil {
-			http.Error(w, "Failed to save latency_threshold", http.StatusInternalServerError)
-			return
-		}
-		h.manager.SetLatencyThreshold(int64(i))
 	}
 
 	if val, ok := body["data_retention_days"]; ok {
@@ -367,9 +342,8 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 		"notification.chronic.limit":                 {0, 1000},
 		"notification.chronic.window_minutes":        {1, 43200},
 		"notification.latency.baseline_days":         {1, 90},
+		"notification.latency.increase_percent":      {1, 9900},
 		"notification.latency.min_samples":           {1, 1000000},
-		"notification.latency.factor_percent":        {100, 10000},
-		"notification.latency.floor_ms":              {0, 60000},
 		"notification.insights.weekly_day":           {0, 6},
 		"notification.flap_window_checks":            {3, 100},
 		"notification.flap_threshold_percent":        {1, 100},
@@ -394,7 +368,6 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 	// Boolean notification settings
 	notifBoolKeys := []string{
 		"notification.flap_detection_enabled",
-		"notification.latency.adaptive_enabled",
 		"notification.insights.weekly_enabled",
 		"notification.event.down.enabled",
 		"notification.event.up.enabled",

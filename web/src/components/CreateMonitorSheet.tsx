@@ -59,7 +59,7 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
     const [interval, setInterval] = useState(60);
     const [confirmThreshold, setConfirmThreshold] = useState<string>("");
     const [cooldownMins, setCooldownMins] = useState<string>("");
-    const [latencyThreshold, setLatencyThreshold] = useState<string>("");
+    const [latencyIncreasePercent, setLatencyIncreasePercent] = useState<string>("");
     const [showAdvanced, setShowAdvanced] = useState(false);
     const [isNewGroup, setIsNewGroup] = useState(false);
     const [newGroupName, setNewGroupName] = useState(""); // For new group input
@@ -193,7 +193,7 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                 interval,
                 confirmationThreshold: confirmThreshold ? parseInt(confirmThreshold) : undefined,
                 notificationCooldownMinutes: cooldownMins ? parseInt(cooldownMins) : undefined,
-                latencyThreshold: monitorType !== "docker" && latencyThreshold ? parseInt(latencyThreshold) : undefined,
+                latencyIncreasePercent: monitorType !== "docker" && latencyIncreasePercent ? Number(latencyIncreasePercent) : undefined,
                 requestConfig,
             });
 
@@ -216,7 +216,7 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
             setInterval(60);
             setConfirmThreshold("");
             setCooldownMins("");
-            setLatencyThreshold("");
+            setLatencyIncreasePercent("");
             setShowAdvanced(false);
             setIsNewGroup(false);
             setHttpMethod("GET");
@@ -400,14 +400,15 @@ export function CreateMonitorSheet({ groups, defaultGroup }: CreateMonitorSheetP
                                         />
                                     </div>
                                     {monitorType !== "docker" && <div className="grid gap-1.5 col-span-2">
-                                        <Label htmlFor="create-latency" className="text-xs">Latency Threshold (ms)</Label>
+                                        <Label htmlFor="create-latency" className="text-xs">Above normal (%)</Label>
                                         <Input
                                             id="create-latency"
                                             type="number"
                                             min={1}
+                                            max={9900}
                                             placeholder="Global default"
-                                            value={latencyThreshold}
-                                            onChange={(e) => setLatencyThreshold(e.target.value)}
+                                            value={latencyIncreasePercent}
+                                            onChange={(e) => setLatencyIncreasePercent(e.target.value)}
                                         />
                                     </div>}
                                     <p className="col-span-2 text-xs text-muted-foreground">

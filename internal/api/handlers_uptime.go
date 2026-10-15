@@ -56,22 +56,23 @@ type HistoryPoint struct {
 }
 
 type MonitorDTO struct {
-	ID                      string            `json:"id"`
-	Name                    string            `json:"name"`
-	Type                    string            `json:"type"`
-	URL                     string            `json:"url"`
-	Status                  string            `json:"status"`
-	Active                  bool              `json:"active"`
-	Latency                 int64             `json:"latency"`
-	Interval                int               `json:"interval"`
-	History                 []HistoryPoint    `json:"history"`
-	Events                  []MonitorEvent    `json:"events"`
-	LastCheck               string            `json:"lastCheck"`
-	ConfirmationThreshold   *int              `json:"confirmationThreshold,omitempty"`
-	NotificationCooldownMin *int              `json:"notificationCooldownMinutes,omitempty"`
-	LatencyThreshold        *int              `json:"latencyThreshold,omitempty"`
-	RequestConfig           *db.RequestConfig `json:"requestConfig,omitempty"`
-	AlertsMuted             bool              `json:"alertsMuted"`
+	ID                          string            `json:"id"`
+	Name                        string            `json:"name"`
+	Type                        string            `json:"type"`
+	URL                         string            `json:"url"`
+	Status                      string            `json:"status"`
+	Active                      bool              `json:"active"`
+	Latency                     int64             `json:"latency"`
+	Interval                    int               `json:"interval"`
+	History                     []HistoryPoint    `json:"history"`
+	Events                      []MonitorEvent    `json:"events"`
+	LastCheck                   string            `json:"lastCheck"`
+	ConfirmationThreshold       *int              `json:"confirmationThreshold,omitempty"`
+	NotificationCooldownMin     *int              `json:"notificationCooldownMinutes,omitempty"`
+	EffectiveLatencyThresholdMs int64             `json:"effectiveLatencyThresholdMs"`
+	LatencyIncreasePercent      *int              `json:"latencyIncreasePercent,omitempty"`
+	RequestConfig               *db.RequestConfig `json:"requestConfig,omitempty"`
+	AlertsMuted                 bool              `json:"alertsMuted"`
 }
 
 type MonitorEvent struct {
@@ -142,7 +143,7 @@ func (h *UptimeHandler) monitorStatus(meta db.Monitor) string {
 	if !isUp {
 		return "down"
 	}
-	if isDegraded || latency > task.GetLatencyThreshold() {
+	if isDegraded || task.IsHighLatency(latency) {
 		return "degraded"
 	}
 	return "up"
@@ -151,15 +152,17 @@ func (h *UptimeHandler) monitorStatus(meta db.Monitor) string {
 func (h *UptimeHandler) monitorDTO(meta db.Monitor, events []db.MonitorEvent) MonitorDTO {
 	status := h.monitorStatus(meta)
 	latency := int64(0)
+	effectiveThreshold := int64(0)
 	lastCheck := "Never"
 	historyPoints := []HistoryPoint{}
 
 	if task := h.manager.GetMonitor(meta.ID); task != nil {
+		effectiveThreshold = task.GetLatencyThreshold()
 		for _, point := range task.GetHistory() {
 			pointStatus := "down"
 			if point.IsUp {
 				pointStatus = "up"
-				if point.Latency > task.GetLatencyThreshold() {
+				if task.IsHighLatency(point.Latency) {
 					pointStatus = "degraded"
 				}
 			}
@@ -175,11 +178,12 @@ func (h *UptimeHandler) monitorDTO(meta db.Monitor, events []db.MonitorEvent) Mo
 	}
 
 	return MonitorDTO{
-		ID: meta.ID, Name: meta.Name, Type: db.NormalizeMonitorType(meta.Type), URL: meta.URL,
+		EffectiveLatencyThresholdMs: effectiveThreshold,
+		ID:                          meta.ID, Name: meta.Name, Type: db.NormalizeMonitorType(meta.Type), URL: meta.URL,
 		Status: status, Active: meta.Active, Latency: latency, Interval: meta.Interval,
 		History: historyPoints, Events: eventsToDTO(events), LastCheck: lastCheck,
 		ConfirmationThreshold: meta.ConfirmationThreshold, NotificationCooldownMin: meta.NotificationCooldownMin,
-		LatencyThreshold: meta.LatencyThreshold, RequestConfig: meta.RequestConfig, AlertsMuted: meta.AlertsMuted,
+		LatencyIncreasePercent: meta.LatencyIncreasePercent, RequestConfig: meta.RequestConfig, AlertsMuted: meta.AlertsMuted,
 	}
 }
 
@@ -383,7 +387,7 @@ func (h *UptimeHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 					threshold := task.GetLatencyThreshold()
 					if last.IsUp {
 						statusStr = "up"
-						if last.Latency > threshold {
+						if threshold > 0 && last.Latency > threshold {
 							statusStr = "degraded"
 						}
 					}
@@ -394,7 +398,7 @@ func (h *UptimeHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 						s := "down"
 						if h.IsUp {
 							s = "up"
-							if h.Latency > threshold {
+							if threshold > 0 && h.Latency > threshold {
 								s = "degraded"
 							}
 						}
@@ -416,23 +420,28 @@ func (h *UptimeHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
+			var effectiveThreshold int64
+			if task != nil {
+				effectiveThreshold = task.GetLatencyThreshold()
+			}
 			monitorDTOs = append(monitorDTOs, MonitorDTO{
-				ID:                      meta.ID,
-				Name:                    meta.Name,
-				Type:                    db.NormalizeMonitorType(meta.Type),
-				URL:                     meta.URL,
-				Status:                  statusStr,
-				Active:                  meta.Active,
-				Latency:                 latency,
-				Interval:                meta.Interval,
-				History:                 historyPoints,
-				LastCheck:               lastCheck,
-				Events:                  eventsToDTO(eventsByMonitor[meta.ID]),
-				ConfirmationThreshold:   meta.ConfirmationThreshold,
-				NotificationCooldownMin: meta.NotificationCooldownMin,
-				LatencyThreshold:        meta.LatencyThreshold,
-				AlertsMuted:             meta.AlertsMuted,
-				RequestConfig:           meta.RequestConfig,
+				EffectiveLatencyThresholdMs: effectiveThreshold,
+				ID:                          meta.ID,
+				Name:                        meta.Name,
+				Type:                        db.NormalizeMonitorType(meta.Type),
+				URL:                         meta.URL,
+				Status:                      statusStr,
+				Active:                      meta.Active,
+				Latency:                     latency,
+				Interval:                    meta.Interval,
+				History:                     historyPoints,
+				LastCheck:                   lastCheck,
+				Events:                      eventsToDTO(eventsByMonitor[meta.ID]),
+				ConfirmationThreshold:       meta.ConfirmationThreshold,
+				NotificationCooldownMin:     meta.NotificationCooldownMin,
+				LatencyIncreasePercent:      meta.LatencyIncreasePercent,
+				AlertsMuted:                 meta.AlertsMuted,
+				RequestConfig:               meta.RequestConfig,
 			})
 		}
 
@@ -724,7 +733,7 @@ func (h *UptimeHandler) GetOverview(w http.ResponseWriter, r *http.Request) {
 							anyDown = true
 							break // Critical priority
 						}
-						if hasHistory && isUp && (isDegraded || latency > task.GetLatencyThreshold()) {
+						if hasHistory && isUp && (isDegraded || task.IsHighLatency(latency)) {
 							anyDegraded = true
 						}
 					}

@@ -7,7 +7,7 @@ test.describe.configure({ mode: 'serial' });
 
 test.describe('Per-Monitor Latency Threshold', () => {
 
-    test('Create monitor with custom latency threshold and verify in settings', async ({ page }) => {
+    test('persists a percentage override and clears it to inherit the global default', async ({ page }) => {
         const dashboard = new DashboardPage(page);
         const login = new LoginPage(page);
 
@@ -36,10 +36,10 @@ test.describe('Per-Monitor Latency Threshold', () => {
 
         // 5. Expand Advanced Settings
         await page.getByText('+ Advanced Settings').click();
-        await expect(page.getByLabel('Latency Threshold (ms)')).toBeVisible({ timeout: 5000 });
+        await expect(page.getByLabel('Above normal (%)')).toBeVisible({ timeout: 5000 });
 
         // 6. Set Latency Threshold
-        await page.getByLabel('Latency Threshold (ms)').fill('2000');
+        await page.getByLabel('Above normal (%)').fill('25');
 
         // 7. Submit
         await dashboard.createMonitorSubmit.click();
@@ -53,30 +53,37 @@ test.describe('Per-Monitor Latency Threshold', () => {
         await page.getByRole('button', { name: /Alerting/ }).click();
 
         // Verify the latency threshold is persisted
-        const latencyInput = page.getByLabel('Latency Threshold (ms)');
+        const latencyInput = page.getByLabel('Above normal (%)');
         await expect(latencyInput).toBeVisible({ timeout: 5000 });
-        await expect(latencyInput).toHaveValue('2000');
+        await expect(latencyInput).toHaveValue('25');
+        await expect(page.getByText('Learning latency.', { exact: false })).toBeVisible();
 
         // 9. Update the latency threshold
         await latencyInput.clear();
-        await latencyInput.fill('5000');
+        await latencyInput.fill('50');
 
         // Save
         const updated = page.waitForResponse(resp => resp.url().includes('/api/monitors/') && resp.request().method() === 'PUT');
         await page.getByRole('button', { name: 'Save changes' }).click();
         expect((await updated).status()).toBe(200);
 
-        // 10. Verify the updated value remains in the canonical settings view
-        await expect(page.getByLabel('Latency Threshold (ms)')).toHaveValue('5000');
+        await page.reload();
+        await page.getByRole('button', { name: /Alerting/ }).click();
+
+        // Verify persisted settings after loading them from the server.
+        await expect(page.getByLabel('Above normal (%)')).toHaveValue('50');
 
         // 11. Clear the threshold (back to global default)
-        await page.getByLabel('Latency Threshold (ms)').clear();
+        await page.getByLabel('Above normal (%)').clear();
         const cleared = page.waitForResponse(resp => resp.url().includes('/api/monitors/') && resp.request().method() === 'PUT');
         await page.getByRole('button', { name: 'Save changes' }).click();
         expect((await cleared).status()).toBe(200);
 
+        await page.reload();
+        await page.getByRole('button', { name: /Alerting/ }).click();
+
         // Should be empty (global default)
-        await expect(page.getByLabel('Latency Threshold (ms)')).toHaveValue('');
+        await expect(page.getByLabel('Above normal (%)')).toHaveValue('');
 
         // 12. Cleanup
         await page.goto(groupPath);
