@@ -296,3 +296,46 @@ func TestPruneDailyRollups(t *testing.T) {
 		t.Error("expected error for 0 days")
 	}
 }
+
+func TestRollupDailyUptime_InactiveAndEmptyMonitors(t *testing.T) {
+	RunTestWithBothDBs(t, "inactive and empty monitor rollups", func(t *testing.T, s *Store) {
+		if err := s.CreateGroup(Group{ID: "g1", Name: "G1"}); err != nil {
+			t.Fatal(err)
+		}
+		for _, id := range []string{"paused", "empty"} {
+			if err := s.CreateMonitor(Monitor{ID: id, GroupID: "g1", Name: id, Interval: 60, Active: false}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := s.BatchInsertChecks([]CheckResult{
+			checkAt("paused", "up", 1), checkAt("paused", "down", 1),
+			checkAt("paused", "down", 4),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		// Pausing preserves history; monitors without checks must not acquire a
+		// synthetic zero-count day. Exercise both instrumented and plain reads.
+		if err := s.RollupDailyUptime(2); err != nil {
+			t.Fatal(err)
+		}
+		stats, err := s.RollupDailyUptimeWithStats(2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stats.Rows != 1 {
+			t.Fatalf("rollup rows = %d, want one recent day for the paused monitor", stats.Rows)
+		}
+		got, err := s.GetDailyUptimeStatsForMonitors([]string{"paused", "empty"}, 7)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d, ok := findDay(got["paused"], dayStr(1)); !ok || d.Total != 2 || d.UptimePercent != 50 {
+			t.Fatalf("paused history = %+v, found = %v", d, ok)
+		}
+		for _, id := range []string{"paused", "empty"} {
+			if d, ok := findDay(got[id], dayStr(4)); !ok || d.Total != 0 || d.UptimePercent != -1 {
+				t.Fatalf("%s outside refresh window = %+v, found = %v", id, d, ok)
+			}
+		}
+	})
+}

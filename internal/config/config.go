@@ -15,6 +15,7 @@ const (
 )
 
 type Config struct {
+	IncrementalUptime     bool
 	SQLiteRollupBatchSize int
 	ListenAddr            string
 	HTTPDiagnostics       bool
@@ -61,6 +62,7 @@ func Load() (*Config, error) {
 	}
 
 	cfg.HTTPDiagnostics = strings.EqualFold(os.Getenv("HTTP_DIAGNOSTICS_ENABLED"), "true")
+	cfg.IncrementalUptime = strings.EqualFold(os.Getenv("INCREMENTAL_UPTIME_ENABLED"), "true")
 	cfg.RollupDiagnostics = strings.EqualFold(os.Getenv("ROLLUP_DIAGNOSTICS_ENABLED"), "true")
 
 	// Database configuration

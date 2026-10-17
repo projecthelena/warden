@@ -53,6 +53,7 @@ func main() {
 
 	// Init DB
 	store, err := db.NewStore(db.DBConfig{
+		IncrementalUptime:     cfg.IncrementalUptime,
 		SQLiteRollupBatchSize: cfg.SQLiteRollupBatchSize,
 		Type:                  cfg.DBType,
 		Path:                  cfg.DBPath,

@@ -1,6 +1,7 @@
 package uptime
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log"
@@ -91,11 +92,17 @@ type Manager struct {
 	mu              sync.RWMutex
 	monitorSnapshot atomic.Value // immutable map[string]*Monitor for read-only consumers
 
-	retrySlots  chan struct{}
-	jobQueue    chan Job
-	resultQueue chan CheckResult
-	stopCh      chan struct{}
-	wg          sync.WaitGroup
+	retrySlots        chan struct{}
+	jobQueue          chan Job
+	resultQueue       chan CheckResult
+	stopCh            chan struct{}
+	wg                sync.WaitGroup
+	workerWG          sync.WaitGroup
+	persistCtx        context.Context
+	cancelPersistence context.CancelFunc
+	processorDone     chan struct{}
+	processorStarted  atomic.Bool
+	stopOnce          sync.Once
 
 	// Track SSL notification thresholds per monitor
 	sslNotifiedThresholds map[string]*sslThresholdState
@@ -139,15 +146,14 @@ type notifierService interface {
 }
 
 const (
-	WorkerCount = 50
-	BatchSize   = 50
-	BatchTime   = 2 * time.Second
-	// How often the daily uptime rollup for recent days is refreshed. Today's bar on the
-	// status page can trail reality by up to this interval, which is fine for a status page.
+	WorkerCount    = 50
+	BatchSize      = 50
+	BatchTime      = 2 * time.Second
 	rollupInterval = 5 * time.Minute
 )
 
 func NewManager(store *db.Store) *Manager {
+	persistCtx, cancelPersistence := context.WithCancel(context.Background())
 	m := &Manager{
 		store:                 store,
 		monitors:              make(map[string]*Monitor),
@@ -156,6 +162,9 @@ func NewManager(store *db.Store) *Manager {
 		resultQueue:           make(chan CheckResult, 1000), // Buffer for results
 		retrySlots:            make(chan struct{}, WorkerCount/10),
 		stopCh:                make(chan struct{}),
+		persistCtx:            persistCtx,
+		cancelPersistence:     cancelPersistence,
+		processorDone:         make(chan struct{}),
 		sslNotifiedThresholds: make(map[string]*sslThresholdState),
 		notificationTimezone:  time.UTC, // Default to UTC
 		notifier:              notifications.NewService(store),
@@ -181,18 +190,21 @@ func (m *Manager) Start() {
 	// Start Workers
 	for i := 0; i < WorkerCount; i++ {
 		m.wg.Add(1)
-		go m.worker()
+		m.workerWG.Add(1)
+		go func() { defer m.workerWG.Done(); m.worker() }()
 	}
 
 	// Start Result Processor (Batch Writer)
+	m.processorStarted.Store(true)
 	m.wg.Add(1)
 	go m.resultProcessor()
 
+	if !m.store.IncrementalUptimeEnabled() {
+		go m.rollupWorker()
+	}
+
 	// Start Retention Worker
 	go m.retentionWorker()
-
-	// Start Uptime Rollup Worker
-	go m.rollupWorker()
 
 	// Start Digest Worker
 	go m.digestWorker()
@@ -230,17 +242,25 @@ func (m *Manager) Start() {
 }
 
 func (m *Manager) Stop() {
-	close(m.stopCh)
-	// Stop monitors (producers)
-	m.mu.Lock()
-	for _, mon := range m.monitors {
-		mon.Stop()
-	}
-	m.mu.Unlock()
-
-	close(m.jobQueue)
-	// Wait for workers to finish
-	// m.wg.Wait() // Optional: strictly wait or just let app exit
+	m.stopOnce.Do(func() {
+		close(m.stopCh)
+		m.mu.Lock()
+		for _, mon := range m.monitors {
+			mon.Stop()
+		}
+		m.mu.Unlock()
+		go func() { m.workerWG.Wait(); close(m.resultQueue) }()
+		defer m.cancelPersistence()
+		if m.processorStarted.Load() {
+			timer := time.NewTimer(10 * time.Second)
+			defer timer.Stop()
+			select {
+			case <-m.processorDone:
+			case <-timer.C:
+				log.Print("Shutdown timed out draining check results; uncommitted results remain in memory")
+			}
+		}
+	})
 }
 
 // Reset stops all monitors and clears the map. Used before DB reset.
@@ -261,7 +281,17 @@ func (m *Manager) worker() {
 
 	transport := checkTransport()
 
-	for job := range m.jobQueue {
+	for {
+		var job Job
+		select {
+		case <-m.stopCh:
+			return
+		case next, ok := <-m.jobQueue:
+			if !ok {
+				return
+			}
+			job = next
+		}
 		started := metricstate.Now()
 		if metricstate.Enabled() {
 			observability.CheckQueueDepth.Set(float64(len(m.jobQueue)))
@@ -285,7 +315,11 @@ func (m *Manager) worker() {
 			observability.Checks.WithLabelValues(monitorType, outcome).Inc()
 			observability.CheckDuration.WithLabelValues(monitorType).Observe(time.Since(started).Seconds())
 		}
-		m.resultQueue <- result
+		select {
+		case m.resultQueue <- result:
+		case <-m.persistCtx.Done():
+			return
+		}
 		if metricstate.Enabled() {
 			observability.ResultQueueDepth.Set(float64(len(m.resultQueue)))
 		}
@@ -391,39 +425,41 @@ func requestConfigChanged(a, b *db.RequestConfig) bool {
 }
 
 func (m *Manager) resultProcessor() {
+	m.processorStarted.Store(true)
 	defer m.wg.Done()
-
+	defer close(m.processorDone)
+	defer m.cancelPersistence()
 	var batch []db.CheckResult
 	timer := time.NewTicker(BatchTime)
 	defer timer.Stop()
-
-	flush := func() {
+	flush := func() bool {
 		if len(batch) == 0 {
-			return
+			return true
 		}
-		started := metricstate.Now()
-		if metricstate.Enabled() {
-			observability.PersistBatchSize.Observe(float64(len(batch)))
-		}
-		outcome := "success"
-		if err := m.store.BatchInsertChecks(batch); err != nil {
-			outcome = "error"
+		if err := m.persistBatch(batch); err != nil {
+			if m.store.IncrementalUptimeEnabled() {
+				log.Printf("Check persistence stopped with %d uncommitted results: %v", len(batch), err)
+				return false
+			}
 			log.Printf("Error capturing batch stats: %v", err)
 		}
-		if metricstate.Enabled() {
-			observability.PersistDuration.WithLabelValues(outcome).Observe(time.Since(started).Seconds())
-		}
 		batch = nil
+		return true
 	}
 
 	for {
 		select {
-		case <-m.stopCh:
-			flush()
+		case <-m.persistCtx.Done():
 			return
 		case <-timer.C:
-			flush()
-		case res := <-m.resultQueue:
+			if !flush() {
+				return
+			}
+		case res, ok := <-m.resultQueue:
+			if !ok {
+				flush()
+				return
+			}
 			// 1. Detect Events (State Change)
 			m.mu.RLock()
 			mon, exists := m.monitors[res.MonitorID]
@@ -676,7 +712,9 @@ func (m *Manager) resultProcessor() {
 			})
 
 			if len(batch) >= BatchSize {
-				flush()
+				if !flush() {
+					return
+				}
 			}
 		}
 	}
@@ -839,6 +877,12 @@ func (m *Manager) Sync() {
 	}
 
 	m.mu.Lock()
+	select {
+	case <-m.stopCh:
+		m.mu.Unlock()
+		return
+	default:
+	}
 	defer m.mu.Unlock()
 
 	// Update cached settings

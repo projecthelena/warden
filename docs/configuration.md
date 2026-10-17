@@ -4,6 +4,7 @@ Warden is configured with environment variables. The defaults run locally with S
 
 | Variable | Default | Description |
 | :-- | :-- | :-- |
+| `INCREMENTAL_UPTIME_ENABLED` | `false` | Opt in to transactional daily uptime counters on SQLite or PostgreSQL. Requires restart; set `false` to restore periodic rollups. See [mode switching](database.md#daily-uptime-feature-flag). |
 | `LISTEN_ADDR` | `:9090` | Address and port Warden listens on. |
 | `ROLLUP_DIAGNOSTICS_ENABLED` | `false` | Opt in to daily uptime rollup phase metrics and structured logs for runs lasting at least one second. Requires a restart. |
 | `HTTP_DIAGNOSTICS_ENABLED` | `false` | Also record HTTP phases for legacy/manual-mode monitors; automatic retry mode already records its attempts. See [HTTP diagnostics](http-diagnostics.md). Requires a restart. |
@@ -69,7 +70,7 @@ The hourly baseline cycle has too few samples for a useful five-minute percentil
 
 ### Rollup diagnostics
 
-Set `ROLLUP_DIAGNOSTICS_ENABLED=true` on the Warden process to diagnose database contention. This flag is independent of `OBSERVABILITY_ADDR`: slow-operation logs work without the metrics listener; scraping requires both. Unset the flag or set it to `false` and restart to disable diagnostics. Daily rollups, their five-minute refresh and status-page history remain active either way.
+Set `ROLLUP_DIAGNOSTICS_ENABLED=true` on the Warden process to diagnose database contention. This flag is independent of `OBSERVABILITY_ADDR`: slow-operation logs work without the metrics listener; scraping requires both. Unset the flag or set it to `false` and restart to disable diagnostics. With `INCREMENTAL_UPTIME_ENABLED=false` (the default), daily rollups and their five-minute refresh remain active either way. Incremental mode replaces these runs with counters written in each check transaction, so this diagnostic flag does not measure the incremental path; use persistence metrics instead.
 
 With diagnostics enabled, `warden_uptime_rollup_in_progress{mode}` marks active work and `warden_uptime_rollup_runs_total{mode,outcome}` counts completed runs. Modes are `backfill` and `refresh`; outcomes are `success` and `error`. `warden_uptime_rollup_rows{mode}` records aggregated monitor-day rows, which may not have committed if a write fails.
 
@@ -77,4 +78,4 @@ With diagnostics enabled, `warden_uptime_rollup_in_progress{mode}` marks active 
 
 Runs lasting at least one second produce one structured `slow uptime rollup` warning with phase durations, outcome, row count, and pool snapshots before/after. Pool wait counts and durations include all concurrent database users: their difference is correlation evidence, not time attributable exclusively to the rollup. The diagnostic log omits SQL, targets, credentials and driver error text. Existing rollup error logging is unchanged.
 
-Smaller `SQLITE_ROLLUP_BATCH_SIZE` values (for example, `10`) release the SQLite connection more often between rollup reads, allowing queued checks and API requests to run. They also increase query overhead and may lengthen the complete refresh. Compare under representative load before changing the default. This setting does not change check-write batches or retention and is ignored with PostgreSQL.
+Smaller `SQLITE_ROLLUP_BATCH_SIZE` values (for example, `10`) release the SQLite connection more often between rollup reads, allowing queued checks and API requests to run. They also increase query overhead and may lengthen the complete refresh. Compare under representative load before changing the default. This setting does not change check-write batches or retention and is ignored with PostgreSQL. It does not affect incremental writes or the startup reconciliation when `INCREMENTAL_UPTIME_ENABLED=true`.

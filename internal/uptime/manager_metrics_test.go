@@ -89,7 +89,7 @@ func TestPersistMetricsSwitchForBothOutcomes(t *testing.T) {
 				m.wg.Add(1)
 				go m.resultProcessor()
 				m.resultQueue <- CheckResult{MonitorID: "m1", Status: true, Timestamp: time.Now().UTC()}
-				close(m.stopCh)
+				close(m.resultQueue)
 				m.wg.Wait()
 				var delta uint64
 				if enabled {

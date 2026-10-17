@@ -210,6 +210,14 @@ jobs:
           go clean -testcache
           go test ./...
 
+      - name: Incremental uptime process E2E (SQLite and PostgreSQL)
+        env:
+          WARDEN_E2E_BINARY: ${{ github.workspace }}/warden-e2e
+          E2E_POSTGRES_URL: postgres://warden:warden@localhost:5432/warden?sslmode=disable
+        run: |
+          go build -o warden-e2e ./cmd/dashboard
+          go test ./tests/e2e -count=1 -v
+
       - name: Ping tests without ICMP permission
         # The other half: with ICMP denied, the checks must report the missing
         # permission rather than claiming the host is down. This is what a default
@@ -270,6 +278,13 @@ jobs:
         working-directory: web
         env:
           WARDEN_E2E_BINARY: ../warden
+        run: npm run test:e2e:sqlite-rollup
+
+      - name: Verify incremental history in the browser
+        working-directory: web
+        env:
+          WARDEN_E2E_BINARY: ../warden
+          INCREMENTAL_UPTIME_ENABLED: 'true'
         run: npm run test:e2e:sqlite-rollup
 
       - name: Run E2E Tests
