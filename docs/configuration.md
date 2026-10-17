@@ -6,6 +6,7 @@ Warden is configured with environment variables. The defaults run locally with S
 | :-- | :-- | :-- |
 | `INCREMENTAL_UPTIME_ENABLED` | `false` | Opt in to transactional daily uptime counters on SQLite or PostgreSQL. Requires restart; set `false` to restore periodic rollups. See [mode switching](database.md#daily-uptime-feature-flag). |
 | `LISTEN_ADDR` | `:9090` | Address and port Warden listens on. |
+| `POSTGRES_TRACE_ENABLED` | `false` | Log PostgreSQL operation start/end events with backend PID and SQL correlation tags. Diagnostic use only; adds log volume and overhead. See [operation traces](../tools/postgres-trace/README.md). Requires restart; ignored for SQLite. |
 | `ROLLUP_DIAGNOSTICS_ENABLED` | `false` | Opt in to daily uptime rollup phase metrics and structured logs for runs lasting at least one second. Requires a restart. |
 | `HTTP_DIAGNOSTICS_ENABLED` | `false` | Also record HTTP phases for legacy/manual-mode monitors; automatic retry mode already records its attempts. See [HTTP diagnostics](http-diagnostics.md). Requires a restart. |
 | `SECONDARY_PROBE_URL` | empty (disabled) | Optional second probe endpoint over HTTPS or a loopback HTTP tunnel. Requires HTTP diagnostics. |

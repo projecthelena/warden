@@ -15,6 +15,7 @@ const (
 )
 
 type Config struct {
+	PostgresTrace         bool
 	IncrementalUptime     bool
 	SQLiteRollupBatchSize int
 	ListenAddr            string
@@ -61,6 +62,7 @@ func Load() (*Config, error) {
 		cfg.MetricsEnabled = enabled
 	}
 
+	cfg.PostgresTrace = strings.EqualFold(os.Getenv("POSTGRES_TRACE_ENABLED"), "true")
 	cfg.HTTPDiagnostics = strings.EqualFold(os.Getenv("HTTP_DIAGNOSTICS_ENABLED"), "true")
 	cfg.IncrementalUptime = strings.EqualFold(os.Getenv("INCREMENTAL_UPTIME_ENABLED"), "true")
 	cfg.RollupDiagnostics = strings.EqualFold(os.Getenv("ROLLUP_DIAGNOSTICS_ENABLED"), "true")

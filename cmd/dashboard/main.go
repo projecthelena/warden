@@ -53,6 +53,7 @@ func main() {
 
 	// Init DB
 	store, err := db.NewStore(db.DBConfig{
+		PostgresTrace:         cfg.PostgresTrace,
 		IncrementalUptime:     cfg.IncrementalUptime,
 		SQLiteRollupBatchSize: cfg.SQLiteRollupBatchSize,
 		Type:                  cfg.DBType,

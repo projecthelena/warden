@@ -28,6 +28,7 @@ var postgresMigrationFS embed.FS
 
 // DBConfig holds database configuration
 type DBConfig struct {
+	PostgresTrace         bool   // Opt-in per-operation diagnostic logs.
 	IncrementalUptime     bool   // Opt in to transactional daily counters.
 	SQLiteRollupBatchSize int    // SQLite monitors per rollup read; zero defaults to 50.
 	Type                  string // "sqlite" or "postgres"
@@ -54,7 +55,11 @@ func NewStore(cfg DBConfig) (*Store, error) {
 	switch cfg.Type {
 	case DialectPostgres, "postgresql":
 		dialect = DialectPostgres
-		db, err = sql.Open("postgres", cfg.URL)
+		if cfg.PostgresTrace {
+			db, err = openTracedPostgres(cfg.URL)
+		} else {
+			db, err = sql.Open("postgres", cfg.URL)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("failed to open postgres: %w", err)
 		}
