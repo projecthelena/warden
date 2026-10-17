@@ -16,6 +16,9 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // These are the interfaces implemented by the pinned pq driver. Embedding them
@@ -52,9 +55,13 @@ type traceConnector struct {
 	run      string
 	sequence atomic.Uint64
 	emit     func(traceEvent)
+	tracer   trace.Tracer
 }
 
 type traceEvent struct {
+	Event       string  `json:"event"`
+	TraceID     string  `json:"trace_id,omitempty"`
+	SpanID      string  `json:"span_id,omitempty"`
 	At          string  `json:"at"`
 	Run         string  `json:"run"`
 	Connection  uint64  `json:"connection"`
@@ -69,14 +76,19 @@ type traceEvent struct {
 	SQLState    string  `json:"sqlstate,omitempty"`
 }
 
-func openTracedPostgres(dsn string) (*sql.DB, error) {
+func openTracedPostgres(dsn string, tracers ...trace.Tracer) (*sql.DB, error) {
 	connector, err := pq.NewConnector(dsn)
 	if err != nil {
 		return nil, err
 	}
-	return sql.OpenDB(&traceConnector{Connector: connector, run: rand.Text()[:12], emit: func(e traceEvent) {
+	var tracer trace.Tracer
+	if len(tracers) > 0 {
+		tracer = tracers[0]
+	}
+	logger := log.New(log.Writer(), "", 0)
+	return sql.OpenDB(&traceConnector{tracer: tracer, Connector: connector, run: rand.Text()[:12], emit: func(e traceEvent) {
 		data, _ := json.Marshal(e)
-		log.Printf("db_trace %s", data)
+		logger.Printf("%s", data)
 	}}), nil
 }
 
@@ -111,14 +123,30 @@ type traceConn struct {
 	id          uint64
 	pid         int64
 	transaction uint64
+	txContext   context.Context
+	txSpan      trace.Span
 }
 
 func (c *traceConn) start(operation string, statement uint64) (uint64, func(error)) {
 	span := c.owner.sequence.Add(1)
 	started := time.Now()
-	event := traceEvent{At: started.UTC().Format(time.RFC3339Nano), Run: c.owner.run,
+	event := traceEvent{Event: "db_trace", At: started.UTC().Format(time.RFC3339Nano), Run: c.owner.run,
 		Connection: c.id, PID: c.pid, Span: span, Transaction: c.transaction,
 		Statement: statement, Operation: operation, Phase: "start"}
+	var otelSpan trace.Span
+	if c.owner.tracer != nil {
+		ctx := context.Background()
+		if c.txContext != nil {
+			ctx = c.txContext
+		}
+		_, otelSpan = c.owner.tracer.Start(ctx, "postgres."+operation, trace.WithSpanKind(trace.SpanKindClient), trace.WithAttributes(
+			attribute.String("db.system.name", "postgresql"), attribute.String("db.operation.name", operation),
+			attribute.String("warden.run", c.owner.run), attribute.Int64("warden.span", int64(span)),
+			attribute.Int64("warden.transaction", int64(c.transaction)), attribute.Int64("warden.statement", int64(statement)),
+			attribute.Int64("db.postgresql.backend_pid", c.pid), attribute.Int64("warden.connection", int64(c.id))))
+		event.TraceID = otelSpan.SpanContext().TraceID().String()
+		event.SpanID = otelSpan.SpanContext().SpanID().String()
+	}
 	c.owner.emit(event)
 	var once sync.Once
 	return span, func(err error) {
@@ -139,6 +167,16 @@ func (c *traceConn) start(operation string, statement uint64) (uint64, func(erro
 				if errors.Is(err, context.DeadlineExceeded) {
 					event.Outcome = "timeout"
 				}
+			}
+			if otelSpan != nil {
+				otelSpan.SetAttributes(attribute.String("warden.outcome", event.Outcome))
+				if err != nil {
+					otelSpan.SetStatus(codes.Error, event.Outcome)
+				}
+				if event.SQLState != "" {
+					otelSpan.SetAttributes(attribute.String("db.response.status_code", event.SQLState))
+				}
+				otelSpan.End()
 			}
 			c.owner.emit(event)
 		})
@@ -182,14 +220,27 @@ func (c *traceConn) Begin() (driver.Tx, error) {
 
 func (c *traceConn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
 	c.transaction = c.owner.sequence.Add(1)
+	if c.owner.tracer != nil {
+		c.txContext, c.txSpan = c.owner.tracer.Start(ctx, "postgres.transaction", trace.WithSpanKind(trace.SpanKindClient), trace.WithAttributes(attribute.String("db.system.name", "postgresql"), attribute.String("warden.run", c.owner.run), attribute.Int64("warden.transaction", int64(c.transaction)), attribute.Int64("db.postgresql.backend_pid", c.pid)))
+	}
 	_, finish := c.start("begin", 0)
 	tx, err := c.postgresConn.BeginTx(ctx, opts)
 	finish(err)
 	if err != nil {
-		c.transaction = 0
+		c.endTransaction(err)
 		return nil, err
 	}
 	return &traceTx{Tx: tx, conn: c}, nil
+}
+
+func (c *traceConn) endTransaction(err error) {
+	if c.txSpan != nil {
+		if err != nil {
+			c.txSpan.SetStatus(codes.Error, "error")
+		}
+		c.txSpan.End()
+	}
+	c.transaction, c.txContext, c.txSpan = 0, nil, nil
 }
 
 type traceTx struct {
@@ -201,14 +252,14 @@ func (t *traceTx) Commit() error {
 	_, finish := t.conn.start("commit", 0)
 	err := t.Tx.Commit()
 	finish(err)
-	t.conn.transaction = 0
+	t.conn.endTransaction(err)
 	return err
 }
 func (t *traceTx) Rollback() error {
 	_, finish := t.conn.start("rollback", 0)
 	err := t.Tx.Rollback()
 	finish(err)
-	t.conn.transaction = 0
+	t.conn.endTransaction(err)
 	return err
 }
 

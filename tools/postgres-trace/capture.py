@@ -9,10 +9,11 @@ from pathlib import Path
 import selectors
 import signal
 import subprocess
+import sys
 import time
 
 
-def capture(sql, output, seconds):
+def capture(sql, output, seconds, stdout=False):
     stop = False
 
     def request_stop(*_):
@@ -45,7 +46,11 @@ def capture(sql, output, seconds):
                         continue  # psql watch headers are not samples.
                     record = json.loads(line)
                     record["received_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                    sink.write(json.dumps(record, separators=(",", ":")) + "\n")
+                    record["event"] = "postgres_" + sql.stem
+                    encoded = json.dumps(record, separators=(",", ":"))
+                    sink.write(encoded + "\n")
+                    if stdout:
+                        print(encoded, flush=True)
                     sink.flush()
                     samples += 1
         finally:
@@ -59,15 +64,16 @@ def capture(sql, output, seconds):
             process.stdout.close()
     if not samples:
         raise RuntimeError("capture produced no samples")
-    print(f"Saved {samples} samples to {output}")
+    print(f"Saved {samples} samples to {output}", file=sys.stderr)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("kind", choices=("activity", "stats"))
     parser.add_argument("output", type=Path)
+    parser.add_argument("--stdout", action="store_true", help="Also emit JSON samples for a container log collector")
     parser.add_argument("--seconds", type=int, default=600)
     args = parser.parse_args()
     if args.seconds < 1 or args.seconds > 72000:
         parser.error("seconds must be between 1 and 72000")
-    capture(Path(__file__).with_name(args.kind + ".sql"), args.output, args.seconds)
+    capture(Path(__file__).with_name(args.kind + ".sql"), args.output, args.seconds, args.stdout)

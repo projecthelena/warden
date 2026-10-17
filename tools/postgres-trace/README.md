@@ -25,3 +25,22 @@ Do not enable `log_statement` or `log_min_duration_statement` to collect these t
 Stop samplers at the end of the window, flush/close compressed output, archive logs and restore exactly the saved settings. Turning off Warden tracing does not disable PostgreSQL logging. Do not restart production or modify its logging configuration for a load-test investigation.
 
 References: [PostgreSQL logging](https://www.postgresql.org/docs/18/runtime-config-logging.html) and [activity/statistics](https://www.postgresql.org/docs/18/monitoring-stats.html).
+
+## Central storage
+
+Trace events are JSON lines (`event=db_trace`) with `trace_id` and `span_id` when OTLP export is configured. Container log collectors can send these events to VictoriaLogs together with PostgreSQL container logs and sampler output.
+
+```sh
+POSTGRES_TRACE_ENABLED=true
+OTEL_SERVICE_NAME=warden
+OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=load-test
+OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://victoria-traces.observability.svc.cluster.local:10428/insert/opentelemetry/v1/traces
+```
+
+VictoriaTraces receives client spans for database operations and their enclosing transactions. PostgreSQL itself does not emit OTLP spans: match its activity samples using backend PID and `warden:<run>:<span>` SQL comments. The corresponding span attributes are `db.postgresql.backend_pid`, `warden.run`, and `warden.span`; prepared executions also carry `warden.statement`.
+
+Export runs in the background with a bounded 2,048-span queue. A full queue drops spans rather than blocking database writes. Export and shutdown have five-second timeouts. This is diagnostic telemetry, not a lossless audit log. No SQL text, parameters or database error messages are exported. Instrumentation adds work; measure its effect before comparing load-test results.
+
+Set `POSTGRES_TRACE_ENABLED=false` and restart to disable both JSON tracing and OTLP export. Removing just the endpoint retains JSON tracing. PostgreSQL native logging and external samplers have their own independent switches.
+
+Use `capture.py activity /data/activity.jsonl.gz --seconds 600 --stdout` in a collector-scoped pod to retain the gzip artifact and emit structured samples to VictoriaLogs. Samples carry `event=postgres_activity` or `postgres_stats`. Local archives are not automatically uploaded. Keep the sampler on a separate node from PostgreSQL and bound its duration; it is independent of the Warden flag.
