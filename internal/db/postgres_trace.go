@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -141,9 +142,9 @@ func (c *traceConn) start(operation string, statement uint64) (uint64, func(erro
 		}
 		_, otelSpan = c.owner.tracer.Start(ctx, "postgres."+operation, trace.WithSpanKind(trace.SpanKindClient), trace.WithAttributes(
 			attribute.String("db.system.name", "postgresql"), attribute.String("db.operation.name", operation),
-			attribute.String("warden.run", c.owner.run), attribute.Int64("warden.span", int64(span)),
-			attribute.Int64("warden.transaction", int64(c.transaction)), attribute.Int64("warden.statement", int64(statement)),
-			attribute.Int64("db.postgresql.backend_pid", c.pid), attribute.Int64("warden.connection", int64(c.id))))
+			attribute.String("warden.run", c.owner.run), attribute.String("warden.span", strconv.FormatUint(span, 10)),
+			attribute.String("warden.transaction", strconv.FormatUint(c.transaction, 10)), attribute.String("warden.statement", strconv.FormatUint(statement, 10)),
+			attribute.Int64("db.postgresql.backend_pid", c.pid), attribute.String("warden.connection", strconv.FormatUint(c.id, 10))))
 		event.TraceID = otelSpan.SpanContext().TraceID().String()
 		event.SpanID = otelSpan.SpanContext().SpanID().String()
 	}
@@ -221,7 +222,7 @@ func (c *traceConn) Begin() (driver.Tx, error) {
 func (c *traceConn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
 	c.transaction = c.owner.sequence.Add(1)
 	if c.owner.tracer != nil {
-		c.txContext, c.txSpan = c.owner.tracer.Start(ctx, "postgres.transaction", trace.WithSpanKind(trace.SpanKindClient), trace.WithAttributes(attribute.String("db.system.name", "postgresql"), attribute.String("warden.run", c.owner.run), attribute.Int64("warden.transaction", int64(c.transaction)), attribute.Int64("db.postgresql.backend_pid", c.pid)))
+		c.txContext, c.txSpan = c.owner.tracer.Start(ctx, "postgres.transaction", trace.WithSpanKind(trace.SpanKindClient), trace.WithAttributes(attribute.String("db.system.name", "postgresql"), attribute.String("warden.run", c.owner.run), attribute.String("warden.transaction", strconv.FormatUint(c.transaction, 10)), attribute.Int64("db.postgresql.backend_pid", c.pid)))
 	}
 	_, finish := c.start("begin", 0)
 	tx, err := c.postgresConn.BeginTx(ctx, opts)

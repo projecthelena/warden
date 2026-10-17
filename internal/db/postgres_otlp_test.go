@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -40,9 +41,10 @@ func TestPostgresOTLP(t *testing.T) {
 	}
 	var events []traceEvent
 	owner := &traceConnector{run: "test-run", tracer: provider.Tracer("test"), emit: func(e traceEvent) { events = append(events, e) }}
-	conn := &traceConn{owner: owner, pid: 42, id: 1, transaction: 2}
+	owner.sequence.Store(math.MaxUint64 - 1)
+	conn := &traceConn{owner: owner, pid: 42, id: math.MaxUint64, transaction: math.MaxUint64}
 	conn.txContext, conn.txSpan = owner.tracer.Start(context.Background(), "postgres.transaction")
-	_, finish := conn.start("checks_insert", 0)
+	_, finish := conn.start("checks_insert", math.MaxUint64)
 	finish(&pq.Error{Code: "23505", Message: "secret-query-value"})
 	finish(nil)
 	conn.endTransaction(nil)
@@ -65,6 +67,15 @@ func TestPostgresOTLP(t *testing.T) {
 		}
 		if spans[0].Status.Message != "error" {
 			t.Fatal("expected sanitized error")
+		}
+		attributes := map[string]string{}
+		for _, a := range spans[0].Attributes {
+			attributes[a.Key] = a.Value.GetStringValue()
+		}
+		for _, key := range []string{"warden.span", "warden.transaction", "warden.statement", "warden.connection"} {
+			if attributes[key] != "18446744073709551615" {
+				t.Errorf("%s lost unsigned ID: %q", key, attributes[key])
+			}
 		}
 		payload, _ := json.Marshal(request)
 		if strings.Contains(string(payload), "secret-query-value") {
