@@ -6,6 +6,7 @@ Warden is configured with environment variables. The defaults run locally with S
 | :-- | :-- | :-- |
 | `INCREMENTAL_UPTIME_ENABLED` | `false` | Opt in to transactional daily uptime counters on SQLite or PostgreSQL. Requires restart; set `false` to restore periodic rollups. See [mode switching](database.md#daily-uptime-feature-flag). |
 | `LISTEN_ADDR` | `:9090` | Address and port Warden listens on. |
+| `POSTGRES_TRACE_ENABLED` | `false` | Log PostgreSQL operation start/end events with backend PID and SQL correlation tags. Diagnostic use only; adds log volume and overhead. See [operation traces](../tools/postgres-trace/README.md). Requires restart; ignored for SQLite. |
 | `ROLLUP_DIAGNOSTICS_ENABLED` | `false` | Opt in to daily uptime rollup phase metrics and structured logs for runs lasting at least one second. Requires a restart. |
 | `HTTP_DIAGNOSTICS_ENABLED` | `false` | Also record HTTP phases for legacy/manual-mode monitors; automatic retry mode already records its attempts. See [HTTP diagnostics](http-diagnostics.md). Requires a restart. |
 | `SECONDARY_PROBE_URL` | empty (disabled) | Optional second probe endpoint over HTTPS or a loopback HTTP tunnel. Requires HTTP diagnostics. |
@@ -79,3 +80,5 @@ With diagnostics enabled, `warden_uptime_rollup_in_progress{mode}` marks active 
 Runs lasting at least one second produce one structured `slow uptime rollup` warning with phase durations, outcome, row count, and pool snapshots before/after. Pool wait counts and durations include all concurrent database users: their difference is correlation evidence, not time attributable exclusively to the rollup. The diagnostic log omits SQL, targets, credentials and driver error text. Existing rollup error logging is unchanged.
 
 Smaller `SQLITE_ROLLUP_BATCH_SIZE` values (for example, `10`) release the SQLite connection more often between rollup reads, allowing queued checks and API requests to run. They also increase query overhead and may lengthen the complete refresh. Compare under representative load before changing the default. This setting does not change check-write batches or retention and is ignored with PostgreSQL. It does not affect incremental writes or the startup reconciliation when `INCREMENTAL_UPTIME_ENABLED=true`.
+
+When `POSTGRES_TRACE_ENABLED=true`, set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` to an OTLP HTTP traces URL (including its full path) to export database spans. Without an endpoint, tracing writes JSON logs only. `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES` identify the service and environment. Changes require restarting Warden. SQLite ignores this configuration.

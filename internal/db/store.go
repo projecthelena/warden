@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log"
 	"sync"
+	"time"
 
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
@@ -28,6 +29,8 @@ var postgresMigrationFS embed.FS
 
 // DBConfig holds database configuration
 type DBConfig struct {
+	PostgresTraceEndpoint string
+	PostgresTrace         bool   // Opt-in per-operation diagnostic logs.
 	IncrementalUptime     bool   // Opt in to transactional daily counters.
 	SQLiteRollupBatchSize int    // SQLite monitors per rollup read; zero defaults to 50.
 	Type                  string // "sqlite" or "postgres"
@@ -36,6 +39,7 @@ type DBConfig struct {
 }
 
 type Store struct {
+	traceShutdown         func(context.Context) error
 	incrementalUptime     bool
 	checkWriteMu          sync.RWMutex // Prevent schema reset during check persistence.
 	sqliteRollupBatchSize int
@@ -50,11 +54,38 @@ func NewStore(cfg DBConfig) (*Store, error) {
 	var db *sql.DB
 	var err error
 	var dialect string
+	var traceShutdown func(context.Context) error
+	initialized := false
+	defer func() {
+		if !initialized {
+			if db != nil {
+				_ = db.Close()
+			}
+			if traceShutdown != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = traceShutdown(ctx)
+			}
+		}
+	}()
 
 	switch cfg.Type {
 	case DialectPostgres, "postgresql":
 		dialect = DialectPostgres
-		db, err = sql.Open("postgres", cfg.URL)
+		if cfg.PostgresTrace {
+			if cfg.PostgresTraceEndpoint != "" {
+				provider, providerErr := postgresTraceProvider(cfg.PostgresTraceEndpoint)
+				if providerErr != nil {
+					return nil, providerErr
+				}
+				traceShutdown = provider.Shutdown
+				db, err = openTracedPostgres(cfg.URL, provider.Tracer("warden/postgres"))
+			} else {
+				db, err = openTracedPostgres(cfg.URL)
+			}
+		} else {
+			db, err = sql.Open("postgres", cfg.URL)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("failed to open postgres: %w", err)
 		}
@@ -90,7 +121,7 @@ func NewStore(cfg DBConfig) (*Store, error) {
 		}
 	}
 
-	s := &Store{incrementalUptime: cfg.IncrementalUptime, db: db, dialect: dialect, sqliteRollupBatchSize: cfg.SQLiteRollupBatchSize}
+	s := &Store{traceShutdown: traceShutdown, incrementalUptime: cfg.IncrementalUptime, db: db, dialect: dialect, sqliteRollupBatchSize: cfg.SQLiteRollupBatchSize}
 	if err := s.migrate(); err != nil {
 		return nil, err
 	}
@@ -103,6 +134,7 @@ func NewStore(cfg DBConfig) (*Store, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	initialized = true
 	return s, nil
 }
 
@@ -152,7 +184,15 @@ func (s *Store) PingContext(ctx context.Context) error {
 }
 
 func (s *Store) Close() error {
-	return s.db.Close()
+	err := s.db.Close()
+	if s.traceShutdown != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if shutdownErr := s.traceShutdown(ctx); shutdownErr != nil {
+			log.Print("postgres trace exporter shutdown failed")
+		}
+	}
+	return err
 }
 
 func (s *Store) migrate() error {
