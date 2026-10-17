@@ -46,3 +46,22 @@ There is no built-in migration tool between backends. To migrate:
 ## Moving an existing PostgreSQL installation
 
 Follow [Move Warden to another PostgreSQL instance](postgresql-migration.md) for the complete dump, restore, verification, rollback, and latency-relearning checklist.
+
+## Daily uptime feature flag
+
+`INCREMENTAL_UPTIME_ENABLED` defaults to `false` on SQLite and PostgreSQL. The default keeps the existing writer, startup backfill and five-minute rollup. Set it to `true` and restart to persist daily counters with each batch of checks in one transaction, with stable identities and safe retries. No external queue or database extension is required.
+
+| Mode | Writes | Background aggregation |
+| :-- | :-- | :-- |
+| `false` (default) | Existing check writer and error handling | Startup backfill and five-minute refresh |
+| `true` | Batched check inserts and daily increments in one transaction | No periodic rollup; reconciliation only on first activation or reactivation |
+
+To enable: back up the database, stop all Warden instances that write to it, set `INCREMENTAL_UPTIME_ENABLED=true`, and restart. Startup reconstructs summaries from available checks and records completion in the same transaction. The application does not start ingestion if reconciliation fails. Normal restarts in incremental mode skip that reconstruction. Allow sufficient startup time for this scan when enabling the flag on a large database.
+
+To return to the previous behavior: stop the writers, set `INCREMENTAL_UPTIME_ENABLED=false`, and restart the same binary. This restores the previous write path and rollup worker and invalidates the incremental initialization marker. No schema downgrade or data deletion is needed. If you later enable the flag again, startup reconciles checks accumulated while it was off before resuming incremental writes. Keep all writers on the same mode; mixed-mode rolling changes are unsupported.
+
+Schema migration 00037 adds the optional identity column and a partial unique index in both modes; legacy writes leave that identity empty. Reconciliation happens only when enabling the flag and can take time on large histories. Existing summaries at or before the partially retained calendar day are preserved; missing summaries can only be built from raw data still available. Expired checks cannot be recovered.
+
+The reconstruction window uses the configured retention period. If retention was increased after older checks had already been deleted, audit history before enabling: the current window alone cannot establish which days remain complete. Use the feature flag for rollback; running an older binary would not invalidate the initialization marker and requires separate reconciliation before incremental mode can resume safely.
+
+In incremental mode, temporary persistence errors retain the current batch for retry. A permanent error stops check persistence and logs the failure; restart after correcting its cause. Deleting a monitor discards its pending results without blocking other monitors. Results still waiting in memory are not durable in either mode. Normal shutdown waits up to ten seconds for in-flight checks and queued results, logging if the deadline expires.

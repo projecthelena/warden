@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"sync"
 
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
@@ -27,6 +28,7 @@ var postgresMigrationFS embed.FS
 
 // DBConfig holds database configuration
 type DBConfig struct {
+	IncrementalUptime     bool   // Opt in to transactional daily counters.
 	SQLiteRollupBatchSize int    // SQLite monitors per rollup read; zero defaults to 50.
 	Type                  string // "sqlite" or "postgres"
 	Path                  string // SQLite file path
@@ -34,6 +36,8 @@ type DBConfig struct {
 }
 
 type Store struct {
+	incrementalUptime     bool
+	checkWriteMu          sync.RWMutex // Prevent schema reset during check persistence.
 	sqliteRollupBatchSize int
 	db                    *sql.DB
 	dialect               string
@@ -86,7 +90,7 @@ func NewStore(cfg DBConfig) (*Store, error) {
 		}
 	}
 
-	s := &Store{db: db, dialect: dialect, sqliteRollupBatchSize: cfg.SQLiteRollupBatchSize}
+	s := &Store{incrementalUptime: cfg.IncrementalUptime, db: db, dialect: dialect, sqliteRollupBatchSize: cfg.SQLiteRollupBatchSize}
 	if err := s.migrate(); err != nil {
 		return nil, err
 	}
@@ -95,6 +99,10 @@ func NewStore(cfg DBConfig) (*Store, error) {
 		return nil, err
 	}
 
+	if err := s.configureUptime(); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	return s, nil
 }
 
@@ -241,6 +249,8 @@ func isValidTableName(table string) bool {
 }
 
 func (s *Store) Reset() error {
+	s.checkWriteMu.Lock()
+	defer s.checkWriteMu.Unlock()
 	// Disable FKs to allow dropping tables regardless of order
 	if s.dialect == DialectSQLite {
 		if _, err := s.db.Exec("PRAGMA foreign_keys = OFF"); err != nil {
@@ -286,5 +296,8 @@ func (s *Store) Reset() error {
 	if err := s.migrate(); err != nil {
 		return err
 	}
-	return s.seed()
+	if err := s.seed(); err != nil {
+		return err
+	}
+	return s.configureUptime()
 }

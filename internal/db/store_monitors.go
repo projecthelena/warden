@@ -2,10 +2,12 @@ package db
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -99,6 +101,7 @@ type GroupMonitorSummary struct {
 }
 
 type CheckResult struct {
+	IngestID    string           `json:"-"`
 	ID          int64            `json:"id,omitempty"`
 	Diagnostics *HTTPDiagnostics `json:"diagnostics,omitempty"`
 	MonitorID   string           `json:"monitorId"`
@@ -632,22 +635,34 @@ func (s *Store) GetOutageByID(id int64) (*MonitorOutage, error) {
 }
 
 func (s *Store) BatchInsertChecks(checks []CheckResult) error {
+	return s.BatchInsertChecksContext(context.Background(), checks)
+}
+
+// BatchInsertChecksContext retains generated identities in checks for safe retries.
+func (s *Store) BatchInsertChecksContext(ctx context.Context, checks []CheckResult) error {
+	s.checkWriteMu.RLock()
+	defer s.checkWriteMu.RUnlock()
 	if len(checks) == 0 {
 		return nil
 	}
+	for i := range checks {
+		if s.incrementalUptime && checks[i].IngestID == "" {
+			checks[i].IngestID = rand.Text()
+		}
+	}
 	if !metricstate.Enabled() {
-		tx, err := s.db.Begin()
+		tx, err := s.db.BeginTx(ctx, nil)
 		if err != nil {
 			return err
 		}
 		defer func() { _ = tx.Rollback() }()
-		if err := s.insertChecks(tx, checks); err != nil {
+		if err := s.insertChecks(ctx, tx, checks); err != nil {
 			return err
 		}
 		return tx.Commit()
 	}
 	finish := operationmetrics.Start(operationmetrics.PersistConnection)
-	conn, err := s.db.Conn(context.Background())
+	conn, err := s.db.Conn(ctx)
 	finish(err)
 	if err != nil {
 		return err
@@ -655,7 +670,7 @@ func (s *Store) BatchInsertChecks(checks []CheckResult) error {
 	defer func() { _ = conn.Close() }()
 
 	finish = operationmetrics.Start(operationmetrics.PersistBegin)
-	tx, err := conn.BeginTx(context.Background(), nil)
+	tx, err := conn.BeginTx(ctx, nil)
 	finish(err)
 	if err != nil {
 		return err
@@ -663,7 +678,7 @@ func (s *Store) BatchInsertChecks(checks []CheckResult) error {
 	defer func() { _ = tx.Rollback() }()
 
 	finish = operationmetrics.Start(operationmetrics.PersistInsert)
-	err = s.insertChecks(tx, checks)
+	err = s.insertChecks(ctx, tx, checks)
 	finish(err)
 	if err != nil {
 		return err
@@ -674,15 +689,122 @@ func (s *Store) BatchInsertChecks(checks []CheckResult) error {
 	return err
 }
 
-func (s *Store) insertChecks(tx *sql.Tx, checks []CheckResult) error {
-
-	stmt, err := tx.Prepare(s.rebind("INSERT INTO monitor_checks (monitor_id, status, latency, timestamp, status_code, diagnostics) VALUES (?, ?, ?, ?, ?, ?)"))
-	if err != nil {
-		return err
+func (s *Store) insertChecks(ctx context.Context, tx *sql.Tx, checks []CheckResult) error {
+	if !s.incrementalUptime {
+		stmt, err := tx.PrepareContext(ctx, s.rebind("INSERT INTO monitor_checks (monitor_id,status,latency,timestamp,status_code,diagnostics) VALUES (?,?,?,?,?,?)"))
+		if err != nil {
+			return err
+		}
+		defer func() { _ = stmt.Close() }()
+		for _, c := range checks {
+			if _, err := stmt.ExecContext(ctx, c.MonitorID, c.Status, c.Latency, c.Timestamp, c.StatusCode, diagnosticsJSON(c.Diagnostics)); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
-	defer func() { _ = stmt.Close() }()
+	// Lock existing monitors before inserting so deletion cannot poison a mixed batch.
+	ids := make([]string, 0)
+	seen := make(map[string]bool)
 	for _, c := range checks {
-		if _, err := stmt.Exec(c.MonitorID, c.Status, c.Latency, c.Timestamp, c.StatusCode, diagnosticsJSON(c.Diagnostics)); err != nil {
+		if !seen[c.MonitorID] {
+			ids = append(ids, c.MonitorID)
+			seen[c.MonitorID] = true
+		}
+	}
+	sort.Strings(ids)
+	existing := make(map[string]bool, len(ids))
+	for start := 0; start < len(ids); start += 200 {
+		end := min(start+200, len(ids))
+		args := make([]any, 0, end-start)
+		for _, id := range ids[start:end] {
+			args = append(args, id)
+		}
+		query := "SELECT id FROM monitors WHERE id IN (" + strings.TrimSuffix(strings.Repeat("?,", len(args)), ",") + ") ORDER BY id"
+		if s.IsPostgres() {
+			query += " FOR KEY SHARE"
+		}
+		rows, err := tx.QueryContext(ctx, s.rebind(query), args...)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			existing[id] = true
+		}
+		err = rows.Err()
+		_ = rows.Close()
+		if err != nil {
+			return err
+		}
+	}
+	type key struct{ monitor, day string }
+	type counts struct{ total, up int }
+	deltas := make(map[key]counts)
+	for start := 0; start < len(checks); start += 100 {
+		end := min(start+100, len(checks))
+		args := make([]any, 0, (end-start)*7)
+		for _, c := range checks[start:end] {
+			if existing[c.MonitorID] {
+				args = append(args, c.MonitorID, c.Status, c.Latency, c.Timestamp.UTC(), c.StatusCode, diagnosticsJSON(c.Diagnostics), c.IngestID)
+			}
+		}
+		if len(args) == 0 {
+			continue
+		}
+		query := `INSERT INTO monitor_checks (monitor_id,status,latency,timestamp,status_code,diagnostics,ingest_id) VALUES ` + strings.TrimSuffix(strings.Repeat("(?,?,?,?,?,?,?),", len(args)/7), ",") + ` ON CONFLICT (ingest_id) WHERE ingest_id IS NOT NULL DO NOTHING RETURNING monitor_id,status,timestamp`
+		rows, err := tx.QueryContext(ctx, s.rebind(query), args...)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var monitor, status string
+			var stamp time.Time
+			if err := rows.Scan(&monitor, &status, &stamp); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			k := key{monitor, stamp.UTC().Format("2006-01-02")}
+			d := deltas[k]
+			d.total++
+			if status == "up" {
+				d.up++
+			}
+			deltas[k] = d
+		}
+		err = rows.Err()
+		_ = rows.Close()
+		if err != nil {
+			return err
+		}
+	}
+
+	keys := make([]key, 0, len(deltas))
+	for k := range deltas {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].monitor == keys[j].monitor {
+			return keys[i].day < keys[j].day
+		}
+		return keys[i].monitor < keys[j].monitor
+	})
+	for start := 0; start < len(keys); start += 200 {
+		end := min(start+200, len(keys))
+		args := make([]any, 0, (end-start)*4)
+		for _, k := range keys[start:end] {
+			d := deltas[k]
+			args = append(args, k.monitor, k.day, d.total, d.up)
+		}
+		query := `INSERT INTO monitor_uptime_daily (monitor_id, day, total, up_count) VALUES ` + strings.TrimSuffix(strings.Repeat("(?, ?, ?, ?),", end-start), ",") + `
+   ON CONFLICT (monitor_id, day) DO UPDATE SET
+   total = monitor_uptime_daily.total + excluded.total,
+   up_count = monitor_uptime_daily.up_count + excluded.up_count`
+		if _, err := tx.ExecContext(ctx, s.rebind(query), args...); err != nil {
 			return err
 		}
 	}
@@ -1197,8 +1319,8 @@ func (s *Store) GetDailyUptimeStats(monitorID string, days int) ([]DailyUptimeSt
 // GetDailyUptimeStatsForMonitors returns per-day uptime for each monitor, read from the
 // precomputed rollup table in one query. The public status page calls this on every load,
 // so it never aggregates raw checks. Each id gets a filled slice, one entry per day oldest
-// to newest; a day without a rollup row is marked -1. Today's row can trail the worker by
-// at most its refresh interval.
+// to newest; a day without a rollup row is marked -1. Incremental mode updates today's
+// row with each committed batch; legacy mode updates it with the periodic rollup.
 func (s *Store) GetDailyUptimeStatsForMonitors(ids []string, days int) (map[string][]DailyUptimeStat, error) {
 	if days < 1 || days > 365 {
 		return nil, fmt.Errorf("invalid days: must be between 1 and 365")
@@ -1368,11 +1490,16 @@ func (s *Store) rollupDailyUptime(days int, stats *DailyUptimeRollupStats) error
 	}
 
 	if s.IsPostgres() {
-		err = readRollups(`SELECT monitor_id, TO_CHAR(timestamp, 'YYYY-MM-DD') as day,
-				COUNT(*), SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END)
-			FROM monitor_checks
-			WHERE timestamp >= NOW() - MAKE_INTERVAL(days => ?)
-			GROUP BY monitor_id, day`, days)
+		// Aggregate one monitor at a time so PostgreSQL can use the covering
+		// history index instead of scanning and sorting the entire check heap.
+		err = readRollups(`SELECT m.id, r.day, r.total, r.up_count
+			FROM monitors m CROSS JOIN LATERAL (
+				SELECT TO_CHAR(timestamp, 'YYYY-MM-DD') AS day,
+					COUNT(*) AS total, SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END) AS up_count
+				FROM monitor_checks
+				WHERE monitor_id = m.id AND timestamp >= NOW() - MAKE_INTERVAL(days => ?)
+				GROUP BY day
+			) r`, days)
 	} else {
 		rows, readConn, queryErr := queryRows(`SELECT id, datetime('now', '-' || ? || ' days')
 			FROM monitors ORDER BY id`, days)
