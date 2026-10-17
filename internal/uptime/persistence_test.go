@@ -3,6 +3,7 @@ package uptime
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -202,5 +203,51 @@ func TestPersistenceRetriesPostgresSerialization(t *testing.T) {
 	}
 	if got := days[id][0]; got.Total != 1 || got.Up != 1 {
 		t.Fatalf("summary=%+v", got)
+	}
+}
+
+func TestPersistenceCancellationStopsRetry(t *testing.T) {
+	cfg := db.NewTestConfigWithPath(filepath.Join(t.TempDir(), "cancel.sqlite") + "?_busy_timeout=1")
+	cfg.IncrementalUptime = true
+	store, err := db.NewStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = store.Close() }()
+	locker, err := sql.Open("sqlite3", cfg.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = locker.Close() }()
+	conn, err := locker.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err = conn.ExecContext(context.Background(), "BEGIN EXCLUSIVE"); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _, _ = conn.ExecContext(context.Background(), "ROLLBACK") }()
+	metricstate.Configure(true)
+	before := histogramCount(t, observability.PersistDuration.WithLabelValues("error"))
+	m := NewManager(store)
+	defer m.cancelPersistence()
+	done := make(chan error, 1)
+	go func() { done <- m.persistBatch([]db.CheckResult{{MonitorID: "missing", Timestamp: time.Now().UTC()}}) }()
+	deadline := time.Now().Add(3 * time.Second)
+	for histogramCount(t, observability.PersistDuration.WithLabelValues("error")) == before {
+		if time.Now().After(deadline) {
+			t.Fatal("retry never started")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	m.cancelPersistence()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("got %v, want cancellation", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancelled retry did not stop")
 	}
 }

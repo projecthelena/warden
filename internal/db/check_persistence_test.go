@@ -2,6 +2,8 @@ package db
 
 import (
 	"context"
+	"database/sql/driver"
+	"errors"
 	"fmt"
 	"io"
 	"testing"
@@ -22,6 +24,16 @@ func TestRetryableCheckError(t *testing.T) {
 		{"SQLite busy", sqlite3.Error{Code: sqlite3.ErrBusy}, true},
 		{"SQLite constraint", sqlite3.Error{Code: sqlite3.ErrConstraint}, false},
 		{"shutdown", context.Canceled, false},
+		{"deadline", context.DeadlineExceeded, false},
+		{"bad connection", driver.ErrBadConn, true},
+		{"partial response", io.ErrUnexpectedEOF, true},
+		{"deadlock", &pq.Error{Code: "40P01"}, true},
+		{"connection lost", &pq.Error{Code: "08006"}, true},
+		{"lock unavailable", &pq.Error{Code: "55P03"}, true},
+		{"server restarting", &pq.Error{Code: "57P03"}, true},
+		{"SQLite locked", sqlite3.Error{Code: sqlite3.ErrLocked}, true},
+		{"syntax", &pq.Error{Code: "42601"}, false},
+		{"unknown", errors.New("unknown failure"), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := RetryableCheckError(fmt.Errorf("persist: %w", tc.err)); got != tc.retry {

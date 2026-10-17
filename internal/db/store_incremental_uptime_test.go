@@ -298,3 +298,63 @@ func TestIncrementalUptimeConcurrentReset(t *testing.T) {
 		assertIncrementalCounts(t, s, dayStr(0), 1, 1)
 	})
 }
+
+func TestIncrementalUptimeDuplicateWithinBatch(t *testing.T) {
+	RunTestWithBothDBs(t, "duplicate within batch", func(t *testing.T, s *Store) {
+		incrementalMonitor(t, s)
+		c := checkAt("m1", "up", 0)
+		c.IngestID = "same-result"
+		batch := []CheckResult{c, c, checkAt("missing", "down", 0)}
+		if err := s.BatchInsertChecks(batch); err != nil {
+			t.Fatal(err)
+		}
+		assertIncrementalCounts(t, s, dayStr(0), 1, 1)
+		if err := s.BatchInsertChecks(nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.BatchInsertChecks([]CheckResult{checkAt("missing", "up", 0)}); err != nil {
+			t.Fatal(err)
+		}
+		var n int
+		if err := s.db.QueryRow("SELECT count(*) FROM monitor_checks").Scan(&n); err != nil || n != 1 {
+			t.Fatalf("checks=%d err=%v", n, err)
+		}
+	})
+}
+
+func TestIncrementalUptimeLaterChunkRollsBackWholeBatch(t *testing.T) {
+	RunTestWithBothDBs(t, "later chunk rollback", func(t *testing.T, s *Store) {
+		incrementalMonitor(t, s)
+		batch := make([]CheckResult, 101)
+		for i := range batch {
+			batch[i] = checkAt("m1", "up", 0)
+		}
+		// The first 100 inserts succeed; a trigger rejects the next SQL chunk.
+		query := `CREATE TRIGGER reject_check BEFORE INSERT ON monitor_checks WHEN NEW.status='reject' BEGIN SELECT RAISE(ABORT,'injected failure'); END`
+		cleanup := `DROP TRIGGER reject_check`
+		if s.IsPostgres() {
+			query = `CREATE FUNCTION reject_check() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.status='reject' THEN RAISE EXCEPTION 'injected failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_check BEFORE INSERT ON monitor_checks FOR EACH ROW EXECUTE FUNCTION reject_check();`
+			cleanup = `DROP TRIGGER reject_check ON monitor_checks; DROP FUNCTION reject_check();`
+		}
+		if _, err := s.db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _, _ = s.db.Exec(cleanup) }()
+		batch[100].Status = "reject"
+		if err := s.BatchInsertChecks(batch); err == nil {
+			t.Fatal("expected failure in second chunk")
+		}
+		var n int
+		if err := s.db.QueryRow("SELECT count(*) FROM monitor_checks").Scan(&n); err != nil || n != 0 {
+			t.Fatalf("partial checks=%d err=%v", n, err)
+		}
+		if err := s.db.QueryRow("SELECT count(*) FROM monitor_uptime_daily").Scan(&n); err != nil || n != 0 {
+			t.Fatalf("partial counters=%d err=%v", n, err)
+		}
+		batch[100].Status = "down"
+		if err := s.BatchInsertChecks(batch); err != nil {
+			t.Fatal(err)
+		}
+		assertIncrementalCounts(t, s, dayStr(0), 101, 100)
+	})
+}

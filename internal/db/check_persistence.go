@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"database/sql/driver"
 	"errors"
 	"io"
@@ -12,6 +13,9 @@ import (
 
 // RetryableCheckError includes connection failures whose commit outcome may be unknown.
 func RetryableCheckError(err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
 	var pg *pq.Error
 	if errors.As(err, &pg) {
 		switch pg.Code.Class() {

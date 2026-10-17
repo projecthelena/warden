@@ -20,6 +20,7 @@ export default defineConfig({
     timeout: 120_000,
     env: {
       DB_TYPE: 'sqlite',
+      INCREMENTAL_UPTIME_ENABLED: process.env.INCREMENTAL_UPTIME_ENABLED || 'false',
       SQLITE_ROLLUP_BATCH_SIZE: process.env.SQLITE_ROLLUP_BATCH_SIZE || '10',
       DB_PATH: database,
       LISTEN_ADDR: '127.0.0.1:19126',
