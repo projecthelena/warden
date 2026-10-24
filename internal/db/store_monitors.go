@@ -849,9 +849,8 @@ func (s *Store) readMonitorChecks(monitorID string, limit int, beforeID int64, c
 		args = append(args, checkID)
 	}
 	if beforeID > 0 {
-		cursor := "(SELECT timestamp FROM monitor_checks WHERE id = ? AND monitor_id = ?)"
-		query += " AND timestamp <= " + cursor + " AND (timestamp < " + cursor + " OR id < ?)"
-		args = append(args, beforeID, monitorID, beforeID, monitorID, beforeID)
+		query += " AND (timestamp, id) < (SELECT timestamp, id FROM monitor_checks WHERE id = ? AND monitor_id = ?)"
+		args = append(args, beforeID, monitorID)
 	}
 	query += " ORDER BY timestamp DESC, id DESC LIMIT ?"
 	args = append(args, limit)

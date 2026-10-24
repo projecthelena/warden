@@ -428,7 +428,7 @@ func incidentSummary(o db.MonitorOutage) IncidentSummary {
 }
 
 type GetMonitorChecksInput struct {
-	BeforeID int64  `json:"beforeId,omitempty" jsonschema:"return checks stored before this check ID"`
+	BeforeID int64  `json:"beforeId,omitempty" jsonschema:"return checks older than this check of the same monitor, by time then ID"`
 	Monitor  string `json:"monitor" jsonschema:"monitor name or ID"`
 	Limit    int    `json:"limit,omitempty" jsonschema:"maximum checks (default 10, maximum 100)"`
 }

@@ -80,6 +80,10 @@ func TestCheckBatch_AsyncCommitIsScopedToTransaction(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer func() { _ = conn.Close() }()
+		var before, inside, after string
+		if err := conn.QueryRowContext(ctx, "SHOW synchronous_commit").Scan(&before); err != nil {
+			t.Fatal(err)
+		}
 		tx, err := conn.BeginTx(ctx, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -87,7 +91,6 @@ func TestCheckBatch_AsyncCommitIsScopedToTransaction(t *testing.T) {
 		if err := s.insertChecks(ctx, tx, []CheckResult{{MonitorID: "m-async", Timestamp: time.Now().UTC(), Status: "up"}}); err != nil {
 			t.Fatal(err)
 		}
-		var inside, after string
 		if err := tx.QueryRowContext(ctx, "SHOW synchronous_commit").Scan(&inside); err != nil {
 			t.Fatal(err)
 		}
@@ -97,8 +100,8 @@ func TestCheckBatch_AsyncCommitIsScopedToTransaction(t *testing.T) {
 		if err := conn.QueryRowContext(ctx, "SHOW synchronous_commit").Scan(&after); err != nil {
 			t.Fatal(err)
 		}
-		if inside != "off" || after != "on" {
-			t.Fatalf("synchronous_commit inside = %q, after = %q", inside, after)
+		if inside != "off" || after != before {
+			t.Fatalf("synchronous_commit before = %q, inside = %q, after = %q", before, inside, after)
 		}
 	})
 }

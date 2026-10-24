@@ -765,7 +765,7 @@ func (h *UptimeHandler) GetOverview(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Param id path string true "Monitor ID"
 // @Param limit query int false "Maximum checks (default 20, maximum 100)"
-// @Param beforeId query int false "Return checks stored before this check ID"
+// @Param beforeId query int false "Return checks older than this check of the same monitor, by time then ID"
 // @Param checkId query int false "Return one retained check belonging to this monitor"
 // @Success 200 {array} db.CheckResult
 // @Failure 400 {string} string "Invalid limit"
