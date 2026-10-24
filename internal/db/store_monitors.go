@@ -647,7 +647,7 @@ func (s *Store) BatchInsertChecksContext(ctx context.Context, checks []CheckResu
 	}
 	for i := range checks {
 		if s.incrementalUptime && checks[i].IngestID == "" {
-			checks[i].IngestID = rand.Text()
+			checks[i].IngestID = newIngestID(time.Now())
 		}
 	}
 	if !metricstate.Enabled() {
@@ -689,7 +689,21 @@ func (s *Store) BatchInsertChecksContext(ctx context.Context, checks []CheckResu
 	return err
 }
 
+// newIngestID leads with the creation time so the unique index appends rather than
+// dirtying a random leaf page, and a full page image, for every check.
+func newIngestID(now time.Time) string {
+	return fmt.Sprintf("%016x", now.UnixNano()) + rand.Text()[:10]
+}
+
 func (s *Store) insertChecks(ctx context.Context, tx *sql.Tx, checks []CheckResult) error {
+	if s.IsPostgres() {
+		// Checks are samples. Losing the last fraction of a second on a database crash
+		// costs less than stalling ingestion whenever the disk pauses on fsync; the batch
+		// and its daily counters still commit or vanish together.
+		if _, err := tx.ExecContext(ctx, "SET LOCAL synchronous_commit = off"); err != nil {
+			return err
+		}
+	}
 	if !s.incrementalUptime {
 		stmt, err := tx.PrepareContext(ctx, s.rebind("INSERT INTO monitor_checks (monitor_id,status,latency,timestamp,status_code,diagnostics) VALUES (?,?,?,?,?,?)"))
 		if err != nil {
@@ -813,20 +827,21 @@ func (s *Store) insertChecks(ctx context.Context, tx *sql.Tx, checks []CheckResu
 
 // GetMonitorChecks returns the last N checks for a monitor
 func (s *Store) GetMonitorChecks(monitorID string, limit int) ([]CheckResult, error) {
-	return s.readMonitorChecks(monitorID, limit, 0, false, 0)
+	return s.readMonitorChecks(monitorID, limit, 0, 0)
 }
 
-// GetMonitorChecksPage uses insertion IDs so new checks cannot shift older pages.
+// GetMonitorChecksPage continues after a check's (timestamp, id) position, so new
+// checks cannot shift older pages and no index beyond (monitor_id, timestamp) is needed.
 func (s *Store) GetMonitorChecksPage(monitorID string, limit int, beforeID int64) ([]CheckResult, error) {
-	return s.readMonitorChecks(monitorID, limit, beforeID, true, 0)
+	return s.readMonitorChecks(monitorID, limit, beforeID, 0)
 }
 
 // GetMonitorCheck scopes a retained check ID to its owning monitor.
 func (s *Store) GetMonitorCheck(monitorID string, checkID int64) ([]CheckResult, error) {
-	return s.readMonitorChecks(monitorID, 1, 0, false, checkID)
+	return s.readMonitorChecks(monitorID, 1, 0, checkID)
 }
 
-func (s *Store) readMonitorChecks(monitorID string, limit int, beforeID int64, page bool, checkID int64) ([]CheckResult, error) {
+func (s *Store) readMonitorChecks(monitorID string, limit int, beforeID int64, checkID int64) ([]CheckResult, error) {
 	query := `SELECT id, monitor_id, status, latency, timestamp, COALESCE(status_code, 0), COALESCE(diagnostics, '') FROM monitor_checks WHERE monitor_id = ?`
 	args := []any{monitorID}
 	if checkID > 0 {
@@ -834,14 +849,10 @@ func (s *Store) readMonitorChecks(monitorID string, limit int, beforeID int64, p
 		args = append(args, checkID)
 	}
 	if beforeID > 0 {
-		query += " AND id < ?"
-		args = append(args, beforeID)
+		query += " AND (timestamp, id) < (SELECT timestamp, id FROM monitor_checks WHERE id = ? AND monitor_id = ?)"
+		args = append(args, beforeID, monitorID)
 	}
-	if page {
-		query += " ORDER BY id DESC LIMIT ?"
-	} else {
-		query += " ORDER BY timestamp DESC, id DESC LIMIT ?"
-	}
+	query += " ORDER BY timestamp DESC, id DESC LIMIT ?"
 	args = append(args, limit)
 	rows, err := s.db.Query(s.rebind(query), args...)
 	if err != nil {

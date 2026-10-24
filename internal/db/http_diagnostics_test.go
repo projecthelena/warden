@@ -76,7 +76,7 @@ func TestCheckSummaryAndPagination(t *testing.T) {
 			t.Fatal(err)
 		}
 		older, err := s.GetMonitorChecksPage("m-summary", 2, page[1].ID)
-		if err != nil || len(older) != 1 || older[0].ID >= page[1].ID {
+		if err != nil || len(older) != 1 || older[0].ID == page[0].ID || older[0].ID == page[1].ID || older[0].Timestamp.After(page[1].Timestamp) {
 			t.Fatalf("unstable pagination: %+v %v", older, err)
 		}
 	})

@@ -1224,7 +1224,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "integer",
-                        "description": "Return checks stored before this check ID",
+                        "description": "Return checks older than this check of the same monitor, by time then ID",
                         "name": "beforeId",
                         "in": "query"
                     },
