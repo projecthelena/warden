@@ -35,6 +35,21 @@ docker run -d -p 9090:9090 \
 
 **When to use:** High availability requirements, existing PostgreSQL infrastructure, large-scale monitoring.
 
+### Check durability
+
+Batches of check results commit with `synchronous_commit = off`, so a slow disk flush does not stall ingestion. If the PostgreSQL server crashes, the most recently committed checks (normally under a second, at most three times `wal_writer_delay`) can be lost; each batch and its daily uptime counters are kept or lost together, and the database stays consistent. Events, outages, incidents and settings keep synchronous commits. Warden's own in-memory queue was never durable.
+
+### Settings for large installations
+
+With thousands of monitors, most write volume is write-ahead log rather than check rows. These server settings reduce it without changing durability:
+
+| Setting | Suggested | Why |
+| :-- | :-- | :-- |
+| `wal_compression` | `lz4` | Compresses the full-page images that index writes log after each checkpoint. |
+| `max_wal_size` | `8GB` or more | Fewer checkpoints, so fewer full-page images. Needs that much free disk for WAL. |
+
+For example, with the official image: `postgres -c wal_compression=lz4 -c max_wal_size=8GB`.
+
 ## Migrating from SQLite to PostgreSQL
 
 There is no built-in migration tool between backends. To migrate:
