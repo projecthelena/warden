@@ -15,7 +15,7 @@ It monitors HTTP endpoints, TCP ports, ICMP hosts, and DNS records; publishes st
 - **Quiet by design:** sustained failures, cooldowns, flapping detection, and correlation prevent one problem from becoming dozens of alerts.
 - **Learns each service:** every monitor can build its own latency baseline instead of sharing an arbitrary global threshold.
 - **AI-ready and safe:** the role-scoped MCP server lets an assistant investigate and manage monitors without exposing destructive operations.
-- **Simple to own:** run one container with SQLite, or connect PostgreSQL when you need an external database.
+- **Simple to own:** run one container with SQLite, or connect PostgreSQL when you need an external database or more than 1,000 monitors.
 
 Read [Why Warden](docs/why-warden.md) for the product direction and comparison with conventional uptime monitoring.
 
