@@ -1409,7 +1409,9 @@ func (m *Manager) digestWorker() {
 // data_retention_days; daily uptime rollups may be kept longer (see Store.RetentionDays).
 func (m *Manager) pruneHistory() {
 	days, rollupDays := m.store.RetentionDays()
-	if err := m.store.PruneMonitorChecks(days); err != nil {
+	// Keep two days of checks even with one day of retention: the rollup refresh
+	// recomputes yesterday, and pruning its morning would shrink or lose its rollup.
+	if err := m.store.PruneMonitorChecks(max(days, rollupRefreshDays)); err != nil {
 		log.Printf("Retention error: %v", err)
 	}
 	if err := m.store.PruneMonitorEvents(days); err != nil {
@@ -1443,6 +1445,9 @@ func (m *Manager) retentionWorker() {
 	}
 }
 
+// rollupRefreshDays is how many trailing days each rollup refresh recomputes.
+const rollupRefreshDays = 2
+
 // rollupWorker keeps the daily uptime rollup current. On start it backfills the whole
 // retention window from existing checks; then every few minutes it recomputes just the
 // trailing days, which is cheap and catches checks that landed after the previous run or
@@ -1467,10 +1472,9 @@ func (m *Manager) rollupWorker() {
 		case <-m.stopCh:
 			return
 		case <-ticker.C:
-			// Recompute today and yesterday only; the rest is already frozen. With one day
-			// of check retention yesterday is already partly pruned, so leave it as is.
-			checkDays, _ := m.store.RetentionDays()
-			if err := m.runRollup("refresh", min(2, checkDays)); err != nil {
+			// Recompute today and yesterday only; the rest is already frozen. pruneHistory
+			// keeps both days of checks whatever the retention.
+			if err := m.runRollup("refresh", rollupRefreshDays); err != nil {
 				log.Printf("Rollup error: %v", err)
 			}
 		}

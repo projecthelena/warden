@@ -136,3 +136,64 @@ func TestCompressResponsesVaryOnce(t *testing.T) {
 		})
 	}
 }
+
+// A flush before the first write must not send the headers before Compress has chosen
+// the encoding, or the gzip body would go out without Content-Encoding.
+func TestCompressResponsesFlushBeforeWrite(t *testing.T) {
+	handler := compressResponses(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.(http.Flusher).Flush()
+		_, _ = io.WriteString(w, strings.Repeat(`{"ok":true}`, 200))
+	}))
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	request.Header.Set("Accept-Encoding", "gzip")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if got := response.Header().Get("Content-Encoding"); got != "gzip" {
+		t.Fatalf("Content-Encoding = %q, want gzip", got)
+	}
+	reader, err := gzip.NewReader(response.Body)
+	if err != nil {
+		t.Fatalf("body is not gzip: %v", err)
+	}
+	if _, err := io.ReadAll(reader); err != nil {
+		t.Fatalf("read gzip body: %v", err)
+	}
+}
+
+func TestVariesOnAcceptEncoding(t *testing.T) {
+	cases := map[string]bool{
+		"Accept-Encoding":         true,
+		"Origin, accept-encoding": true,
+		"*":                       true,
+		"Origin":                  false,
+	}
+	for value, want := range cases {
+		if got := variesOnAcceptEncoding([]string{value}); got != want {
+			t.Errorf("variesOnAcceptEncoding(%q) = %v, want %v", value, got, want)
+		}
+	}
+}
+
+func TestVaryWriterHijack(t *testing.T) {
+	server := httptest.NewServer(varyAcceptEncoding(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Errorf("hijack: %v", err)
+			return
+		}
+		_, _ = io.WriteString(conn, "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
+		_ = conn.Close()
+	})))
+	defer server.Close()
+
+	response, err := http.Get(server.URL)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", response.StatusCode)
+	}
+}

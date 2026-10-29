@@ -6,11 +6,15 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/projecthelena/warden/internal/db"
 	"github.com/projecthelena/warden/internal/uptime"
 )
+
+// retentionMu serializes retention updates, which validate one setting against the other.
+var retentionMu sync.Mutex
 
 type SettingsHandler struct {
 	store   *db.Store
@@ -291,28 +295,30 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 	checksVal, setChecks := body["data_retention_days"]
 	rollupVal, setRollups := body["rollup_retention_days"]
 	if setChecks || setRollups {
+		// Two concurrent saves would each validate against the settings the other is
+		// about to replace.
+		retentionMu.Lock()
+		defer retentionMu.Unlock()
+
 		// rollup_retention_days is only stored while it is longer than data_retention_days;
 		// empty means daily uptime history follows check retention. Rollups older than the
 		// checks would just be rebuilt from them, so a shorter value is refused when sent
 		// and cleared when raising check retention catches up with it.
 		checks, rollups := h.store.RetentionDays()
-		if rollups == checks {
-			rollups = 0
-		}
+		follow := rollups == checks
 		if setChecks {
-			// Validate int
 			i, err := strconv.Atoi(checksVal)
-			if err != nil || i < 1 || i > 3650 {
-				http.Error(w, "Invalid data_retention_days (must be between 1 and 3650)", http.StatusBadRequest)
+			if err != nil || i < 1 || i > db.MaxRetentionDays {
+				writeError(w, http.StatusBadRequest, "data_retention_days must be between 1 and 3650")
 				return
 			}
 			checks = i
 		}
 		if setRollups {
-			rollups = 0
-			if rollupVal != "" {
+			follow = rollupVal == ""
+			if !follow {
 				i, err := strconv.Atoi(rollupVal)
-				if err != nil || i < 1 || i > 3650 {
+				if err != nil || i < 1 || i > db.MaxRetentionDays {
 					writeError(w, http.StatusBadRequest, "rollup_retention_days must be empty or between 1 and 3650")
 					return
 				}
@@ -323,7 +329,10 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 				rollups = i
 			}
 		}
-		clearRollups := rollups > 0 && rollups <= checks
+		if follow {
+			rollups = checks
+		}
+		rollups = max(rollups, checks)
 
 		// Cross-validate: status pages read daily rollups, so no page may show a longer
 		// uptime range than the rollups keep.
@@ -333,27 +342,25 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		for _, p := range pages {
-			if p.UptimeDaysRange > max(rollups, checks) {
+			if p.UptimeDaysRange > rollups {
 				writeError(w, http.StatusBadRequest, "cannot reduce retention below "+strconv.Itoa(p.UptimeDaysRange)+" days (used by status page \""+p.Title+"\")")
 				return
 			}
 		}
 
 		if setChecks {
-			if err := h.store.SetSetting("data_retention_days", checksVal); err != nil {
+			if err := h.store.SetSetting("data_retention_days", strconv.Itoa(checks)); err != nil {
 				http.Error(w, "Failed to save data_retention_days", http.StatusInternalServerError)
 				return
 			}
 		}
-		if setRollups || clearRollups {
-			stored := ""
-			if rollups > checks {
-				stored = strconv.Itoa(rollups)
-			}
-			if err := h.store.SetSetting("rollup_retention_days", stored); err != nil {
-				http.Error(w, "Failed to save rollup_retention_days", http.StatusInternalServerError)
-				return
-			}
+		stored := ""
+		if rollups > checks {
+			stored = strconv.Itoa(rollups)
+		}
+		if err := h.store.SetSetting("rollup_retention_days", stored); err != nil {
+			http.Error(w, "Failed to save rollup_retention_days", http.StatusInternalServerError)
+			return
 		}
 	}
 

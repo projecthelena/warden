@@ -1,9 +1,13 @@
 package api
 
 import (
+	"bufio"
 	"encoding/json"
+	"errors"
+	"net"
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -61,8 +65,10 @@ func SecureHeadersWithConfig(cookieSecure bool) func(http.Handler) http.Handler 
 // compressResponses gzips JSON, HTML, CSS and JavaScript for clients that accept it.
 // Event streams and responses that already carry a Content-Encoding pass through as is.
 func compressResponses(next http.Handler) http.Handler {
-	return varyAcceptEncoding(middleware.Compress(5, "application/json", "text/html", "text/css", "application/javascript")(next))
+	return varyAcceptEncoding(middleware.Compress(5, compressibleTypes...)(next))
 }
+
+var compressibleTypes = []string{"application/json", "text/html", "text/css", "application/javascript"}
 
 // varyAcceptEncoding makes every response that passes through middleware.Compress carry
 // Vary: Accept-Encoding once, so a cache never hands an identity copy to a client that
@@ -84,21 +90,55 @@ type varyWriter struct {
 func (w *varyWriter) WriteHeader(code int) {
 	if !w.wroteHeader {
 		w.wroteHeader = true
-		if !slices.Contains(w.Header().Values("Vary"), "Accept-Encoding") {
+		if !variesOnAcceptEncoding(w.Header().Values("Vary")) {
 			w.Header().Add("Vary", "Accept-Encoding")
 		}
 	}
 	w.ResponseWriter.WriteHeader(code)
 }
 
-// Flush keeps event streams working; a flush sends the headers too.
+// variesOnAcceptEncoding reports whether a Vary header already covers Accept-Encoding,
+// in any case and in a comma-separated list or as "*".
+func variesOnAcceptEncoding(values []string) bool {
+	for _, v := range values {
+		for _, field := range strings.Split(v, ",") {
+			field = strings.TrimSpace(field)
+			if field == "*" || strings.EqualFold(field, "Accept-Encoding") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// Flush keeps event streams working. Compress decides whether to encode on the first
+// write, so for a compressible type, or one not set yet, sending the headers early could
+// ship a gzip body without its Content-Encoding; that flush waits for the first write.
 func (w *varyWriter) Flush() {
 	if !w.wroteHeader {
+		contentType, _, _ := strings.Cut(w.Header().Get("Content-Type"), ";")
+		if contentType == "" || slices.Contains(compressibleTypes, contentType) {
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 	}
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+func (w *varyWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := w.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, errors.New("http.Hijacker is unavailable on the writer")
+}
+
+func (w *varyWriter) Push(target string, opts *http.PushOptions) error {
+	if p, ok := w.ResponseWriter.(http.Pusher); ok {
+		return p.Push(target, opts)
+	}
+	return http.ErrNotSupported
 }
 
 func (w *varyWriter) Unwrap() http.ResponseWriter {

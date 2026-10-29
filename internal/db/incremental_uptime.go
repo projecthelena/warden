@@ -3,7 +3,6 @@ package db
 import (
 	"database/sql"
 	"fmt"
-	"strconv"
 	"time"
 )
 
@@ -14,6 +13,7 @@ func (s *Store) IncrementalUptimeEnabled() bool { return s.incrementalUptime }
 // configureUptime runs before ingestion. Writers must use the same mode and stop
 // before switching it; a disabled startup invalidates the next incremental baseline.
 func (s *Store) configureUptime() error {
+	days, _ := s.RetentionDays()
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -32,15 +32,6 @@ func (s *Store) configureUptime() error {
 	}
 	if initialized == "true" {
 		return tx.Commit()
-	}
-	days := 365
-	var retention string
-	err = tx.QueryRow("SELECT value FROM settings WHERE key = 'data_retention_days'").Scan(&retention)
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-	if parsed, err := strconv.Atoi(retention); err == nil && parsed >= 1 && parsed <= 3650 {
-		days = parsed
 	}
 	cutoff := time.Now().UTC().AddDate(0, 0, -days).Format("2006-01-02")
 	day := "date(timestamp)"

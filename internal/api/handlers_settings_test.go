@@ -580,6 +580,17 @@ func patchSettings(t *testing.T, h *SettingsHandler, body map[string]string) *ht
 	return w
 }
 
+// The UI shows the "error" field of a JSON body, so range errors must not be plain text.
+func TestRetentionRangeErrorIsJSON(t *testing.T) {
+	s, _ := db.NewStore(db.NewTestConfig())
+	h := NewSettingsHandler(s, uptime.NewManager(s))
+	w := patchSettings(t, h, map[string]string{"data_retention_days": "5000"})
+	var body map[string]string
+	if w.Code != http.StatusBadRequest || json.Unmarshal(w.Body.Bytes(), &body) != nil || body["error"] == "" {
+		t.Fatalf("got %d %q, want 400 with a JSON error", w.Code, w.Body.String())
+	}
+}
+
 func TestRollupRetentionSetting(t *testing.T) {
 	s, _ := db.NewStore(db.NewTestConfig())
 	h := NewSettingsHandler(s, uptime.NewManager(s))

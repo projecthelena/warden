@@ -44,6 +44,7 @@ func TestRetentionDays(t *testing.T) {
 			{"rollups never shorter than checks", "30", "7", 30, 30},
 			{"invalid rollups follow checks", "30", "soon", 30, 30},
 			{"invalid checks fall back", "0", "", 365, 365},
+			{"stored past the cap", "5000", "9000", 3650, 3650},
 		}
 		for _, tc := range cases {
 			if err := s.SetSetting("data_retention_days", tc.checks); err != nil {
