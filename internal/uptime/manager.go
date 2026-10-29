@@ -1405,33 +1405,30 @@ func (m *Manager) digestWorker() {
 	}
 }
 
+// pruneHistory applies data retention. Raw checks, events and sent digests use
+// data_retention_days; daily uptime rollups may be kept longer (see Store.RetentionDays).
+func (m *Manager) pruneHistory() {
+	days, rollupDays := m.store.RetentionDays()
+	if err := m.store.PruneMonitorChecks(days); err != nil {
+		log.Printf("Retention error: %v", err)
+	}
+	if err := m.store.PruneMonitorEvents(days); err != nil {
+		log.Printf("Retention: failed to prune monitor events: %v", err)
+	}
+	if err := m.store.PruneDigestEvents(days); err != nil {
+		log.Printf("Retention: failed to prune digest events: %v", err)
+	}
+	if err := m.store.PruneDailyRollups(rollupDays); err != nil {
+		log.Printf("Retention: failed to prune daily rollups: %v", err)
+	}
+}
+
 func (m *Manager) retentionWorker() {
 	m.wg.Add(1)
 	defer m.wg.Done()
 
-	prune := func() {
-		days := 365 // Default
-		if val, err := m.store.GetSetting("data_retention_days"); err == nil {
-			if i, err := strconv.Atoi(val); err == nil && i > 0 {
-				days = i
-			}
-		}
-		if err := m.store.PruneMonitorChecks(days); err != nil {
-			log.Printf("Retention error: %v", err)
-		}
-		if err := m.store.PruneMonitorEvents(days); err != nil {
-			log.Printf("Retention: failed to prune monitor events: %v", err)
-		}
-		if err := m.store.PruneDigestEvents(days); err != nil {
-			log.Printf("Retention: failed to prune digest events: %v", err)
-		}
-		if err := m.store.PruneDailyRollups(days); err != nil {
-			log.Printf("Retention: failed to prune daily rollups: %v", err)
-		}
-	}
-
 	// Run immediately
-	prune()
+	m.pruneHistory()
 
 	ticker := time.NewTicker(24 * time.Hour) // Run daily
 	defer ticker.Stop()
@@ -1441,7 +1438,7 @@ func (m *Manager) retentionWorker() {
 		case <-m.stopCh:
 			return
 		case <-ticker.C:
-			prune()
+			m.pruneHistory()
 		}
 	}
 }
@@ -1454,18 +1451,11 @@ func (m *Manager) rollupWorker() {
 	m.wg.Add(1)
 	defer m.wg.Done()
 
-	retentionDays := func() int {
-		days := 365
-		if val, err := m.store.GetSetting("data_retention_days"); err == nil {
-			if i, err := strconv.Atoi(val); err == nil && i > 0 {
-				days = i
-			}
-		}
-		return days
-	}
-
-	// Backfill the full window once so the status page has history right after a deploy.
-	if err := m.runRollup("backfill", retentionDays()); err != nil {
+	// Backfill the raw check window once so the status page has history right after a
+	// deploy. It covers whole days only, so the oldest day, whose checks are partly
+	// pruned, keeps its full rollup. Older rollups have no checks left and stay as they are.
+	checkDays, _ := m.store.RetentionDays()
+	if err := m.runRollup("backfill", checkDays); err != nil {
 		log.Printf("Rollup backfill error: %v", err)
 	}
 
@@ -1477,8 +1467,10 @@ func (m *Manager) rollupWorker() {
 		case <-m.stopCh:
 			return
 		case <-ticker.C:
-			// Recompute today and yesterday only; the rest is already frozen.
-			if err := m.runRollup("refresh", 2); err != nil {
+			// Recompute today and yesterday only; the rest is already frozen. With one day
+			// of check retention yesterday is already partly pruned, so leave it as is.
+			checkDays, _ := m.store.RetentionDays()
+			if err := m.runRollup("refresh", min(2, checkDays)); err != nil {
 				log.Printf("Rollup error: %v", err)
 			}
 		}

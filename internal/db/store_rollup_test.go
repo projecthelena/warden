@@ -369,3 +369,69 @@ func TestRollupDailyUptime_InactiveAndEmptyMonitors(t *testing.T) {
 		}
 	})
 }
+
+// With split retention the checks behind an old bar go while the bar stays, on both
+// dialects. The prune calls mirror the manager's retention worker.
+func TestRetentionDays_SplitPrune(t *testing.T) {
+	RunTestWithBothDBs(t, "split retention prune", func(t *testing.T, s *Store) {
+		_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+		_ = s.CreateMonitor(Monitor{ID: "m1", GroupID: "g1", Name: "M1", Interval: 60})
+		if err := s.BatchInsertChecks([]CheckResult{
+			checkAt("m1", "up", 30), checkAt("m1", "down", 30), checkAt("m1", "up", 1),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.RollupDailyUptime(60); err != nil {
+			t.Fatal(err)
+		}
+		_ = s.SetSetting("data_retention_days", "7")
+		_ = s.SetSetting("rollup_retention_days", "365")
+
+		checkDays, rollupDays := s.RetentionDays()
+		if err := s.PruneMonitorChecks(checkDays); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.PruneDailyRollups(rollupDays); err != nil {
+			t.Fatal(err)
+		}
+
+		checks, _ := s.GetMonitorChecks("m1", 10)
+		if len(checks) != 1 {
+			t.Fatalf("checks after prune = %d, want 1", len(checks))
+		}
+		got, _ := s.GetDailyUptimeStatsForMonitors([]string{"m1"}, 60)
+		if d, ok := findDay(got["m1"], dayStr(30)); !ok || d.Total != 2 || d.UptimePercent != 50 {
+			t.Fatalf("day-30 bar should outlive its checks at 50%% of 2, got %+v (ok=%v)", d, ok)
+		}
+	})
+}
+
+// Startup backfills the check retention window. Pruning cuts partway through its oldest
+// day, so the backfill must not rebuild that day from the checks that are left.
+func TestRollupDailyUptime_BackfillSkipsPartlyPrunedDay(t *testing.T) {
+	RunTestWithBothDBs(t, "backfill skips partly pruned day", func(t *testing.T, s *Store) {
+		_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+		_ = s.CreateMonitor(Monitor{ID: "m1", GroupID: "g1", Name: "M1", Interval: 60})
+		d := time.Now().UTC().AddDate(0, 0, -3)
+		if err := s.BatchInsertChecks([]CheckResult{
+			{MonitorID: "m1", Status: "down", Timestamp: time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 1, 0, time.UTC)},
+			{MonitorID: "m1", Status: "up", Timestamp: time.Date(d.Year(), d.Month(), d.Day(), 23, 59, 59, 0, time.UTC)},
+		}); err != nil {
+			t.Fatalf("BatchInsertChecks: %v", err)
+		}
+		if err := s.RollupDailyUptime(10); err != nil {
+			t.Fatalf("rollup: %v", err)
+		}
+		if err := s.PruneMonitorChecks(3); err != nil {
+			t.Fatalf("prune: %v", err)
+		}
+		if err := s.RollupDailyUptime(3); err != nil {
+			t.Fatalf("backfill: %v", err)
+		}
+
+		got, _ := s.GetDailyUptimeStatsForMonitors([]string{"m1"}, 10)
+		if d, ok := findDay(got["m1"], dayStr(3)); !ok || d.Total != 2 || d.Up != 1 {
+			t.Errorf("day-3 rollup rebuilt from pruned checks: want 1/2, got %+v (ok=%v)", d, ok)
+		}
+	})
+}

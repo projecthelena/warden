@@ -341,17 +341,10 @@ func (h *StatusPageHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid uptime days range (must be 7, 30, 60, 90, 180, or 365)")
 			return
 		}
-		// Cross-validate against data retention
-		retentionStr, err := h.store.GetSetting("data_retention_days")
-		if err != nil {
-			retentionStr = "365"
-		}
-		retention, err := strconv.Atoi(retentionStr)
-		if err != nil || retention <= 0 {
-			retention = 365
-		}
+		// Cross-validate against the daily rollups the public page reads its uptime from.
+		_, retention := h.store.RetentionDays()
 		if *req.UptimeDaysRange > retention {
-			writeError(w, http.StatusBadRequest, "uptime days range cannot exceed data retention period ("+retentionStr+" days)")
+			writeError(w, http.StatusBadRequest, "uptime days range cannot exceed how long daily uptime history is kept ("+strconv.Itoa(retention)+" days)")
 			return
 		}
 		uptimeDaysRange = *req.UptimeDaysRange

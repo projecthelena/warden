@@ -569,3 +569,100 @@ func TestUpdateSettings_RejectsABadWeekday(t *testing.T) {
 		}
 	}
 }
+
+func patchSettings(t *testing.T, h *SettingsHandler, body map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	bodyBytes, _ := json.Marshal(body)
+	req := httptest.NewRequest("PATCH", "/api/settings", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.UpdateSettings(w, withAdminCtx(req))
+	return w
+}
+
+func TestRollupRetentionSetting(t *testing.T) {
+	s, _ := db.NewStore(db.NewTestConfig())
+	h := NewSettingsHandler(s, uptime.NewManager(s))
+	if err := s.UpsertStatusPageFull(db.StatusPageInput{Slug: "ninety", Title: "Ninety", Public: true, Enabled: true, UptimeDaysRange: 90}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Unset: GET reports it empty and rollups follow check retention, so a short check
+	// retention is still refused while a status page shows 90 days.
+	w := httptest.NewRecorder()
+	h.GetSettings(w, httptest.NewRequest("GET", "/api/settings", nil))
+	var settings map[string]string
+	_ = json.Unmarshal(w.Body.Bytes(), &settings)
+	if v, ok := settings["rollup_retention_days"]; !ok || v != "" {
+		t.Fatalf("rollup_retention_days = %q (present=%v), want empty", v, ok)
+	}
+	if w := patchSettings(t, h, map[string]string{"data_retention_days": "7"}); w.Code != http.StatusBadRequest {
+		t.Fatalf("7-day retention with a 90-day page: got %d, want 400", w.Code)
+	}
+
+	// Rollups kept for a year let raw checks drop to a week.
+	if w := patchSettings(t, h, map[string]string{"data_retention_days": "7", "rollup_retention_days": "365"}); w.Code != http.StatusOK {
+		t.Fatalf("split retention: got %d: %s", w.Code, w.Body.String())
+	}
+	if checks, rollups := s.RetentionDays(); checks != 7 || rollups != 365 {
+		t.Fatalf("RetentionDays = (%d, %d), want (7, 365)", checks, rollups)
+	}
+
+	for _, body := range []map[string]string{
+		{"rollup_retention_days": "30"},  // below the status page range
+		{"rollup_retention_days": "5"},   // below check retention
+		{"rollup_retention_days": "abc"}, // not a number
+		{"rollup_retention_days": "4000"},
+	} {
+		if w := patchSettings(t, h, body); w.Code != http.StatusBadRequest {
+			t.Errorf("%v: got %d, want 400", body, w.Code)
+		}
+	}
+
+	// Clearing it makes rollups follow check retention again, which the page forbids.
+	if w := patchSettings(t, h, map[string]string{"rollup_retention_days": ""}); w.Code != http.StatusBadRequest {
+		t.Fatalf("clearing with 7-day checks and a 90-day page: got %d, want 400", w.Code)
+	}
+	if w := patchSettings(t, h, map[string]string{"data_retention_days": "90", "rollup_retention_days": ""}); w.Code != http.StatusOK {
+		t.Fatalf("clear rollup retention: got %d: %s", w.Code, w.Body.String())
+	}
+	if checks, rollups := s.RetentionDays(); checks != 90 || rollups != 90 {
+		t.Fatalf("RetentionDays after clear = (%d, %d), want (90, 90)", checks, rollups)
+	}
+
+	// data_retention_days is bounded like the prune functions that use it.
+	for _, val := range []string{"0", "3651", "abc"} {
+		if w := patchSettings(t, h, map[string]string{"data_retention_days": val}); w.Code != http.StatusBadRequest {
+			t.Errorf("data_retention_days %q: got %d, want 400", val, w.Code)
+		}
+	}
+
+	// Raising check retention past the stored daily history value clears it, so what GET
+	// returns and what is stored both match what is in effect.
+	if w := patchSettings(t, h, map[string]string{"rollup_retention_days": "180"}); w.Code != http.StatusOK {
+		t.Fatalf("set 180-day history: got %d: %s", w.Code, w.Body.String())
+	}
+	for _, checks := range []string{"120", "400"} {
+		if w := patchSettings(t, h, map[string]string{"data_retention_days": checks}); w.Code != http.StatusOK {
+			t.Fatalf("raise checks to %s: got %d: %s", checks, w.Code, w.Body.String())
+		}
+	}
+	if stored, _ := s.GetSetting("rollup_retention_days"); stored != "" {
+		t.Fatalf("stored rollup_retention_days = %q, want cleared", stored)
+	}
+	w = httptest.NewRecorder()
+	h.GetSettings(w, httptest.NewRequest("GET", "/api/settings", nil))
+	settings = map[string]string{}
+	_ = json.Unmarshal(w.Body.Bytes(), &settings)
+	if settings["data_retention_days"] != "400" || settings["rollup_retention_days"] != "" {
+		t.Fatalf("GET after raising checks = (%q, %q), want (400, empty)", settings["data_retention_days"], settings["rollup_retention_days"])
+	}
+
+	// A value equal to check retention means the same as empty.
+	if w := patchSettings(t, h, map[string]string{"rollup_retention_days": "400"}); w.Code != http.StatusOK {
+		t.Fatalf("history equal to checks: got %d: %s", w.Code, w.Body.String())
+	}
+	if stored, _ := s.GetSetting("rollup_retention_days"); stored != "" {
+		t.Fatalf("stored rollup_retention_days = %q, want empty when equal to checks", stored)
+	}
+}

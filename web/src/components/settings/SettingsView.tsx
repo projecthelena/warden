@@ -89,6 +89,7 @@ function GeneralSettings() {
     const { settings, fetchSettings, updateSettings } = useMonitorStore();
     const { toast } = useToast();
     const [retention, setRetention] = useState(settings?.data_retention_days || "30");
+    const [rollupRetention, setRollupRetention] = useState(settings?.rollup_retention_days || "");
 
     // Fetch settings on mount
     useEffect(() => {
@@ -99,14 +100,23 @@ function GeneralSettings() {
     useEffect(() => {
         if (settings) {
             setRetention(settings.data_retention_days || "30");
+            setRollupRetention(settings.rollup_retention_days || "");
         }
     }, [settings]);
 
     const handleSave = async () => {
-        await updateSettings({
-            data_retention_days: retention
-        });
-        toast({ title: "Settings Saved", description: "Global settings updated." });
+        // Send only what changed. The server keeps the other value and clears a daily
+        // history setting that a longer check retention has caught up with.
+        const changes: Record<string, string> = {};
+        if (retention !== (settings?.data_retention_days || "30")) changes.data_retention_days = retention;
+        if (rollupRetention !== (settings?.rollup_retention_days || "")) changes.rollup_retention_days = rollupRetention;
+        try {
+            await updateSettings(changes);
+            await fetchSettings();
+            toast({ title: "Settings Saved", description: "Global settings updated." });
+        } catch (error) {
+            toast({ title: "Could not save settings", description: error instanceof Error ? error.message : "Try again.", variant: "destructive" });
+        }
     };
 
     return (
@@ -124,6 +134,14 @@ function GeneralSettings() {
                             <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">days</span>
                         </div>
                         <p className="text-xs text-muted-foreground">Incident history is always kept.</p>
+                    </div>
+                    <div className="grid gap-2">
+                        <Label htmlFor="rollup-retention">Keep daily uptime history for</Label>
+                        <div className="relative max-w-xs">
+                            <Input id="rollup-retention" type="number" value={rollupRetention} placeholder={retention} onChange={(e) => setRollupRetention(e.target.value)} className="pr-16" />
+                            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">days</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">Backs status page uptime bars. Leave empty to match check data.</p>
                     </div>
                 </div>
                 <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">

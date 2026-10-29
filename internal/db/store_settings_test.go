@@ -32,6 +32,34 @@ func TestSettingsResult(t *testing.T) {
 	}
 }
 
+func TestRetentionDays(t *testing.T) {
+	RunTestWithBothDBs(t, "retention days", func(t *testing.T, s *Store) {
+		cases := []struct {
+			name, checks, rollups   string
+			wantChecks, wantRollups int
+		}{
+			{"defaults", "365", "", 365, 365},
+			{"rollups follow checks", "7", "", 7, 7},
+			{"rollups kept longer", "7", "365", 7, 365},
+			{"rollups never shorter than checks", "30", "7", 30, 30},
+			{"invalid rollups follow checks", "30", "soon", 30, 30},
+			{"invalid checks fall back", "0", "", 365, 365},
+		}
+		for _, tc := range cases {
+			if err := s.SetSetting("data_retention_days", tc.checks); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.SetSetting("rollup_retention_days", tc.rollups); err != nil {
+				t.Fatal(err)
+			}
+			checks, rollups := s.RetentionDays()
+			if checks != tc.wantChecks || rollups != tc.wantRollups {
+				t.Errorf("%s: got (%d, %d), want (%d, %d)", tc.name, checks, rollups, tc.wantChecks, tc.wantRollups)
+			}
+		}
+	})
+}
+
 func TestSystemStats(t *testing.T) {
 	s := newTestStore(t)
 	stats, err := s.GetSystemStats()
