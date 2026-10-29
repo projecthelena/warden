@@ -74,6 +74,8 @@ func varyAcceptEncoding(next http.Handler) http.Handler {
 	})
 }
 
+// varyWriter sits under middleware.Compress, which always calls WriteHeader before the
+// first Write, so the body needs no wrapping.
 type varyWriter struct {
 	http.ResponseWriter
 	wroteHeader bool
@@ -87,13 +89,6 @@ func (w *varyWriter) WriteHeader(code int) {
 		}
 	}
 	w.ResponseWriter.WriteHeader(code)
-}
-
-func (w *varyWriter) Write(p []byte) (int, error) {
-	if !w.wroteHeader {
-		w.WriteHeader(http.StatusOK)
-	}
-	return w.ResponseWriter.Write(p)
 }
 
 // Flush keeps event streams working; a flush sends the headers too.
