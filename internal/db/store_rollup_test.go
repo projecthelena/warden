@@ -193,6 +193,36 @@ func TestRollupDailyUptime_FrozenAfterCheckPrune(t *testing.T) {
 	}
 }
 
+// The periodic refresh recomputes whole UTC days. A cutoff of now-48h used to fall partway
+// through the day before yesterday and rebuild it from only its later checks.
+func TestRollupDailyUptime_RefreshLeavesOlderDayWhole(t *testing.T) {
+	RunTestWithBothDBs(t, "refresh leaves older day whole", func(t *testing.T, s *Store) {
+		_ = s.CreateGroup(Group{ID: "g1", Name: "G1"})
+		_ = s.CreateMonitor(Monitor{ID: "m1", GroupID: "g1", Name: "M1", Interval: 60})
+		d := time.Now().UTC().AddDate(0, 0, -2)
+		day := func(h, m, sec int) time.Time {
+			return time.Date(d.Year(), d.Month(), d.Day(), h, m, sec, 0, time.UTC)
+		}
+		if err := s.BatchInsertChecks([]CheckResult{
+			{MonitorID: "m1", Status: "down", Timestamp: day(0, 0, 1)},
+			{MonitorID: "m1", Status: "up", Timestamp: day(23, 59, 59)},
+		}); err != nil {
+			t.Fatalf("BatchInsertChecks: %v", err)
+		}
+		if err := s.RollupDailyUptime(10); err != nil {
+			t.Fatalf("backfill: %v", err)
+		}
+		if err := s.RollupDailyUptime(2); err != nil {
+			t.Fatalf("refresh: %v", err)
+		}
+
+		got, _ := s.GetDailyUptimeStatsForMonitors([]string{"m1"}, 10)
+		if d, ok := findDay(got["m1"], dayStr(2)); !ok || d.Total != 2 || d.Up != 1 {
+			t.Errorf("day-2 rollup changed by refresh: want 1/2, got %+v (ok=%v)", d, ok)
+		}
+	})
+}
+
 // A 365-day range is the case that most benefits from the rollup (it used to aggregate a
 // year of raw checks per request). It must read a full 365-entry series from the rollup.
 func TestRollupDailyUptime_LargeRange(t *testing.T) {
