@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -57,13 +58,65 @@ func SecureHeadersWithConfig(cookieSecure bool) func(http.Handler) http.Handler 
 	}
 }
 
+// compressResponses gzips JSON, HTML, CSS and JavaScript for clients that accept it.
+// Event streams and responses that already carry a Content-Encoding pass through as is.
+func compressResponses(next http.Handler) http.Handler {
+	return varyAcceptEncoding(middleware.Compress(5, "application/json", "text/html", "text/css", "application/javascript")(next))
+}
+
+// varyAcceptEncoding makes every response that passes through middleware.Compress carry
+// Vary: Accept-Encoding once, so a cache never hands an identity copy to a client that
+// asked for gzip, or the reverse. Compress adds it only when it encodes; this adds it to
+// the rest just before the headers go out.
+func varyAcceptEncoding(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(&varyWriter{ResponseWriter: w}, r)
+	})
+}
+
+type varyWriter struct {
+	http.ResponseWriter
+	wroteHeader bool
+}
+
+func (w *varyWriter) WriteHeader(code int) {
+	if !w.wroteHeader {
+		w.wroteHeader = true
+		if !slices.Contains(w.Header().Values("Vary"), "Accept-Encoding") {
+			w.Header().Add("Vary", "Accept-Encoding")
+		}
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *varyWriter) Write(p []byte) (int, error) {
+	if !w.wroteHeader {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(p)
+}
+
+// Flush keeps event streams working; a flush sends the headers too.
+func (w *varyWriter) Flush() {
+	if !w.wroteHeader {
+		w.WriteHeader(http.StatusOK)
+	}
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (w *varyWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
 // NewRouter builds the HTTP router serving both JSON APIs and static assets.
 func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) http.Handler {
 	r := chi.NewRouter()
 	r.Use(observability.HTTPMiddleware)
 	r.Use(requestLogger)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Compress(5, "application/json", "text/html", "text/css", "application/javascript"))
+	r.Use(compressResponses)
 
 	// SECURITY: Only trust X-Forwarded-For headers when behind a trusted reverse proxy.
 	// If TrustProxy is false (default), we use the direct connection IP to prevent
