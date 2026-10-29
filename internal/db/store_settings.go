@@ -3,6 +3,7 @@ package db
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -27,6 +28,29 @@ func (s *Store) SetSetting(key, value string) error {
 		_, err = s.db.Exec("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", key, value)
 	}
 	return err
+}
+
+// MaxRetentionDays is the longest retention the prune queries accept.
+const MaxRetentionDays = 3650
+
+// RetentionDays returns how long raw history (checks, events, sent digests) and daily
+// uptime rollups are kept. Rollups follow data_retention_days unless
+// rollup_retention_days is set, and are never pruned before the checks they summarize.
+// Both are capped at MaxRetentionDays, which older installs may have stored past.
+func (s *Store) RetentionDays() (checks, rollups int) {
+	checks = 365
+	if val, err := s.GetSetting("data_retention_days"); err == nil {
+		if i, err := strconv.Atoi(val); err == nil && i > 0 {
+			checks = min(i, MaxRetentionDays)
+		}
+	}
+	rollups = checks
+	if val, err := s.GetSetting("rollup_retention_days"); err == nil {
+		if i, err := strconv.Atoi(val); err == nil && i > rollups {
+			rollups = min(i, MaxRetentionDays)
+		}
+	}
+	return checks, rollups
 }
 
 // Notification Channels

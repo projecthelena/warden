@@ -6,11 +6,15 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/projecthelena/warden/internal/db"
 	"github.com/projecthelena/warden/internal/uptime"
 )
+
+// retentionMu serializes retention updates, which validate one setting against the other.
+var retentionMu sync.Mutex
 
 type SettingsHandler struct {
 	store   *db.Store
@@ -29,10 +33,13 @@ func NewSettingsHandler(store *db.Store, manager *uptime.Manager) *SettingsHandl
 // @Success      200  {object} map[string]string
 // @Router       /settings [get]
 func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
-	// Data Retention
-	retention, err := h.store.GetSetting("data_retention_days")
-	if err != nil {
-		retention = "365"
+	// Data Retention, as in effect. Empty means daily uptime history follows
+	// data_retention_days.
+	checkDays, rollupDays := h.store.RetentionDays()
+	retention := strconv.Itoa(checkDays)
+	rollupRetention := ""
+	if rollupDays > checkDays {
+		rollupRetention = strconv.Itoa(rollupDays)
 	}
 
 	// Slack Notifications
@@ -197,6 +204,7 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]string{
 		"data_retention_days":             retention,
+		"rollup_retention_days":           rollupRetention,
 		"notifications.slack.enabled":     slackEnabled,
 		"notifications.slack.webhook_url": slackWebhookMasked, // SECURITY: Masked for display
 		"notifications.slack.webhook_configured": func() string {
@@ -284,29 +292,74 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	if val, ok := body["data_retention_days"]; ok {
-		// Validate int
-		i, err := strconv.Atoi(val)
-		if err != nil || i < 1 {
-			http.Error(w, "Invalid data_retention_days", http.StatusBadRequest)
-			return
-		}
+	checksVal, setChecks := body["data_retention_days"]
+	rollupVal, setRollups := body["rollup_retention_days"]
+	if setChecks || setRollups {
+		// Two concurrent saves would each validate against the settings the other is
+		// about to replace.
+		retentionMu.Lock()
+		defer retentionMu.Unlock()
 
-		// Cross-validate: no status page should have uptime_days_range > new retention
+		// rollup_retention_days is only stored while it is longer than data_retention_days;
+		// empty means daily uptime history follows check retention. Rollups older than the
+		// checks would just be rebuilt from them, so a shorter value is refused when sent
+		// and cleared when raising check retention catches up with it.
+		checks, rollups := h.store.RetentionDays()
+		follow := rollups == checks
+		if setChecks {
+			i, err := strconv.Atoi(checksVal)
+			if err != nil || i < 1 || i > db.MaxRetentionDays {
+				writeError(w, http.StatusBadRequest, "data_retention_days must be between 1 and 3650")
+				return
+			}
+			checks = i
+		}
+		if setRollups {
+			follow = rollupVal == ""
+			if !follow {
+				i, err := strconv.Atoi(rollupVal)
+				if err != nil || i < 1 || i > db.MaxRetentionDays {
+					writeError(w, http.StatusBadRequest, "rollup_retention_days must be empty or between 1 and 3650")
+					return
+				}
+				if i < checks {
+					writeError(w, http.StatusBadRequest, "rollup_retention_days cannot be shorter than data_retention_days ("+strconv.Itoa(checks)+" days)")
+					return
+				}
+				rollups = i
+			}
+		}
+		if follow {
+			rollups = checks
+		}
+		rollups = max(rollups, checks)
+
+		// Cross-validate: status pages read daily rollups, so no page may show a longer
+		// uptime range than the rollups keep.
 		pages, err := h.store.GetStatusPages()
 		if err != nil {
 			http.Error(w, "Failed to validate against status pages", http.StatusInternalServerError)
 			return
 		}
 		for _, p := range pages {
-			if p.UptimeDaysRange > i {
+			if p.UptimeDaysRange > rollups {
 				writeError(w, http.StatusBadRequest, "cannot reduce retention below "+strconv.Itoa(p.UptimeDaysRange)+" days (used by status page \""+p.Title+"\")")
 				return
 			}
 		}
 
-		if err := h.store.SetSetting("data_retention_days", val); err != nil {
-			http.Error(w, "Failed to save data_retention_days", http.StatusInternalServerError)
+		if setChecks {
+			if err := h.store.SetSetting("data_retention_days", strconv.Itoa(checks)); err != nil {
+				http.Error(w, "Failed to save data_retention_days", http.StatusInternalServerError)
+				return
+			}
+		}
+		stored := ""
+		if rollups > checks {
+			stored = strconv.Itoa(rollups)
+		}
+		if err := h.store.SetSetting("rollup_retention_days", stored); err != nil {
+			http.Error(w, "Failed to save rollup_retention_days", http.StatusInternalServerError)
 			return
 		}
 	}

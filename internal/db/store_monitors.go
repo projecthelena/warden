@@ -1414,8 +1414,9 @@ type DailyUptimeRollupStats struct {
 	DBAfter                 sql.DBStats
 }
 
-// RollupDailyUptime recomputes daily uptime from raw checks and upserts the result.
-// It remains active when diagnostics are disabled. Historical reads use these rows.
+// RollupDailyUptime recomputes daily uptime from raw checks and upserts the result for
+// the last `days` whole UTC days, today included. It remains active when diagnostics are
+// disabled. Historical reads use these rows.
 func (s *Store) RollupDailyUptime(days int) error {
 	return s.rollupDailyUptime(days, nil)
 }
@@ -1431,6 +1432,9 @@ func (s *Store) rollupDailyUptime(days int, stats *DailyUptimeRollupStats) error
 	if days < 1 {
 		return nil
 	}
+	// Start at UTC midnight, the boundary rollup days use. A cutoff partway through a day
+	// would rebuild that day from only its later checks and overwrite the full count.
+	cutoff := time.Now().UTC().AddDate(0, 0, -(days-1)).Format("2006-01-02") + " 00:00:00"
 	// Disabled diagnostics do not read the clock or snapshot the connection pool.
 	var phaseStart time.Time
 	startPhase := func() {
@@ -1508,21 +1512,19 @@ func (s *Store) rollupDailyUptime(days int, stats *DailyUptimeRollupStats) error
 				SELECT TO_CHAR(timestamp, 'YYYY-MM-DD') AS day,
 					COUNT(*) AS total, SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END) AS up_count
 				FROM monitor_checks
-				WHERE monitor_id = m.id AND timestamp >= NOW() - MAKE_INTERVAL(days => ?)
+				WHERE monitor_id = m.id AND timestamp >= ?
 				GROUP BY day
-			) r`, days)
+			) r`, cutoff)
 	} else {
-		rows, readConn, queryErr := queryRows(`SELECT id, datetime('now', '-' || ? || ' days')
-			FROM monitors ORDER BY id`, days)
+		rows, readConn, queryErr := queryRows(`SELECT id FROM monitors ORDER BY id`)
 		if queryErr != nil {
 			return queryErr
 		}
 		var monitorIDs []string
-		var cutoff string
 		startPhase()
 		for rows.Next() {
 			var id string
-			if err = rows.Scan(&id, &cutoff); err != nil {
+			if err = rows.Scan(&id); err != nil {
 				break
 			}
 			monitorIDs = append(monitorIDs, id)

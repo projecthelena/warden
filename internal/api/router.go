@@ -1,8 +1,13 @@
 package api
 
 import (
+	"bufio"
 	"encoding/json"
+	"errors"
+	"net"
 	"net/http"
+	"slices"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -57,13 +62,96 @@ func SecureHeadersWithConfig(cookieSecure bool) func(http.Handler) http.Handler 
 	}
 }
 
+// compressResponses gzips JSON, HTML, CSS and JavaScript for clients that accept it.
+// Event streams and responses that already carry a Content-Encoding pass through as is.
+func compressResponses(next http.Handler) http.Handler {
+	return varyAcceptEncoding(middleware.Compress(5, compressibleTypes...)(next))
+}
+
+var compressibleTypes = []string{"application/json", "text/html", "text/css", "application/javascript"}
+
+// varyAcceptEncoding makes every response that passes through middleware.Compress carry
+// Vary: Accept-Encoding once, so a cache never hands an identity copy to a client that
+// asked for gzip, or the reverse. Compress adds it only when it encodes; this adds it to
+// the rest just before the headers go out.
+func varyAcceptEncoding(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(&varyWriter{ResponseWriter: w}, r)
+	})
+}
+
+// varyWriter sits under middleware.Compress, which always calls WriteHeader before the
+// first Write, so the body needs no wrapping.
+type varyWriter struct {
+	http.ResponseWriter
+	wroteHeader bool
+}
+
+func (w *varyWriter) WriteHeader(code int) {
+	if !w.wroteHeader {
+		w.wroteHeader = true
+		if !variesOnAcceptEncoding(w.Header().Values("Vary")) {
+			w.Header().Add("Vary", "Accept-Encoding")
+		}
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+// variesOnAcceptEncoding reports whether a Vary header already covers Accept-Encoding,
+// in any case and in a comma-separated list or as "*".
+func variesOnAcceptEncoding(values []string) bool {
+	for _, v := range values {
+		for _, field := range strings.Split(v, ",") {
+			field = strings.TrimSpace(field)
+			if field == "*" || strings.EqualFold(field, "Accept-Encoding") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// Flush keeps event streams working. Compress decides whether to encode on the first
+// write, so for a compressible type, or one not set yet, sending the headers early could
+// ship a gzip body without its Content-Encoding; that flush waits for the first write.
+func (w *varyWriter) Flush() {
+	if !w.wroteHeader {
+		contentType, _, _ := strings.Cut(w.Header().Get("Content-Type"), ";")
+		if contentType == "" || slices.Contains(compressibleTypes, contentType) {
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (w *varyWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := w.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, errors.New("http.Hijacker is unavailable on the writer")
+}
+
+func (w *varyWriter) Push(target string, opts *http.PushOptions) error {
+	if p, ok := w.ResponseWriter.(http.Pusher); ok {
+		return p.Push(target, opts)
+	}
+	return http.ErrNotSupported
+}
+
+func (w *varyWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
 // NewRouter builds the HTTP router serving both JSON APIs and static assets.
 func NewRouter(manager *uptime.Manager, store *db.Store, cfg *config.Config) http.Handler {
 	r := chi.NewRouter()
 	r.Use(observability.HTTPMiddleware)
 	r.Use(requestLogger)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Compress(5, "application/json", "text/html", "text/css", "application/javascript"))
+	r.Use(compressResponses)
 
 	// SECURITY: Only trust X-Forwarded-For headers when behind a trusted reverse proxy.
 	// If TrustProxy is false (default), we use the direct connection IP to prevent

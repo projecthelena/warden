@@ -2303,3 +2303,37 @@ func TestGetStatusPagesByIDs(t *testing.T) {
 		t.Errorf("Expected 0 pages for nonexistent IDs, got %d", len(pages))
 	}
 }
+
+// Status pages read uptime from daily rollups, so their range is bounded by rollup
+// retention, which follows data_retention_days unless set on its own.
+func TestToggle_UptimeRangeValidatedAgainstRollupRetention(t *testing.T) {
+	store, spH := newStatusPageTestEnv(t)
+	seedPage(t, store, "range", "Range", nil, true, true)
+	toggle := func(days int) int {
+		w := httptest.NewRecorder()
+		spH.Toggle(w, makeRequest("PATCH", "/api/status-pages/range", "range", map[string]interface{}{
+			"public": true, "enabled": true, "title": "Range", "uptimeDaysRange": days,
+		}))
+		return w.Code
+	}
+
+	if err := store.SetSetting("data_retention_days", "30"); err != nil {
+		t.Fatal(err)
+	}
+	if code := toggle(90); code != http.StatusBadRequest {
+		t.Fatalf("90 days with 30-day retention: got %d, want 400", code)
+	}
+	if code := toggle(30); code != http.StatusOK {
+		t.Fatalf("30 days with 30-day retention: got %d, want 200", code)
+	}
+
+	if err := store.SetSetting("data_retention_days", "7"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetSetting("rollup_retention_days", "365"); err != nil {
+		t.Fatal(err)
+	}
+	if code := toggle(365); code != http.StatusOK {
+		t.Fatalf("365 days with 7-day checks and 365-day rollups: got %d, want 200", code)
+	}
+}
