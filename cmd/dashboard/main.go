@@ -51,6 +51,22 @@ func main() {
 	// Start Monitor in background // This comment is now misleading, as monitor is removed.
 	// go monitor.Start(ctx) // Removed
 
+	// Listen before opening the database: migrations on a large history can take minutes,
+	// and a liveness probe that finds no listener kills the process mid-migration.
+	handler := &startupHandler{}
+	srv := &http.Server{
+		Addr:              cfg.ListenAddr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second, // Prevent Slowloris attacks
+	}
+
+	go func() {
+		log.Printf("Starting server on %s", cfg.ListenAddr)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("listen: %s\n", err)
+		}
+	}()
+
 	// Init DB
 	store, err := db.NewStore(db.DBConfig{
 		PostgresTrace:         cfg.PostgresTrace,
@@ -98,20 +114,7 @@ func main() {
 	}
 
 	// Init Router
-	r := api.NewRouter(manager, store, cfg) // Changed monitor to manager
-
-	srv := &http.Server{
-		Addr:              cfg.ListenAddr,
-		Handler:           r,
-		ReadHeaderTimeout: 10 * time.Second, // Prevent Slowloris attacks
-	}
-
-	go func() {
-		log.Printf("Starting server on %s", cfg.ListenAddr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("listen: %s\n", err)
-		}
-	}()
+	handler.ready(api.NewRouter(manager, store, cfg))
 
 	// Wait for interrupt signal
 	<-ctx.Done()
