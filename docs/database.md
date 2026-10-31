@@ -16,7 +16,7 @@ docker run -d -p 9090:9090 \
 | :-------- | :---------------- | :----------------------- |
 | `DB_PATH` | `/data/warden.db` | Path to the SQLite file. |
 
-**When to use:** Single-instance deployments, low-to-medium traffic, simplicity.
+**When to use:** Single-instance deployments with up to 1,000 monitors, simplicity. SQLite has sustained 1,000 HTTP monitors at a 10-second interval in [load testing](load-testing.md); 2,000 did not pass.
 
 ## PostgreSQL
 
@@ -33,7 +33,7 @@ docker run -d -p 9090:9090 \
 | `DB_TYPE` | `sqlite` | Set to `postgres` (auto-detected if `DB_URL` starts with `postgres`). |
 | `DB_URL` | — | PostgreSQL connection string. |
 
-**When to use:** High availability requirements, existing PostgreSQL infrastructure, large-scale monitoring.
+**When to use:** More than 1,000 monitors, high availability requirements, existing PostgreSQL infrastructure. PostgreSQL has sustained 5,000 HTTP monitors at a 10-second interval for 18 hours in [load testing](load-testing.md).
 
 ### Check durability
 
@@ -49,6 +49,10 @@ With thousands of monitors, most write volume is write-ahead log rather than che
 | `max_wal_size` | `8GB` or more | Fewer checkpoints, so fewer full-page images. Needs that much free disk for WAL. |
 
 For example, with the official image: `postgres -c wal_compression=lz4 -c max_wal_size=8GB`.
+
+### Disk
+
+Warden buffers about two seconds of checks at 5,000 monitors every 10 seconds. If the disk under PostgreSQL stops responding for longer, checks are dropped. Use an NVMe disk or an SSD with DRAM cache and power-loss protection, and keep other write-heavy workloads off it. See [disk stalls](load-testing.md#disk-stalls) for what was observed and what to monitor.
 
 ## Migrating from SQLite to PostgreSQL
 
